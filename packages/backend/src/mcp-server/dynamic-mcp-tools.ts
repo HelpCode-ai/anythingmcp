@@ -71,6 +71,7 @@ import { connectorPageUrl } from '../common/url.util';
 import { hashContent } from '../adapters/catalog-fingerprint';
 import { getAdapter } from '../adapters/catalog';
 import { ArgumentPatternError, catalogPatternViolations } from './catalog-patterns';
+import { missingRequiredDefault } from './required-env-defaults';
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
 import { ToolRateLimitService } from './tool-rate-limit.service';
@@ -779,6 +780,11 @@ export class DynamicMcpTools {
         tool.parameters,
         applyEnvDefaults(tool.endpointMapping, paramsWithEnv, envVars),
       );
+      // A required argument that the call left out and the connector variable
+      // meant to fill is empty (a Telegram send with no chat and no default
+      // chat) is refused here instead of going out empty.
+      const missingDefault = missingRequiredDefault(adapterSlug, tool.endpointMapping, mergedParams);
+      if (missingDefault) throw missingDefault;
 
       if (adapterSlug === 'odoo' || adapterSlug === 'odoo-jsonrpc') {
         lookupOdooFields = (model) =>

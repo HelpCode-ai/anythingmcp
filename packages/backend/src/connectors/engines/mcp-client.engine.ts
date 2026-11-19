@@ -8,8 +8,12 @@ import { ssrfGuardedFetch } from '../../common/outbound-http';
 import { engineLogSecrets, urlForLog } from '../../common/log-safe-url.util';
 import { withMcpFixedArguments } from '../mcp-connector-config.util';
 
-/** Pages of tools/list followed at most (MCP pagination). */
-const MAX_TOOL_LIST_PAGES = 50;
+/**
+ * Pages of tools/list followed at most (MCP pagination). Enforced by the SDK
+ * through `listMaxPages`: since client 2.4 a `listTools()` call without a
+ * cursor walks every page itself, so a loop of our own never saw a cursor.
+ */
+export const MAX_TOOL_LIST_PAGES = 50;
 /** Bound background cleanup before aborting the local transport. */
 const SESSION_TERMINATION_TIMEOUT_MS = 5_000;
 
@@ -162,10 +166,13 @@ export class McpClientEngine {
       requestInit: { headers },
     });
 
-    const client = new Client({
-      name: 'anythingmcp-bridge',
-      version: '1.0.0',
-    });
+    const client = new Client(
+      {
+        name: 'anythingmcp-bridge',
+        version: '1.0.0',
+      },
+      { listMaxPages: MAX_TOOL_LIST_PAGES },
+    );
 
     try {
       try {
@@ -174,15 +181,14 @@ export class McpClientEngine {
         throw explainMcpConnectError(err, mcpUrl, config.authType);
       }
       // tools/list is paginated (MCP spec): a server with a large catalogue
-      // (Atlassian with ?tools=all) returns a nextCursor. Follow it, with a
-      // ceiling so a server that never stops cannot hold the request.
-      const tools: Awaited<ReturnType<Client['listTools']>>['tools'] = [];
-      let cursor: string | undefined;
-      for (let page = 0; page < MAX_TOOL_LIST_PAGES; page++) {
-        const result = await client.listTools(cursor ? { cursor } : undefined);
-        tools.push(...(result.tools || []));
-        cursor = typeof result.nextCursor === 'string' && result.nextCursor ? result.nextCursor : undefined;
-        if (!cursor) break;
+      // (Atlassian with ?tools=all) returns a nextCursor. Called without a
+      // cursor, the SDK follows every page and stops at listMaxPages, so a
+      // server that never stops cannot hold the request.
+      let tools: Awaited<ReturnType<Client['listTools']>>['tools'];
+      try {
+        tools = (await client.listTools()).tools || [];
+      } catch (err) {
+        throw explainToolListPageCap(err);
       }
 
       return tools.map((tool) => ({
@@ -362,6 +368,21 @@ export function assertNotThisServer(mcpUrl: URL, env: NodeJS.ProcessEnv = proces
  * was not told about, e.g. its own public tunnel (trycloudflare, ngrok). The
  * raw message reads like our fault; say which setting on their side to change.
  */
+/**
+ * The SDK refuses a tools/list walk longer than {@link MAX_TOOL_LIST_PAGES}
+ * pages. Say what happened in words an operator can act on; any other error
+ * passes through unchanged.
+ */
+export function explainToolListPageCap(err: unknown): unknown {
+  const code = (err as { code?: unknown } | null)?.code;
+  if (code !== 'LIST_PAGINATION_EXCEEDED') return err;
+  return new Error(
+    `The MCP server listed its tools on more than ${MAX_TOOL_LIST_PAGES} pages, ` +
+      'so discovery stopped. Narrow the tool list on the server side (for example ' +
+      'a toolset or filter option in the endpoint address) and discover again.',
+  );
+}
+
 export function explainMcpConnectError(err: unknown, mcpUrl: URL, authType?: string): Error {
   const message = String((err as Error)?.message ?? err);
   if (!/invalid host header|host not allowed|dns rebinding/i.test(message)) {

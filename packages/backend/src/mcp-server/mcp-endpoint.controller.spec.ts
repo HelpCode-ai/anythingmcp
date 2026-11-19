@@ -609,6 +609,61 @@ describe('McpEndpointController — keys created for a server', () => {
       expect(res.status).toHaveBeenCalledWith(405);
     }
   });
+
+  describe('the guide placeholder pasted as the server id', () => {
+    const jwtUser = { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' };
+    const prevServerUrl = process.env.SERVER_URL;
+    afterEach(() => {
+      if (prevServerUrl === undefined) delete process.env.SERVER_URL;
+      else process.env.SERVER_URL = prevServerUrl;
+    });
+
+    it('still answers 404, explaining the placeholder and the sign-in /mcp of the request host', async () => {
+      delete process.env.SERVER_URL;
+      for (const id of ['YOUR_SERVER_ID', 'YOUR_SERVER_ID, then click Add.', '<server-id>']) {
+        const res = makeRes();
+        await controller.handlePost(
+          id,
+          { user: jwtUser, headers: { host: 'mcp.example.test', 'x-forwarded-proto': 'https' } } as any,
+          res,
+          {},
+        );
+        expect(res.status).toHaveBeenCalledWith(404);
+        const body = res.json.mock.calls[0][0];
+        expect(body).toMatchObject({ jsonrpc: '2.0', id: null, error: { code: -32001 } });
+        expect(body.error.message).toMatch(/^MCP server not found: .*placeholder/);
+        expect(body.error.message).toContain('Replace YOUR_SERVER_ID');
+        expect(body.error.message).toContain('https://mcp.example.test/mcp.');
+      }
+      expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+      expect((controller as any).serveStateless).not.toHaveBeenCalled();
+    });
+
+    it('names the configured public URL when SERVER_URL is set', async () => {
+      process.env.SERVER_URL = 'https://public.example.test/';
+      const res = makeRes();
+      await controller.handlePost('YOUR_SERVER_ID', { user: jwtUser, headers: { host: 'internal:4000' } } as any, res, {});
+      expect(res.json.mock.calls[0][0].error.message).toContain('https://public.example.test/mcp.');
+    });
+
+    it('keeps the plain message for any other unknown id', async () => {
+      const res = makeRes();
+      await controller.handlePost('srv-missing', { user: jwtUser, headers: {} } as any, res, {});
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(res.json).toHaveBeenCalledWith({
+        jsonrpc: '2.0',
+        error: { code: -32001, message: 'MCP server not found' },
+        id: null,
+      });
+    });
+
+    it('is still refused first for a key created for another server', async () => {
+      const res = makeRes();
+      await controller.handlePost('YOUR_SERVER_ID', { user: keyFor('srv-A'), headers: {} } as any, res, {});
+      denied(res);
+      expect(mcpServersService.findById).not.toHaveBeenCalled();
+    });
+  });
 });
 
 /**
