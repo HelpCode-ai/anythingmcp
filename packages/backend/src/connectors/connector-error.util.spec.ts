@@ -1,4 +1,4 @@
-import { classifyToolExecutionError } from './connector-error.util';
+import { classifyToolExecutionError, loginRequestHint } from './connector-error.util';
 
 describe('classifyToolExecutionError', () => {
   it('maps 401 to auth_failed with an authType-specific hint', () => {
@@ -16,11 +16,11 @@ describe('classifyToolExecutionError', () => {
     });
     expect(sap.kind).toBe('auth_failed');
     expect(sap.hint).toMatch(/not allowed to perform this action/);
-    expect(sap.hint).not.toMatch(/Login failed/);
-    // A plain 403 still points at the credentials.
-    expect(classifyToolExecutionError({ status: 403, authType: 'LOGIN_TOKEN', message: 'Forbidden' }).hint).toMatch(/Login failed/);
+    expect(sap.hint).not.toMatch(/refused the session token/);
+    // A plain 403 still points at the credentials (the token, after a login that worked).
+    expect(classifyToolExecutionError({ status: 403, authType: 'LOGIN_TOKEN', message: 'Forbidden' }).hint).toMatch(/refused the session token/);
     // Only 403: a 401 is a rejected credential whatever its text says.
-    expect(classifyToolExecutionError({ status: 401, authType: 'LOGIN_TOKEN', message: 'not permitted' }).hint).toMatch(/Login failed/);
+    expect(classifyToolExecutionError({ status: 401, authType: 'LOGIN_TOKEN', message: 'not permitted' }).hint).toMatch(/refused the session token/);
   });
 
   it('maps 403 to auth_failed', () => {
@@ -79,5 +79,35 @@ describe('classifyToolExecutionError', () => {
 
   it('reads a 405 like a 404: the address answers, but not as this API', () => {
     expect(classifyToolExecutionError({ status: 405 }).kind).toBe('not_found');
+  });
+});
+
+describe('a failed Login → Token login request', () => {
+  const login = (status: number | undefined, message = `LOGIN_TOKEN: login request failed (HTTP ${status}): {}`) =>
+    classifyToolExecutionError({ status, authType: 'LOGIN_TOKEN', message });
+
+  it('is classified by the login status, with advice about the login settings', () => {
+    expect(login(401)).toMatchObject({ kind: 'auth_failed' });
+    expect(login(401).hint).toMatch(/the tool itself was not called/);
+    expect(login(401).hint).not.toMatch(/refused the session token/);
+    // A 404 is the login URL, not the tool path.
+    expect(login(404).kind).toBe('not_found');
+    expect(login(404).hint).toMatch(/login URL/);
+    expect(login(404).hint).not.toMatch(/tool path/);
+    expect(login(415).kind).toBe('bad_request');
+    expect(login(503).kind).toBe('upstream_error');
+    expect(login(undefined, 'LOGIN_TOKEN: login request failed (ENOTFOUND): getaddrinfo ENOTFOUND x').kind).toBe('unreachable');
+  });
+
+  it('names the connector headers the login did not carry', () => {
+    const hint = loginRequestHint(401, { connectorHeaders: ['X-Api-Key', 'X-Tenant'], loginHeaders: ['x-api-key'] });
+    expect(hint).toContain('Connector headers (X-Tenant) are not sent with the login request');
+    expect(loginRequestHint(401, { connectorHeaders: ['X-Api-Key'], loginHeaders: ['X-Api-Key'] })).not.toContain('Connector headers');
+  });
+
+  it('does not say retrying will not help for a rate limit or a server error', () => {
+    expect(loginRequestHint(429)).not.toMatch(/Retrying will not help/);
+    expect(loginRequestHint(500)).not.toMatch(/Retrying will not help/);
+    expect(loginRequestHint(401)).toMatch(/Retrying will not help/);
   });
 });

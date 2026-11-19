@@ -24,7 +24,7 @@ There is also a shared endpoint, `https://<your-host>/mcp`. When a client connec
 
 AnythingMCP is listed in Claude's connector directory: [claude.ai/directory/anythingmcp](https://claude.ai/directory/anythingmcp). This is the fastest path if you use AnythingMCP Cloud.
 
-1. Open [the AnythingMCP listing](https://claude.ai/directory/anythingmcp), or in Claude open **Customize → Connectors**, browse the connectors and search for AnythingMCP.
+1. Open [the AnythingMCP listing](https://claude.ai/directory/anythingmcp), or in Claude open **Plugins** (still called **Customize** on some plans) → **Connectors**, browse the connectors and search for AnythingMCP.
 2. Click **Connect**.
 3. Sign in to AnythingMCP Cloud and approve access. If you have several MCP servers, choose the ones Claude may reach.
 
@@ -40,18 +40,32 @@ The listing always connects to AnythingMCP Cloud. For a self-hosted instance, us
 
 Adds one specific MCP server, on Cloud or on a self-hosted instance.
 
-1. In Claude, open **Customize → Connectors**.
-2. Click **+**, then **Add custom connector**.
-3. Enter a name and paste the endpoint URL, `https://<your-host>/mcp/<server-id>`, then click **Add**.
-4. Click **Connect**, sign in to AnythingMCP and approve access.
+1. In Claude, open **Plugins** (still called **Customize** on some plans) → **Connectors**.
+2. Click **+ Add**, then **Add custom connector**.
+3. Enter a name (for example AnythingMCP) and paste the endpoint URL, `https://<your-host>/mcp/<server-id>`, then click **Continue**.
+4. Keep the detected authentication settings and click **Continue**.
+5. Choose **Sign in now**, keep the default OAuth client and click **Add**.
+6. Sign in to AnythingMCP and approve access.
+
+Claude is replacing **Customize** with a single **Plugins** page that holds skills, connectors and plugins. Most plans have it since November 9, 2026; Enterprise plans get it from November 30, 2026. Until then some accounts still show **Customize**: the steps are the same.
 
 Connectors added on claude.ai also appear in Claude Desktop and the mobile apps. The **Add to Claude** button in the server's Quick Connect panel opens the same dialog.
+
+### Team and Enterprise plans
+
+On Team and Enterprise plans, an owner adds the custom connector once for the whole organization:
+
+1. Open **Organization settings → Connectors**.
+2. Click **Add**, hover **Custom** and select **Web**.
+3. Enter a name and the endpoint URL, then finish the same steps as above.
+
+Members then open **Plugins** (or **Customize**) → **Connectors**, find the connector, click **Connect**, sign in to AnythingMCP and approve access.
 
 Claude connects to custom connectors from Anthropic's cloud, so a self-hosted instance must be reachable on a **public HTTPS URL**; `localhost` does not work here. See the [Deployment Guide](../deployment.md).
 
 ### Claude Desktop and `claude_desktop_config.json`
 
-Use **Customize → Connectors** in Claude Desktop as well. The `claude_desktop_config.json` file only launches local (stdio) commands: a remote URL entry in it is skipped as "not a valid MCP server configuration".
+Use **Plugins** (or **Customize**) → **Connectors** in Claude Desktop as well. The `claude_desktop_config.json` file only launches local (stdio) commands: a remote URL entry in it is skipped as "not a valid MCP server configuration".
 
 If you must use the config file, bridge the remote server through the [`mcp-remote`](https://www.npmjs.com/package/mcp-remote) package (requires Node.js), then restart Claude Desktop:
 

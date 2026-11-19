@@ -14,6 +14,7 @@ import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
 import type { Prisma } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
+import { isLoginRequestError } from './engines/login-token.service';
 import { attachResponseMeta } from './engines/response-headers.util';
 import { SoapEngine, WsdlReadError } from './engines/soap.engine';
 import { wsdlUrlForLog } from './parsers/wsdl.parser';
@@ -619,6 +620,21 @@ export class ConnectorsService implements OnApplicationBootstrap {
   }
 
   /**
+   * Store a complete authConfig the caller already merged (the Login → Token
+   * settings, where a merge also removes fields). Clears a recorded
+   * credential refusal that no longer applies, as updateAuthConfigMerge does.
+   */
+  async replaceAuthConfig(id: string, authConfig: Record<string, unknown>): Promise<Connector> {
+    await this.findByIdInternal(id);
+    const updated = await this.prisma.connector.update({
+      where: { id },
+      data: { authConfig: encrypt(JSON.stringify(authConfig), this.encryptionKey) },
+    });
+    await this.authStatus?.clear(id, { exceptRef: authCredentialRef(authConfig) });
+    return updated;
+  }
+
+  /**
    * Switch whose credential the connector's calls carry (user-credential.util).
    *
    * To USER, the connector's own tokens are removed in the same write: they
@@ -1128,13 +1144,33 @@ export class ConnectorsService implements OnApplicationBootstrap {
 
     // HTTP responses (axios)
     const status: number | undefined = error?.response?.status;
+    // The Login → Token login failed: the healthcheck was never sent, so the
+    // result names the login and its answer, not the healthcheck path.
+    if (isLoginRequestError(error)) {
+      const kind =
+        status === 401 || status === 403
+          ? 'auth_failed'
+          : status === 404 || status === 405
+            ? 'not_found'
+            : status === undefined && /ENOTFOUND|EAI_AGAIN|ECONNREFUSED|ECONNRESET|ETIMEDOUT|timeout|SSRF guard/i.test(String(error?.message ?? ''))
+              ? 'unreachable'
+              : 'error';
+      return {
+        ok: false,
+        kind,
+        ...(typeof status === 'number' ? { httpStatus: status } : {}),
+        message: [error.message, error.hint].filter((v) => typeof v === 'string' && v).join(' '),
+      };
+    }
     if (status === 401 || status === 403) {
       return {
         ok: false,
         kind: 'auth_failed',
         httpStatus: status,
         message:
-          'Auth handshake reached the API, but the credentials were rejected. Update authConfig and retry.',
+          'Auth handshake reached the API, but the credentials were rejected. Update authConfig and retry.' +
+          // A Login → Token header that replaced a connector header says so.
+          (typeof error?.hint === 'string' && error.hint ? ` ${error.hint}` : ''),
       };
     }
     if (status === 404) {
