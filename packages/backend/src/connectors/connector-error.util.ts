@@ -24,8 +24,11 @@ const AUTH_HINTS: Record<string, string> = {
   OAUTH1: 'The OAuth 1.0a signature was rejected — check the consumer key/secret and token.',
   BASIC_AUTH:
     'The username/password (or API key used as username) was rejected. Verify both fields.',
+  // A refused login is reported as "login request failed" and classified
+  // before this table is read (see loginRequestHint); a 401/403 that reaches
+  // here came from the tool call, after a login that worked.
   LOGIN_TOKEN:
-    'Login failed — the credentials used to mint the session token (email and password, or a signing key) were rejected.',
+    'The login worked, but the API refused the session token it returned. Check how the token is sent (headerName / headerTemplate, default "Authorization: Bearer <token>"), and that the token header does not replace a connector header with the same name that the API needs.',
   QUERY_AUTH: 'The API key sent as a query parameter was rejected.',
   // Auth type NONE also covers keys carried in the address or the body (a
   // Telegram bot token is part of the URL), so "no credentials" can be wrong.
@@ -35,12 +38,93 @@ const AUTH_HINTS: Record<string, string> = {
 const PERMISSION_DENIED =
   /not permitted|not allowed|no permission|insufficient (privileges|permissions?)|not authori[sz]ed to|access to this (object|resource) is denied|-6006/i;
 
+/**
+ * The start of every error message for a failed Login → Token login request
+ * (LoginTokenService), so a refused login is not mistaken for a refused tool
+ * call: the tool itself was never sent.
+ */
+export const LOGIN_REQUEST_FAILED_PREFIX = 'LOGIN_TOKEN: login request failed';
+
+/** Whether a message reports a failed Login → Token login request. */
+export function isLoginRequestFailureMessage(message: unknown): boolean {
+  return typeof message === 'string' && message.startsWith(LOGIN_REQUEST_FAILED_PREFIX);
+}
+
+/**
+ * What to fix when the Login → Token login request failed, by the status the
+ * login endpoint answered (undefined: no answer at all). Says plainly that
+ * the tool was not called, so the advice points at the login settings and
+ * not at the tool's path or parameters.
+ *
+ * `connectorHeaders` are the connector-level header names: they are not sent
+ * with the login request, so when the login has none of them the hint says
+ * where to add the ones the login needs.
+ */
+export function loginRequestHint(
+  status: number | undefined,
+  options: { connectorHeaders?: string[]; loginHeaders?: string[] } = {},
+): string {
+  let what: string;
+  let fixable = true;
+  if (status === 401 || status === 403) {
+    what = `The login endpoint refused the login (HTTP ${status}): check the credentials or key the login sends, in the login body, username and password, and the headers for the login request (authConfig.loginHeaders).`;
+  } else if (status === 404 || status === 405) {
+    what = `The login endpoint answered HTTP ${status}: check the login URL and the login method.`;
+  } else if (status === 400 || status === 415 || status === 422) {
+    what = `The login endpoint rejected the request (HTTP ${status}): check the login body and its Content-Type (set another one in the headers for the login request when the endpoint expects it).`;
+  } else if (status === 429) {
+    what = 'The login endpoint rate-limited the login (HTTP 429). Wait a moment and try again.';
+    fixable = false;
+  } else if (typeof status === 'number' && status >= 500) {
+    what = `The login endpoint returned a server error (HTTP ${status}). This is on the provider's side.`;
+    fixable = false;
+  } else if (typeof status === 'number') {
+    what = `The login endpoint answered HTTP ${status}.`;
+  } else {
+    what = 'The login endpoint could not be reached: check the login URL.';
+  }
+  const sent = new Set((options.loginHeaders ?? []).map((h) => h.toLowerCase()));
+  const notSent = (options.connectorHeaders ?? []).filter((h) => !sent.has(h.toLowerCase()));
+  const headers = notSent.length
+    ? ` Connector headers (${notSent.join(', ')}) are not sent with the login request; add any the login needs to the headers for the login request.`
+    : '';
+  return (
+    'This is the Login → Token login request, sent before the tool call: the tool itself was not called. ' +
+    what +
+    headers +
+    (fixable ? ' Retrying will not help until the login settings are fixed.' : '')
+  );
+}
+
+/** The classification of a failed Login → Token login request. */
+function classifyLoginRequestFailure(
+  status: number | undefined,
+  message: string,
+): { kind: ToolErrorKind; hint: string } {
+  const hint = loginRequestHint(status);
+  if (status === 401 || status === 403) return { kind: 'auth_failed', hint };
+  if (status === 404 || status === 405) return { kind: 'not_found', hint };
+  if (status === 400 || status === 415 || status === 422) return { kind: 'bad_request', hint };
+  if (status === 429) return { kind: 'rate_limited', hint };
+  if (typeof status === 'number' && status >= 500) return { kind: 'upstream_error', hint };
+  if (status === undefined && /ENOTFOUND|EAI_AGAIN|getaddrinfo|SSRF|ECONNREFUSED|ETIMEDOUT|timeout|certificate/i.test(message)) {
+    return { kind: 'unreachable', hint };
+  }
+  return { kind: 'error', hint };
+}
+
 export function classifyToolExecutionError(input: {
   status?: number;
   authType?: string | null;
   message?: string;
 }): { kind: ToolErrorKind; hint: string } {
   const { status, authType, message } = input;
+
+  // The Login → Token login failed: the tool call was never sent, so the
+  // advice is about the login settings whatever the status.
+  if (isLoginRequestFailureMessage(message)) {
+    return classifyLoginRequestFailure(status, String(message));
+  }
 
   // A 403 that says the user may not do this is a missing permission, not a
   // rejected login: SAP Business One answers a write by a read-only user with

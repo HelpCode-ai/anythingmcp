@@ -1354,7 +1354,15 @@
       "method": "Methode",
       "tokenPath": "JSON-Pfad des Tokens",
       "ttl": "Token-TTL (s)",
-      "refreshOn401": "Bei einer 401-Antwort automatisch neu anmelden und erneut versuchen"
+      "refreshOn401": "Bei einer 401-Antwort automatisch neu anmelden und erneut versuchen",
+      "credentialsHint": "Nur nötig, wenn der Login-Body oder die Login-Header <code>{user}</code> / <code>{pass}</code> verwenden (oder wenn es keinen Login-Body gibt). Für einen Token-Tausch, der nur einen Schlüssel sendet, beide leer lassen.",
+      "tokenPathPlaceholder": "token, data.accessToken …",
+      "tokenPathHint": "Wo das Token in der Login-Antwort steht, z. B. token oder data.accessToken (mehrere Pfade, durch Kommas getrennt, werden der Reihe nach versucht). Leer lassen, wenn die ganze Antwort das Token ist (Klartext oder ein JSON-String).",
+      "loginHeaders": "Header für die Login-Anfrage",
+      "loginHeadersHint": "Werden nur mit der Login-Anfrage gesendet; die Connector-Header weiter unten nicht. Werte können Variablen wie {variable} und den Platzhalter {pass} verwenden.",
+      "urlRequired": "Geben Sie die Login-URL ein.",
+      "usernameRequired": "Der Login verwendet {user}: Geben Sie einen Benutzernamen ein oder entfernen Sie den Platzhalter aus Login-Body und Login-Headern.",
+      "passwordRequired": "Der Login verwendet {pass}: Geben Sie ein Passwort oder einen Schlüssel ein oder entfernen Sie den Platzhalter aus Login-Body und Login-Headern."
     },
     "creating": "Wird angelegt...",
     "create": "Connector anlegen",
@@ -1526,7 +1534,7 @@
       "noteNew": "Consumer Key und Secret gehören zur beim Anbieter registrierten Anwendung – nicht zu Ihrer Login-E-Mail oder Ihrem Passwort. Beide sind nötig, um auf OAuth 1.0a umzustellen. Das Access-Token ist nur für APIs, die im Namen eines Benutzers handeln (three-legged)."
     },
     "loginToken": {
-      "intro": "Für APIs mit kurzlebigen Tokens (z. B. HRworks): Wir senden Ihre Zugangsdaten per POST an den Login-Endpunkt, lesen das Token aus der Antwort, senden es als Bearer-Token und erneuern es automatisch, bevor es abläuft. Geben Sie Passwort/Secret erneut ein, um diese Konfiguration zu ändern; leer lassen, um die aktuelle zu behalten.",
+      "intro": "Für APIs mit kurzlebigen Tokens (z. B. HRworks): Wir senden die Login-Anfrage an den Login-Endpunkt, lesen das Token aus der Antwort, senden es mit jedem Aufruf und erneuern es automatisch, bevor es abläuft. Benutzername und Passwort leer lassen, um die gespeicherten zu behalten; Einstellungen, die dieses Formular nicht zeigt, bleiben beim Speichern erhalten.",
       "url": "Login-URL",
       "username": "Benutzername / Access-Key",
       "usernamePlaceholder": "Access-Key",
@@ -1536,7 +1544,18 @@
       "method": "Methode",
       "tokenPath": "JSON-Pfad des Tokens",
       "ttl": "Token-TTL (s)",
-      "refreshOn401": "Bei einer 401-Antwort automatisch neu anmelden und erneut versuchen"
+      "refreshOn401": "Bei einer 401-Antwort automatisch neu anmelden und erneut versuchen",
+      "credentialsHint": "Nur nötig, wenn der Login-Body oder die Login-Header <code>{user}</code> / <code>{pass}</code> verwenden (oder wenn es keinen Login-Body gibt). Für einen Token-Tausch, der nur einen Schlüssel sendet, beide leer lassen.",
+      "tokenPathPlaceholder": "token, data.accessToken …",
+      "tokenPathHint": "Wo das Token in der Login-Antwort steht, z. B. token oder data.accessToken (mehrere Pfade, durch Kommas getrennt, werden der Reihe nach versucht). Leer lassen, wenn die ganze Antwort das Token ist (Klartext oder ein JSON-String).",
+      "loginHeaders": "Header für die Login-Anfrage",
+      "loginHeadersHint": "Werden nur mit der Login-Anfrage gesendet; die Connector-Header weiter unten nicht. Werte können Variablen wie {variable} und den Platzhalter {pass} verwenden.",
+      "urlRequired": "Geben Sie die Login-URL ein.",
+      "usernameRequired": "Der Login verwendet {user}: Geben Sie einen Benutzernamen ein oder entfernen Sie den Platzhalter aus Login-Body und Login-Headern.",
+      "passwordRequired": "Der Login verwendet {pass}: Geben Sie ein Passwort oder einen Schlüssel ein oder entfernen Sie den Platzhalter aus Login-Body und Login-Headern.",
+      "passwordPlaceholder": "Secret",
+      "bodyHidden": "Der gespeicherte Login-Body enthält einen geheimen Wert und wird nicht angezeigt. Feld leer lassen, um ihn zu behalten, oder einen neuen Body eingeben, um ihn zu ersetzen.",
+      "tokenFromSource": "Dieser Connector liest das Token aus der Login-Antwort ({source}), der Token-Pfad wird daher nicht verwendet."
     },
     "oauthCard": {
       "title": "OAuth2-Autorisierung",

@@ -25,6 +25,7 @@ import ReactMarkdown from 'react-markdown';
 import remarkGfm from 'remark-gfm';
 import { useLocale, useTranslations } from 'next-intl';
 import { cn } from '@/lib/utils';
+import { missingLoginCredential, tokenPathFromInput, tokenPathToInput } from '@/lib/login-token-form';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { canManageConnector } from '@/lib/can-manage-connector';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
@@ -96,6 +97,47 @@ function hasOData(connector: any): boolean {
 }
 
 const EDIT_DEFAULT_LOGIN_BODY = '{\n  "username": "${username}",\n  "password": "${password}"\n}';
+
+/**
+ * The Login → Token settings as the form was filled (from the server, or the
+ * defaults): saving sends only what differs, merged server-side, so settings
+ * this form does not show survive. Secrets are never part of it.
+ */
+interface LoginTokenFormSnapshot {
+  loginUrl: string;
+  method: string;
+  body: string;
+  /** The stored body is a string (form, XML): an edit is sent as text. */
+  bodyIsString: boolean;
+  /** A body with a literal secret is stored but not shown. */
+  bodyHidden: boolean;
+  hasTemplate: boolean;
+  tokenPath: string;
+  ttl: string;
+  refreshOn401: boolean;
+  headers: string;
+  maskedHeaders: string[];
+  hasUsername: boolean;
+  hasPassword: boolean;
+  tokenSource: 'body' | 'cookie' | 'header';
+}
+
+const EMPTY_LOGIN_TOKEN_SNAPSHOT: LoginTokenFormSnapshot = {
+  loginUrl: '',
+  method: 'POST',
+  body: EDIT_DEFAULT_LOGIN_BODY,
+  bodyIsString: false,
+  bodyHidden: false,
+  hasTemplate: false,
+  tokenPath: 'token',
+  ttl: '',
+  refreshOn401: true,
+  headers: '{}',
+  maskedHeaders: [],
+  hasUsername: false,
+  hasPassword: false,
+  tokenSource: 'body',
+};
 
 function formatBytes(n: number): string {
   if (n < 1024) return `${n} B`;
@@ -313,6 +355,9 @@ export default function ConnectorDetailPage() {
   const [editLtTokenPath, setEditLtTokenPath] = useState('token');
   const [editLtTtl, setEditLtTtl] = useState('');
   const [editLtRefreshOn401, setEditLtRefreshOn401] = useState(true);
+  // Headers sent with the login request only (authConfig.loginHeaders).
+  const [editLtHeaderRows, setEditLtHeaderRows] = useState<HeaderRow[]>([]);
+  const [ltSnapshot, setLtSnapshot] = useState<LoginTokenFormSnapshot>(EMPTY_LOGIN_TOKEN_SNAPSHOT);
   const [editHeaderRows, setEditHeaderRows] = useState<HeaderRow[]>([]);
   const [editDbReadOnly, setEditDbReadOnly] = useState(true);
   const [editDbDeniedTables, setEditDbDeniedTables] = useState('');
@@ -454,9 +499,42 @@ export default function ConnectorDetailPage() {
           })
           .catch(() => setEditTokenAuthMethod('client_secret_post'));
       }
-      // authConfig is encrypted server-side, so LOGIN_TOKEN fields start empty;
-      // headers are stored in the clear and can be pre-filled for editing.
+      // authConfig is encrypted server-side: the Login → Token settings come
+      // from their own endpoint, without username, password or secret header
+      // values. Headers are stored in the clear and can be pre-filled.
       setEditLtPassword('');
+      setEditLtUsername('');
+      if (c.authType === 'LOGIN_TOKEN') {
+        connectors
+          .getLoginTokenConfig(id, token)
+          .then((r) => {
+            const bodyIsString = typeof r.loginBody === 'string';
+            applyLoginTokenSnapshot({
+              loginUrl: r.loginUrl,
+              method: r.loginMethod || 'POST',
+              body:
+                r.loginBody === undefined
+                  ? ''
+                  : bodyIsString
+                    ? (r.loginBody as string)
+                    : JSON.stringify(r.loginBody, null, 2),
+              bodyIsString,
+              bodyHidden: r.loginBodyHidden,
+              hasTemplate: r.hasLoginBodyTemplate,
+              tokenPath: tokenPathToInput(r.tokenJsonPath),
+              ttl: typeof r.tokenTTLSeconds === 'number' ? String(r.tokenTTLSeconds) : '',
+              refreshOn401: r.refreshOn401,
+              headers: JSON.stringify(r.loginHeaders ?? {}),
+              maskedHeaders: r.maskedLoginHeaders ?? [],
+              hasUsername: r.hasUsername,
+              hasPassword: r.hasPassword,
+              tokenSource: r.tokenSource,
+            });
+          })
+          .catch(() => applyLoginTokenSnapshot(EMPTY_LOGIN_TOKEN_SNAPSHOT));
+      } else {
+        applyLoginTokenSnapshot(EMPTY_LOGIN_TOKEN_SNAPSHOT);
+      }
       setEditHeaderRows(objectToHeaderRows(c.headers as Record<string, string> | null));
       setEditDbReadOnly((c.config as any)?.readOnly !== false);
       {
@@ -526,6 +604,76 @@ export default function ConnectorDetailPage() {
     fetchConnector();
   }, [token, id]);
 
+  /** Fill the Login → Token fields from a snapshot and remember it. */
+  const applyLoginTokenSnapshot = (snap: LoginTokenFormSnapshot) => {
+    setLtSnapshot(snap);
+    setEditLtLoginUrl(snap.loginUrl);
+    setEditLtMethod(snap.method);
+    setEditLtLoginBody(snap.body);
+    setEditLtTokenPath(snap.tokenPath);
+    setEditLtTtl(snap.ttl);
+    setEditLtRefreshOn401(snap.refreshOn401);
+    setEditLtHeaderRows(objectToHeaderRows(JSON.parse(snap.headers) as Record<string, string>));
+  };
+
+  /** The typed login body: undefined when empty, else parsed JSON (or text for a stored text body). */
+  const parseLtLoginBody = (): unknown => {
+    const raw = editLtLoginBody.trim();
+    if (!raw) return undefined;
+    try {
+      return JSON.parse(raw);
+    } catch {
+      if (ltSnapshot.bodyIsString) return editLtLoginBody;
+      throw new Error(t('msg.loginJson'));
+    }
+  };
+
+  /** Refuse a login that uses a credential nobody gave (typed now or stored). */
+  const assertLtCredentials = (opts: { hasBody: boolean; bodyText: string; headers: Record<string, string>; stored: boolean }) => {
+    const missing = missingLoginCredential({
+      texts: [opts.bodyText, ...Object.values(opts.headers)],
+      hasBody: opts.hasBody,
+      hasUsername: !!editLtUsername || (opts.stored && ltSnapshot.hasUsername),
+      hasPassword: !!editLtPassword || (opts.stored && ltSnapshot.hasPassword),
+    });
+    if (missing === 'username') throw new Error(t('loginToken.usernameRequired', { user: '${username}' }));
+    if (missing === 'password') throw new Error(t('loginToken.passwordRequired', { pass: '${password}' }));
+  };
+
+  /**
+   * The changes to a connector that already uses Login → Token, for the
+   * merging PATCH: only what differs from the loaded settings, plus a typed
+   * username or password (empty keeps the stored one).
+   */
+  const buildLoginTokenPatch = () => {
+    const snap = ltSnapshot;
+    const patch: Parameters<typeof connectors.updateLoginTokenConfig>[1] = {};
+    if (editLtLoginUrl.trim() !== snap.loginUrl) {
+      if (!editLtLoginUrl.trim()) throw new Error(t('loginToken.urlRequired'));
+      patch.loginUrl = editLtLoginUrl.trim();
+    }
+    if (editLtMethod !== snap.method) patch.loginMethod = editLtMethod;
+    const bodyChanged = editLtLoginBody !== snap.body;
+    if (bodyChanged && !(snap.bodyHidden && !editLtLoginBody.trim())) {
+      const body = parseLtLoginBody();
+      patch.loginBody = body === undefined ? null : body;
+    }
+    if (editLtUsername) patch.username = editLtUsername;
+    if (editLtPassword) patch.password = editLtPassword;
+    if (editLtTokenPath.trim() !== snap.tokenPath.trim()) patch.tokenJsonPath = tokenPathFromInput(editLtTokenPath);
+    if (editLtTtl.trim() !== snap.ttl) patch.tokenTTLSeconds = editLtTtl.trim() ? Number(editLtTtl) : null;
+    if (editLtRefreshOn401 !== snap.refreshOn401) patch.refreshOn401 = editLtRefreshOn401;
+    const headers = headerRowsToObject(editLtHeaderRows);
+    if (JSON.stringify(headers) !== snap.headers) patch.loginHeaders = headers;
+    // A hidden stored body cannot be checked here; the login reports it.
+    const bodyKnown = !(snap.bodyHidden && !editLtLoginBody.trim());
+    if (bodyKnown) {
+      const hasBody = !!editLtLoginBody.trim() || (snap.hasTemplate && !bodyChanged);
+      assertLtCredentials({ hasBody, bodyText: editLtLoginBody, headers, stored: true });
+    }
+    return patch;
+  };
+
   const buildAuthConfig = () => {
     // Only send authConfig if the user filled in credential fields;
     // empty fields mean "keep existing credentials on the server".
@@ -571,25 +719,25 @@ export default function ConnectorDetailPage() {
         };
       }
       case 'LOGIN_TOKEN': {
-        // Re-entering the password is required to (re)write the whole config;
-        // leaving it empty keeps the existing encrypted credentials untouched.
-        if (!editLtPassword) return undefined;
-        let loginBody: unknown;
-        const raw = editLtLoginBody.trim();
-        if (raw) {
-          try {
-            loginBody = JSON.parse(raw);
-          } catch {
-            throw new Error(t('msg.loginJson'));
-          }
-        }
+        // A connector that already logs in this way is patched field by
+        // field instead (see handleSave): a full write would drop the
+        // settings this form does not show (login headers set through the
+        // API, header name, extra headers, token source …).
+        if (connector.authType === 'LOGIN_TOKEN') return undefined;
+        if (!editLtLoginUrl.trim()) throw new Error(t('loginToken.urlRequired'));
+        const loginBody = parseLtLoginBody();
+        const loginHeaders = headerRowsToObject(editLtHeaderRows);
+        assertLtCredentials({ hasBody: loginBody !== undefined, bodyText: editLtLoginBody, headers: loginHeaders, stored: false });
+        const tokenJsonPath = tokenPathFromInput(editLtTokenPath);
         return {
-          loginUrl: editLtLoginUrl,
+          loginUrl: editLtLoginUrl.trim(),
           loginMethod: editLtMethod || 'POST',
           ...(loginBody !== undefined ? { loginBody } : {}),
-          username: editLtUsername,
-          password: editLtPassword,
-          tokenJsonPath: editLtTokenPath || 'token',
+          ...(Object.keys(loginHeaders).length > 0 ? { loginHeaders } : {}),
+          ...(editLtUsername ? { username: editLtUsername } : {}),
+          ...(editLtPassword ? { password: editLtPassword } : {}),
+          // Left out when empty: the whole response body is the token.
+          ...(tokenJsonPath !== '' ? { tokenJsonPath } : {}),
           ...(editLtTtl.trim() ? { tokenTTLSeconds: Number(editLtTtl) } : {}),
           refreshOn401: editLtRefreshOn401,
         };
@@ -663,6 +811,14 @@ export default function ConnectorDetailPage() {
         if (editOauth1TokenSecret.trim()) oauth1Patch.tokenSecret = editOauth1TokenSecret.trim();
         if (Object.keys(oauth1Patch).length > 0) {
           await connectors.updateOAuth1Config(id, oauth1Patch, token);
+        }
+      }
+      // Login → Token on a connector that already uses it: merged server-side,
+      // before the main update so a refused value saves nothing.
+      if (editAuthType === 'LOGIN_TOKEN' && connector.authType === 'LOGIN_TOKEN') {
+        const loginPatch = buildLoginTokenPatch();
+        if (Object.keys(loginPatch).length > 0) {
+          await connectors.updateLoginTokenConfig(id, loginPatch, token);
         }
       }
       if (connector.type === 'EMAIL') {
@@ -2060,16 +2216,26 @@ export default function ConnectorDetailPage() {
                   <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                     <div>
                       <label className="block text-sm font-medium mb-1">{t('loginToken.username')}</label>
-                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder={t('loginToken.usernamePlaceholder')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="text" autoComplete="off" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtUsername} onChange={(e) => setEditLtUsername(e.target.value)} placeholder={connector.authType === 'LOGIN_TOKEN' && ltSnapshot.hasUsername ? t('details.keepCurrent') : t('loginToken.usernamePlaceholder')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">{t('loginToken.password')}</label>
-                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtPassword} onChange={(e) => setEditLtPassword(e.target.value)} placeholder={t('details.keepCurrent')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="password" autoComplete="new-password" data-1p-ignore data-lpignore="true" data-bwignore="true" data-form-type="other" value={editLtPassword} onChange={(e) => setEditLtPassword(e.target.value)} placeholder={connector.authType === 'LOGIN_TOKEN' && ltSnapshot.hasPassword ? t('details.keepCurrent') : t('loginToken.passwordPlaceholder')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
+                    <p className="text-xs text-[var(--text-3)] sm:col-span-2 -mt-2">
+                      {t.rich('loginToken.credentialsHint', {
+                        user: '${username}',
+                        pass: '${password}',
+                        code: (chunks) => <code>{chunks}</code>,
+                      })}
+                    </p>
                   </div>
                   <div>
                     <label className="block text-sm font-medium mb-1">{t('loginToken.body')}</label>
                     <textarea value={editLtLoginBody} onChange={(e) => setEditLtLoginBody(e.target.value)} rows={4} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] resize-y focus:outline-none focus:border-[var(--border-strong)]" />
+                    {connector.authType === 'LOGIN_TOKEN' && ltSnapshot.bodyHidden && (
+                      <p className="text-xs text-[var(--t-warn-fg)] mt-1">{t('loginToken.bodyHidden')}</p>
+                    )}
                     <p className="text-xs text-[var(--text-3)] mt-1">
                       {t.rich('loginToken.bodyHint', {
                         user: '${username}',
@@ -2091,13 +2257,25 @@ export default function ConnectorDetailPage() {
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">{t('loginToken.tokenPath')}</label>
-                      <input type="text" value={editLtTokenPath} onChange={(e) => setEditLtTokenPath(e.target.value)} placeholder="token" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
+                      <input type="text" value={editLtTokenPath} onChange={(e) => setEditLtTokenPath(e.target.value)} placeholder={t('loginToken.tokenPathPlaceholder')} className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
                     <div>
                       <label className="block text-sm font-medium mb-1">{t('loginToken.ttl')}</label>
                       <input type="number" value={editLtTtl} onChange={(e) => setEditLtTtl(e.target.value)} placeholder="900" className="w-full border border-[var(--border)] rounded-[9px] px-3 py-2 text-sm font-mono bg-[var(--surface)] focus:outline-none focus:border-[var(--border-strong)]" />
                     </div>
+                    <p className="text-xs text-[var(--text-3)] sm:col-span-3 -mt-2">
+                      {connector.authType === 'LOGIN_TOKEN' && ltSnapshot.tokenSource !== 'body'
+                        ? t('loginToken.tokenFromSource', { source: ltSnapshot.tokenSource })
+                        : t('loginToken.tokenPathHint')}
+                    </p>
                   </div>
+                  <HeadersEditor
+                    rows={editLtHeaderRows}
+                    onChange={setEditLtHeaderRows}
+                    label={t('loginToken.loginHeaders')}
+                    hint={t('loginToken.loginHeadersHint', { variable: '{{API_KEY}}', pass: '${password}' })}
+                    maskedKeys={connector.authType === 'LOGIN_TOKEN' ? ltSnapshot.maskedHeaders : []}
+                  />
                   <label className="flex items-center gap-2 text-sm text-[var(--text-2)]">
                     <input type="checkbox" checked={editLtRefreshOn401} onChange={(e) => setEditLtRefreshOn401(e.target.checked)} />
                     {t('loginToken.refreshOn401')}

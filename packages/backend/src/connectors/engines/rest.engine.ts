@@ -146,6 +146,9 @@ function isEmptyBody(data: unknown): boolean {
 @Injectable()
 export class RestEngine {
   private readonly logger = new Logger(RestEngine.name);
+  // Connectors already warned about a connector header that the Login → Token
+  // token header replaces (one warning per connector and header per process).
+  private readonly loginHeaderCollisionsWarned = new Set<string>();
 
   constructor(
     private readonly oauth2TokenService: OAuth2TokenService,
@@ -387,6 +390,13 @@ export class RestEngine {
 
     // Inject authentication
     const headersBeforeAuth = headerNames(axiosConfig.headers);
+    // A connector or tool header with the name of the Login → Token header:
+    // the token replaces it (warned once in injectAuth), and a refused call
+    // says so in its hint.
+    const loginHeaderCollision =
+      config.authType === 'LOGIN_TOKEN'
+        ? loginTokenHeaderCollision(axiosConfig.headers, config.authConfig as unknown as LoginTokenAuthConfig)
+        : undefined;
     // Set only for LOGIN_TOKEN with `tokenPlacement: "body"`: the token is
     // then `${loginToken}` in the tool's bodyTemplate instead of a header.
     const loginBodyToken = await this.injectAuth(axiosConfig, config);
@@ -742,7 +752,7 @@ export class RestEngine {
         const bundle = await this.loginTokenService.forceRelogin(
           authConfig,
           config.connectorId,
-          { proxyUrl: config.proxyUrl },
+          { proxyUrl: config.proxyUrl, connectorHeaders: Object.keys(config.headers ?? {}) },
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
         if (renderTokenBody) axiosConfig.data = renderTokenBody(bundle.token);
@@ -802,7 +812,7 @@ export class RestEngine {
         const hint = await this.bearerTokens.onRejected(config.authConfig, config.connectorId, error);
         if (hint) (error as AxiosError & { hint?: string }).hint = hint;
       }
-      throw restateProxyError(error);
+      throw restateProxyError(withLoginHeaderCollisionHint(error, loginHeaderCollision));
     }
   }
 
@@ -981,6 +991,20 @@ export class RestEngine {
     }
   }
 
+  /**
+   * Log once per connector and header that the Login → Token header replaces
+   * a header of the same name set on the connector (or the tool). The token
+   * wins, as it always did; the warning makes the replacement visible.
+   */
+  private warnLoginHeaderCollision(connectorId: string | undefined, header: string): void {
+    const key = `${connectorId ?? '(none)'}|${header.toLowerCase()}`;
+    if (this.loginHeaderCollisionsWarned.has(key)) return;
+    this.loginHeaderCollisionsWarned.add(key);
+    this.logger.warn(
+      `LOGIN_TOKEN: connector ${connectorId ?? '(none)'} sets a "${header}" header, which the login token header replaces on every call (authConfig.headerName). Remove the connector header, or send the token in another header.`,
+    );
+  }
+
   private async injectAuth(
     axiosConfig: AxiosRequestConfig,
     config: {
@@ -988,6 +1012,7 @@ export class RestEngine {
       authConfig?: Record<string, unknown>;
       connectorId?: string;
       proxyUrl?: string;
+      headers?: Record<string, string>;
     },
   ): Promise<string | undefined> {
     if (!config.authConfig) return undefined;
@@ -1071,14 +1096,15 @@ export class RestEngine {
         const bundle = await this.loginTokenService.getToken(
           config.authConfig as unknown as LoginTokenAuthConfig,
           config.connectorId,
-          { proxyUrl: config.proxyUrl },
+          { proxyUrl: config.proxyUrl, connectorHeaders: Object.keys(config.headers ?? {}) },
         );
-        injectLoginTokenHeaders(
+        const replaced = injectLoginTokenHeaders(
           axiosConfig,
           config.authConfig as unknown as LoginTokenAuthConfig,
           bundle.token,
           bundle.aud,
         );
+        if (replaced) this.warnLoginHeaderCollision(config.connectorId, replaced);
         // `tokenPlacement: "body"`: the caller renders the token into the
         // tool's bodyTemplate as `${loginToken}`.
         if (config.authConfig.tokenPlacement === 'body') return bundle.token;
@@ -2513,21 +2539,60 @@ export function injectLoginTokenHeaders(
   authConfig: LoginTokenAuthConfig,
   token: string,
   aud?: string,
-): void {
+): string | undefined {
   const headerName = authConfig.headerName || 'Authorization';
   const headerTemplate = authConfig.headerTemplate || 'Bearer ${token}';
   const interpolate = loginTokenHeaderInterpolator(token, aud);
+  const replaced = loginTokenHeaderCollision(axiosConfig.headers, authConfig);
 
-  axiosConfig.headers =
+  const current = (axiosConfig.headers ?? {}) as Record<string, unknown>;
+  // The token header wins over a connector header of the same name, in any
+  // spelling (axios would otherwise keep whichever came last).
+  const others = Object.fromEntries(
+    Object.entries(current).filter(([name]) => name.toLowerCase() !== headerName.toLowerCase()),
+  );
+  axiosConfig.headers = (
     authConfig.tokenPlacement === 'body'
-      ? { ...axiosConfig.headers }
-      : {
-          ...axiosConfig.headers,
-          [headerName]: interpolate(headerTemplate),
-        };
+      ? { ...current }
+      : { ...others, [headerName]: interpolate(headerTemplate) }
+  ) as AxiosRequestConfig['headers'];
   for (const [k, v] of Object.entries(authConfig.extraHeaders || {})) {
-    axiosConfig.headers[k] = interpolate(String(v));
+    axiosConfig.headers![k] = interpolate(String(v));
   }
+  return replaced;
+}
+
+/**
+ * The name of a header already on the request (set on the connector or the
+ * tool) that the Login → Token header would replace, matched without regard
+ * to case. Undefined with `tokenPlacement: "body"` (no token header) or when
+ * nothing collides.
+ */
+export function loginTokenHeaderCollision(
+  headers: AxiosRequestConfig['headers'] | Record<string, unknown> | undefined,
+  authConfig: LoginTokenAuthConfig | undefined,
+): string | undefined {
+  if (!headers || typeof headers !== 'object' || authConfig?.tokenPlacement === 'body') return undefined;
+  const wanted = (authConfig?.headerName || 'Authorization').toLowerCase();
+  return Object.keys(headers).find((name) => name.toLowerCase() === wanted);
+}
+
+/**
+ * Add a hint to a refused call (HTTP 401/403, or an errorWhen rule that gave
+ * one) of a Login → Token connector whose token header replaced a connector
+ * header of the same name: the API may have needed that header. A hint the
+ * error already carries (a failed login's own) is kept, with this one added.
+ */
+export function withLoginHeaderCollisionHint(error: unknown, collision: string | undefined): unknown {
+  if (!collision || !error || typeof error !== 'object') return error;
+  const e = error as { response?: { status?: unknown }; status?: unknown; hint?: unknown };
+  const status = error instanceof ResponseBodyError ? error.status : e.response?.status;
+  if (status !== 401 && status !== 403) return error;
+  const note =
+    `The connector sets a "${collision}" header, and the Login → Token header (authConfig.headerName, default Authorization) replaces it on every call. ` +
+    'If the API needs that header as well, send the token in another header (headerName / headerTemplate), or move the value to the headers for the login request when only the login needs it.';
+  e.hint = typeof e.hint === 'string' && e.hint ? `${e.hint} ${note}` : note;
+  return error;
 }
 
 /**

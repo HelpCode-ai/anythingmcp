@@ -1354,7 +1354,15 @@
       "method": "Method",
       "tokenPath": "Token JSON path",
       "ttl": "Token TTL (s)",
-      "refreshOn401": "Re-login and retry automatically on a 401 response"
+      "refreshOn401": "Re-login and retry automatically on a 401 response",
+      "credentialsHint": "Only needed when the login body or headers use <code>{user}</code> / <code>{pass}</code> (or when there is no login body). Leave both empty for a token exchange that only sends a key.",
+      "tokenPathPlaceholder": "token, data.accessToken …",
+      "tokenPathHint": "Where the token is in the login answer, e.g. token or data.accessToken (several paths separated by commas are tried in order). Leave it empty when the whole answer is the token (plain text or a JSON string).",
+      "loginHeaders": "Headers for the login request",
+      "loginHeadersHint": "Sent with the login request only; the connector headers further down are not. Values can use variables such as {variable} and the placeholder {pass}.",
+      "urlRequired": "Enter the login URL.",
+      "usernameRequired": "The login uses {user}: enter a username, or remove the placeholder from the login body and headers.",
+      "passwordRequired": "The login uses {pass}: enter a password or key, or remove the placeholder from the login body and headers."
     },
     "creating": "Creating...",
     "create": "Create connector",
@@ -1526,7 +1534,7 @@
       "noteNew": "The consumer key and secret belong to the application registered with the provider — not your login e-mail or password. Both are required to switch to OAuth 1.0a. The access token is only for APIs that act on behalf of a user (three-legged)."
     },
     "loginToken": {
-      "intro": "For APIs with short-lived tokens (e.g. HRworks): we POST your credentials to the login endpoint, read the token from the response, send it as a Bearer token, and refresh it automatically before it expires. Re-enter the password/secret to change this configuration; leave it empty to keep the current one.",
+      "intro": "For APIs with short-lived tokens (e.g. HRworks): we send the login request to the login endpoint, read the token from the response, send it with every call and renew it automatically before it expires. Leave username and password empty to keep the stored ones; settings this form does not show are kept when you save.",
       "url": "Login URL",
       "username": "Username / Access key",
       "usernamePlaceholder": "access key",
@@ -1536,7 +1544,18 @@
       "method": "Method",
       "tokenPath": "Token JSON path",
       "ttl": "Token TTL (s)",
-      "refreshOn401": "Re-login and retry automatically on a 401 response"
+      "refreshOn401": "Re-login and retry automatically on a 401 response",
+      "credentialsHint": "Only needed when the login body or headers use <code>{user}</code> / <code>{pass}</code> (or when there is no login body). Leave both empty for a token exchange that only sends a key.",
+      "tokenPathPlaceholder": "token, data.accessToken …",
+      "tokenPathHint": "Where the token is in the login answer, e.g. token or data.accessToken (several paths separated by commas are tried in order). Leave it empty when the whole answer is the token (plain text or a JSON string).",
+      "loginHeaders": "Headers for the login request",
+      "loginHeadersHint": "Sent with the login request only; the connector headers further down are not. Values can use variables such as {variable} and the placeholder {pass}.",
+      "urlRequired": "Enter the login URL.",
+      "usernameRequired": "The login uses {user}: enter a username, or remove the placeholder from the login body and headers.",
+      "passwordRequired": "The login uses {pass}: enter a password or key, or remove the placeholder from the login body and headers.",
+      "passwordPlaceholder": "secret",
+      "bodyHidden": "The stored login body contains a secret value and is not shown. Leave the field empty to keep it, or type a new body to replace it.",
+      "tokenFromSource": "This connector reads the token from the login response {source}, so the token path is not used."
     },
     "oauthCard": {
       "title": "OAuth2 Authorization",
