@@ -38,8 +38,9 @@ export function directoryListingsFor(client: string | null | undefined): Directo
 
 /**
  * Opens claude.ai straight on its "Add custom connector" dialog. Connectors
- * moved from Settings to Customize → Connectors; the old settings URL now only
- * says so. Connectors added on claude.ai also appear in Claude Desktop.
+ * moved from Settings to Customize → Connectors, now Plugins → Connectors; the
+ * deep link still opens the dialog and the old settings URL only says so.
+ * Connectors added on claude.ai also appear in Claude Desktop.
  */
 export const CLAUDE_ADD_CONNECTOR_URL = 'https://claude.ai/new?modal=add-custom-connector#customize/connectors';
 

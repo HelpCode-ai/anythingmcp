@@ -61,7 +61,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 <details>
 <summary><strong>How do I create a custom connector for Claude?</strong></summary>
 
-Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Customize → Connectors*. On AnythingMCP Cloud you can instead add AnythingMCP from the [Claude Directory](https://claude.ai/directory/anythingmcp) in one click. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
+Run AnythingMCP (self-hosted or [Cloud](https://cloud.anythingmcp.com)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under **Plugins** (still called **Customize** on some plans) → **Connectors**. On AnythingMCP Cloud you can instead add AnythingMCP from the [Claude Directory](https://claude.ai/directory/anythingmcp) in one click. No code required — the [Claude guide](integrations/claude.md) walks through it in ~5 minutes.
 </details>
 
 <details>

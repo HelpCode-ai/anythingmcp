@@ -204,6 +204,38 @@ describe('DynamicMcpTools — actionable hint on upstream errors', () => {
     expect(audit.logInvocation.mock.calls[0][0].error).not.toMatch(/fetch ONE record/);
   });
 
+  it("returns the vendor's request id (intuit_tid) with the allowed headers, and drops the others", async () => {
+    const { AxiosError } = await import('axios');
+    const tool = makeTool();
+    tool.connectorConfig = { baseUrl: 'https://sandbox-quickbooks.api.intuit.com/v3/company/9341453050071234', authType: 'NONE' };
+    const { executor, restEngine, audit } = build(tool);
+    const err = new AxiosError('Request failed with status code 400', '400', { url: '/payment', baseURL: tool.connectorConfig.baseUrl } as any, undefined, {
+      status: 400,
+      statusText: 'Bad Request',
+      // As axios hands them over: names in lower case.
+      headers: {
+        intuit_tid: '1-6744f2a1-3c5d7e9f0a1b2c3d4e5f6a7b',
+        'content-type': 'application/json;charset=UTF-8',
+        'set-cookie': ['ivid=abc; Path=/'],
+        server: 'nginx',
+      },
+      config: {} as any,
+      data: { Fault: { Error: [{ Message: 'Business Validation Error', code: '6000' }], type: 'ValidationFault' } },
+    });
+    restEngine.execute.mockRejectedValueOnce(err);
+
+    const res = await executor.executeTool('list_devices', {});
+
+    expect(res.isError).toBe(true);
+    const detail = JSON.parse(res.content[0].text);
+    expect(detail.responseHeaders).toEqual({
+      intuit_tid: '1-6744f2a1-3c5d7e9f0a1b2c3d4e5f6a7b',
+      'content-type': 'application/json;charset=UTF-8',
+    });
+    expect(detail.responseBody.Fault.Error[0].code).toBe('6000');
+    expect(audit.logInvocation.mock.calls[0][0].error).toMatch(/Business Validation Error/);
+  });
+
   it("returns the engine's own hint (a refused refresh token) to the model", async () => {
     const { executor, restEngine } = build(makeTool());
     const hint =

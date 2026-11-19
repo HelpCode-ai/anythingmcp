@@ -39,6 +39,14 @@ describe('demo tools: anythingmcp_connect_client', () => {
     expect(result.content[0].text).toContain('https://claude.ai/directory/anythingmcp');
   });
 
+  it('names both the Plugins page and the older Customize page for Claude', async () => {
+    const result = await tool.handler({ client: 'claude' });
+    const text = result.content[0].text;
+    expect(text).toContain('Plugins (still called Customize on some plans) → Connectors');
+    expect(text).toContain('"Add custom connector"');
+    expect(text).toContain('Organization settings → Connectors');
+  });
+
   it('points ChatGPT users at the ChatGPT Plugin Directory for databases', async () => {
     const result = await tool.handler({ client: 'chatgpt' });
     expect(result.content[0].text).toContain(
