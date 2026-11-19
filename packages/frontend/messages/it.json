@@ -3668,6 +3668,33 @@
       "openFailed": "Questa pagina è scaduta.",
       "openFailedHint": "Torna alla chat e collega di nuovo, oppure accedi alla dashboard e configura lì la cartella.",
       "openWizard": "Configura la cartella nella dashboard"
+    },
+    "reach": {
+      "title": {
+        "private": "Questo indirizzo funziona solo nella tua rete",
+        "quickconnect": "I link QuickConnect qui non funzionano",
+        "unreachable": "AnythingMCP Cloud non ha raggiunto il server"
+      },
+      "intro": {
+        "private": "AnythingMCP Cloud gira su internet, quindi non può aprire indirizzi come 192.168.x.x o nas.local. Dai al NAS un indirizzo raggiungibile da internet:",
+        "quickconnect": "Synology QuickConnect inoltra solo le app di Synology, non SFTP o WebDAV. Dai al NAS un indirizzo raggiungibile da internet:",
+        "unreachable": "Se il NAS è nella rete di casa o dell'ufficio, il router tiene fuori AnythingMCP Cloud. Dai al NAS un indirizzo raggiungibile da internet:"
+      },
+      "synology": {
+        "title": "Synology: WebDAV su HTTPS con un indirizzo synology.me gratuito",
+        "steps": "Pannello di controllo → Accesso esterno → DDNS: aggiungi un nome come tuonome.synology.me e attiva il certificato gratuito Let's Encrypt. Centro pacchetti: installa WebDAV Server e attiva HTTPS (porta 5006). Sul router inoltra la porta TCP 5006 al NAS. Qui scegli WebDAV e inserisci https://tuonome.synology.me:5006."
+      },
+      "tunnel": {
+        "title": "Senza aprire porte sul router: un tunnel",
+        "steps": "Cloudflare Tunnel (con un tuo dominio su Cloudflare) o Tailscale Funnel pubblica il server WebDAV del NAS sotto un indirizzo https://. Qui scegli WebDAV e inserisci quell'indirizzo."
+      },
+      "other": {
+        "title": "QNAP, Fritz!Box e altri NAS",
+        "steps": "Attiva WebDAV su HTTPS (o SFTP), dai al NAS un nome DNS dinamico (myQNAPcloud, MyFRITZ! o simili) e inoltra quella porta sul router."
+      },
+      "firewall": "Per tenere fuori tutti gli altri, nel firewall del NAS o del router consenti solo {count, plural, one {questo indirizzo} other {questi indirizzi}}:",
+      "selfHosted": "Preferisci non esporre il NAS su internet? Un AnythingMCP self-hosted nella tua rete lo raggiunge direttamente.",
+      "useWebdav": "Passa a WebDAV"
     }
   },
   "fileShare": {
