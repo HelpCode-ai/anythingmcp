@@ -189,7 +189,7 @@ Everything runs on your infrastructure, so you decide what leaves it. OAuth2, ro
 
 The same MCP server works in every client that speaks MCP, so you build a connector once:
 
-- **Claude.** Add the server URL as a **custom connector** under *Customize → Connectors*; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](<https://claude.ai/directory/anythingmcp>). [Claude setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) · [custom connectors for Claude](<https://anythingmcp.com/claude-connectors>) · [every connector's Claude guide](<https://anythingmcp.com/guides/clients/claude>)
+- **Claude.** Add the server URL as a **custom connector** under **Plugins** (still called **Customize** on some plans) → **Connectors**; it then works in Claude.ai, Claude Desktop and Claude Code. OAuth 2.0 is supported out of the box. On AnythingMCP Cloud you can also add it in one click from the [Claude Directory](<https://claude.ai/directory/anythingmcp>). [Claude setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) · [custom connectors for Claude](<https://anythingmcp.com/claude-connectors>) · [every connector's Claude guide](<https://anythingmcp.com/guides/clients/claude>)
 - **ChatGPT.** On AnythingMCP Cloud, the [AnythingMCP plugin in the ChatGPT Plugin Directory](<https://chatgpt.com/plugins/plugin_asdk_app_6ade03541ce08191b35bbad1dc5b4121>) answers questions from your company databases, read-only. For every connector, add the server under *Plugins* in ChatGPT (*Add → Add custom MCP server*), or use it as the tool layer of an Apps SDK app. [ChatGPT setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/chatgpt.md>) · [ChatGPT apps and connectors](<https://anythingmcp.com/chatgpt-apps>) · [every connector's ChatGPT guide](<https://anythingmcp.com/guides/clients/chatgpt>)
 - **Meta Muse.** In Muse, open *Settings → Connectors → Add custom connector*, paste the server URL and sign in to AnythingMCP. [Muse setup](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/muse.md>) · [every connector's Muse guide](<https://anythingmcp.com/guides/clients/muse>)
 - **Copilot, Gemini, Cursor** and other MCP clients: [client setup guides](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/guides.md>), and a guide for every connector in [Copilot](<https://anythingmcp.com/guides/clients/copilot>), [Gemini](<https://anythingmcp.com/guides/clients/gemini>) and [Cursor](<https://anythingmcp.com/guides/clients/cursor>).
@@ -902,7 +902,7 @@ On an MCP server's page, the **Share this server** card gives you "Add to Cursor
 
 ### How do I create a custom connector for Claude?
 
-Run AnythingMCP (self-hosted or [Cloud](<https://cloud.anythingmcp.com>)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under *Customize → Connectors*. On AnythingMCP Cloud you can instead add AnythingMCP from the [Claude Directory](<https://claude.ai/directory/anythingmcp>) in one click. No code required — the [Claude guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) walks through it in ~5 minutes.
+Run AnythingMCP (self-hosted or [Cloud](<https://cloud.anythingmcp.com>)), import your API spec or pick a pre-built adapter, then add the gateway URL in Claude under **Plugins** (still called **Customize** on some plans) → **Connectors**. On AnythingMCP Cloud you can instead add AnythingMCP from the [Claude Directory](<https://claude.ai/directory/anythingmcp>) in one click. No code required — the [Claude guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/integrations/claude.md>) walks through it in ~5 minutes.
 
 ### Can I build a ChatGPT app from my existing API?
 
@@ -1936,6 +1936,7 @@ Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/conn
 | HTTP Basic | `BASIC_AUTH` |
 | OAuth2 Authorization Code / Client Credentials with refresh tokens | `OAUTH2` |
 | **POST `{username, password}` → receive bearer good for hours/days** | **`LOGIN_TOKEN`** |
+| **Exchange a key (in a header or the body) for a short-lived token, even a plain-text one** | **`LOGIN_TOKEN`** |
 | **Client-side bcrypt against a per-account salt before login** | **`LOGIN_TOKEN`** |
 
 If your provider already speaks OAuth2, prefer `OAUTH2` — it has standardised refresh, scope, and PKCE handling.
@@ -1983,7 +1984,8 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   // ─── Login endpoint ────────────────────────────────────────────
   "loginUrl": "https://api.example.com/graphql",
   "loginMethod": "POST",                     // GET | POST (default POST)
-  "loginHeaders": { "X-App": "anythingmcp" }, // static headers for the login call
+  "loginHeaders": { "X-App": "anythingmcp" }, // headers for the login call only (connector headers are not sent);
+                                             // values take {{VARIABLES}}, ${uuid} and the login placeholders
   "loginBasicAuth": true,                    // optional: send Authorization: Basic base64(username:password)
                                              // on the login call only (Wazuh). The password is then not
                                              // offered to templates, no body is sent without loginBody, and
@@ -2005,6 +2007,7 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   "loginResponseFormat": "xml",              // optional: parse an XML login answer so the paths below address it
 
   // ─── Credentials & client identity ─────────────────────────────
+  // Only needed when the login uses them (see "Key-only token exchange").
   "username": "{{SERVICE_EMAIL}}",
   "password": "{{SERVICE_PASSWORD}}",
   "aud":      "{{SERVICE_AUD}}",     // optional; exposed in ${aud} for templates/headers
@@ -2035,7 +2038,7 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
   },
 
   // ─── Where to find the token & expiry in the login response ────
-  "tokenJsonPath":  "data.signIn.jwtToken.token",   // or a list, see below
+  "tokenJsonPath":  "data.signIn.jwtToken.token",   // or a list; empty, absent or "." = the whole body
   "expiryJsonPath": "data.signIn.jwtToken.expiredAt",
   "audJsonPath":    "data.signIn.jwtToken.aud",      // optional — overrides authConfig.aud
   "expiryFormat":   "iso8601",                       // iso8601 | unix | ttl_seconds
@@ -2069,10 +2072,10 @@ The token cache is keyed by `connectorId` (when available) or by `loginUrl|usern
 
 When the vendor does not document the login answer, `tokenJsonPath` can be a
 list of paths, tried in order; the first that holds a non-empty string is the
-token. `"."` takes the whole body, for a login that answers with a bare
-string. A login that finds none fails with every path named (or with the
-service's own refusal message, when the body carries one). A single string
-works as before.
+token. `"."` (or an empty entry) takes the whole body, for a login that answers
+with a bare string. A login that finds none fails with every path named (or
+with the service's own refusal message, when the body carries one). A single
+string works as before.
 
 ```json
 "tokenJsonPath": ["AuthenticationResult.IdToken", "IdToken", "idToken", "data.idToken", "token", "."]
@@ -2091,11 +2094,81 @@ The placeholders below are substituted by the engine when rendering `loginBody` 
 | `${otp}` | `authConfig.otp` |
 | `${signedJwt}` | a JWT signed for this login (see below; renamed via `outputParam`) |
 
-In `headerTemplate` and `extraHeaders`, only `${token}`, `${aud}` and `${uuid}` are available. `${token}` and `${aud}` refer to the issued token, not the credentials. `${uuid}` is a new random UUID for every API request (the same value wherever it appears in that request), for APIs that want a unique request or correlation id on each call. In `loginHeaders`, `${uuid}` is the only placeholder and gives each login its own UUID.
+In `headerTemplate` and `extraHeaders`, only `${token}`, `${aud}` and `${uuid}` are available. `${token}` and `${aud}` refer to the issued token, not the credentials. `${uuid}` is a new random UUID for every API request (the same value wherever it appears in that request), for APIs that want a unique request or correlation id on each call. In `loginHeaders`, `${uuid}` gives each login its own UUID, and the login placeholders of the table above (`${username}`, `${password}`, `${passwordHashed}`, `${aud}`, `${otp}`) are filled in as in the body; any other `${…}` is sent as written. Connector variables (`{{API_KEY}}`) work everywhere, as in the rest of the connector.
 
 With `tokenPlacement: "body"`, a tool's `endpointMapping.bodyTemplate` has one more placeholder, `${loginToken}`: the issued token (see [XML logins and a token in the request body](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md#xml-logins-and-a-token-in-the-request-body>)).
 
 A `loginBody` that is a string is sent as is, with its placeholders filled in (XML-escaped with `loginBodyFormat: "xml"`). Together with `"Content-Type": "application/x-www-form-urlencoded"` in `loginHeaders` that covers OAuth-style token endpoints which take a form body, such as Walmart's client-credentials call (`"loginBody": "grant_type=client_credentials"` with `loginBasicAuth: true`).
+
+### Key-only token exchange and plain-text tokens
+
+Some APIs exchange a key for a short-lived token and answer with the token
+alone, as plain text rather than JSON. Three rules cover them:
+
+- **`username` and `password` are optional.** They are required only when the
+  login uses them: a `loginBody`, `loginBodyTemplate` or `loginHeaders` value
+  that references `${username}`, `${password}` or `${passwordHashed}` (or the
+  `passwordHashing.outputParam` name), a login without any body (the engine
+  then sends the credentials as the body), or `loginBasicAuth`. A login that
+  does not use the password neither hashes it nor fetches a salt for it.
+- **An empty `tokenJsonPath` takes the whole response body.** Absent, `""`,
+  `[]` and `"."` all mean the same: the body is the token, plain text or a
+  JSON string, with the white space (and the quotes of a JSON string) around
+  it removed. `"token"` is read only when it is set explicitly. When the body
+  turns out to be a JSON object instead, the login fails with "the login
+  response body is a JSON object, not a plain-text token", so set the path to
+  the field that holds it.
+- **The key travels in `loginHeaders` (or the body).** Write it as a
+  connector variable, so it is stored as a secret and never appears in the
+  configuration.
+
+```json
+"authConfig": {
+  "loginUrl": "https://api.example.com/oauth/token",
+  "loginMethod": "POST",
+  "loginHeaders": { "X-Api-Key": "{{SERVICE_API_KEY}}" },
+  "loginBody": {},
+  "tokenTTLSeconds": 3600
+}
+```
+
+In the connector editor this is: Login URL, the key under **Headers for the
+login request**, username and password empty, and **Token JSON path** empty.
+The editor reads the stored settings back (`GET /api/connectors/:id/login-token-config`,
+without username, password or secret header values) and saves only the fields
+you changed (`PATCH` on the same path), so settings it does not show
+(`headerName`, `extraHeaders`, `tokenSource`, expiry paths …) survive a save.
+A save also drops the token obtained with the old settings, so the next call
+logs in again.
+
+### Connector headers and the login request
+
+The connector's own headers (the **Headers** list of the connector) are sent on
+the tool calls, never on the login request: only `loginHeaders` are. A header
+the login needs goes in `loginHeaders`.
+
+On the tool calls, the token header (`headerName`, default `Authorization`)
+replaces a connector or tool header with the same name, whatever its case.
+That has always been so; the server now logs a warning once per connector,
+and a call the API then refuses (401/403) says so in its hint. Send the token
+in another header (`headerName` / `headerTemplate`) when the API needs both.
+
+### When the login fails
+
+A login request that fails is reported as the login, not as the tool call:
+
+```
+LOGIN_TOKEN: login request failed (HTTP 401 Unauthorized): {"error":"invalid key"}
+```
+
+The message carries the status and the first 300 characters of the answer
+(credentials and login header values replaced by `[redacted]`), or the network
+error code when nothing answered. The tool itself was not called. The AI
+client, the tool test and the connector's **Test connection** get a hint about
+the login settings (login URL, body, credentials, login headers), naming the
+connector headers that were not sent with the login. A 401 on a tool call after
+a login that worked means the API refused the token: check `headerName` and
+`headerTemplate`.
 
 ### XML logins and a token in the request body
 
@@ -2275,10 +2348,11 @@ headers `access_token`, `expires_in` and `token_type`.
 - The expiry is not read from a header: set `tokenTTLSeconds` to the token's
   lifetime (900 for Ceneo's 15 minutes), or `expiryJsonPath` when the body
   carries it.
-- `username` and `password` are still required. A login that only sends a key
-  in `loginHeaders` sets both to that key and `"loginBody": {}`, so nothing
+- `username` and `password` are not needed when nothing uses them: a login
+  that only sends a key in `loginHeaders` sets `"loginBody": {}`, so nothing
   but the header travels (a `GET` login sends `loginBody` as query
-  parameters, and without a `loginBody` the credentials themselves).
+  parameters, and without a `loginBody` the credentials themselves, which
+  then are required). See [Key-only token exchange](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/login-token-auth.md#key-only-token-exchange-and-plain-text-tokens>).
 
 ---
 
@@ -5810,7 +5884,9 @@ The engine handles salt fetch → bcrypt → login → token cache → proactive
 
 A login that takes HTTP Basic credentials (Wazuh's `POST /security/user/authenticate`) sets `"loginBasicAuth": true`: the engine sends `Authorization: Basic base64(username:password)` on the login request only (the API calls keep using `headerTemplate`), the password is never offered to the body templates (`${password}` renders empty), and no body is sent without a `loginBody`. An `Authorization` in `loginHeaders` is refused rather than overridden, as are `signedJwt`, bcrypt `passwordHashing` and a username containing `:`; `scripts/validate-adapters.mjs` reports the same mistakes (rule `login-basic-auth`).
 
-When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`.
+When the login answer is not documented, `tokenJsonPath` may be a list of paths tried in order (the first non-empty string wins), e.g. `["AuthenticationResult.IdToken", "idToken", "token", "."]`. An empty or absent `tokenJsonPath` (or `"."`) takes the whole response body, for a login that answers with a plain-text token.
+
+`username` and `password` are needed only when the login uses them (`${username}` / `${password}` in `loginBody`, `loginBodyTemplate` or `loginHeaders`, no login body at all, or `loginBasicAuth`). A key-only token exchange puts the key in `loginHeaders` (`{"X-Api-Key": "{{API_KEY}}"}`) with `"loginBody": {}`. Connector-level headers are not sent with the login request, and a failed login is reported as `LOGIN_TOKEN: login request failed (HTTP <status>): <excerpt>`.
 
 An XML API (Fnac Darty's marketplace) logs in with an XML document and carries the token in the body of every request instead of a header. Four opt-in fields cover it: `"loginBodyFormat": "xml"` (a string `loginBody` is XML, its values are XML-escaped), `"loginResponseFormat": "xml"` (the XML login answer is parsed, so `tokenJsonPath` reads `auth_response.token`), `"tokenPlacement": "body"` (no token header; the token is `${loginToken}` in a tool's `bodyTemplate`) and `"refreshOnBody401": true` (log in again when a `config.errorWhen` rule with `status: 401` matches the response body). `scripts/validate-adapters.mjs` checks the combinations (rule `login-token-xml`).
 
@@ -6027,7 +6103,7 @@ There is also a shared endpoint, `https://<your-host>/mcp`. When a client connec
 
 AnythingMCP is listed in Claude's connector directory: [claude.ai/directory/anythingmcp](<https://claude.ai/directory/anythingmcp>). This is the fastest path if you use AnythingMCP Cloud.
 
-1. Open [the AnythingMCP listing](<https://claude.ai/directory/anythingmcp>), or in Claude open **Customize → Connectors**, browse the connectors and search for AnythingMCP.
+1. Open [the AnythingMCP listing](<https://claude.ai/directory/anythingmcp>), or in Claude open **Plugins** (still called **Customize** on some plans) → **Connectors**, browse the connectors and search for AnythingMCP.
 2. Click **Connect**.
 3. Sign in to AnythingMCP Cloud and approve access. If you have several MCP servers, choose the ones Claude may reach.
 
@@ -6043,18 +6119,32 @@ The listing always connects to AnythingMCP Cloud. For a self-hosted instance, us
 
 Adds one specific MCP server, on Cloud or on a self-hosted instance.
 
-1. In Claude, open **Customize → Connectors**.
-2. Click **+**, then **Add custom connector**.
-3. Enter a name and paste the endpoint URL, `https://<your-host>/mcp/<server-id>`, then click **Add**.
-4. Click **Connect**, sign in to AnythingMCP and approve access.
+1. In Claude, open **Plugins** (still called **Customize** on some plans) → **Connectors**.
+2. Click **+ Add**, then **Add custom connector**.
+3. Enter a name (for example AnythingMCP) and paste the endpoint URL, `https://<your-host>/mcp/<server-id>`, then click **Continue**.
+4. Keep the detected authentication settings and click **Continue**.
+5. Choose **Sign in now**, keep the default OAuth client and click **Add**.
+6. Sign in to AnythingMCP and approve access.
+
+Claude is replacing **Customize** with a single **Plugins** page that holds skills, connectors and plugins. Most plans have it since November 9, 2026; Enterprise plans get it from November 30, 2026. Until then some accounts still show **Customize**: the steps are the same.
 
 Connectors added on claude.ai also appear in Claude Desktop and the mobile apps. The **Add to Claude** button in the server's Quick Connect panel opens the same dialog.
+
+### Team and Enterprise plans
+
+On Team and Enterprise plans, an owner adds the custom connector once for the whole organization:
+
+1. Open **Organization settings → Connectors**.
+2. Click **Add**, hover **Custom** and select **Web**.
+3. Enter a name and the endpoint URL, then finish the same steps as above.
+
+Members then open **Plugins** (or **Customize**) → **Connectors**, find the connector, click **Connect**, sign in to AnythingMCP and approve access.
 
 Claude connects to custom connectors from Anthropic's cloud, so a self-hosted instance must be reachable on a **public HTTPS URL**; `localhost` does not work here. See the [Deployment Guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md>).
 
 ### Claude Desktop and `claude_desktop_config.json`
 
-Use **Customize → Connectors** in Claude Desktop as well. The `claude_desktop_config.json` file only launches local (stdio) commands: a remote URL entry in it is skipped as "not a valid MCP server configuration".
+Use **Plugins** (or **Customize**) → **Connectors** in Claude Desktop as well. The `claude_desktop_config.json` file only launches local (stdio) commands: a remote URL entry in it is skipped as "not a valid MCP server configuration".
 
 If you must use the config file, bridge the remote server through the [`mcp-remote`](<https://www.npmjs.com/package/mcp-remote>) package (requires Node.js), then restart Claude Desktop:
 
@@ -9486,9 +9576,9 @@ tools always read the current version).
 
 **claude.ai caches the tool list.** After you add the first skill to a server,
 turn on learning or memory for a user, or upgrade AnythingMCP, claude.ai keeps
-offering the tools it listed before. Refresh them under *Customize →
-Connectors →* the connector *→ ⋮ → Refresh tools list*; new chats then get the
-current tools and descriptions.
+offering the tools it listed before. Refresh them under **Plugins** (or
+**Customize**) → **Connectors** → the connector → **⋮** → **Refresh tools
+list**; new chats then get the current tools and descriptions.
 
 ---
 
@@ -9608,8 +9698,9 @@ only those the user's access level allows. The shared `/mcp` endpoint is
 unchanged.
 
 claude.ai caches a connector's tool list: after memory is turned on for a user,
-refresh it under *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
-list* before the memory tools appear in new chats.
+refresh it under **Plugins** (or **Customize**) → **Connectors** → the
+connector → **⋮** → **Refresh tools list** before the memory tools appear in
+new chats.
 
 | Tool | Offered from | What it does |
 |---|---|---|
@@ -9797,8 +9888,8 @@ be kept and chooses **Accept** or **Decline**. The notice they accepted is
 stored with the project.
 
 After accepting, they refresh the connector's tool list in their AI client
-(in claude.ai: *Customize → Connectors →* the connector *→ ⋮ → Refresh tools
-list*) and work as usual.
+(in claude.ai: **Plugins** (or **Customize**) → **Connectors** → the connector
+→ **⋮** → **Refresh tools list**) and work as usual.
 
 At any time they can **Stop** the project on the same page, and choose to
 erase everything that was not published. Their opt-out of

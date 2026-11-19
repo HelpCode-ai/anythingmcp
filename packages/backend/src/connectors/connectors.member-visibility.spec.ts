@@ -73,6 +73,7 @@ const RULES: Record<string, Record<string, { path: string; rule: Rule }>> = {
     webhookUrl: { path: ':id/webhook/url', rule: 'visible-then-owner' },
     webhookEventsList: { path: ':id/webhook/events', rule: 'visible-then-owner' },
     getOAuthConfig: { path: ':id/oauth-config', rule: 'full-view' },
+    getLoginTokenConfig: { path: ':id/login-token-config', rule: 'full-view' },
     getMyCredential: { path: ':id/my-credential', rule: 'visible' },
     oauthRedirectUri: { path: 'oauth/redirect-uri', rule: 'no-connector-data' },
     catalogDiff: { path: ':id/catalog-diff', rule: 'visible-then-owner' },
@@ -311,6 +312,7 @@ const res = () => ({ setHeader: jest.fn() }) as any;
 const BY_ID: Record<string, (c: Ctx, role: string, id: string) => Promise<unknown>> = {
   'ConnectorsController.findOne': (c, role, id) => c.connectors.findOne(req(role), id),
   'ConnectorsController.getOAuthConfig': (c, role, id) => c.connectors.getOAuthConfig(req(role), id),
+  'ConnectorsController.getLoginTokenConfig': (c, role, id) => c.connectors.getLoginTokenConfig(req(role), id),
   'ConnectorsController.getMyCredential': (c, role, id) => c.connectors.getMyCredential(req(role), id),
   'ConnectorsController.webhookUrl': (c, role, id) => c.connectors.webhookUrl(req(role), id),
   'ConnectorsController.webhookEventsList': (c, role, id) => c.connectors.webhookEventsList(req(role), id),

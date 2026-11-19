@@ -394,17 +394,20 @@ describe('LoginTokenService', () => {
       );
     });
 
-    it('refuses an empty list or a non-string entry before logging in', async () => {
+    it('reads an empty list as the whole body', async () => {
+      answer('  bare-jwt\n');
+      const bundle = await service.getToken({ ...listAuth, tokenJsonPath: [] }, 'conn-list-7');
+      expect(bundle.token).toBe('bare-jwt');
+    });
+
+    it('refuses a non-string entry before logging in', async () => {
       const calls = (mockedAxios as unknown as jest.Mock).mock.calls.length;
-      await expect(
-        service.getToken({ ...listAuth, tokenJsonPath: [] }, 'conn-list-7'),
-      ).rejects.toThrow(/tokenJsonPath is required/);
       await expect(
         service.getToken(
           { ...listAuth, tokenJsonPath: ['token', 5 as unknown as string] },
           'conn-list-8',
         ),
-      ).rejects.toThrow(/tokenJsonPath is required/);
+      ).rejects.toThrow(/tokenJsonPath must be a path, or a list of paths/);
       expect((mockedAxios as unknown as jest.Mock).mock.calls.length).toBe(calls);
     });
   });
@@ -900,9 +903,14 @@ describe('LoginTokenService — signedJwt login (noon Partner API pattern)', () 
     expect(message).not.toContain('secretmaterial');
   });
 
-  it('still asks for username and password when there is no signedJwt', async () => {
+  it('still asks for username and password when there is no signedJwt and the body uses them', async () => {
     const { signedJwt: _omit, ...withoutJwt } = noonAuth as LoginTokenAuthConfig & { signedJwt?: unknown };
-    await expect(service.getToken(withoutJwt as LoginTokenAuthConfig, 'conn-noon-3')).rejects.toThrow(/username/);
+    await expect(
+      service.getToken(
+        { ...withoutJwt, loginBody: { user: '${username}', pass: '${password}' } } as LoginTokenAuthConfig,
+        'conn-noon-3',
+      ),
+    ).rejects.toThrow(/username/);
   });
 });
 

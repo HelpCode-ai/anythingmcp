@@ -573,6 +573,30 @@ export const OPERATIONS: readonly ApiOperation[] = [
   },
   {
     "resource": "connectors",
+    "action": "getLoginTokenConfig",
+    "method": "GET",
+    "path": "/api/connectors/:id/login-token-config",
+    "summary": "Read the Login → Token settings of a connector",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": false
+  },
+  {
+    "resource": "connectors",
+    "action": "updateLoginTokenConfig",
+    "method": "PATCH",
+    "path": "/api/connectors/:id/login-token-config",
+    "summary": "Update the Login → Token settings of a connector (partial)",
+    "admin": false,
+    "pathParams": [
+      "id"
+    ],
+    "hasBody": true
+  },
+  {
+    "resource": "connectors",
     "action": "deleteMyCredential",
     "method": "DELETE",
     "path": "/api/connectors/:id/my-credential",

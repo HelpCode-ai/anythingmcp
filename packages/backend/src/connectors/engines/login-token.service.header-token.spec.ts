@@ -188,11 +188,13 @@ describe('LoginTokenService — tokenSource=header (Ceneo pattern)', () => {
       ).rejects.toThrow('LOGIN_TOKEN: token not found at "token" in login response');
     });
 
-    it('still requires tokenJsonPath without a tokenSource', async () => {
-      await expect(
-        service.getToken({ ...bodyAuth, tokenJsonPath: undefined } as unknown as LoginTokenAuthConfig, 'conn-nopath'),
-      ).rejects.toThrow('LOGIN_TOKEN: authConfig.tokenJsonPath is required');
-      expect(mockedAxios).not.toHaveBeenCalled();
+    it('reads the whole body without a tokenJsonPath', async () => {
+      mockedAxios.mockResolvedValue({ data: 'plain-token\n', headers: { access_token: token } });
+      const bundle = await service.getToken(
+        { ...bodyAuth, tokenJsonPath: undefined } as unknown as LoginTokenAuthConfig,
+        'conn-nopath',
+      );
+      expect(bundle.token).toBe('plain-token');
     });
 
     it('tokenSource cookie still reads Set-Cookie', async () => {

@@ -11,6 +11,7 @@
       <img src="https://api.star-history.com/badge?repo=HelpCode-ai/anythingmcp&type=trending" alt="GitHub Trending Repository of the Day" height="64" />
     </picture>
   </a>
+  <a href="https://www.producthunt.com/products/anythingmcp?embed=true&amp;utm_source=badge-featured&amp;utm_medium=badge&amp;utm_campaign=badge-anythingmcp" target="_blank" rel="noopener noreferrer"><img alt="AnythingMCP - Open-source MCP gateway and company brain | Product Hunt" width="250" height="54" src="https://api.producthunt.com/widgets/embed-image/v1/featured.svg?post_id=1321607&amp;theme=light&amp;t=1795006241059"></a>
 </p>
 
 <p align="center">
@@ -251,7 +252,7 @@ amd64 ではイメージの取得に約 30 秒、その 24 秒後に API が利�
 
 同じ MCP サーバーが MCP 対応のあらゆるクライアントで動くため、コネクターは一度作るだけで済みます。
 
-- **Claude。** *Customize → Connectors* でサーバーの URL を**カスタムコネクター**として追加すると、Claude.ai、Claude Desktop、Claude Code で使えます。OAuth 2.0 に標準対応しています。AnythingMCP Cloud なら [Claude ディレクトリ](https://claude.ai/directory/anythingmcp)からワンクリックで追加することもできます。[Claude の設定](docs/integrations/claude.md)
+- **Claude。** **Plugins**（一部のプランではまだ **Customize**）→ **Connectors** でサーバーの URL を**カスタムコネクター**として追加すると、Claude.ai、Claude Desktop、Claude Code で使えます。OAuth 2.0 に標準対応しています。AnythingMCP Cloud なら [Claude ディレクトリ](https://claude.ai/directory/anythingmcp)からワンクリックで追加することもできます。[Claude の設定](docs/integrations/claude.md)
 - **ChatGPT。** ChatGPT のアプリは MCP の上に作られています。ChatGPT の *Plugins* でサーバーを追加するか（*Add → Add custom MCP server*）、Apps SDK アプリのツール層として使います。[ChatGPT の設定](docs/integrations/chatgpt.md)
 - **Meta Muse。** Muse で *Settings → Connectors → Add custom connector* を開き、サーバーの URL を貼り付けて AnythingMCP にサインインします。[Muse の設定](docs/integrations/muse.md)
 - **Copilot、Gemini、Cursor** などの MCP クライアント：[クライアント設定ガイド](docs/guides.md)。
