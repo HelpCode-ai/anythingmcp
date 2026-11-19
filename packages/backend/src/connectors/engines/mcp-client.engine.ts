@@ -14,6 +14,8 @@ import { withMcpFixedArguments } from '../mcp-connector-config.util';
  * cursor walks every page itself, so a loop of our own never saw a cursor.
  */
 export const MAX_TOOL_LIST_PAGES = 50;
+/** Bound background cleanup before aborting the local transport. */
+const SESSION_TERMINATION_TIMEOUT_MS = 5_000;
 
 @Injectable()
 export class McpClientEngine {
@@ -115,17 +117,13 @@ export class McpClientEngine {
               arguments: args,
             });
           } finally {
-            try { await retryClient.close(); } catch { /* ignore */ }
+            void this.closeSession(retryClient, retryTransport);
           }
         }
       }
       throw error;
     } finally {
-      try {
-        await client.close();
-      } catch {
-        // Ignore close errors
-      }
+      void this.closeSession(client, transport);
     }
   }
 
@@ -210,10 +208,29 @@ export class McpClientEngine {
           : {}),
       }));
     } finally {
+      void this.closeSession(client, transport);
+    }
+  }
+
+  private async closeSession(client: Client, transport: StreamableHTTPClientTransport): Promise<void> {
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      // close() aborts locally; it does not release the upstream session.
+      // The SDK makes termination a no-op when the server issued no session ID.
+      await Promise.race([
+        transport.terminateSession(),
+        new Promise<void>((resolve) => { timer = setTimeout(resolve, SESSION_TERMINATION_TIMEOUT_MS); }),
+      ]);
+    } catch {
+      // Cleanup must never replace the tool result or its original error.
+    } finally {
+      if (timer !== undefined) clearTimeout(timer);
+      // Also abort a DELETE that exceeded the deadline. Its rejection is still
+      // observed by Promise.race, so it cannot become an unhandled rejection.
       try {
         await client.close();
       } catch {
-        // Ignore close errors
+        // Background cleanup must not produce an unhandled rejection.
       }
     }
   }

@@ -425,6 +425,7 @@ import * as linkedinAds from './intl/linkedin-ads.json';
 import * as livedune from './intl/livedune.json';
 import * as lodgify from './intl/lodgify.json';
 import * as lokalise from './intl/lokalise.json';
+import * as loom from './intl/loom.json';
 import * as loops from './intl/loops.json';
 import * as lowes from './intl/lowes.json';
 import * as loyverse from './intl/loyverse.json';
@@ -1644,6 +1645,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   livedune as unknown as AdapterDefinition,
   lodgify as unknown as AdapterDefinition,
   lokalise as unknown as AdapterDefinition,
+  loom as unknown as AdapterDefinition,
   loops as unknown as AdapterDefinition,
   lowes as unknown as AdapterDefinition,
   loyverse as unknown as AdapterDefinition,

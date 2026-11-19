@@ -35,6 +35,7 @@ describe('McpClientEngine endpoint resolution', () => {
     listTools: jest.Mock;
     close: jest.Mock;
   };
+  let transport: { terminateSession: jest.Mock };
 
   beforeEach(() => {
     jest.clearAllMocks();
@@ -44,7 +45,9 @@ describe('McpClientEngine endpoint resolution', () => {
       listTools: jest.fn().mockResolvedValue({ tools: [] }),
       close: jest.fn().mockResolvedValue(undefined),
     };
+    transport = { terminateSession: jest.fn().mockResolvedValue(undefined) };
     MockedClient.mockImplementation(() => client);
+    MockedTransport.mockImplementation(() => transport);
     engine = new McpClientEngine({} as unknown as OAuth2TokenService);
   });
 
@@ -52,6 +55,89 @@ describe('McpClientEngine endpoint resolution', () => {
     baseUrl,
     authType: 'NONE',
     headers: {} as Record<string, string>,
+  });
+
+  describe('session cleanup', () => {
+    it('terminates the session before locally closing the client', async () => {
+      await engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {});
+      await new Promise((resolve) => setImmediate(resolve));
+      expect(transport.terminateSession).toHaveBeenCalledTimes(1);
+      expect(transport.terminateSession.mock.invocationCallOrder[0]).toBeLessThan(client.close.mock.invocationCallOrder[0]);
+    });
+
+    it('preserves the original tool error when session termination also fails', async () => {
+      const original = new Error('tool failed');
+      client.callTool.mockRejectedValueOnce(original);
+      transport.terminateSession.mockRejectedValueOnce(new Error('cleanup failed'));
+      await expect(engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {})).rejects.toBe(original);
+      expect(transport.terminateSession).toHaveBeenCalledTimes(1);
+      expect(client.close).toHaveBeenCalledTimes(1);
+    });
+
+    it('closes locally even when connecting fails and remote termination fails', async () => {
+      const original = new Error('connect failed');
+      client.connect.mockRejectedValueOnce(original);
+      transport.terminateSession.mockRejectedValueOnce(new Error('transport already aborted'));
+      await expect(engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {})).rejects.toBe(original);
+      expect(client.close).toHaveBeenCalledTimes(1);
+    });
+
+    it.each(['execute', 'listTools'] as const)('returns from %s before a hanging cleanup reaches its deadline', async (operation) => {
+      jest.useFakeTimers();
+      try {
+        transport.terminateSession.mockReturnValue(new Promise<void>(() => undefined));
+        const call = operation === 'execute'
+          ? engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {})
+          : engine.listTools(config('https://mcp.example.com'));
+        const settled = jest.fn();
+        const outcome = call.then(settled);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(settled).toHaveBeenCalledWith(operation === 'execute' ? { content: [] } : []);
+        await outcome;
+        expect(client.close).not.toHaveBeenCalled();
+        await jest.advanceTimersByTimeAsync(5_000);
+        expect(client.close).toHaveBeenCalledTimes(1);
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it.each(['execute', 'listTools'] as const)('rejects %s without waiting for hanging cleanup', async (operation) => {
+      jest.useFakeTimers();
+      try {
+        const original = new Error('upstream request failed');
+        if (operation === 'execute') client.callTool.mockRejectedValueOnce(original);
+        else client.listTools.mockRejectedValueOnce(original);
+        transport.terminateSession.mockReturnValue(new Promise<void>(() => undefined));
+        const call = operation === 'execute'
+          ? engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {})
+          : engine.listTools(config('https://mcp.example.com'));
+        const rejected = jest.fn();
+        const outcome = call.catch(rejected);
+        await jest.advanceTimersByTimeAsync(0);
+        expect(rejected).toHaveBeenCalledWith(original);
+        await outcome;
+        expect(client.close).not.toHaveBeenCalled();
+        await jest.advanceTimersByTimeAsync(5_000);
+        expect(client.close).toHaveBeenCalledTimes(1);
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('clears the cleanup timer on success even when local close fails', async () => {
+      jest.useFakeTimers();
+      try {
+        client.close.mockRejectedValueOnce(new Error('local close failed'));
+        await expect(engine.execute(config('https://mcp.example.com'), { method: 'echo', path: '/mcp' }, {})).resolves.toEqual({ content: [] });
+        expect(transport.terminateSession).toHaveBeenCalledTimes(1);
+        expect(jest.getTimerCount()).toBe(0);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
   });
 
   describe('execute', () => {
