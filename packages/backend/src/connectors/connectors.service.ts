@@ -46,6 +46,7 @@ import { connectorPageUrl, normalizeConnectorBaseUrl } from '../common/url.util'
 import { resolveAdapterIcon } from './connector-icon.util';
 import { envVarsForMcpTool, mcpPathOf, resolveMcpFixedArguments } from './mcp-connector-config.util';
 import { applyEnvDefaults, applySchemaDefaults } from '../common/schema-defaults.util';
+import { missingRequiredDefault } from '../mcp-server/required-env-defaults';
 import { renderStaticResponse } from './static-response.util';
 import { ODataEngine, isODataBuiltinMethod } from './engines/odata.engine';
 import { EmailEngine } from './engines/email.engine';
@@ -1275,6 +1276,13 @@ export class ConnectorsService implements OnApplicationBootstrap {
       : params;
     // A parameter left out takes the variable the tool names for it (envDefaults).
     const mergedParams = applySchemaDefaults(parameters, applyEnvDefaults(endpointMapping, withEnv, envVars));
+    // Refused before sending, as on a real call (DynamicMcpTools).
+    const missingDefault = missingRequiredDefault(
+      (connector.config as { adapterSlug?: string } | null | undefined)?.adapterSlug,
+      endpointMapping,
+      mergedParams,
+    );
+    if (missingDefault) throw missingDefault;
 
     // Static response tools — return text immediately without engine dispatch.
     //
