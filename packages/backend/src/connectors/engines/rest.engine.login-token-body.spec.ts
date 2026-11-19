@@ -155,7 +155,7 @@ describe('RestEngine: re-login when the body reports a refused token (refreshOnB
       .mockResolvedValueOnce({ status: 200, data: offers, headers: XML });
     const out = await new RestEngine({} as OAuth2TokenService, login).execute(config(), mapping(), { sku: 'A' });
     expect(login.forceRelogin).toHaveBeenCalledTimes(1);
-    expect(login.forceRelogin).toHaveBeenCalledWith(expect.objectContaining({ tokenPlacement: 'body' }), 'conn-1', { proxyUrl: undefined });
+    expect(login.forceRelogin).toHaveBeenCalledWith(expect.objectContaining({ tokenPlacement: 'body' }), 'conn-1', { proxyUrl: undefined, connectorHeaders: [] });
     expect(mockedAxios).toHaveBeenCalledTimes(2);
     expect(sentAt(0).data).toContain('token="tok-1"');
     expect(sentAt(1).data).toBe('<offers_query partner_id="P1" shop_id="S1" token="tok-2"><offer_seller_id>A</offer_seller_id></offers_query>');

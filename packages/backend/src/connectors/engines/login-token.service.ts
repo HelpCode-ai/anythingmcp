@@ -14,6 +14,7 @@ import { ClientAssertionError, signJwt } from './client-assertion.util';
 import { findUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
 import { escapeXmlValue } from '../../common/xml-escape.util';
 import { isXmlContentType, xmlParser } from './xml-parse.util';
+import { LOGIN_REQUEST_FAILED_PREFIX, loginRequestHint } from '../connector-error.util';
 
 const DEFAULT_TOKEN_TTL_SECONDS = 30 * 24 * 60 * 60; // 30 days
 const DEFAULT_PROACTIVE_REFRESH_SECONDS = 24 * 60 * 60; // 1 day
@@ -35,6 +36,12 @@ const PROACTIVE_RETRY_BACKOFF_MS = 30 * 1000;
  */
 export interface LoginRequestOptions {
   proxyUrl?: string;
+  /**
+   * Names of the connector-level headers. They are not sent with the login
+   * request (only loginHeaders are); a failed login names the ones the login
+   * did not carry, so the user knows where to add a header the login needs.
+   */
+  connectorHeaders?: string[];
 }
 
 /**
@@ -94,6 +101,12 @@ export interface LoginTokenAuthConfig {
    * Absent: the answer is read as axios delivered it.
    */
   loginResponseFormat?: 'xml';
+  /**
+   * Headers sent with the login request only (connector-level headers are
+   * not). Values may use `${uuid}` (a new UUID per login) and the login
+   * placeholders `${username}`, `${password}` (or the hashed password's
+   * name), `${aud}` and `${otp}`.
+   */
   loginHeaders?: Record<string, string>;
   /**
    * Send `Authorization: Basic base64(username:password)` on the login request
@@ -105,9 +118,12 @@ export interface LoginTokenAuthConfig {
    * with bcrypt passwordHashing, and for a username containing ":" (RFC 7617).
    */
   loginBasicAuth?: boolean;
-  // Required, unless the login proves who it is with `signedJwt` instead.
-  username: string;
-  password: string;
+  // Required only when the login uses them: a loginBody, loginBodyTemplate
+  // or loginHeaders that reference `${username}` / `${password}` (or the
+  // hashed password), a login without a body (the default body sends both),
+  // or loginBasicAuth. A key-only token exchange needs neither.
+  username?: string;
+  password?: string;
   aud?: string;
   otp?: string;
 
@@ -144,8 +160,8 @@ export interface LoginTokenAuthConfig {
 
   // One path, or several tried in order when the vendor does not document
   // the login answer's shape: the first that holds a non-empty string wins.
-  // Required when the token is read from the body (the default); not read
-  // with tokenSource 'cookie' or 'header'.
+  // Empty, absent or "." means the whole response body: a plain-text token or
+  // a JSON string, trimmed. Not read with tokenSource 'cookie' or 'header'.
   tokenJsonPath?: string | string[];
   expiryJsonPath?: string;
   audJsonPath?: string;
@@ -317,6 +333,21 @@ export class LoginTokenService {
   }
 
   /**
+   * Drop the token held for a connector (memory and database), after its
+   * login settings changed: the next call logs in with the new ones instead
+   * of reusing a token the old settings obtained.
+   */
+  async forget(connectorId: string): Promise<void> {
+    this.cache.delete(connectorId);
+    this.retryAfter.delete(connectorId);
+    try {
+      await this.prisma.connectorAuthCache.deleteMany({ where: { connectorId } });
+    } catch (err: any) {
+      this.logger.warn(`LOGIN_TOKEN: failed to drop the cached token for ${connectorId}: ${err.message}`);
+    }
+  }
+
+  /**
    * Force a fresh login regardless of cache state (called on 401 retry).
    */
   async forceRelogin(
@@ -351,10 +382,9 @@ export class LoginTokenService {
     request: LoginRequestOptions,
   ): Promise<LoginTokenBundle> {
     this.requireString(authConfig.loginUrl, 'loginUrl');
-    if (!authConfig.signedJwt) {
-      this.requireString(authConfig.username, 'username');
-      this.requireString(authConfig.password, 'password');
-    }
+    const needs = loginCredentialNeeds(authConfig);
+    if (needs.username) this.requireString(authConfig.username, 'username');
+    if (needs.password) this.requireString(authConfig.password, 'password');
     if (authConfig.tokenSource === 'header') {
       // Checked before the request: a login whose answer cannot be read is
       // not worth sending.
@@ -369,9 +399,10 @@ export class LoginTokenService {
 
     const basicAuth = loginBasicAuthHeader(authConfig);
 
-    const passwordToSend = authConfig.signedJwt && authConfig.password === undefined
-      ? ''
-      : basicAuth
+    // A login that does not use the password neither hashes it nor fetches
+    // a salt for it.
+    const passwordToSend =
+      (authConfig.signedJwt && authConfig.password === undefined) || basicAuth || !needs.password
         ? ''
         : await this.preparePassword(authConfig, request);
     const signedToken = authConfig.signedJwt
@@ -397,11 +428,17 @@ export class LoginTokenService {
     // `${uuid}` in a login header becomes a new random UUID for this login
     // (Walmart's token call takes the same WM_QOS.CORRELATION_ID header as its
     // API calls).
+    // The login placeholders (`${username}`, `${password}` …) work in login
+    // headers too, for a token exchange that takes its key in a header. Only
+    // known names are replaced; any other `${…}` stays as written.
     const loginUuid = randomUUID();
+    const headerParams: Record<string, string> = { ...templateParams, uuid: loginUuid };
     const loginHeaders = Object.fromEntries(
       Object.entries(authConfig.loginHeaders || {}).map(([k, v]) => [
         k,
-        String(v).replace(/\$\{uuid\}/g, loginUuid),
+        String(v).replace(/\$\{([A-Za-z_][A-Za-z0-9_]*)\}/g, (m, name: string) =>
+          Object.prototype.hasOwnProperty.call(headerParams, name) ? headerParams[name] : m,
+        ),
       ]),
     );
     // `loginBodyFormat: "xml"` with a string loginBody: an XML document.
@@ -464,7 +501,17 @@ export class LoginTokenService {
       });
     } catch (err) {
       if (basicAuth) scrubLoginError(err, basicAuth.secrets);
-      throw err;
+      throw labelLoginRequestError(err, {
+        secrets: [
+          authConfig.password ?? '',
+          passwordToSend,
+          signedToken ?? '',
+          ...(basicAuth?.secrets ?? []),
+          ...loginHeaderSecrets(loginHeaders),
+        ],
+        loginHeaders: Object.keys(loginHeaders),
+        connectorHeaders: request.connectorHeaders,
+      });
     }
     if (authConfig.loginResponseFormat === 'xml') {
       response.data = parseXmlLoginAnswer(response);
@@ -519,7 +566,7 @@ export class LoginTokenService {
         throw new Error(
           refusal
             ? `LOGIN_TOKEN: the service refused the login — ${refusal}`
-            : `LOGIN_TOKEN: token not found at ${paths.map((p) => `"${p}"`).join(', ')} in login response`,
+            : tokenNotFoundMessage(paths, response.data),
         );
       }
     }
@@ -554,7 +601,7 @@ export class LoginTokenService {
     request: LoginRequestOptions,
   ): Promise<string> {
     const hashing = authConfig.passwordHashing;
-    if (!hashing || hashing.scheme === 'none') return authConfig.password;
+    if (!hashing || hashing.scheme === 'none') return authConfig.password ?? '';
     if (hashing.scheme !== 'bcrypt') {
       throw new Error(
         `LOGIN_TOKEN: unsupported passwordHashing.scheme "${hashing.scheme}"`,
@@ -567,7 +614,7 @@ export class LoginTokenService {
         'LOGIN_TOKEN: passwordHashing.scheme=bcrypt requires a non-empty salt',
       );
     }
-    return bcrypt.hashSync(authConfig.password, salt);
+    return bcrypt.hashSync(authConfig.password ?? '', salt);
   }
 
   private async resolveSalt(
@@ -586,7 +633,7 @@ export class LoginTokenService {
       throw new Error('LOGIN_TOKEN: saltSource.url is required when type=fetch');
     }
 
-    const url = src.url.replace(/\$\{username\}/g, encodeURIComponent(authConfig.username));
+    const url = src.url.replace(/\$\{username\}/g, encodeURIComponent(authConfig.username ?? ''));
     await assertSafeOutboundUrl(url);
 
     const method = (src.method || 'GET').toUpperCase();
@@ -748,11 +795,13 @@ export function loginBasicAuthHeader(
       throw new Error(`LOGIN_TOKEN: authConfig.${name} is required`);
     }
   }
-  if (cfg.username.includes(':')) {
+  const username = cfg.username as string;
+  const password = cfg.password as string;
+  if (username.includes(':')) {
     throw new Error('LOGIN_TOKEN: loginBasicAuth: the username must not contain ":"');
   }
-  const encoded = Buffer.from(`${cfg.username}:${cfg.password}`, 'utf8').toString('base64');
-  return { header: `Basic ${encoded}`, secrets: [cfg.password, encoded] };
+  const encoded = Buffer.from(`${username}:${password}`, 'utf8').toString('base64');
+  return { header: `Basic ${encoded}`, secrets: [password, encoded] };
 }
 
 /**
@@ -789,28 +838,216 @@ function scrubLoginError(err: unknown, secrets: string[]): void {
   }
 }
 
+/** The token path that means "the whole response body". */
+export const WHOLE_BODY_PATH = '.';
+
+/** Whether a token path addresses the whole body ("", ".", or no segments). */
+export function isWholeBodyPath(path: string): boolean {
+  return path.replace(/\[(\d+)\]/g, '.$1').split('.').filter((p) => p.trim()).length === 0;
+}
+
 /**
  * The token path(s) of an authConfig as a list. A single string is the usual
  * form; a list is for logins whose answer is undocumented, tried in order.
- * Anything else (missing, empty, a non-string entry) is a configuration error.
+ * Absent, empty (`""`, `[]`) or `"."` means the whole response body, for a
+ * login that answers with a bare token (plain text or a JSON string). A
+ * non-string entry is a configuration error.
  */
 export function tokenJsonPaths(value: unknown): string[] {
+  if (value === undefined || value === null) return [WHOLE_BODY_PATH];
   const list = Array.isArray(value) ? value : [value];
-  if (list.length === 0 || list.some((p) => !p || typeof p !== 'string')) {
+  if (list.some((p) => typeof p !== 'string')) {
     throw new Error(
-      'LOGIN_TOKEN: authConfig.tokenJsonPath is required (a path, or a list of paths)',
+      'LOGIN_TOKEN: authConfig.tokenJsonPath must be a path, or a list of paths (empty for the whole response body)',
     );
   }
-  return list as string[];
+  if (list.length === 0) return [WHOLE_BODY_PATH];
+  return (list as string[]).map((p) => (isWholeBodyPath(p) ? WHOLE_BODY_PATH : p.trim()));
+}
+
+/**
+ * The token when the whole response body is the token: a plain-text answer
+ * or a JSON string, without the white space and quotes around it. A safe
+ * integer counts (axios parses a bare `12345` as a number); anything else
+ * (an object, an empty body) is not a token.
+ */
+function wholeBodyToken(body: unknown): string | undefined {
+  if (typeof body === 'number' && Number.isSafeInteger(body)) return String(body);
+  if (typeof body !== 'string') return undefined;
+  let text = body.trim();
+  if (text.length >= 2 && text.startsWith('"') && text.endsWith('"')) {
+    try {
+      const parsed: unknown = JSON.parse(text);
+      if (typeof parsed === 'string') text = parsed.trim();
+    } catch {
+      // Not a JSON string: the quotes are part of the text.
+    }
+  }
+  return text || undefined;
 }
 
 /** The first non-empty string found at one of `paths`, in order. */
 export function readTokenAt(body: unknown, paths: string[]): string | undefined {
   for (const path of paths) {
+    if (isWholeBodyPath(path)) {
+      const token = wholeBodyToken(body);
+      if (token) return token;
+      continue;
+    }
     const value = jsonPath(body, path);
     if (typeof value === 'string' && value.trim() !== '') return value;
   }
   return undefined;
+}
+
+/** Why no token was found, naming the paths (the whole body in words). */
+function tokenNotFoundMessage(paths: string[], body: unknown): string {
+  if (paths.length === 1 && isWholeBodyPath(paths[0])) {
+    const shape =
+      body === undefined || body === null || (typeof body === 'string' && !body.trim())
+        ? 'was empty'
+        : Array.isArray(body)
+          ? 'is a JSON array'
+          : typeof body === 'object'
+            ? 'is a JSON object'
+            : `is a ${typeof body}`;
+    return (
+      `LOGIN_TOKEN: token not found: the login response body ${shape}, not a plain-text token. ` +
+      'Set tokenJsonPath ("Token JSON path") to the field that holds the token; leave it empty only when the whole body is the token'
+    );
+  }
+  const named = paths.map((p) => (isWholeBodyPath(p) ? 'the whole body' : `"${p}"`));
+  return `LOGIN_TOKEN: token not found at ${named.join(', ')} in login response`;
+}
+
+/**
+ * Which credentials a login actually uses, so a key-only token exchange can
+ * leave username and password empty.
+ *
+ * - signedJwt: neither (as before).
+ * - loginBasicAuth: both (loginBasicAuthHeader checks them).
+ * - no loginBody and no loginBodyTemplate: both, because the default body is
+ *   the credentials themselves.
+ * - otherwise: what the loginBody, loginBodyTemplate and loginHeaders
+ *   reference. `${username}` needs the username; `${password}`,
+ *   `${passwordHashed}` (or passwordHashing.outputParam) need the password,
+ *   and a bcrypt salt fetched from a URL with `${username}` needs both.
+ */
+export function loginCredentialNeeds(cfg: LoginTokenAuthConfig): {
+  username: boolean;
+  password: boolean;
+} {
+  if (cfg.signedJwt) return { username: false, password: false };
+  if ((cfg as { loginBasicAuth?: unknown }).loginBasicAuth === true) {
+    return { username: true, password: true };
+  }
+  if (cfg.loginBody === undefined && !cfg.loginBodyTemplate) {
+    return { username: true, password: true };
+  }
+  const text = JSON.stringify([cfg.loginBody ?? null, cfg.loginBodyTemplate ?? null, cfg.loginHeaders ?? null]);
+  const uses = (name: string) => text.includes('${' + name + '}');
+  const passwordNames = ['password', 'passwordHashed', cfg.passwordHashing?.outputParam].filter(
+    (n): n is string => typeof n === 'string' && n.length > 0,
+  );
+  const password = passwordNames.some(uses);
+  const saltUrl = cfg.passwordHashing?.scheme === 'bcrypt' ? cfg.passwordHashing.saltSource?.url : undefined;
+  const username = uses('username') || (password && typeof saltUrl === 'string' && saltUrl.includes('${username}'));
+  return { username, password };
+}
+
+/** Login header names whose values are not credentials, kept in error excerpts. */
+const PLAIN_LOGIN_HEADERS = new Set(['content-type', 'accept', 'accept-language', 'user-agent']);
+
+/** The login header values to keep out of an error excerpt. */
+function loginHeaderSecrets(headers: Record<string, string>): string[] {
+  return Object.entries(headers)
+    .filter(([name]) => !PLAIN_LOGIN_HEADERS.has(name.toLowerCase()))
+    .map(([, value]) => value);
+}
+
+const LOGIN_EXCERPT_MAX = 300;
+
+/**
+ * A short, single-line excerpt of a failed login's answer: HTML tags dropped,
+ * white space collapsed, the given secrets (and the bare value behind a
+ * `Bearer `/`Basic ` prefix) replaced by [redacted], cut at 300 characters.
+ */
+export function loginBodyExcerpt(data: unknown, secrets: string[] = []): string {
+  let text: string;
+  if (data === undefined || data === null) text = '';
+  else if (typeof data === 'string') text = data;
+  else if (Buffer.isBuffer(data)) text = data.toString('utf8');
+  else if (data instanceof ArrayBuffer) text = Buffer.from(data).toString('utf8');
+  else {
+    try {
+      text = JSON.stringify(data);
+    } catch {
+      text = String(data);
+    }
+  }
+  if (/<(html|body|head|!doctype)\b/i.test(text)) {
+    text = text.replace(/<(script|style)\b[\s\S]*?<\/\1>/gi, ' ').replace(/<[^>]+>/g, ' ');
+  }
+  text = text.replace(/\s+/g, ' ').trim();
+  const words = new Set<string>();
+  for (const secret of secrets) {
+    if (typeof secret !== 'string' || secret.length < 4) continue;
+    words.add(secret);
+    const bare = /^(?:bearer|basic|token)\s+(.+)$/i.exec(secret.trim())?.[1];
+    if (bare && bare.length >= 4) words.add(bare);
+  }
+  for (const word of [...words].sort((a, b) => b.length - a.length)) {
+    text = text.split(word).join('[redacted]');
+  }
+  return text.length > LOGIN_EXCERPT_MAX ? `${text.slice(0, LOGIN_EXCERPT_MAX)}…` : text;
+}
+
+/**
+ * Restate an error thrown by the login request itself, so it cannot be taken
+ * for a failed tool call: `LOGIN_TOKEN: login request failed (HTTP 401
+ * Unauthorized): <excerpt of the answer>`, or with the network error code and
+ * message when nothing answered. The error object stays the same (an axios
+ * error keeps its response and status, which the callers classify by), and
+ * gets `hint` (what to fix in the login settings, see loginRequestHint) and
+ * `loginRequestFailed: true`.
+ */
+export function labelLoginRequestError(
+  err: unknown,
+  options: { secrets?: string[]; loginHeaders?: string[]; connectorHeaders?: string[] } = {},
+): unknown {
+  if (!err || typeof err !== 'object') return err;
+  const e = err as {
+    message?: unknown;
+    code?: unknown;
+    response?: { status?: unknown; statusText?: unknown; data?: unknown };
+    hint?: string;
+    loginRequestFailed?: boolean;
+  };
+  if (e.loginRequestFailed) return err;
+  const status = typeof e.response?.status === 'number' ? e.response.status : undefined;
+  const original = typeof e.message === 'string' ? e.message : '';
+  if (status !== undefined) {
+    const statusText =
+      typeof e.response?.statusText === 'string' && e.response.statusText.trim()
+        ? ` ${e.response.statusText.trim()}`
+        : '';
+    const excerpt = loginBodyExcerpt(e.response?.data, options.secrets);
+    e.message = `${LOGIN_REQUEST_FAILED_PREFIX} (HTTP ${status}${statusText}): ${excerpt || 'empty response body'}`;
+  } else {
+    const code = typeof e.code === 'string' && e.code ? e.code : 'no response';
+    e.message = `${LOGIN_REQUEST_FAILED_PREFIX} (${code}): ${loginBodyExcerpt(original, options.secrets) || 'no details'}`;
+  }
+  e.hint = loginRequestHint(status, {
+    connectorHeaders: options.connectorHeaders,
+    loginHeaders: options.loginHeaders,
+  });
+  e.loginRequestFailed = true;
+  return err;
+}
+
+/** Whether an error comes from a failed Login → Token login request. */
+export function isLoginRequestError(err: unknown): boolean {
+  return !!err && typeof err === 'object' && (err as { loginRequestFailed?: unknown }).loginRequestFailed === true;
 }
 
 /**

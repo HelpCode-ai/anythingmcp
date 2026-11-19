@@ -1354,7 +1354,15 @@
       "method": "Metodo",
       "tokenPath": "Percorso JSON del token",
       "ttl": "TTL del token (s)",
-      "refreshOn401": "In caso di risposta 401, rifai il login e riprova automaticamente"
+      "refreshOn401": "In caso di risposta 401, rifai il login e riprova automaticamente",
+      "credentialsHint": "Servono solo se il body o gli header di login usano <code>{user}</code> / <code>{pass}</code> (o se non c'è un body di login). Lasciali entrambi vuoti per uno scambio di token che invia solo una chiave.",
+      "tokenPathPlaceholder": "token, data.accessToken …",
+      "tokenPathHint": "Dove si trova il token nella risposta di login, es. token o data.accessToken (più percorsi separati da virgole vengono provati in ordine). Lascialo vuoto se l'intera risposta è il token (testo semplice o una stringa JSON).",
+      "loginHeaders": "Header della richiesta di login",
+      "loginHeadersHint": "Inviati solo con la richiesta di login; gli header del connettore più sotto no. I valori possono usare variabili come {variable} e il segnaposto {pass}.",
+      "urlRequired": "Inserisci l'URL di login.",
+      "usernameRequired": "Il login usa {user}: inserisci un nome utente, oppure togli il segnaposto dal body e dagli header di login.",
+      "passwordRequired": "Il login usa {pass}: inserisci una password o una chiave, oppure togli il segnaposto dal body e dagli header di login."
     },
     "creating": "Creazione...",
     "create": "Crea connettore",
@@ -1526,7 +1534,7 @@
       "noteNew": "Consumer key e secret appartengono all'applicazione registrata presso il provider, non alla tua email o password di login. Servono entrambi per passare a OAuth 1.0a. L'access token serve solo per le API che agiscono per conto di un utente (three-legged)."
     },
     "loginToken": {
-      "intro": "Per le API con token di breve durata (es. HRworks): inviamo con POST le tue credenziali all'endpoint di login, leggiamo il token dalla risposta, lo inviamo come Bearer token e lo rinnoviamo automaticamente prima che scada. Reinserisci password/secret per cambiare questa configurazione; lascialo vuoto per mantenere quella attuale.",
+      "intro": "Per le API con token di breve durata (es. HRworks): inviamo la richiesta di login all'endpoint di login, leggiamo il token dalla risposta, lo inviamo con ogni chiamata e lo rinnoviamo automaticamente prima che scada. Lascia vuoti nome utente e password per mantenere quelli salvati; le impostazioni che questo modulo non mostra restano invariate al salvataggio.",
       "url": "URL di login",
       "username": "Nome utente / Access key",
       "usernamePlaceholder": "access key",
@@ -1536,7 +1544,18 @@
       "method": "Metodo",
       "tokenPath": "Percorso JSON del token",
       "ttl": "TTL del token (s)",
-      "refreshOn401": "In caso di risposta 401, rifai il login e riprova automaticamente"
+      "refreshOn401": "In caso di risposta 401, rifai il login e riprova automaticamente",
+      "credentialsHint": "Servono solo se il body o gli header di login usano <code>{user}</code> / <code>{pass}</code> (o se non c'è un body di login). Lasciali entrambi vuoti per uno scambio di token che invia solo una chiave.",
+      "tokenPathPlaceholder": "token, data.accessToken …",
+      "tokenPathHint": "Dove si trova il token nella risposta di login, es. token o data.accessToken (più percorsi separati da virgole vengono provati in ordine). Lascialo vuoto se l'intera risposta è il token (testo semplice o una stringa JSON).",
+      "loginHeaders": "Header della richiesta di login",
+      "loginHeadersHint": "Inviati solo con la richiesta di login; gli header del connettore più sotto no. I valori possono usare variabili come {variable} e il segnaposto {pass}.",
+      "urlRequired": "Inserisci l'URL di login.",
+      "usernameRequired": "Il login usa {user}: inserisci un nome utente, oppure togli il segnaposto dal body e dagli header di login.",
+      "passwordRequired": "Il login usa {pass}: inserisci una password o una chiave, oppure togli il segnaposto dal body e dagli header di login.",
+      "passwordPlaceholder": "secret",
+      "bodyHidden": "Il body di login salvato contiene un valore segreto e non viene mostrato. Lascia il campo vuoto per mantenerlo, o scrivi un nuovo body per sostituirlo.",
+      "tokenFromSource": "Questo connettore legge il token dalla risposta di login ({source}), quindi il percorso del token non viene usato."
     },
     "oauthCard": {
       "title": "Autorizzazione OAuth2",

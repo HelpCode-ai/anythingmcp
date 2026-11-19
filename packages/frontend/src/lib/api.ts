@@ -569,6 +569,53 @@ export const connectors = {
       token,
     }),
   /**
+   * The Login → Token settings, without the secrets: username and password
+   * only as `hasUsername` / `hasPassword`, a login header holding a stored
+   * secret empty and named in `maskedLoginHeaders`, a login body with a
+   * literal secret left out (`loginBodyHidden`). '' = whole-body token.
+   */
+  getLoginTokenConfig: (id: string, token: string) =>
+    request<{
+      loginUrl: string;
+      loginMethod: string;
+      loginBody?: unknown;
+      loginBodyHidden: boolean;
+      hasLoginBodyTemplate: boolean;
+      hasUsername: boolean;
+      hasPassword: boolean;
+      tokenJsonPath: string | string[];
+      tokenSource: 'body' | 'cookie' | 'header';
+      tokenTTLSeconds?: number;
+      refreshOn401: boolean;
+      loginHeaders: Record<string, string>;
+      maskedLoginHeaders: string[];
+    }>(`/api/connectors/${id}/login-token-config`, { token }),
+  /**
+   * Partial update of the Login → Token settings. Merges server-side, so the
+   * settings the form does not show (header name, extra headers, token
+   * source …) and fields left out keep their stored value.
+   */
+  updateLoginTokenConfig: (
+    id: string,
+    data: {
+      loginUrl?: string;
+      loginMethod?: string;
+      loginBody?: unknown;
+      username?: string | null;
+      password?: string | null;
+      tokenJsonPath?: string | string[];
+      tokenTTLSeconds?: number | null;
+      refreshOn401?: boolean;
+      loginHeaders?: Record<string, string> | null;
+    },
+    token: string,
+  ) =>
+    request<{ message: string }>(`/api/connectors/${id}/login-token-config`, {
+      method: 'PATCH',
+      body: data,
+      token,
+    }),
+  /**
    * Partial update of OAuth 1.0a credentials. Only the fields sent change; the
    * stored values are never returned to the browser.
    */

@@ -15,6 +15,7 @@ import { AppSelect } from '@/components/ui/select';
 import { HeadersEditor, headerRowsToObject, type HeaderRow } from '@/components/headers-editor';
 import { isTrialLimitMessage, TrialLimitNotice } from '@/lib/trial-limit';
 import { cn } from '@/lib/utils';
+import { missingLoginCredential, tokenPathFromInput } from '@/lib/login-token-form';
 import {
   EMPTY_EMAIL_FORM,
   EmailSettingsFields,
@@ -104,7 +105,10 @@ export default function NewConnectorPage() {
   const [ltUsername, setLtUsername] = useState('');
   const [ltPassword, setLtPassword] = useState('');
   const [ltLoginBody, setLtLoginBody] = useState(DEFAULT_LOGIN_BODY);
+  // Empty: the whole response body is the token (plain text or a JSON string).
   const [ltTokenPath, setLtTokenPath] = useState('token');
+  // Headers sent with the login request only (authConfig.loginHeaders).
+  const [ltHeaderRows, setLtHeaderRows] = useState<HeaderRow[]>([]);
   const [ltTtl, setLtTtl] = useState('');
   const [ltRefreshOn401, setLtRefreshOn401] = useState(true);
   const [headerRows, setHeaderRows] = useState<HeaderRow[]>([]);
@@ -170,13 +174,28 @@ export default function NewConnectorPage() {
             throw new Error(t('loginToken.invalidJson'));
           }
         }
+        if (!ltLoginUrl.trim()) throw new Error(t('loginToken.urlRequired'));
+        const loginHeaders = headerRowsToObject(ltHeaderRows);
+        // Username and password are needed only when the login uses them: a
+        // key-only token exchange leaves both empty.
+        const missing = missingLoginCredential({
+          texts: [raw, ...Object.values(loginHeaders)],
+          hasBody: loginBody !== undefined,
+          hasUsername: !!ltUsername,
+          hasPassword: !!ltPassword,
+        });
+        if (missing === 'username') throw new Error(t('loginToken.usernameRequired', { user: '${username}' }));
+        if (missing === 'password') throw new Error(t('loginToken.passwordRequired', { pass: '${password}' }));
+        const tokenJsonPath = tokenPathFromInput(ltTokenPath);
         return {
-          loginUrl: ltLoginUrl,
+          loginUrl: ltLoginUrl.trim(),
           loginMethod: ltMethod || 'POST',
           ...(loginBody !== undefined ? { loginBody } : {}),
-          username: ltUsername,
-          password: ltPassword,
-          tokenJsonPath: ltTokenPath || 'token',
+          ...(Object.keys(loginHeaders).length > 0 ? { loginHeaders } : {}),
+          ...(ltUsername ? { username: ltUsername } : {}),
+          ...(ltPassword ? { password: ltPassword } : {}),
+          // Left out when empty: the whole response body is the token.
+          ...(tokenJsonPath !== '' ? { tokenJsonPath } : {}),
           ...(ltTtl.trim() ? { tokenTTLSeconds: Number(ltTtl) } : {}),
           refreshOn401: ltRefreshOn401,
         };
@@ -893,6 +912,13 @@ export default function NewConnectorPage() {
                       <label className={labelClass}>{t('loginToken.password')}</label>
                       <input type="password" value={ltPassword} onChange={(e) => setLtPassword(e.target.value)} placeholder={t('loginToken.passwordPlaceholder')} className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
+                    <p className="col-span-2 -mt-1 text-[11.5px] text-[var(--text-3)]">
+                      {t.rich('loginToken.credentialsHint', {
+                        user: '${username}',
+                        pass: '${password}',
+                        code: (chunks) => <code>{chunks}</code>,
+                      })}
+                    </p>
                   </div>
                   <div>
                     <label className={labelClass}>{t('loginToken.body')}</label>
@@ -918,13 +944,20 @@ export default function NewConnectorPage() {
                     </div>
                     <div>
                       <label className={labelClass}>{t('loginToken.tokenPath')}</label>
-                      <input type="text" value={ltTokenPath} onChange={(e) => setLtTokenPath(e.target.value)} placeholder="token" className={cn(inputClass, 'font-mono text-[13px]')} />
+                      <input type="text" value={ltTokenPath} onChange={(e) => setLtTokenPath(e.target.value)} placeholder={t('loginToken.tokenPathPlaceholder')} className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
                     <div>
                       <label className={labelClass}>{t('loginToken.ttl')}</label>
                       <input type="number" value={ltTtl} onChange={(e) => setLtTtl(e.target.value)} placeholder="900" className={cn(inputClass, 'font-mono text-[13px]')} />
                     </div>
+                    <p className="col-span-3 -mt-1 text-[11.5px] text-[var(--text-3)]">{t('loginToken.tokenPathHint')}</p>
                   </div>
+                  <HeadersEditor
+                    rows={ltHeaderRows}
+                    onChange={setLtHeaderRows}
+                    label={t('loginToken.loginHeaders')}
+                    hint={t('loginToken.loginHeadersHint', { variable: '{{API_KEY}}', pass: '${password}' })}
+                  />
                   <label className="flex items-center gap-2 text-[12.5px] text-[var(--text-2)]">
                     <input type="checkbox" checked={ltRefreshOn401} onChange={(e) => setLtRefreshOn401(e.target.checked)} />
                     {t('loginToken.refreshOn401')}

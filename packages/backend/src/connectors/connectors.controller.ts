@@ -34,6 +34,8 @@ import {
   ValidateNested,
   ArrayMinSize,
   MaxLength,
+  IsNumber,
+  Allow,
 } from 'class-validator';
 import { Type } from 'class-transformer';
 import { ConnectorType, AuthType } from '../generated/prisma/client';
@@ -61,6 +63,12 @@ import { decrypt, encrypt } from '../common/crypto/encryption.util';
 import { keepMaskedUrlPassword, moveUrlCredentials } from './database-url-credentials.util';
 import { getAdapter } from '../adapters/catalog';
 import { resolvePkce } from './oauth-authorize-settings';
+import { LoginTokenService } from './engines/login-token.service';
+import {
+  mergeLoginTokenConfig,
+  toPublicLoginTokenConfig,
+  type LoginTokenConfigPatch,
+} from './login-token-config.util';
 import { isMachineGrant } from './oauth-grant.util';
 import { mcpPathOf } from './mcp-connector-config.util';
 import {
@@ -444,6 +452,68 @@ class UpdateOAuthConfigDto {
   pkce?: boolean;
 }
 
+class UpdateLoginTokenConfigDto {
+  @ApiPropertyOptional({ description: 'The login endpoint (Login → Token). Cannot be emptied.' })
+  @IsOptional()
+  @IsString()
+  loginUrl?: string;
+
+  @ApiPropertyOptional({ description: 'HTTP method of the login request.', enum: ['GET', 'POST', 'PUT', 'PATCH'] })
+  @IsOptional()
+  @IsString()
+  @IsIn(['GET', 'POST', 'PUT', 'PATCH', 'get', 'post', 'put', 'patch'])
+  loginMethod?: string;
+
+  @ApiPropertyOptional({
+    description:
+      'The login body: a JSON value (strings may use ${username}, ${password} and {{VARIABLES}}) or a string. ' +
+      'null removes it (the login then sends username and password as JSON).',
+  })
+  @IsOptional()
+  @Allow()
+  loginBody?: unknown;
+
+  @ApiPropertyOptional({ description: 'Username for the login. Empty or null removes it.', nullable: true })
+  @IsOptional()
+  @IsString()
+  username?: string | null;
+
+  @ApiPropertyOptional({ description: 'Password (or key) for the login. Empty or null removes it.', nullable: true })
+  @IsOptional()
+  @IsString()
+  password?: string | null;
+
+  @ApiPropertyOptional({
+    description:
+      'Where the token is in the login answer: a dotted path (data.token), a list of paths tried in order, ' +
+      'or empty for the whole response body (a plain-text token or a JSON string).',
+  })
+  @IsOptional()
+  @Allow()
+  tokenJsonPath?: string | string[];
+
+  @ApiPropertyOptional({ description: 'Token lifetime when the answer does not say; null removes it (30 days).', nullable: true })
+  @IsOptional()
+  @IsNumber()
+  tokenTTLSeconds?: number | null;
+
+  @ApiPropertyOptional({ description: 'Log in again and retry once when a call gets HTTP 401.' })
+  @IsOptional()
+  @IsBoolean()
+  refreshOn401?: boolean;
+
+  @ApiPropertyOptional({
+    description:
+      'The complete set of headers sent with the login request only (connector headers are not). A name left out ' +
+      'is removed; a header the GET answer listed in maskedLoginHeaders, sent back empty, keeps its stored value. ' +
+      'null removes them all.',
+    nullable: true,
+  })
+  @IsOptional()
+  @IsObject()
+  loginHeaders?: Record<string, string> | null;
+}
+
 class UpdateOAuth1ConfigDto {
   @ApiPropertyOptional({
     description:
@@ -793,6 +863,9 @@ export class ConnectorsController {
     // Not @Optional: Nest refuses to boot without it. It is missing only in
     // unit specs that build the controller by hand and predate the setting.
     private readonly visibility?: MemberVisibilityService,
+    // Drops a token obtained with old login settings. Optional for the same
+    // reason as `visibility`.
+    @Optional() private readonly loginTokens?: LoginTokenService,
   ) {
     this.encryptionKey = getRequiredSecret(
       'ENCRYPTION_KEY',
@@ -2001,6 +2074,83 @@ export class ConnectorsController {
     // reload the old client settings stay in use until the next restart.
     await this.mcpServer.reloadConnectorTools(id);
     return { message: 'OAuth configuration updated' };
+  }
+
+  @Get(':id/login-token-config')
+  @ApiOperation({
+    summary: 'Read the Login → Token settings of a connector',
+    description:
+      'Returns the login URL, method, body, token path, token lifetime, re-login switch and the headers of the login ' +
+      'request, so the editor can show the stored configuration. Username and password are never returned, only ' +
+      'whether they are set; a login header holding a stored secret comes back empty and is named in ' +
+      '`maskedLoginHeaders`; a login body with a literal secret is left out (`loginBodyHidden`). An empty ' +
+      '`tokenJsonPath` means the whole response body is the token. ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector ' +
+      'they do not own.',
+  })
+  async getLoginTokenConfig(@Req() req: any, @Param('id') id: string) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertOrgMatch(connector, req);
+    await this.hideUnlessFullView(req, connector, id);
+    // Like the OAuth settings, answered for any auth type: a connector that
+    // does not log in this way gets the empty defaults.
+    return toPublicLoginTokenConfig(this.readLoginTokenAuthConfig(connector.authConfig), connector);
+  }
+
+  @Patch(':id/login-token-config')
+  @ApiOperation({
+    summary: 'Update the Login → Token settings of a connector (partial)',
+    description:
+      'Merges the supplied fields into the stored authConfig instead of replacing it: a field left out keeps its ' +
+      'value, and the settings the editor does not show (headerName, headerTemplate, extraHeaders, tokenSource, ' +
+      'expiry paths, password hashing …) are never touched. Username and password are only needed when the login ' +
+      'body or headers use ${username} / ${password} (or the login has no body). The token obtained with the old ' +
+      'settings is dropped, so the next call logs in again.',
+  })
+  async updateLoginTokenConfig(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body() dto: UpdateLoginTokenConfigDto,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertCanWrite(connector, req);
+    if (connector.authType !== 'LOGIN_TOKEN') {
+      throw new BadRequestException('Connector auth type must be LOGIN_TOKEN');
+    }
+    const patch: LoginTokenConfigPatch = {};
+    for (const key of [
+      'loginUrl',
+      'loginMethod',
+      'loginBody',
+      'username',
+      'password',
+      'tokenJsonPath',
+      'tokenTTLSeconds',
+      'refreshOn401',
+      'loginHeaders',
+    ] as const) {
+      if (dto[key] !== undefined) (patch as Record<string, unknown>)[key] = dto[key];
+    }
+    if (Object.keys(patch).length === 0) {
+      return { message: 'Nothing to update' };
+    }
+    const existing = this.readLoginTokenAuthConfig(connector.authConfig);
+    const merged = mergeLoginTokenConfig(existing, patch, connector);
+    await this.connectorsService.replaceAuthConfig(id, merged);
+    await this.loginTokens?.forget(id);
+    await this.mcpServer.reloadConnectorTools(id);
+    return { message: 'Login settings updated' };
+  }
+
+  /** The stored authConfig of a LOGIN_TOKEN connector; empty when unreadable. */
+  private readLoginTokenAuthConfig(authConfig: string | null): Record<string, unknown> {
+    if (!authConfig) return {};
+    try {
+      const cfg = JSON.parse(decrypt(authConfig, this.encryptionKey));
+      return cfg && typeof cfg === 'object' && !Array.isArray(cfg) ? cfg : {};
+    } catch {
+      return {};
+    }
   }
 
   @Patch(':id/oauth1-config')

@@ -1212,7 +1212,10 @@ export class ToolsController {
           statusText: err.response.statusText,
           responseBody: err.response.data,
           kind,
-          hint,
+          // The engine's own hint when it knows more than the status says (a
+          // failed Login → Token login, a token header that replaced a
+          // connector header).
+          hint: engineHintOf(err) ?? hint,
           ...withNote,
         };
       }
@@ -1267,4 +1270,10 @@ export class ToolsController {
     await this.mcpServer.reloadConnectorTools(connectorId);
     return { message: 'Tool deleted' };
   }
+}
+
+/** The hint an engine attached to an error (`error.hint`), if any. */
+function engineHintOf(err: unknown): string | undefined {
+  const hint = (err as { hint?: unknown } | null)?.hint;
+  return typeof hint === 'string' && hint ? hint : undefined;
 }

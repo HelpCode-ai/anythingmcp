@@ -164,6 +164,8 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
   'ConnectorsController.deleteMyCredential': scoped('the caller\'s own credential; hidden connector answers 404'),
   'ConnectorsController.updateOAuthConfig': ownerOrAdmin(),
   'ConnectorsController.updateOAuth1Config': ownerOrAdmin(),
+  'ConnectorsController.getLoginTokenConfig': scoped('404 unless the member owns the connector'),
+  'ConnectorsController.updateLoginTokenConfig': ownerOrAdmin(),
   'ConnectorsController.remove': ownerOrAdmin(),
   'ConnectorsController.test': scoped(OWNER_OR_ADMIN_404),
   'ConnectorsController.oauthRedirectUri': config(),
