@@ -629,6 +629,7 @@ import * as savvycal from './intl/savvycal.json';
 import * as scrapingbee from './intl/scrapingbee.json';
 import * as sealSubscriptions from './intl/seal-subscriptions.json';
 import * as seamlessAi from './intl/seamless-ai.json';
+import * as searchapi from './intl/searchapi.json';
 import * as secEdgar from './intl/sec-edgar.json';
 import * as segment from './intl/segment.json';
 import * as sellauth from './intl/sellauth.json';
@@ -1847,6 +1848,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   scrapingbee as unknown as AdapterDefinition,
   sealSubscriptions as unknown as AdapterDefinition,
   seamlessAi as unknown as AdapterDefinition,
+  searchapi as unknown as AdapterDefinition,
   secEdgar as unknown as AdapterDefinition,
   segment as unknown as AdapterDefinition,
   sellauth as unknown as AdapterDefinition,
