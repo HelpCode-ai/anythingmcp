@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 902 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 903 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -93,7 +93,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-902 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
+903 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -2375,6 +2375,66 @@ See [`packages/backend/src/adapters/intl/sorare.json`](<https://github.com/HelpC
 
 ---
 
+## docs/connectors/loom.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/loom.md
+
+# Loom (agent memory)
+
+The Loom catalog preset connects AnythingMCP to your own
+[Loom](<https://github.com/ClickHouse/loom>) deployment through the existing
+[MCP bridge](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md>). It uses Streamable HTTP and discovers the tools
+and schemas that your server publishes through `tools/list`.
+
+## Setup
+
+1. In Loom, open **Settings > Tokens > New token**. Create a dedicated token
+   for this connector, restricted to the intended namespaces. Select the
+   `viewer` role for read-only access; grant write roles only when you want
+   the assistant to save or change memory. Avoid wildcard namespace scopes.
+2. In AnythingMCP, open **Connectors > Store** and select **Loom (agent memory)**.
+3. Set `LOOM_MCP_URL` to the complete HTTPS MCP endpoint, for example
+   `https://loom.example.com/mcp`. Include any reverse-proxy path. Optional
+   `toolset` and `schema_profile` query parameters are accepted. They select
+   the listing and schema shape; the token's permissions govern access.
+4. Set `LOOM_MCP_TOKEN` to the token alone, without `Bearer`. The bridge sends
+   it in `Authorization: Bearer`. Never put credentials in the endpoint URL.
+5. Install the connector and check the discovered tools. Click **Discover
+   tools** after changing the deployment's toolset.
+
+The catalog has a minimal fallback snapshot: `loom_activate`, which reads
+Loom's session primer without arguments. Successful discovery replaces the
+snapshot with the server's current tool list, including any write tools it
+exposes. Use the scoped token to enforce read-only access.
+
+## Cloud and self-hosted reachability
+
+AnythingMCP Cloud requires a Loom endpoint reachable over public HTTPS. A
+loopback-only Loom deployment works only with self-hosted AnythingMCP and an
+appropriate network route. Inside an AnythingMCP container, `localhost`
+refers to that container, not the machine running Loom. This preset requires
+HTTPS in both modes. See the [MCP bridge guide](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md>) for network
+configuration.
+
+## Connector identity and verification
+
+One connector uses one token. Every caller of that connector acts as the
+same Loom identity. Use separate connectors with separate tokens for
+different principals, and restrict access to each connector accordingly.
+
+This preset has static checks; no live AnythingMCP-to-Loom connection has
+been verified. Before relying on it, verify tool discovery, an allowed read,
+and refusal outside the token's namespace scope. If writes are authorized,
+also verify a permitted write and retrieval from a separate session.
+
+The preset follows the released Loom 1.2.0
+[MCP reference](<https://github.com/ClickHouse/loom/blob/v1.2.0/docs/reference/mcp.md>)
+and [token guide](<https://github.com/ClickHouse/loom/blob/v1.2.0/docs/guides/tokens-and-grants.md>).
+The bundled Loom mark is from that release under Apache-2.0; its source,
+attribution and license accompany the asset in `loom.svg.LICENSE.txt`.
+
+---
+
 ## docs/connectors/mcp-bridge.md
 
 Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/mcp-bridge.md
@@ -2637,6 +2697,7 @@ declares none, so a refused token is reported on the setup form before anything 
 
 | Adapter | Endpoint | Auth |
 |---------|----------|------|
+| [Loom (agent memory)](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/loom.md>) | Your complete HTTPS MCP endpoint, e.g. `https://loom.example.com/mcp` | Bearer (dedicated, namespace-scoped token) |
 | Splunk | `https://<host>:8089/services/mcp` | Bearer (encrypted MCP token) |
 | Linear | `https://mcp.linear.app/mcp` | Bearer (API key) |
 | GitHub | `https://api.githubcopilot.com/mcp/` | Bearer (personal access token) |
