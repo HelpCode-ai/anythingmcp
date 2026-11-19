@@ -503,7 +503,8 @@ describe('catalog install', () => {
     const { data } = prisma.connector.create.mock.calls[0][0];
     expect(data.baseUrl).toBe('https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}');
     expect(data.config.baseUrlBaseline).toBe('https://api.telegram.org/bot{{TELEGRAM_BOT_TOKEN}}');
-    expect(data.envVars).toEqual({ TELEGRAM_BOT_TOKEN: TG });
+    // The optional default chat left out is stored empty, as the form does (#1774).
+    expect(data.envVars).toEqual({ TELEGRAM_BOT_TOKEN: TG, TELEGRAM_DEFAULT_CHAT_ID: '' });
   });
 
   it('still resolves non-secret address variables', () => {

@@ -404,6 +404,24 @@ export class AdaptersService {
       ...(catalogEntry?.optionalEnvVars ?? []),
     ]);
 
+    // An optional variable the caller left out is stored empty, as the setup
+    // form stores it: empty is its meaning (MSSQL_DOMAIN: a SQL login). Left
+    // out, it stayed a literal {{MSSQL_DOMAIN}}, so an import by API showed
+    // "Still empty: MSSQL_DOMAIN" and its tools were kept off MCP (#1774).
+    // A value that was sent, or that the operator provides, is kept; an import
+    // without credentials stores nothing, as before.
+    if (input && Object.keys(input).length > 0) {
+      const omitted = [
+        ...new Set([...(adapter.optionalEnvVars ?? []), ...(catalogEntry?.optionalEnvVars ?? [])]),
+      ].filter((name) => !(name in (credentials ?? {})));
+      if (omitted.length > 0) {
+        credentials = {
+          ...Object.fromEntries(omitted.map((name) => [name, ''])),
+          ...credentials,
+        };
+      }
+    }
+
     // Credentials arrive from the UI verbatim — a stray leading/trailing
     // space (easy to pick up when pasting) would otherwise be encrypted into
     // authConfig and break auth downstream (e.g. Basic Auth 401s that are
