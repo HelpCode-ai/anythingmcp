@@ -1,0 +1,1515 @@
+{
+  "slug": "infomaniak",
+  "name": "Infomaniak",
+  "aliases": [
+    "kDrive",
+    "kSuite",
+    "Infomaniak Mail"
+  ],
+  "description": "Infomaniak from any AI agent: accounts and products, kDrive (drives, folders, file search, activity, share links, comments and versions), mail services (mailboxes, aliases, forwarding, redirections, mailing lists), domains and DNS records, kSuite and service incidents. Read-only, with an API token from the Infomaniak Manager.",
+  "instructions": "## Infomaniak\nThis connector reads the **Infomaniak API** (`https://api.infomaniak.com`) of Infomaniak, the Swiss hosting and cloud provider: the accounts and products of a user, **kDrive** (drives, folders, file search, activity, share links, comments, versions), **mail services** (mailboxes, aliases, forwarding, redirections, mailing lists), **domains and DNS zones**, the personal kSuite and Infomaniak's published incidents. It is **read-only**: every tool is a GET request. It does not read the content of emails or files.\n\n**Setup (about 5 minutes)**\n1. Sign in to the Infomaniak Manager and open **API tokens** in the developer section of your user menu (address `https://manager.infomaniak.com/v3/ng/accounts/token/list`).\n2. Click **Create a token**, choose the application and the **scopes**, and a validity (a limited one is safer than unlimited). Scopes this connector uses:\n   - `user_info` for `infomaniak_get_profile` (the setup check needs it);\n   - `accounts` for `infomaniak_list_accounts` and `infomaniak_list_account_users`;\n   - `products:read` for `infomaniak_list_products`;\n   - `drive` for every kDrive tool;\n   - `mail` for every mail tool;\n   - `domain:read` for domains and `dns:read` for zones and records.\n   Leave out the scopes of products you do not want the agent to see; a tool without its scope answers 401 or 403.\n3. Copy the token (shown once) into `INFOMANIAK_API_TOKEN`. It is sent as `Authorization: Bearer <token>`. The token acts as you: it sees what your user sees in the Manager.\n\n**Where to start**\n- `infomaniak_get_profile` and `infomaniak_list_accounts`: who the token is and which organisations it belongs to. `infomaniak_list_account_users` lists the people of an account.\n- `infomaniak_list_products` lists everything the user manages; filter with `service_name` (`drive`, `email_hosting`, `domain`, `hosting`). The `id` of an `email_hosting` product is the `mail_hosting_id` of the mail tools.\n- kDrive: `infomaniak_list_drives` (needs an account id), `infomaniak_get_drive`, `infomaniak_list_drive_users`. Browse with `infomaniak_list_directory_files` starting at directory 1 (the root); `infomaniak_get_file` describes one item; `infomaniak_search_files` searches by name or content. Also `infomaniak_list_recent_files`, `infomaniak_list_last_modified_files`, `infomaniak_list_drive_activities`, `infomaniak_get_file_share_link`, `infomaniak_list_file_comments`, `infomaniak_list_file_versions` and `infomaniak_list_trash`.\n- Mail: `infomaniak_list_mailboxes`, `infomaniak_get_mailbox`, `infomaniak_list_mailbox_aliases`, `infomaniak_list_mailbox_forwarding`, `infomaniak_list_mail_redirections`, `infomaniak_list_mailing_lists`, `infomaniak_list_mail_auto_replies`.\n- Domains and DNS: `infomaniak_list_domains`, `infomaniak_get_domain`, `infomaniak_list_domain_zones`, `infomaniak_get_zone`, `infomaniak_list_dns_records`, `infomaniak_get_dns_record`, `infomaniak_check_dnssec`.\n- `infomaniak_get_my_ksuite` for the personal kSuite; `infomaniak_list_events` for incidents and maintenance.\n\n**Reading the data**\n- Every answer is wrapped: `result` is `success` and the content is in `data`. Errors come as `result` `error` with `error.code` and `error.description`.\n- Two kinds of paging. Lists of products, mailboxes, domains and records use `page` and `per_page` and answer `total` and `pages`. kDrive file lists use `cursor` and `limit` and answer `cursor` and `has_more`.\n- Times are Unix timestamps in **seconds**; sizes are bytes.\n- `with` adds optional fields to an answer and takes several values separated by commas. For files, `with` `path` returns the full path.\n- In kDrive, folders have `type` `dir`; the root directory has id 1; private and shared spaces appear as folders below it.\n\n**Not included**: no uploads, downloads, moves or deletes in kDrive, no share link creation, no mailbox creation or password changes, no DNS record changes, no orders or renewals. Mail content (reading or sending messages) is not part of this API.\n\n**Privacy**: mailbox lists, user lists and file names can be personal data. Share only what the question needs.\n\n**Limits and errors**: 60 requests per minute, and Infomaniak does not raise that limit; 429 means wait a minute. 401: the token is wrong, expired or lacks the scope of that call. 403: your user has no right on that product. 404: the id does not exist or belongs to another account.",
+  "region": "ch",
+  "category": "infrastructure",
+  "icon": "infomaniak",
+  "docsUrl": "https://developer.infomaniak.com/docs/api",
+  "prerequisites": "An Infomaniak account and an API token created in the Infomaniak Manager (API tokens) with the scopes of the products the agent may read: user_info, accounts, products:read, drive, mail, domain:read, dns:read. Every account can create one. About 5 minutes.",
+  "requiredEnvVars": [
+    "INFOMANIAK_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "INFOMANIAK_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Infomaniak Manager, user menu, API tokens, Create a token. Tick the scopes user_info, accounts, products:read and those of the products to read (drive, mail, domain:read, dns:read). The token is shown once.",
+      "link": "https://manager.infomaniak.com/v3/ng/accounts/token/list",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Infomaniak refused the token: it is wrong or expired, or it lacks the scope of this call (the setup check needs user_info). Create a new token in the Manager under API tokens with the scopes listed in the instructions.",
+    "403": "The token is valid but your Infomaniak user has no right on this product. Ask an administrator of the account for access, or use a token of a user who has it.",
+    "404": "Infomaniak found nothing with that id. Take ids from the list tools: drives from infomaniak_list_drives, the mail service id from infomaniak_list_products.",
+    "rate_limited": "Infomaniak allows 60 API requests per minute. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "infomaniak_get_profile"
+  },
+  "connector": {
+    "name": "Infomaniak API",
+    "type": "REST",
+    "baseUrl": "https://api.infomaniak.com",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INFOMANIAK_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "infomaniak_get_profile",
+      "description": "Get the Infomaniak user the token belongs to: id, display_name, first_name, last_name, email and login, optionally with all email addresses, phone numbers and security settings. Use it to check the setup. Needs the user_info scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: emails, phones, security."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/profile",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_accounts",
+      "description": "List the accounts (organisations) the user belongs to: id, name, legal_entity_type, type, created_at, nb_users, website, phone and vat_number. Most other tools need an account id. Needs the accounts scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas, e.g. addresses, timezone, language."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/accounts",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_products",
+      "description": "List the Infomaniak products the user has rights on (kDrive, mail services, domains, web hosting, Swiss Backup and others): id, account_id, service_id, service_name, customer_name, internal_name, created_at, expired_at, is_locked, has_maintenance, is_trial and status. The id of an email_hosting product is the mail service id of the mail tools. Answers data plus total, page, pages and items_per_page; page with page and per_page. Needs the products:read scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Only products of this account.",
+            "minimum": 1
+          },
+          "service_name": {
+            "type": "string",
+            "enum": [
+              "ai_tools",
+              "backup",
+              "certificate",
+              "cloud",
+              "cloud_hd",
+              "custom_url",
+              "dedicated_server",
+              "domain",
+              "drive",
+              "e_ticketing",
+              "email_hosting",
+              "hosting",
+              "housing",
+              "invitation",
+              "jelastic",
+              "ksuite",
+              "mailing",
+              "nas",
+              "public_cloud",
+              "radio",
+              "swiss_backup",
+              "video",
+              "vod",
+              "web_hosting",
+              "website_builder"
+            ],
+            "description": "Only products of this kind, e.g. drive (kDrive), email_hosting (a mail service), domain, web_hosting or ksuite."
+          },
+          "customer_name": {
+            "type": "string",
+            "description": "Only the product with this name, as shown in the Manager."
+          },
+          "fqdn": {
+            "type": "string",
+            "description": "Only products attached to this host name, e.g. www.example.ch."
+          },
+          "with": {
+            "type": "string",
+            "description": "Write fqdn to include the host names of each product."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/products",
+        "queryParams": {
+          "account_id": "$account_id",
+          "service_name": "$service_name",
+          "customer_name": "$customer_name",
+          "fqdn": "$fqdn",
+          "with": "$with",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_account_users",
+      "description": "List the users of an account: user_id, first_name, last_name, display_name, email, role_type, state_in_account, user_status and last_login_at. Answers data plus total, page, pages and items_per_page; page with page and per_page. Needs the accounts scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Account (organisation) id from infomaniak_list_accounts.",
+            "minimum": 1
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in names and email addresses."
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: teams, security, app_access, products, drive_infos."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/accounts/{account_id}/users",
+        "queryParams": {
+          "search": "$search",
+          "with": "$with",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_get_my_ksuite",
+      "description": "Get the kSuite subscription of the current user (the personal my kSuite offer): its id, status and, when asked through with, the pack, the kDrive and the mailbox that belong to it. Answers an error when the user has no my kSuite.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: pack, drive, mail, has_auto_renew, can_trial."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/my_ksuite/current",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_events",
+      "description": "List the incidents and planned maintenance Infomaniak has published (the service status): id, type, status (inprogress, planned, reviewed or terminated), description, the services affected, started_at, ended_at and duration. Use it when a service seems down. Times are Unix timestamps in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "inprogress",
+              "planned",
+              "reviewed",
+              "terminated"
+            ],
+            "description": "Only events in this state."
+          },
+          "event_type": {
+            "type": "string",
+            "enum": [
+              "public",
+              "server",
+              "streaming",
+              "internal"
+            ],
+            "description": "Only events of this kind."
+          },
+          "date_from": {
+            "type": "integer",
+            "description": "Only events after this time, Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "date_to": {
+            "type": "integer",
+            "description": "Only events before this time, Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the texts, e.g. en_GB, fr_FR, de_DE or it_IT."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/events",
+        "queryParams": {
+          "status": "$status",
+          "event_type": "$event_type",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "locale": "$locale"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_drives",
+      "description": "List the kDrives of an account that the user can open: id, name, size and used_size in bytes, users_count, account_id, product_id, role of the user (admin, user or external), in_maintenance, is_locked and created_at. Answers data plus total, page, pages and items_per_page; page with page and per_page. Needs the drive scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Account (organisation) id from infomaniak_list_accounts.",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/drive",
+        "queryParams": {
+          "account_id": "$account_id",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_get_drive",
+      "description": "Get one kDrive: name, size and used_size in bytes, users_count and users_quota, the role of the user, maintenance and lock state, and with the extras asked for its pack, limits, settings, categories and teams.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: account, capabilities, pack, limits, settings, categories, users, teams, rights."
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/drive/{drive_id}",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_drive_users",
+      "description": "List the people with access to a kDrive: id, display_name, first_name, last_name, email, role (admin, user or external), is_sso and deleted_at. Answers data, cursor and has_more; pass cursor back for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in first name, last name or email."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: the cursor value of the previous answer while has_more is true. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items per page. Default 10.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/users",
+        "queryParams": {
+          "search": "$search",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_directory_files",
+      "description": "List the files and folders directly inside a kDrive directory. Each item has id, name, type (dir or file), size in bytes, mime_type, extension_type, parent_id, created_at, last_modified_at and visibility. Start at directory 1, the root, and walk down by passing a folder's id. Answers data, cursor and has_more; pass cursor back for the next page. Times are Unix timestamps in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "Id of the directory to list. 1 is the root of the kDrive.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data per file, separated by commas: path (full path), users, teams, is_favorite, sharelink, categories, version, hash, parents."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "name",
+              "last_modified_at",
+              "size",
+              "added_at",
+              "type"
+            ],
+            "description": "Field to sort by."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction. Default asc."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: the cursor value of the previous answer while has_more is true. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items per page. Default 10.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/files/{file_id}/files",
+        "queryParams": {
+          "with": "$with",
+          "order_by[]": "$order_by",
+          "order": "$order",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_get_file",
+      "description": "Get the description of one file or folder of a kDrive: name, type, size in bytes, mime_type, extension_type, parent_id, created_by, created_at, last_modified_at, last_modified_by, visibility and status; with path the full path is added. The content of the file is not returned. Times are Unix timestamps in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "File or directory id. The root directory of a kDrive is 1.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data per file, separated by commas: path (full path), users, teams, is_favorite, sharelink, categories, version, hash, parents."
+          }
+        },
+        "required": [
+          "drive_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/files/{file_id}",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_search_files",
+      "description": "Search the files and folders of a kDrive by name and, where the kDrive offers it, by content. Each hit has id, name, type, size, mime_type, parent_id, last_modified_at and, with path, its full path. The search text should have at least 3 characters. Answers data, cursor and has_more; pass cursor back for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to look for, at least 3 characters."
+          },
+          "query_scope": {
+            "type": "string",
+            "enum": [
+              "all",
+              "content",
+              "filename"
+            ],
+            "description": "Where to look: filename, content (only kDrives with content search) or all."
+          },
+          "directory_id": {
+            "type": "integer",
+            "description": "Search only inside this directory. Default the root.",
+            "minimum": 1
+          },
+          "depth": {
+            "type": "string",
+            "enum": [
+              "child",
+              "unlimited"
+            ],
+            "description": "child for the directory itself only, unlimited for every level below it."
+          },
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "archive",
+                "audio",
+                "code",
+                "diagram",
+                "dir",
+                "ebook",
+                "email",
+                "file",
+                "font",
+                "form",
+                "image",
+                "model",
+                "pdf",
+                "presentation",
+                "spreadsheet",
+                "text",
+                "unknown",
+                "video"
+              ]
+            },
+            "description": "Only these kinds of file."
+          },
+          "extensions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only files with these extensions, without the dot, e.g. pdf, xlsx."
+          },
+          "modified_at": {
+            "type": "string",
+            "enum": [
+              "last_24_hours",
+              "last_7_days",
+              "last_30_days",
+              "last_90_days",
+              "last_12_months",
+              "this_week",
+              "last_week",
+              "this_month",
+              "last_month",
+              "last_year",
+              "custom"
+            ],
+            "description": "Only files changed in this period. custom needs modified_after and modified_before."
+          },
+          "modified_after": {
+            "type": "integer",
+            "description": "With modified_at custom: only files changed after this Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "modified_before": {
+            "type": "integer",
+            "description": "With modified_at custom: only files changed before this Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "author_id": {
+            "type": "integer",
+            "description": "Only files created by this user (user id from infomaniak_list_drive_users).",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data per file, separated by commas: path (full path), users, teams, is_favorite, sharelink, categories, version, hash, parents."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "last_modified_at"
+            ],
+            "description": "Sort by relevance or by last change."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: the cursor value of the previous answer while has_more is true. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items per page. Default 10.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/files/search",
+        "queryParams": {
+          "query": "$query",
+          "query_scope": "$query_scope",
+          "directory_id": "$directory_id",
+          "depth": "$depth",
+          "types[]": "$types",
+          "extensions[]": "$extensions",
+          "modified_at": "$modified_at",
+          "modified_after": "$modified_after",
+          "modified_before": "$modified_before",
+          "author_id": "$author_id",
+          "with": "$with",
+          "order_by[]": "$order_by",
+          "order": "$order",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_recent_files",
+      "description": "List the files and folders the user opened or changed most recently in a kDrive, with the same fields as infomaniak_list_directory_files. Answers data, cursor and has_more; pass cursor back for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data per file, separated by commas: path (full path), users, teams, is_favorite, sharelink, categories, version, hash, parents."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: the cursor value of the previous answer while has_more is true. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items per page. Default 10.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/files/recents",
+        "queryParams": {
+          "with": "$with",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_last_modified_files",
+      "description": "List the files changed last anywhere in a kDrive, by any user, newest first, with the same fields as infomaniak_list_directory_files. Answers data, cursor and has_more; pass cursor back for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data per file, separated by commas: path (full path), users, teams, is_favorite, sharelink, categories, version, hash, parents."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: the cursor value of the previous answer while has_more is true. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items per page. Default 10.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/files/last_modified",
+        "queryParams": {
+          "with": "$with",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_drive_activities",
+      "description": "List what happened in a kDrive: one row per action with id, created_at, action (for example file_create, file_update, file_rename, file_move, file_trash, file_restore, file_access, file_share_create, share_link_create, comment_create), file_id, user_id, new_path and old_path. Needs admin rights on the kDrive. Answers data, cursor and has_more; pass cursor back for the next page. Times are Unix timestamps in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "lang": {
+            "type": "string",
+            "enum": [
+              "en",
+              "fr",
+              "de",
+              "it",
+              "es",
+              "nl",
+              "pt"
+            ],
+            "description": "Language of the texts. Default en.",
+            "default": "en"
+          },
+          "from": {
+            "type": "integer",
+            "description": "Only activities after this Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "until": {
+            "type": "integer",
+            "description": "Only activities before this Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "terms": {
+            "type": "string",
+            "description": "Text to look for in file names and paths, at least 3 characters.",
+            "minLength": 3
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: user (who did it), file (the file with its fields), file.path, source."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction by time. Default desc."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: the cursor value of the previous answer while has_more is true. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items per page. Default 10.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/activities",
+        "queryParams": {
+          "lang": "$lang",
+          "from": "$from",
+          "until": "$until",
+          "terms": "$terms",
+          "with": "$with",
+          "order": "$order",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_get_file_share_link",
+      "description": "Get the share link of a file or folder, when one exists: url, right (public: anyone with the link; password: protected by a password; inherit: only users of the kDrive), valid_until, created_at, capabilities (what visitors may do), access_blocked and, with views, the number of views. Answers an error when the item has no share link.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "File or directory id. The root directory of a kDrive is 1.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Write views to include the number of views."
+          }
+        },
+        "required": [
+          "drive_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/drive/{drive_id}/files/{file_id}/link",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_file_comments",
+      "description": "List the comments on a kDrive file: id, body, created_at, updated_at, is_resolved, likes_count and responses_count; with user the author is added. Answers data plus total, page, pages and items_per_page; page with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "File or directory id. The root directory of a kDrive is 1.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: user, likes, responses, responses.user."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/drive/{drive_id}/files/{file_id}/comments",
+        "queryParams": {
+          "with": "$with",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_file_versions",
+      "description": "List the saved versions of a kDrive file: id, size in bytes, mime_type, created_at, last_modified_at, updated_by (the user who saved it) and keep_forever. Answers data plus total, page, pages and items_per_page; page with page and per_page. Times are Unix timestamps in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "file_id": {
+            "type": "integer",
+            "description": "File or directory id. The root directory of a kDrive is 1.",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/files/{file_id}/versions",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_trash",
+      "description": "List the files and folders at the top of a kDrive's trash, with id, name, type, size, deleted_at and deleted_by. Nothing is restored or emptied from here. Answers data, cursor and has_more; pass cursor back for the next page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "drive_id": {
+            "type": "integer",
+            "description": "kDrive id from infomaniak_list_drives.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data per file, separated by commas: path (full path), users, teams, is_favorite, sharelink, categories, version, hash, parents."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: the cursor value of the previous answer while has_more is true. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of items per page. Default 10.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "drive_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/3/drive/{drive_id}/trash",
+        "queryParams": {
+          "with": "$with",
+          "cursor": "$cursor",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_mailboxes",
+      "description": "List the mailboxes (email addresses) of a mail service: mailbox_name (the part before the @), mailbox (the full address), type, size in bytes, created_at, has_auto_responder, has_redirection, is_limited and the last IMAP and POP3 sign-in. Mail content is not accessible through this API. Answers data plus total, page, pages and items_per_page; page with page and per_page. Needs the mail scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mail_hosting_id": {
+            "type": "integer",
+            "description": "Id of the mail service: the id of a product from infomaniak_list_products with service_name email_hosting.",
+            "minimum": 1
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the mailbox addresses."
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: full_name, aliases, auto_responder, redirection, last_login, authorized_senders, blocked_senders."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "mail_hosting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/mail_hostings/{mail_hosting_id}/mailboxes",
+        "queryParams": {
+          "search": "$search",
+          "with": "$with",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_get_mailbox",
+      "description": "Get one mailbox of a mail service: the address, size, creation date, auto-responder and redirection flags, spam filtering settings, the last sign-ins and, with the extras asked for, its aliases, auto responder text and allowed or blocked senders. Passwords are never returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mail_hosting_id": {
+            "type": "integer",
+            "description": "Id of the mail service: the id of a product from infomaniak_list_products with service_name email_hosting.",
+            "minimum": 1
+          },
+          "mailbox_name": {
+            "type": "string",
+            "description": "The part of the email address before the @ sign, e.g. anna for anna@example.com."
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: full_name, aliases, auto_responder, redirection, last_login, authorized_senders, blocked_senders."
+          },
+          "unit": {
+            "type": "string",
+            "enum": [
+              "B",
+              "kB",
+              "MB"
+            ],
+            "description": "Unit of the mailbox size: B (bytes), kB or MB."
+          }
+        },
+        "required": [
+          "mail_hosting_id",
+          "mailbox_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/mail_hostings/{mail_hosting_id}/mailboxes/{mailbox_name}",
+        "queryParams": {
+          "with": "$with",
+          "unit": "$unit"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_mailbox_aliases",
+      "description": "List the alias addresses of one mailbox (other addresses that deliver into it), each with address and status. Answers data plus total, page, pages and items_per_page; page with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mail_hosting_id": {
+            "type": "integer",
+            "description": "Id of the mail service: the id of a product from infomaniak_list_products with service_name email_hosting.",
+            "minimum": 1
+          },
+          "mailbox_name": {
+            "type": "string",
+            "description": "The part of the email address before the @ sign, e.g. anna for anna@example.com."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the aliases."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "mail_hosting_id",
+          "mailbox_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/mail_hostings/{mail_hosting_id}/mailboxes/{mailbox_name}/aliases",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_mailbox_forwarding",
+      "description": "Get the forwarding of one mailbox: is_enabled, the addresses its mail is forwarded to, has_dont_deliver (true when no copy stays in the mailbox) and has_forward_spam. Use it to check where mail for an address really goes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mail_hosting_id": {
+            "type": "integer",
+            "description": "Id of the mail service: the id of a product from infomaniak_list_products with service_name email_hosting.",
+            "minimum": 1
+          },
+          "mailbox_name": {
+            "type": "string",
+            "description": "The part of the email address before the @ sign, e.g. anna for anna@example.com."
+          }
+        },
+        "required": [
+          "mail_hosting_id",
+          "mailbox_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/mail_hostings/{mail_hosting_id}/mailboxes/{mailbox_name}/forwarding_addresses"
+      }
+    },
+    {
+      "name": "infomaniak_list_mail_redirections",
+      "description": "List the redirection addresses of a mail service (addresses without a mailbox that only forward): id, name, address, state, targets, created_at and updated_at. Answers data plus total, page, pages and items_per_page; page with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mail_hosting_id": {
+            "type": "integer",
+            "description": "Id of the mail service: the id of a product from infomaniak_list_products with service_name email_hosting.",
+            "minimum": 1
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the redirection addresses."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "mail_hosting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/mail_hostings/{mail_hosting_id}/redirections",
+        "queryParams": {
+          "search": "$search",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_mailing_lists",
+      "description": "List the mailing lists of a mail service: mail (the list address), name, subject, info and user_count (number of subscribers); with the extras asked for also its configuration and moderators. The subscribers themselves are not included.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mail_hosting_id": {
+            "type": "integer",
+            "description": "Id of the mail service: the id of a product from infomaniak_list_products with service_name email_hosting.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: config, messages, moderators."
+          }
+        },
+        "required": [
+          "mail_hosting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/mail_hostings/{mail_hosting_id}/mailing_lists",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_mail_auto_replies",
+      "description": "List the auto replies defined for a mail service (out-of-office messages and the templates mailboxes can use): id, name, is_model, message, is_active, is_recurrent, started_at and ended_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mail_hosting_id": {
+            "type": "integer",
+            "description": "Id of the mail service: the id of a product from infomaniak_list_products with service_name email_hosting.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Write reply to include the reply-from details of each auto reply."
+          }
+        },
+        "required": [
+          "mail_hosting_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/1/mail_hostings/{mail_hosting_id}/auto_replies",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_domains",
+      "description": "List the domain names registered or managed at Infomaniak: id, name, tld, status, is_premium, created_at, expires_at, nameservers and options (such as DNSSEC, domain privacy and renewal warranty). Use expires_before to find domains about to expire. Answers data plus total, page, pages and items_per_page; page with page and per_page. Needs the domain:read scope. Times are Unix timestamps in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Only domains of this account.",
+            "minimum": 1
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in the domain names."
+          },
+          "tld": {
+            "type": "string",
+            "description": "Only domains with this ending, without the dot, e.g. ch."
+          },
+          "expires_before": {
+            "type": "integer",
+            "description": "Only domains expiring before this Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "expires_after": {
+            "type": "integer",
+            "description": "Only domains expiring after this Unix timestamp in seconds.",
+            "minimum": 0
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "expiration",
+              "name"
+            ],
+            "description": "Sort by expiration date or name."
+          },
+          "order_dir": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/domains/domains",
+        "queryParams": {
+          "account_id": "$account_id",
+          "search": "$search",
+          "tld": "$tld",
+          "expires_before": "$expires_before",
+          "expires_after": "$expires_after",
+          "order_by": "$order_by",
+          "order_dir": "$order_dir",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_get_domain",
+      "description": "Get one domain name: status, created_at, expires_at, the name servers in use, the options (DNSSEC, domain privacy, renewal warranty) and the contacts attached to it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.ch."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/domains/domains/{domain}"
+      }
+    },
+    {
+      "name": "infomaniak_list_domain_zones",
+      "description": "List the DNS zones of a domain: the base zone and any delegated sub-zones, each with its fqdn. The zone name is what infomaniak_list_dns_records takes. Needs the dns:read and domain:read scopes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.ch."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/domains/domains/{domain}/zones",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_check_dnssec",
+      "description": "Check the DNSSEC status of a domain: has_dnssec (whether it is enabled), dnssec_type and the key data published for the zone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "domain": {
+            "type": "string",
+            "description": "Domain name, e.g. example.ch."
+          }
+        },
+        "required": [
+          "domain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/domains/domains/{domain}/dnssec/check"
+      }
+    },
+    {
+      "name": "infomaniak_get_zone",
+      "description": "Get one DNS zone: fqdn, the DNSSEC state and the name servers; with records every DNS record of the zone is included. Needs the dns:read scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "description": "DNS zone: a domain name or a delegated sub-zone, e.g. example.ch."
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: records (all DNS records), records_description, idn."
+          }
+        },
+        "required": [
+          "zone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/zones/{zone}",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_list_dns_records",
+      "description": "List the DNS records of a zone: id, source (the host part, a single dot or empty for the zone itself), type (A, AAAA, CNAME, MX, TXT, NS, SRV, CAA and others), target, ttl in seconds and updated_at. Answers data plus total, page, pages and items_per_page; page with page and per_page. Needs the dns:read scope.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "description": "DNS zone: a domain name or a delegated sub-zone, e.g. example.ch."
+          },
+          "search": {
+            "type": "string",
+            "description": "Text to look for in source and target, e.g. mail or a part of an IP address."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "id",
+              "source_idn",
+              "target",
+              "type",
+              "ttl",
+              "updated_at"
+            ],
+            "description": "Field to sort by."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Default 1.",
+            "minimum": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page. Default 15 on most lists.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "zone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/zones/{zone}/records",
+        "queryParams": {
+          "search": "$search",
+          "order_by": "$order_by",
+          "order": "$order",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "infomaniak_get_dns_record",
+      "description": "Get one DNS record of a zone by its id: source, type, target, ttl in seconds and updated_at; with records_description a plain-language explanation of the record is added.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "zone": {
+            "type": "string",
+            "description": "DNS zone: a domain name or a delegated sub-zone, e.g. example.ch."
+          },
+          "record_id": {
+            "type": "integer",
+            "description": "Record id from infomaniak_list_dns_records.",
+            "minimum": 1
+          },
+          "with": {
+            "type": "string",
+            "description": "Extra data, separated by commas: records_description, idn, alias."
+          }
+        },
+        "required": [
+          "zone",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/2/zones/{zone}/records/{record_id}",
+        "queryParams": {
+          "with": "$with"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1945 @@
+{
+  "slug": "adesk",
+  "name": "Adesk",
+  "description": "Adesk (adesk.ru) management accounting for small business: cash transactions on bank and cash accounts, income and expense categories, counterparties and their obligations, projects and deals with profit figures, legal entities and budgets. Bookkeeping records only, no payments. API token.",
+  "instructions": "## Adesk\nThis connector works with the **Adesk public API v1** at `https://api.adesk.ru/v1`. Adesk (adesk.ru) is a management accounting service for small business: cash transactions on bank and cash accounts, categories, counterparties, projects and deals, obligations, legal entities and budgets, from which it builds the cash flow and profit and loss reports. Everything here is bookkeeping: no tool sends a payment or moves money at a bank.\n\n**Setup (about 2 minutes)**\n1. Sign in to Adesk and open **Settings**, then **Profile**.\n2. Copy the **API token** into `ADESK_API_TOKEN`. The token acts with the rights of that user; changing accounts and legal entities needs an administrator.\n3. The API only answers while the trial or a paid subscription is active (otherwise \"Payment required\").\n\n**Where to start**: `adesk_list_bank_accounts` shows the accounts with their current balances, `adesk_list_legal_entities` the own companies. `adesk_list_transactions` with a period is the base of every money question; `adesk_get_transaction` reads one entry.\n\n**Cash flow and profit**: the public API has no ready report endpoint. For cash flow call `adesk_list_transactions` with `date_type` cashier and a period and group the rows by category (`adesk_list_transaction_categories` gives type and kind: operating, investing, financing). For profit and loss use `date_type` accrual. Leave out transfers and, for revenue and expenses, categories with isOwnerTransfer. Per project `adesk_get_project_stats` returns income, expenses and gross profit directly, and `adesk_list_budgets` with `adesk_get_budget` give plan versus actual.\n\n**Transactions**: `adesk_create_transaction`, `adesk_update_transaction` (date, amount and bank_account are always required, and Adesk returns a new id after an update), `adesk_complete_transaction` for planned entries, `adesk_save_transaction_category` for categories and `adesk_list_tags` for tag ids. `adesk_delete_transaction` is installed switched off. Transfers between own accounts and bulk operations are not included.\n\n**Counterparties and obligations**: `adesk_list_contractors` (search by name or INN), `adesk_get_contractor`, `adesk_list_contractor_requisites`, `adesk_create_contractor`, `adesk_update_contractor`. Obligations are what a counterparty owes you or you owe them: `adesk_list_commitments`, `adesk_list_contractor_commitments`, `adesk_create_commitment`, `adesk_update_commitment`. `adesk_delete_contractor` and `adesk_delete_commitment` are installed switched off.\n\n**Projects and accounts**: `adesk_list_projects` (with_amounts adds the figures), `adesk_get_project`, `adesk_create_project`, `adesk_update_project`, `adesk_list_project_categories`, `adesk_get_bank_account`, `adesk_create_bank_account`, `adesk_get_legal_entity`.\n\n**Formats and pitfalls**: request dates are `YYYY-MM-DD`; answers show dates as `DD.MM.YYYY` and amounts as strings. Currencies are RUR, EUR, USD, KZT, UAH, GBP, BYN (RUR, not RUB). Lists page with `start` (from 0) and `length`; `recordsFiltered` is the total for the filter. Every answer carries `success`; a failed write lists the fields at fault under `errors`. Adesk blocks a method that is called too often (\"Too many requests\") and locks out an address after several calls with a wrong token, so do not retry a refused token.",
+  "aliases": [
+    "Adesk.ru",
+    "Адеск"
+  ],
+  "region": "intl",
+  "category": "accounting",
+  "icon": "adesk",
+  "docsUrl": "https://adesk.ru/api-docs/",
+  "requiredEnvVars": [
+    "ADESK_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "ADESK_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In Adesk open Settings, Profile and copy the API token. It works with the rights of that user and only while the trial or subscription is active.",
+      "link": "https://adesk.ru/api-docs/",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the API token from your Adesk profile, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Adesk did not accept the API token (\"Auth required\"). Copy it again from Settings, Profile. Do not retry a wrong token many times: Adesk locks the address out for a while.",
+    "403": "Adesk answered \"Payment required\": the trial or the subscription of the account has ended, and the API stays blocked until it is renewed.",
+    "404": "Adesk found no record with that id, or this user may not see it.",
+    "rate_limited": "Adesk blocks a method that is called too often, and locks out an address after several wrong tokens. Wait a few minutes before the next call."
+  },
+  "probe": {
+    "tool": "adesk_list_legal_entities",
+    "params": {}
+  },
+  "prerequisites": "An Adesk account (adesk.ru) on the trial or a paid plan, and the API token from Settings, Profile. Use an administrator for changes to accounts and legal entities. About 2 minutes.",
+  "connector": {
+    "name": "Adesk API v1",
+    "type": "REST",
+    "baseUrl": "https://api.adesk.ru/v1",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "api_token": "{{ADESK_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "equals": 401,
+          "messagePath": "message",
+          "status": 401
+        },
+        {
+          "path": "code",
+          "equals": 21,
+          "messagePath": "message",
+          "status": 403
+        },
+        {
+          "path": "code",
+          "equals": 429,
+          "messagePath": "message",
+          "status": 429
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "message",
+            "errors"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "adesk_list_transactions",
+      "description": "List cash transactions (income, expenses, transfers) with filters: per row id, amount, date, relatedDate (accrual date), type (1 income, 2 outcome), description, isPlanned, isTransfer, isSplitted, bankAccount with its legal entity, category, contractor, project, tags. Also recordsTotal and recordsFiltered. Without filters it returns every transaction, so give a period and page with start and length. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "string",
+            "enum": [
+              "all_time",
+              "this_month",
+              "this_quarter",
+              "this_year",
+              "prev_month",
+              "prev_quarter",
+              "prev_year",
+              "custom"
+            ],
+            "description": "Period of the transactions. Default all_time. custom needs range_start and range_end."
+          },
+          "range_start": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (YYYY-MM-DD). Only used, and then required, with range custom."
+          },
+          "range_end": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (YYYY-MM-DD). Only used, and then required, with range custom."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "all",
+              "income",
+              "outcome",
+              "transfers"
+            ],
+            "description": "Kind of transaction. Default all."
+          },
+          "category": {
+            "type": "string",
+            "description": "A category id, all (default) or no_category for transactions without a category. The category must fit the type filter."
+          },
+          "bank_account": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only transactions on this account (from adesk_list_bank_accounts)."
+          },
+          "legal_entity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only transactions on accounts of this legal entity. Ignored when bank_account is given."
+          },
+          "contractor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only transactions with this counterparty."
+          },
+          "contractor_inn": {
+            "type": "string",
+            "description": "Only transactions with the counterparty that has this tax number (INN). Ignored when contractor is given."
+          },
+          "project": {
+            "type": "string",
+            "description": "A project id, no_project (without a project) or any_project (with any project)."
+          },
+          "business_unit": {
+            "type": "string",
+            "description": "A business line id, no_business_unit or any_business_unit."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "completed",
+              "planned",
+              "all"
+            ],
+            "description": "completed (actual), planned or all."
+          },
+          "owner_transfer": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true: only owner contributions and withdrawals; false: without them; all (default)."
+          },
+          "taxes": {
+            "type": "string",
+            "enum": [
+              "true",
+              "false",
+              "all"
+            ],
+            "description": "true: only transactions in the taxes category; false: without them; all (default)."
+          },
+          "date_type": {
+            "type": "string",
+            "enum": [
+              "cashier",
+              "accrual"
+            ],
+            "description": "Which date the period applies to: cashier (payment date, default, for cash flow) or accrual (accrual date, for profit and loss)."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index of the first row to return, counted from 0."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of rows to return from start."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions",
+        "queryParams": {
+          "range": "$range",
+          "range_start": "$range_start",
+          "range_end": "$range_end",
+          "type": "$type",
+          "category": "$category",
+          "bank_account": "$bank_account",
+          "legal_entity": "$legal_entity",
+          "contractor": "$contractor",
+          "contractor_inn": "$contractor_inn",
+          "project": "$project",
+          "business_unit": "$business_unit",
+          "status": "$status",
+          "owner_transfer": "$owner_transfer",
+          "taxes": "$taxes",
+          "date_type": "$date_type",
+          "start": "$start",
+          "length": "$length"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_get_transaction",
+      "description": "Read one transaction by id: amount, date, accrual date, type, description, planned and periodic flags, split parts, bank account with balance after the transaction, category, contractor, project or business line and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Transaction id."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transaction/{transaction_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_create_transaction",
+      "description": "Record an income or expense in Adesk on one of the accounts. It is a bookkeeping entry: no money is moved at any bank. Returns the transaction object. For a planned payment set is_planned and confirm it later with adesk_complete_transaction.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Transaction date, YYYY-MM-DD."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "income",
+              "outcome"
+            ],
+            "description": "income or outcome (expense)."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the currency of the account, positive."
+          },
+          "bank_account": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the account the transaction is booked on (from adesk_list_bank_accounts)."
+          },
+          "apply_import_rules": {
+            "type": "boolean",
+            "description": "true to apply the import rules of the account (automatic category, counterparty, project)."
+          },
+          "category": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the transaction category (from adesk_list_transaction_categories). Its type must match the transaction type. Ignored for a split transaction."
+          },
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the project or deal the transaction belongs to. Not together with business_unit."
+          },
+          "business_unit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the business line (a project category) the expense belongs to. Outcome only; not together with project."
+          },
+          "contractor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the counterparty (from adesk_list_contractors)."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 510,
+            "description": "Free text, up to 510 characters."
+          },
+          "related_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Accrual date (YYYY-MM-DD), only when it differs from the transaction date."
+          },
+          "is_periodic": {
+            "type": "boolean",
+            "description": "true to repeat the transaction with the given period."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "week",
+              "two_weeks",
+              "month",
+              "two_months",
+              "quarter",
+              "half_year",
+              "year"
+            ],
+            "description": "How often a periodic transaction repeats."
+          },
+          "repetition_end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (YYYY-MM-DD) a periodic transaction repeats."
+          },
+          "is_commitment": {
+            "type": "boolean",
+            "description": "true to count the transaction as an obligation of the counterparty."
+          },
+          "is_planned": {
+            "type": "boolean",
+            "description": "true for a planned (not yet executed) transaction."
+          },
+          "is_splitted": {
+            "type": "boolean",
+            "description": "true to split the transaction into the parts given in parts."
+          },
+          "parts": {
+            "type": "string",
+            "description": "Parts of a split transaction as JSON text of a list, used with is_splitted true, e.g. `[{\"amount\": 600, \"category\": 48, \"project\": 46}, {\"amount\": 400, \"contractor\": 15}]`. Each part needs amount and may set category, project or business_unit, contractor and related_date (YYYY-MM-DD). The amounts must add up to the transaction amount."
+          },
+          "tags": {
+            "type": "string",
+            "pattern": "^[0-9]+(,[0-9]+)*$",
+            "description": "Tag ids separated by commas, e.g. 3,12 (from adesk_list_tags)."
+          }
+        },
+        "required": [
+          "date",
+          "type",
+          "amount",
+          "bank_account"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transaction",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "date": "$date",
+          "type": "$type",
+          "amount": "$amount",
+          "bank_account": "$bank_account",
+          "apply_import_rules": "$apply_import_rules",
+          "category": "$category",
+          "project": "$project",
+          "business_unit": "$business_unit",
+          "contractor": "$contractor",
+          "description": "$description",
+          "related_date": "$related_date",
+          "is_periodic": "$is_periodic",
+          "period": "$period",
+          "repetition_end_date": "$repetition_end_date",
+          "is_commitment": "$is_commitment",
+          "is_planned": "$is_planned",
+          "is_splitted": "$is_splitted",
+          "parts": "$parts",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "adesk_update_transaction",
+      "description": "Change a transaction. date, amount and bank_account must always be sent, also when unchanged. Attention: Adesk returns the transaction with a NEW id after an update; use that id from then on. Bookkeeping only, no money is moved.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the transaction to change."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Transaction date, YYYY-MM-DD."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount in the currency of the account."
+          },
+          "bank_account": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the account the transaction is booked on."
+          },
+          "category": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the transaction category (from adesk_list_transaction_categories). Its type must match the transaction type. Ignored for a split transaction."
+          },
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the project or deal the transaction belongs to. Not together with business_unit."
+          },
+          "business_unit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the business line (a project category) the expense belongs to. Outcome only; not together with project."
+          },
+          "contractor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the counterparty (from adesk_list_contractors)."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 510,
+            "description": "Free text, up to 510 characters."
+          },
+          "related_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Accrual date (YYYY-MM-DD), only when it differs from the transaction date."
+          },
+          "is_periodic": {
+            "type": "boolean",
+            "description": "true to repeat the transaction with the given period."
+          },
+          "period": {
+            "type": "string",
+            "enum": [
+              "week",
+              "two_weeks",
+              "month",
+              "two_months",
+              "quarter",
+              "half_year",
+              "year"
+            ],
+            "description": "How often a periodic transaction repeats."
+          },
+          "repetition_end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (YYYY-MM-DD) a periodic transaction repeats."
+          },
+          "is_commitment": {
+            "type": "boolean",
+            "description": "true to count the transaction as an obligation of the counterparty."
+          },
+          "is_planned": {
+            "type": "boolean",
+            "description": "true for a planned (not yet executed) transaction."
+          },
+          "is_splitted": {
+            "type": "boolean",
+            "description": "true to split the transaction into the parts given in parts."
+          },
+          "parts": {
+            "type": "string",
+            "description": "Parts of a split transaction as JSON text of a list, used with is_splitted true, e.g. `[{\"amount\": 600, \"category\": 48, \"project\": 46}, {\"amount\": 400, \"contractor\": 15}]`. Each part needs amount and may set category, project or business_unit, contractor and related_date (YYYY-MM-DD). The amounts must add up to the transaction amount."
+          },
+          "tags": {
+            "type": "string",
+            "pattern": "^[0-9]+(,[0-9]+)*$",
+            "description": "Tag ids separated by commas, e.g. 3,12 (from adesk_list_tags)."
+          },
+          "periodic_edit_type": {
+            "type": "string",
+            "enum": [
+              "this",
+              "this-and-following"
+            ],
+            "description": "For a repeating transaction: change only this one or this and the following ones."
+          }
+        },
+        "required": [
+          "transaction_id",
+          "date",
+          "amount",
+          "bank_account"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transaction/{transaction_id}",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "date": "$date",
+          "amount": "$amount",
+          "bank_account": "$bank_account",
+          "category": "$category",
+          "project": "$project",
+          "business_unit": "$business_unit",
+          "contractor": "$contractor",
+          "description": "$description",
+          "related_date": "$related_date",
+          "is_periodic": "$is_periodic",
+          "period": "$period",
+          "repetition_end_date": "$repetition_end_date",
+          "is_commitment": "$is_commitment",
+          "is_planned": "$is_planned",
+          "is_splitted": "$is_splitted",
+          "parts": "$parts",
+          "tags": "$tags",
+          "periodic_edit_type": "$periodic_edit_type"
+        }
+      }
+    },
+    {
+      "name": "adesk_complete_transaction",
+      "description": "Mark a planned transaction (isPlanned true) as executed, so it counts as actual from now on. Returns success. Bookkeeping only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the planned transaction."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transaction/{transaction_id}/complete"
+      }
+    },
+    {
+      "name": "adesk_delete_transaction",
+      "description": "Delete a transaction from the books by id. The account balance and every report change. Cannot be undone through the API. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the transaction to delete."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transaction/{transaction_id}/remove"
+      }
+    },
+    {
+      "name": "adesk_list_transaction_categories",
+      "description": "List the income and expense categories (the lines of the cash flow and profit and loss reports): id, name, type (1 income, 2 expense), kind (1 operating, 2 investing, 3 financing), isOwnerTransfer, isSystem, group and isArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "income",
+              "outcome"
+            ],
+            "description": "Only income or only expense categories."
+          },
+          "full_group": {
+            "type": "boolean",
+            "description": "true adds the category group details."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/categories",
+        "queryParams": {
+          "type": "$type",
+          "full_group": "$full_group"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_save_transaction_category",
+      "description": "Create an income or expense category, or change one when id is given (name, type, kind, archive flag). Returns the category object. Deleting categories is not offered by this tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of an existing category to change. Leave out to create a new one."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 210,
+            "description": "Category name, up to 210 characters."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 income, 2 expense."
+          },
+          "kind": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "description": "Activity: 1 operating, 2 investing, 3 financing."
+          },
+          "group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the category group."
+          },
+          "is_owner_transfer": {
+            "type": "boolean",
+            "description": "true for owner contributions or withdrawals, which reports do not count as revenue or expenses."
+          },
+          "is_archived": {
+            "type": "boolean",
+            "description": "true moves the category to the archive."
+          }
+        },
+        "required": [
+          "name",
+          "type",
+          "kind"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/transactions/category",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "id": "$id",
+          "name": "$name",
+          "type": "$type",
+          "kind": "$kind",
+          "group": "$group",
+          "is_owner_transfer": "$is_owner_transfer",
+          "is_archived": "$is_archived"
+        }
+      }
+    },
+    {
+      "name": "adesk_list_bank_accounts",
+      "description": "List the bank and cash accounts kept in Adesk: id, name, number, bankName, currency, type (Bank or Cash), status (open, closed), initialAmount with its date and amount (current balance). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_account_type": {
+            "type": "string",
+            "enum": [
+              "Bank",
+              "Cash"
+            ],
+            "description": "Only bank accounts or only cash registers."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "open",
+              "closed"
+            ],
+            "description": "Only open or only closed accounts."
+          },
+          "with_sum_amount": {
+            "type": "boolean",
+            "description": "true adds the total balance over all accounts."
+          },
+          "reduced": {
+            "type": "boolean",
+            "description": "true returns a short object per account."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index of the first row to return, counted from 0."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of rows to return from start."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank-accounts",
+        "queryParams": {
+          "bank_account_type": "$bank_account_type",
+          "status": "$status",
+          "with_sum_amount": "$with_sum_amount",
+          "reduced": "$reduced",
+          "start": "$start",
+          "length": "$length"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_get_bank_account",
+      "description": "Read one account by id: name, number, bank, currency, type, status, initial balance with its date and the current balance. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_account_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Account id."
+          }
+        },
+        "required": [
+          "bank_account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/bank-account/{bank_account_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_create_bank_account",
+      "description": "Add a bank account or cash register to the books of one legal entity, optionally with an opening balance. It creates a record in Adesk only; nothing is opened at a bank. Returns the account object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 210,
+            "description": "Account name, up to 210 characters."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RUR",
+              "EUR",
+              "USD",
+              "KZT",
+              "UAH",
+              "GBP",
+              "BYN"
+            ],
+            "description": "Account currency."
+          },
+          "legal_entity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the legal entity that owns the account (from adesk_list_legal_entities)."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2
+            ],
+            "description": "1 cash register, 2 bank account (default)."
+          },
+          "number": {
+            "type": "string",
+            "description": "Account number."
+          },
+          "bank_name": {
+            "type": "string",
+            "description": "Bank name."
+          },
+          "bank_code": {
+            "type": "string",
+            "description": "Bank identification code (BIK)."
+          },
+          "correspondent_account": {
+            "type": "string",
+            "maxLength": 64,
+            "description": "Correspondent account of the bank."
+          },
+          "initial_amount": {
+            "type": "number",
+            "description": "Opening balance."
+          },
+          "initial_amount_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of the opening balance, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "name",
+          "currency",
+          "legal_entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/bank-account",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "name": "$name",
+          "currency": "$currency",
+          "legal_entity": "$legal_entity",
+          "type": "$type",
+          "number": "$number",
+          "bank_name": "$bank_name",
+          "bank_code": "$bank_code",
+          "correspondent_account": "$correspondent_account",
+          "initial_amount": "$initial_amount",
+          "initial_amount_date": "$initial_amount_date"
+        }
+      }
+    },
+    {
+      "name": "adesk_list_legal_entities",
+      "description": "List the legal entities (own companies) of the Adesk account: id, name, fullName, inn, kpp, address, phoneNumber, registrationNumber and VAT rates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/legal-entities"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_get_legal_entity",
+      "description": "Read one legal entity by id: names, tax numbers (INN, KPP, OGRN), address, phone and VAT rate history. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "legal_entity_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Legal entity id."
+          }
+        },
+        "required": [
+          "legal_entity_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/legal-entity/{legal_entity_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_list_contractors",
+      "description": "List or search counterparties (customers, suppliers): id, name, contactPerson, phoneNumber, email and balance of obligations. Search by name, tax number or bank account; a period keeps only those with transactions in it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Text to search in the counterparty name."
+          },
+          "inn": {
+            "type": "string",
+            "description": "Tax number (INN) to search for."
+          },
+          "checking_bank_account": {
+            "type": "string",
+            "description": "Bank account number from the counterparty requisites."
+          },
+          "with_balance": {
+            "type": "boolean",
+            "description": "true keeps only counterparties whose obligations do not add up to 0."
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "all",
+              "this_month",
+              "this_quarter",
+              "this_year",
+              "prev_month",
+              "prev_quarter",
+              "prev_year",
+              "custom"
+            ],
+            "description": "Only counterparties with transactions in this period. Default all. custom needs range_start and range_end."
+          },
+          "range_start": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (YYYY-MM-DD). Only used, and then required, with range custom."
+          },
+          "range_end": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (YYYY-MM-DD). Only used, and then required, with range custom."
+          },
+          "reduced": {
+            "type": "boolean",
+            "description": "true returns a short object per counterparty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contractors",
+        "queryParams": {
+          "q": "$q",
+          "inn": "$inn",
+          "checking_bank_account": "$checking_bank_account",
+          "with_balance": "$with_balance",
+          "range": "$range",
+          "range_start": "$range_start",
+          "range_end": "$range_end",
+          "reduced": "$reduced"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_get_contractor",
+      "description": "Read one counterparty by id: name, contact person, phone, email, description and balance of obligations. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contractor_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counterparty id."
+          }
+        },
+        "required": [
+          "contractor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contractor/{contractor_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_list_contractor_commitments",
+      "description": "List the obligations (receivables and payables) of one counterparty: amount, VAT, date, type (1 incoming, 2 outgoing), currency, description, project and linked transaction. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contractor_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counterparty id."
+          }
+        },
+        "required": [
+          "contractor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contractor/{contractor_id}/commitments"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_list_contractor_requisites",
+      "description": "List the legal details of one counterparty: legal name, INN, KPP, address and bank accounts (bank code, account number, correspondent account, bank name). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contractor_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counterparty id."
+          }
+        },
+        "required": [
+          "contractor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contractor/{contractor_id}/requisites"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_create_contractor",
+      "description": "Add a counterparty (customer or supplier) with name and optional contact details. Returns the counterparty object. Search with adesk_list_contractors first to avoid a duplicate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Counterparty name."
+          },
+          "contact_person": {
+            "type": "string",
+            "description": "Contact person."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contractor",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "name": "$name",
+          "contact_person": "$contact_person",
+          "phone_number": "$phone_number",
+          "email": "$email",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "adesk_update_contractor",
+      "description": "Change the name or contact details of a counterparty. Only the fields you send are changed. Returns success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contractor_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the counterparty to change."
+          },
+          "name": {
+            "type": "string",
+            "description": "Counterparty name."
+          },
+          "contact_person": {
+            "type": "string",
+            "description": "Contact person."
+          },
+          "phone_number": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description."
+          }
+        },
+        "required": [
+          "contractor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contractor/{contractor_id}",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "name": "$name",
+          "contact_person": "$contact_person",
+          "phone_number": "$phone_number",
+          "email": "$email",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "adesk_delete_contractor",
+      "description": "Delete a counterparty by id. Transactions and obligations lose their link to it. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contractor_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the counterparty to delete."
+          }
+        },
+        "required": [
+          "contractor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contractor/{contractor_id}/remove"
+      }
+    },
+    {
+      "name": "adesk_list_projects",
+      "description": "List projects and deals: id, type, name, description, category, manager, plan income and expenses, deal counterparty, legal entity, amount and dates, isArchived. With with_amounts also income, outcome, grossProfit and profitability per project and a total. Read-only; page with start and length.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Text to search in the project name."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "archived",
+              "all"
+            ],
+            "description": "active (default), archived or all."
+          },
+          "categories": {
+            "type": "string",
+            "pattern": "^[0-9]+(,[0-9]+)*$",
+            "description": "Project category ids separated by commas."
+          },
+          "with_amounts": {
+            "type": "boolean",
+            "description": "true adds income, outcome, gross profit and profitability."
+          },
+          "with_stages": {
+            "type": "boolean",
+            "description": "true adds the stages of deals."
+          },
+          "reduced": {
+            "type": "boolean",
+            "description": "true returns a short object without financial figures."
+          },
+          "sorting": {
+            "type": "string",
+            "enum": [
+              "alphabetically",
+              "last_modified",
+              "popularity"
+            ],
+            "description": "Sort order. Default last_modified."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index of the first row to return, counted from 0."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of rows to return from start."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "q": "$q",
+          "status": "$status",
+          "categories": "$categories",
+          "with_amounts": "$with_amounts",
+          "with_stages": "$with_stages",
+          "reduced": "$reduced",
+          "sorting": "$sorting",
+          "start": "$start",
+          "length": "$length"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_get_project",
+      "description": "Read one project or deal by id, optionally with its income, expenses, gross profit and profitability and with the stages of a deal. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Project id."
+          },
+          "with_amounts": {
+            "type": "boolean",
+            "description": "true adds income, outcome, grossProfit and profitability."
+          },
+          "with_stages": {
+            "type": "boolean",
+            "description": "true adds the list of deal stages."
+          },
+          "with_stages_summary": {
+            "type": "boolean",
+            "description": "true adds totals over the deal stages."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project/{project_id}",
+        "queryParams": {
+          "with_amounts": "$with_amounts",
+          "with_stages": "$with_stages",
+          "with_stages_summary": "$with_stages_summary"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_get_project_stats",
+      "description": "Read the financial figures of one project or deal for a period: income, outcome, grossProfit, profitability and the planned income and expenses. data_type profit (default) uses accrual dates as in the profit and loss report, cashflow uses payment dates. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Project id."
+          },
+          "range": {
+            "type": "string",
+            "enum": [
+              "all_time",
+              "today",
+              "yesterday",
+              "this_week",
+              "this_month",
+              "this_quarter",
+              "this_year",
+              "prev_week",
+              "prev_month",
+              "prev_quarter",
+              "prev_year",
+              "custom"
+            ],
+            "description": "Period. Default all_time. custom needs range_start and range_end."
+          },
+          "range_start": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (YYYY-MM-DD). Only used, and then required, with range custom."
+          },
+          "range_end": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (YYYY-MM-DD). Only used, and then required, with range custom."
+          },
+          "include_planned": {
+            "type": "boolean",
+            "description": "true includes planned transactions (ordinary projects)."
+          },
+          "data_type": {
+            "type": "string",
+            "enum": [
+              "profit",
+              "cashflow"
+            ],
+            "description": "profit (default, accrual) or cashflow (money movement by payment date). Not applied to deals."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/stats",
+        "queryParams": {
+          "range": "$range",
+          "range_start": "$range_start",
+          "range_end": "$range_end",
+          "include_planned": "$include_planned",
+          "data_type": "$data_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_create_project",
+      "description": "Create a project or a deal with plan figures, category, manager and, for a deal, counterparty, legal entity, amount and dates. Returns the project object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "maxLength": 210,
+            "description": "Project name, up to 210 characters."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "project",
+              "deal",
+              "product_deal"
+            ],
+            "description": "project (default), deal, or product_deal (the older goods deal)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description."
+          },
+          "is_archived": {
+            "type": "boolean",
+            "description": "true marks the project as archived."
+          },
+          "plan_income": {
+            "type": "number",
+            "description": "Planned income in the account currency."
+          },
+          "plan_outcome": {
+            "type": "number",
+            "description": "Planned expenses in the account currency."
+          },
+          "category": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the project category (business line), from adesk_list_project_categories."
+          },
+          "manager": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the Adesk user who manages the project."
+          },
+          "deal_contractor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counterparty id. Deals only."
+          },
+          "deal_legal_entity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Legal entity id. Deals only; required for type deal."
+          },
+          "deal_amount": {
+            "type": "number",
+            "description": "Deal amount. Type deal only."
+          },
+          "deal_amount_vat": {
+            "type": "number",
+            "description": "VAT amount of the deal."
+          },
+          "deal_amount_vat_percent": {
+            "type": "number",
+            "description": "VAT rate of the deal in percent."
+          },
+          "deal_count_outcomes_at_act_date": {
+            "type": "boolean",
+            "description": "true to book the deal expenses in the profit and loss report on the act date."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code of the deal, e.g. RUR, USD, EUR. Default: the account currency."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Start date of the deal, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "End date of the deal, YYYY-MM-DD, not before start_date."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/project",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "description": "$description",
+          "is_archived": "$is_archived",
+          "plan_income": "$plan_income",
+          "plan_outcome": "$plan_outcome",
+          "category": "$category",
+          "manager": "$manager",
+          "deal_contractor": "$deal_contractor",
+          "deal_legal_entity": "$deal_legal_entity",
+          "deal_amount": "$deal_amount",
+          "deal_amount_vat": "$deal_amount_vat",
+          "deal_amount_vat_percent": "$deal_amount_vat_percent",
+          "deal_count_outcomes_at_act_date": "$deal_count_outcomes_at_act_date",
+          "currency": "$currency",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "adesk_update_project",
+      "description": "Change a project or deal: name, description, plan figures, category, manager, deal details or the archive flag. Only the fields you send are changed. Returns success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the project to change."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 210,
+            "description": "Project name, up to 210 characters."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "project",
+              "deal",
+              "product_deal"
+            ],
+            "description": "project (default), deal, or product_deal (the older goods deal)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Short description."
+          },
+          "is_archived": {
+            "type": "boolean",
+            "description": "true marks the project as archived."
+          },
+          "plan_income": {
+            "type": "number",
+            "description": "Planned income in the account currency."
+          },
+          "plan_outcome": {
+            "type": "number",
+            "description": "Planned expenses in the account currency."
+          },
+          "category": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the project category (business line), from adesk_list_project_categories."
+          },
+          "manager": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the Adesk user who manages the project."
+          },
+          "deal_contractor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counterparty id. Deals only."
+          },
+          "deal_legal_entity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Legal entity id. Deals only; required for type deal."
+          },
+          "deal_amount": {
+            "type": "number",
+            "description": "Deal amount. Type deal only."
+          },
+          "deal_amount_vat": {
+            "type": "number",
+            "description": "VAT amount of the deal."
+          },
+          "deal_amount_vat_percent": {
+            "type": "number",
+            "description": "VAT rate of the deal in percent."
+          },
+          "deal_count_outcomes_at_act_date": {
+            "type": "boolean",
+            "description": "true to book the deal expenses in the profit and loss report on the act date."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code of the deal, e.g. RUR, USD, EUR. Default: the account currency."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Start date of the deal, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "End date of the deal, YYYY-MM-DD, not before start_date."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/project/{project_id}",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "description": "$description",
+          "is_archived": "$is_archived",
+          "plan_income": "$plan_income",
+          "plan_outcome": "$plan_outcome",
+          "category": "$category",
+          "manager": "$manager",
+          "deal_contractor": "$deal_contractor",
+          "deal_legal_entity": "$deal_legal_entity",
+          "deal_amount": "$deal_amount",
+          "deal_amount_vat": "$deal_amount_vat",
+          "deal_amount_vat_percent": "$deal_amount_vat_percent",
+          "deal_count_outcomes_at_act_date": "$deal_count_outcomes_at_act_date",
+          "currency": "$currency",
+          "start_date": "$start_date",
+          "end_date": "$end_date"
+        }
+      }
+    },
+    {
+      "name": "adesk_list_project_categories",
+      "description": "List the project categories (business lines) with their hierarchy: id, name and parent path. Their ids filter adesk_list_projects and are the business_unit of expenses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reduced": {
+            "type": "boolean",
+            "description": "true returns only id and name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/categories",
+        "queryParams": {
+          "reduced": "$reduced"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_list_commitments",
+      "description": "List obligations (receivables and payables from invoices, acts and shipments) for a period: id, amount, vat, date, type (1 incoming, 2 outgoing), currency, description, legalEntity, contractor, project and linked transaction. For one counterparty use adesk_list_contractor_commitments. Read-only, although Adesk takes this list as a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "range": {
+            "type": "string",
+            "enum": [
+              "all_time",
+              "this_month",
+              "this_quarter",
+              "this_year",
+              "prev_month",
+              "prev_quarter",
+              "prev_year",
+              "custom"
+            ],
+            "description": "Period of the obligations. Default all_time. custom needs range_start and range_end."
+          },
+          "range_start": {
+            "type": "string",
+            "format": "date",
+            "description": "First day (YYYY-MM-DD). Only used, and then required, with range custom."
+          },
+          "range_end": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day (YYYY-MM-DD). Only used, and then required, with range custom."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/commitments",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "range": "$range",
+          "range_start": "$range_start",
+          "range_end": "$range_end"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_create_commitment",
+      "description": "Record an obligation between a legal entity and a counterparty: in (the counterparty owes you after you delivered, or you received goods or services) or out, with amount, date and currency. Bookkeeping only: no invoice is sent and no money moves. Returns the obligation object.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "amount": {
+            "type": "number",
+            "description": "Amount of the obligation."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ],
+            "description": "in (incoming) or out (outgoing) obligation, as Adesk defines them."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of the obligation, YYYY-MM-DD."
+          },
+          "contractor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counterparty id."
+          },
+          "legal_entity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Legal entity id."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RUR",
+              "EUR",
+              "USD",
+              "KZT",
+              "UAH",
+              "GBP",
+              "BYN"
+            ],
+            "description": "Currency of the obligation."
+          },
+          "vat_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "VAT rate in percent, 0 to 100."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 510,
+            "description": "Short description, up to 510 characters."
+          },
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the project the obligation belongs to."
+          }
+        },
+        "required": [
+          "amount",
+          "type",
+          "date",
+          "contractor",
+          "legal_entity",
+          "currency"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/commitment",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "amount": "$amount",
+          "type": "$type",
+          "date": "$date",
+          "contractor": "$contractor",
+          "legal_entity": "$legal_entity",
+          "currency": "$currency",
+          "vat_percent": "$vat_percent",
+          "description": "$description",
+          "project": "$project"
+        }
+      }
+    },
+    {
+      "name": "adesk_update_commitment",
+      "description": "Change an obligation. legal_entity must always be sent; the other fields only when they change. Returns the changed obligation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "commitment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the obligation to change."
+          },
+          "legal_entity": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Legal entity id (always required by Adesk)."
+          },
+          "amount": {
+            "type": "number",
+            "description": "Amount of the obligation."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "in",
+              "out"
+            ],
+            "description": "in or out."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date, YYYY-MM-DD."
+          },
+          "contractor": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Counterparty id."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RUR",
+              "EUR",
+              "USD",
+              "KZT",
+              "UAH",
+              "GBP",
+              "BYN"
+            ],
+            "description": "Currency."
+          },
+          "vat_percent": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "VAT rate in percent, 0 to 100."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 510,
+            "description": "Short description, up to 510 characters."
+          },
+          "project": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the project the obligation belongs to."
+          }
+        },
+        "required": [
+          "commitment_id",
+          "legal_entity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/commitment/{commitment_id}",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "legal_entity": "$legal_entity",
+          "amount": "$amount",
+          "type": "$type",
+          "date": "$date",
+          "contractor": "$contractor",
+          "currency": "$currency",
+          "vat_percent": "$vat_percent",
+          "description": "$description",
+          "project": "$project"
+        }
+      }
+    },
+    {
+      "name": "adesk_delete_commitment",
+      "description": "Delete an obligation by id. The balance of the counterparty changes. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "commitment_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the obligation to delete."
+          }
+        },
+        "required": [
+          "commitment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/commitment/{commitment_id}/remove"
+      }
+    },
+    {
+      "name": "adesk_list_tags",
+      "description": "List the tags used to label transactions: id, name and color. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to search in the tag name."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags",
+        "queryParams": {
+          "search": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_list_budgets",
+      "description": "List the budgets (plan versus actual by category): id, name, step (1 weeks, 2 months, 3 days), start and end of the period, projects, bank accounts and isArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "all",
+              "active",
+              "archived"
+            ],
+            "description": "all, active or archived budgets."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Index of the first row to return, counted from 0."
+          },
+          "length": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of rows to return from start."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/budgets",
+        "queryParams": {
+          "status": "$status",
+          "start": "$start",
+          "length": "$length"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "adesk_get_budget",
+      "description": "Read one budget by id with its planned and actual amounts per category and period, built by the cash method or the accrual method. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "budget_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Budget id, from adesk_list_budgets."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "cashier",
+              "accrual"
+            ],
+            "description": "cashier (by payment date) or accrual (by accrual date)."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "alpha",
+              "amount"
+            ],
+            "description": "Sort the categories by name (alpha) or by total (amount)."
+          }
+        },
+        "required": [
+          "budget_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/budget/{budget_id}",
+        "queryParams": {
+          "method": "$method",
+          "sort_by": "$sort_by"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

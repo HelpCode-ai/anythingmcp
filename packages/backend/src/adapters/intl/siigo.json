@@ -1,0 +1,1486 @@
+{
+  "slug": "siigo",
+  "name": "Siigo",
+  "description": "Siigo API for Siigo Nube, the Colombian accounting and electronic invoicing software: customers and suppliers, products, sales invoices with their DIAN status, quotations, credit notes, cash and payment receipts, journal vouchers, catalogs (document types, taxes, payment methods, cost centers, users, warehouses), trial balance and accounts payable. Username and access key.",
+  "aliases": [
+    "Siigo Nube",
+    "Siigo API",
+    "Siigo Colombia",
+    "Siigo facturación electrónica"
+  ],
+  "region": "intl",
+  "category": "accounting",
+  "icon": "siigo",
+  "docsUrl": "https://siigoapi.docs.apiary.io/",
+  "prerequisites": "A Siigo Nube company (Colombia) and an administrator who can open Alianzas, Mi Credencial API to generate the API username and access key. About 3 minutes.",
+  "requiredEnvVars": [
+    "SIIGO_USERNAME",
+    "SIIGO_ACCESS_KEY"
+  ],
+  "envVarMeta": {
+    "SIIGO_USERNAME": {
+      "label": "API username",
+      "kind": "setting",
+      "help": "Siigo Nube, left menu Alianzas, button Mi Credencial API: the username of the API credential (an email address).",
+      "link": "https://siigoapi.docs.apiary.io/#reference/autenticacion",
+      "example": "usuario@empresa.com",
+      "pattern": "^\\S{3,200}$",
+      "patternMessage": "Enter the API username exactly as Siigo shows it, without spaces."
+    },
+    "SIIGO_ACCESS_KEY": {
+      "label": "Access key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Siigo Nube, left menu Alianzas, button Mi Credencial API: the access key shown with the username.",
+      "link": "https://siigoapi.docs.apiary.io/#reference/autenticacion",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the access key without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Siigo refused the username and access key, or blocked the API user. Copy both again from Siigo Nube, Alianzas, Mi Credencial API.",
+    "403": "The Siigo user behind this credential has no permission for this call.",
+    "404": "Siigo found nothing with that id. Document ids are GUIDs from the list tools; catalog ids are numbers.",
+    "auth_failed": "Siigo did not issue a token (Incorrect username or password). Copy the username and the access key again from Siigo Nube, Alianzas, Mi Credencial API.",
+    "rate_limited": "Siigo allows 100 calls per minute per company. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "siigo_list_users",
+    "params": {}
+  },
+  "instructions": "## Siigo\nThis connector works with the **Siigo API** at `https://api.siigo.com` for companies on Siigo Nube, the accounting and electronic invoicing software used in Colombia: third parties, products, sales invoices with their DIAN status, quotations, credit notes, cash and payment receipts, journal vouchers, the catalogs a document needs, and the trial balance and accounts payable reports.\n\n**Setup (about 3 minutes)**\n1. Sign in to Siigo Nube as an administrator and open **Alianzas** in the left menu, then **Mi Credencial API**.\n2. Generate the credential and copy the **username** into `SIIGO_USERNAME` and the **access key** into `SIIGO_ACCESS_KEY`.\n\nThe connector signs in at `POST /auth` with both values, receives a token that lasts 24 hours and renews it by itself. Every call carries the header `Partner-Id: AnythingMCP`, which Siigo requires to identify the integrating application.\n\n**Where to start**: `siigo_list_document_types` (the invoice types of the company), `siigo_list_users` (sellers), `siigo_list_payment_types` and `siigo_list_taxes`: their ids are needed to create documents. `siigo_list_invoices` with a customer or a date range answers most sales questions.\n\n**Catalogs**: `siigo_list_document_types`, `siigo_list_taxes`, `siigo_list_payment_types`, `siigo_list_cost_centers`, `siigo_list_users`, `siigo_list_warehouses`, `siigo_list_account_groups`. They rarely change: read each once per conversation.\n\n**Third parties and products**: `siigo_list_customers` (filter by `identification`), `siigo_get_customer`, `siigo_create_customer`; `siigo_list_products` (filter by `code`), `siigo_get_product`, `siigo_create_product`.\n\n**Sales invoices**: `siigo_list_invoices`, `siigo_get_invoice`, `siigo_create_invoice`, `siigo_get_invoice_stamp_errors`, `siigo_send_invoice_email`. `siigo_create_invoice` saves the invoice without sending it to the DIAN unless `send_to_dian` is true; an invoice the DIAN accepted has a `cufe` and can no longer be annulled or deleted, only corrected with a credit note. `siigo_annul_invoice` and `siigo_delete_invoice` are installed switched off. The `public_url` of an invoice is the printable view to share; the connector does not return PDF files.\n\n**Other documents (read only)**: `siigo_list_quotations`, `siigo_get_quotation`, `siigo_list_credit_notes`, `siigo_get_credit_note`, `siigo_list_vouchers` and `siigo_get_voucher` (cash receipts: money received), `siigo_list_payment_receipts` (money paid to suppliers), `siigo_list_journals`. The connector creates no receipts, credit notes or journal vouchers and moves no money.\n\n**Reports**: `siigo_generate_trial_balance` and `siigo_generate_trial_balance_by_third_party` return a link to an Excel file, not figures. `siigo_list_accounts_payable` returns the open supplier dues as JSON.\n\n**Paging**: lists return `results`, `pagination` (`page`, `page_size`, `total_results`) and `_links`. Ask for the next `page` while rows remain; `page_size` goes up to 100.\n\n**Formats**: dates are `yyyy-MM-dd`; the created and updated filters also take UTC date-times. Document ids are GUIDs, catalog ids are numbers. A customer is addressed on documents by `identification` and `branch_office`, a product by `code`. Amounts are numbers in the local currency (COP) unless the document has a `currency`.\n\n**Errors** are `Status` and `Errors` with `Code`, `Message` and `Params`: `parameter_required` and `invalid_reference` name the field or the id that does not exist, `invalid_total_payments` means the payments do not add up to the total, `already_exists` a duplicate code or identification, `unauthorized` a wrong or blocked credential.\n\n**Limits**: 100 calls per minute per company (`requests_limit`). Siigo blocks an API user whose calls were more than 80 % errors over 7 days, so do not guess ids or codes: read them from the catalogs first.",
+  "connector": {
+    "name": "Siigo API",
+    "type": "REST",
+    "baseUrl": "https://api.siigo.com",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://api.siigo.com/auth",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Partner-Id": "AnythingMCP"
+      },
+      "loginBody": {
+        "username": "${username}",
+        "access_key": "${password}"
+      },
+      "username": "{{SIIGO_USERNAME}}",
+      "password": "{{SIIGO_ACCESS_KEY}}",
+      "tokenJsonPath": "access_token",
+      "expiryJsonPath": "expires_in",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 86400,
+      "proactiveRefreshSeconds": 1800,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "Partner-Id": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "siigo_list_document_types",
+      "description": "List the document types (comprobantes) configured in Siigo for one kind of document: id, code, name, description, whether it is electronic, its numbering and its defaults. The `id` is what `document_id` needs when creating an invoice. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "FV",
+              "NC",
+              "RC",
+              "FC",
+              "RP",
+              "CC",
+              "C",
+              "DS"
+            ],
+            "default": "FV",
+            "description": "FV sales invoice (default), NC credit note, RC cash receipt, FC purchase invoice, RP payment receipt, CC journal voucher, C quotation, DS support document."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/document-types",
+        "queryParams": {
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_taxes",
+      "description": "List the taxes configured in Siigo: id, name, type (IVA, Retefuente, ReteIVA, ReteICA, Impoconsumo, AdValorem, Autorretencion), percentage and active. Use the ids in the `taxes` of invoice items and products. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/taxes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_payment_types",
+      "description": "List the payment methods (formas de pago) usable on one kind of document: id, name, type (Cartera, Proveedor, CarteraProveedor), active and `due_date` (true when the method needs a due date). Use the ids in the `payments` of an invoice. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_type": {
+            "type": "string",
+            "enum": [
+              "FV",
+              "NC",
+              "RC",
+              "FC",
+              "RP"
+            ],
+            "default": "FV",
+            "description": "FV sales invoice (default), NC credit note, RC cash receipt, FC purchase invoice, RP payment receipt."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment-types",
+        "queryParams": {
+          "document_type": "$document_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_cost_centers",
+      "description": "List the cost centers (centros de costo): id, code, name and active. Some document types require one on every invoice. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/cost-centers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_users",
+      "description": "List the Siigo users of the company: id, username, first_name, last_name, email, identification and active. The `id` of a user is the `seller` an invoice needs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_warehouses",
+      "description": "List the warehouses (bodegas) used for inventory: id, name, active and has_movements. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/warehouses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_account_groups",
+      "description": "List the inventory classifications (grupos de inventario): id, name and active. A new product needs the id of one as `account_group`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/account-groups"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_customers",
+      "description": "List customers and other third parties (clientes, proveedores, terceros): id, type, person_type, id_type, identification, check_digit, name, commercial_name, branch_office, active, address, phones and contacts. Look one up by its identification number. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "identification": {
+            "type": "string",
+            "description": "Identification number of the third party (cedula or NIT without the check digit)."
+          },
+          "branch_office": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "description": "Branch office number (sucursal), 0 for the main one."
+          },
+          "created_start": {
+            "type": "string",
+            "description": "Only third parties created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only third parties created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_start": {
+            "type": "string",
+            "description": "Only third parties changed on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_end": {
+            "type": "string",
+            "description": "Only third parties changed on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers",
+        "queryParams": {
+          "identification": "$identification",
+          "branch_office": "$branch_office",
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "updated_start": "$updated_start",
+          "updated_end": "$updated_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_get_customer",
+      "description": "Read one third party in full: identification and type, names, VAT responsibility and fiscal responsibilities, address with country, state and city codes, phones, contacts with email, comments and the seller and collector assigned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the customer (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/customers/{customer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_create_customer",
+      "description": "Create a third party (customer, supplier or other) in Siigo and return it with its id. Look it up first with siigo_list_customers by identification: the same number can only be reused with another branch_office. City, state and country are Siigo codes (for example Co, 11, 11001 for Bogota).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_type": {
+            "type": "string",
+            "enum": [
+              "Person",
+              "Company"
+            ],
+            "description": "Person for a natural person, Company for a company."
+          },
+          "id_type": {
+            "type": "string",
+            "description": "Code of the identification type: 13 cedula de ciudadania, 31 NIT, 22 cedula de extranjeria, 41 passport, 42 foreign document."
+          },
+          "identification": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{3,50}$",
+            "description": "Identification number without the check digit."
+          },
+          "name": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 2,
+            "items": {
+              "type": "string"
+            },
+            "description": "For a Company one entry with the legal name; for a Person two entries: first names, then last names."
+          },
+          "address": {
+            "type": "object",
+            "description": "Address: `address` (street) and `city` with `country_code` (e.g. Co), `state_code` (e.g. 11) and `city_code` (e.g. 11001); optional `postal_code`."
+          },
+          "phones": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Phones: objects with `number` (digits only, at most 10) and optionally `indicative` and `extension`."
+          },
+          "contacts": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Contacts (at most 20): objects with `first_name`, `last_name` and `email`; electronic invoices are mailed to the contact email."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "Customer",
+              "Supplier",
+              "Other"
+            ],
+            "default": "Customer",
+            "description": "Customer (default), Supplier or Other."
+          },
+          "commercial_name": {
+            "type": "string",
+            "description": "Trade name of the company."
+          },
+          "branch_office": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "description": "Branch office number, default 0."
+          },
+          "vat_responsible": {
+            "type": "boolean",
+            "description": "true when the third party is responsible for IVA. Default false."
+          },
+          "fiscal_responsibilities": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Fiscal responsibilities as objects with `code`, e.g. R-99-PN (not responsible, the default), O-13, O-15, O-23 or O-47."
+          },
+          "comments": {
+            "type": "string",
+            "description": "Free-text observations."
+          }
+        },
+        "required": [
+          "person_type",
+          "id_type",
+          "identification",
+          "name",
+          "address",
+          "phones",
+          "contacts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/customers",
+        "bodyMapping": {
+          "type": "$type",
+          "person_type": "$person_type",
+          "id_type": "$id_type",
+          "identification": "$identification",
+          "name": "$name",
+          "commercial_name": "$commercial_name",
+          "branch_office": "$branch_office",
+          "vat_responsible": "$vat_responsible",
+          "fiscal_responsibilities": "$fiscal_responsibilities",
+          "address": "$address",
+          "phones": "$phones",
+          "contacts": "$contacts",
+          "comments": "$comments"
+        }
+      }
+    },
+    {
+      "name": "siigo_list_products",
+      "description": "List products and services, newest first: id, code, name, account_group, type (Product, Service, ConsumerGood), stock_control, active, tax_classification, taxes, prices per price list, unit, reference, description, available_quantity and the stock per warehouse. Look one up by code. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Exact product code."
+          },
+          "created_start": {
+            "type": "string",
+            "description": "Only products created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only products created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_start": {
+            "type": "string",
+            "description": "Only products changed on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_end": {
+            "type": "string",
+            "description": "Only products changed on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/products",
+        "queryParams": {
+          "code": "$code",
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "updated_start": "$updated_start",
+          "updated_end": "$updated_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_get_product",
+      "description": "Read one product or service in full: code, name, classification, type, taxes, prices, unit, description, additional fields (barcode, brand, model), available_quantity and warehouses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the product (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_create_product",
+      "description": "Create a product or service in Siigo and return it with its id. The code must be unique; `account_group` is the id of an inventory classification from siigo_list_account_groups.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Unique product code, e.g. Item-1."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the product or service."
+          },
+          "account_group": {
+            "type": "integer",
+            "description": "Id of the inventory classification (siigo_list_account_groups)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "Product",
+              "Service",
+              "ConsumerGood"
+            ],
+            "default": "Product",
+            "description": "Product (default), Service or ConsumerGood."
+          },
+          "stock_control": {
+            "type": "boolean",
+            "description": "true to track inventory for the product. Default false."
+          },
+          "tax_classification": {
+            "type": "string",
+            "enum": [
+              "Taxed",
+              "Exempt",
+              "Excluded"
+            ],
+            "description": "Taxed (default, gravado), Exempt or Excluded."
+          },
+          "tax_included": {
+            "type": "boolean",
+            "description": "true when the prices include IVA. Default false."
+          },
+          "taxes": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Taxes of the product as objects with `id` (siigo_list_taxes)."
+          },
+          "prices": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Sale prices: objects with `currency_code` (e.g. COP) and `price_list`, a list of objects with `position` (1 to 12) and `value`."
+          },
+          "unit": {
+            "type": "string",
+            "description": "Unit of measure code for electronic invoicing, default 94 (unit)."
+          },
+          "unit_label": {
+            "type": "string",
+            "description": "Unit label printed on the invoice, e.g. unidad."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Factory reference of the product."
+          },
+          "description": {
+            "type": "string",
+            "description": "Long description of the product or service."
+          }
+        },
+        "required": [
+          "code",
+          "name",
+          "account_group"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/products",
+        "bodyMapping": {
+          "code": "$code",
+          "name": "$name",
+          "account_group": "$account_group",
+          "type": "$type",
+          "stock_control": "$stock_control",
+          "tax_classification": "$tax_classification",
+          "tax_included": "$tax_included",
+          "taxes": "$taxes",
+          "prices": "$prices",
+          "unit": "$unit",
+          "unit_label": "$unit_label",
+          "reference": "$reference",
+          "description": "$description"
+        }
+      }
+    },
+    {
+      "name": "siigo_list_invoices",
+      "description": "List sales invoices (facturas de venta): id, document type, number, name (such as FV-2-22), date, customer, cost_center, total, balance (still unpaid), seller, the DIAN `stamp` (status and cufe), items, payments and public_url. Filter by invoice name, customer, invoice date or creation and change dates. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Invoice name as Siigo shows it, e.g. FV-2-22 (type, document code, number)."
+          },
+          "customer_identification": {
+            "type": "string",
+            "description": "Identification number of the customer."
+          },
+          "customer_branch_office": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "description": "Branch office of the customer."
+          },
+          "document_id": {
+            "type": "integer",
+            "description": "Only invoices of this document type id (siigo_list_document_types)."
+          },
+          "date_start": {
+            "type": "string",
+            "format": "date",
+            "description": "Invoice date on or after, yyyy-MM-dd."
+          },
+          "date_end": {
+            "type": "string",
+            "format": "date",
+            "description": "Invoice date on or before, yyyy-MM-dd."
+          },
+          "created_start": {
+            "type": "string",
+            "description": "Only invoices created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only invoices created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_start": {
+            "type": "string",
+            "description": "Only invoices changed on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_end": {
+            "type": "string",
+            "description": "Only invoices changed on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices",
+        "queryParams": {
+          "name": "$name",
+          "customer_identification": "$customer_identification",
+          "customer_branch_office": "$customer_branch_office",
+          "document_id": "$document_id",
+          "date_start": "$date_start",
+          "date_end": "$date_end",
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "updated_start": "$updated_start",
+          "updated_end": "$updated_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_get_invoice",
+      "description": "Read one sales invoice in full: number and name, date, customer, seller, cost center, currency, every item with quantity, price, discount and taxes, payments with due dates, retentions, total and balance, the DIAN stamp (status, cufe, errors), mail status and `public_url` (a link to the printable invoice that can be shared with the customer). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the invoice (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices/{invoice_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_create_invoice",
+      "description": "Create a sales invoice in Siigo for an existing customer and return it with its id, number, total and public_url. By default the invoice is saved in Siigo but NOT sent to the DIAN and not mailed: with send_to_dian true Siigo stamps it as an electronic invoice, which is a legal act that cannot be undone, only corrected with a credit note. The sum of `payments` must equal the invoice total including taxes. Electronic document types refuse a date before today. Confirm customer, items, taxes and total with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "description": "Id of the invoice document type (siigo_list_document_types with type FV)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Invoice date, yyyy-MM-dd."
+          },
+          "customer_identification": {
+            "type": "string",
+            "description": "Identification number of an existing, active customer (siigo_list_customers)."
+          },
+          "customer_branch_office": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "description": "Branch office of the customer, default 0."
+          },
+          "seller": {
+            "type": "integer",
+            "description": "Id of the selling user (siigo_list_users)."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            },
+            "description": "Invoice lines: objects with `code` (an existing product code), `quantity` and `price` (unit price before tax, or `taxed_price` for a price that includes IVA), and optionally `description`, `discount` (percent or value, as the document type is set up), `taxes` (objects with the tax `id`) and `warehouse` (id)."
+          },
+          "payments": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            },
+            "description": "Payment methods: objects with `id` (siigo_list_payment_types), `value` and, when the method has due dates, `due_date` (yyyy-MM-dd). The values must add up to the invoice total."
+          },
+          "send_to_dian": {
+            "type": "boolean",
+            "default": false,
+            "description": "true sends the invoice to the DIAN as an electronic invoice right away (irreversible). Default false: the invoice is saved and can be sent from Siigo."
+          },
+          "send_email": {
+            "type": "boolean",
+            "default": false,
+            "description": "true mails the invoice to the contact of the customer. Default false."
+          },
+          "observations": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Comments printed on the invoice, at most 4,000 characters."
+          },
+          "cost_center": {
+            "type": "integer",
+            "description": "Cost center id (siigo_list_cost_centers), when the document type requires one."
+          },
+          "currency": {
+            "type": "object",
+            "description": "Foreign currency: `code` (e.g. USD) and `exchange_rate`. Leave out for the local currency."
+          },
+          "retentions": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Retentions as objects with the tax `id` (ReteICA, ReteIVA or Autorretencion from siigo_list_taxes)."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{1,30}$",
+            "description": "A unique key of at most 30 letters and digits for this invoice. Repeating the call with the same key returns the invoice already created instead of a duplicate."
+          }
+        },
+        "required": [
+          "document_id",
+          "date",
+          "customer_identification",
+          "seller",
+          "items",
+          "payments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/invoices",
+        "timeoutMs": 120000,
+        "headers": {
+          "Idempotency-Key": "$idempotency_key"
+        },
+        "bodyMapping": {
+          "document": {
+            "id": "$document_id"
+          },
+          "date": "$date",
+          "customer": {
+            "identification": "$customer_identification",
+            "branch_office": "$customer_branch_office"
+          },
+          "seller": "$seller",
+          "stamp": {
+            "send": "$send_to_dian"
+          },
+          "mail": {
+            "send": "$send_email"
+          },
+          "observations": "$observations",
+          "cost_center": "$cost_center",
+          "currency": "$currency",
+          "retentions": "$retentions",
+          "items": "$items",
+          "payments": "$payments"
+        }
+      }
+    },
+    {
+      "name": "siigo_get_invoice_stamp_errors",
+      "description": "Read why the DIAN rejected an electronic invoice: `errors` with the message of each rejection. Use it when the stamp status of an invoice is not Accepted. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the invoice (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/invoices/{invoice_id}/stamp/errors"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_send_invoice_email",
+      "description": "Mail an existing sales invoice to up to 5 addresses. Returns `status` sent when Siigo accepted the request. Confirm the recipients with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the invoice (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          },
+          "mail_to": {
+            "type": "string",
+            "description": "Main recipient email address."
+          },
+          "copy_to": {
+            "type": "string",
+            "description": "Further recipients separated by semicolons, at most 4."
+          }
+        },
+        "required": [
+          "invoice_id",
+          "mail_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/invoices/{invoice_id}/mail",
+        "bodyMapping": {
+          "mail_to": "$mail_to",
+          "copy_to": "$copy_to"
+        }
+      }
+    },
+    {
+      "name": "siigo_annul_invoice",
+      "enabled": false,
+      "description": "Annul (anular) a sales invoice. Siigo refuses invoices already sent to or accepted by the DIAN (with a CUFE) and invoices with related credit notes or cash receipts. Installed switched off; confirm the invoice with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the invoice (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/invoices/{invoice_id}/annul"
+      }
+    },
+    {
+      "name": "siigo_delete_invoice",
+      "enabled": false,
+      "description": "Delete a sales invoice permanently. Siigo refuses invoices sent to or accepted by the DIAN and invoices with related documents. This cannot be undone. Installed switched off; confirm the invoice with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the invoice (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/invoices/{invoice_id}"
+      }
+    },
+    {
+      "name": "siigo_list_quotations",
+      "description": "List quotations (cotizaciones): id, number, name (such as C-1-22), date, customer, total, seller, items and public_url. Filter by name, customer or creation date. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Quotation name as Siigo shows it, e.g. C-1-22."
+          },
+          "customer_identification": {
+            "type": "string",
+            "description": "Identification number of the customer."
+          },
+          "customer_branch_office": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "description": "Branch office of the customer."
+          },
+          "created_start": {
+            "type": "string",
+            "description": "Only quotations created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only quotations created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/quotations",
+        "queryParams": {
+          "name": "$name",
+          "customer_identification": "$customer_identification",
+          "customer_branch_office": "$customer_branch_office",
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_get_quotation",
+      "description": "Read one quotation in full: number, name, date, customer, seller, items with quantities, prices and taxes, total and public_url. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "quotation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the quotation (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "quotation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/quotations/{quotation_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_credit_notes",
+      "description": "List credit notes (notas credito): id, document type, number, name, date, the invoice each one corrects, customer, total, DIAN stamp, items and payments. Filter by creation and change dates. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_start": {
+            "type": "string",
+            "description": "Only credit notes created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only credit notes created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_start": {
+            "type": "string",
+            "description": "Only credit notes changed on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_end": {
+            "type": "string",
+            "description": "Only credit notes changed on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/credit-notes",
+        "queryParams": {
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "updated_start": "$updated_start",
+          "updated_end": "$updated_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_get_credit_note",
+      "description": "Read one credit note in full: number, date, the invoice it corrects, customer, reason, items, payments, total and the DIAN stamp. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "credit_note_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the credit note (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "credit_note_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/credit-notes/{credit_note_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_vouchers",
+      "description": "List cash receipts (recibos de caja), the record of money received from customers: id, document type, number, name, date, type, customer, the invoices and amounts each receipt settles, payment method and observations. Filter by creation and change dates. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_start": {
+            "type": "string",
+            "description": "Only cash receipts created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only cash receipts created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_start": {
+            "type": "string",
+            "description": "Only cash receipts changed on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_end": {
+            "type": "string",
+            "description": "Only cash receipts changed on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/vouchers",
+        "queryParams": {
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "updated_start": "$updated_start",
+          "updated_end": "$updated_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_get_voucher",
+      "description": "Read one cash receipt (recibo de caja) in full: number, date, customer, the due invoices it pays with their values, payment method, cost center and observations. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voucher_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "Siigo id of the cash receipt (a GUID such as 63f918c2-ca65-4edc-a7db-66bcdd5159fb), from the list tool."
+          }
+        },
+        "required": [
+          "voucher_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/vouchers/{voucher_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_payment_receipts",
+      "description": "List payment receipts (recibos de pago or egreso), the record of money paid to suppliers: id, document type, number, name, date, supplier, the purchase documents and amounts each one settles and the payment method. Filter by creation and change dates. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_start": {
+            "type": "string",
+            "description": "Only payment receipts created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only payment receipts created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_start": {
+            "type": "string",
+            "description": "Only payment receipts changed on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_end": {
+            "type": "string",
+            "description": "Only payment receipts changed on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/payment-receipts",
+        "queryParams": {
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "updated_start": "$updated_start",
+          "updated_end": "$updated_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_journals",
+      "description": "List journal vouchers (comprobantes contables): id, document type, number, name, date and the debit and credit items with account, third party, cost center and value. Filter by document type id or creation and change dates. Answers hold `results` and `pagination`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "description": "Only vouchers of this document type id (siigo_list_document_types with type CC)."
+          },
+          "created_start": {
+            "type": "string",
+            "description": "Only journal vouchers created on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "created_end": {
+            "type": "string",
+            "description": "Only journal vouchers created on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_start": {
+            "type": "string",
+            "description": "Only journal vouchers changed on or after this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "updated_end": {
+            "type": "string",
+            "description": "Only journal vouchers changed on or before this date, as yyyy-MM-dd or yyyy-MM-ddTHH:mm:ssZ (UTC)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/journals",
+        "queryParams": {
+          "document_id": "$document_id",
+          "created_start": "$created_start",
+          "created_end": "$created_end",
+          "updated_start": "$updated_start",
+          "updated_end": "$updated_end",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_generate_trial_balance",
+      "description": "Generate the general trial balance (balance de prueba) of a year for a range of months and accounts. Siigo builds an Excel file and returns `file_id` and `file_url`, a download link: give the link to the user, the figures are not in the answer. Month 13 is the closing period. Nothing is changed in Siigo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the report, four digits."
+          },
+          "month_start": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 13,
+            "description": "First month, 1 to 13."
+          },
+          "month_end": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 13,
+            "description": "Last month, 1 to 13, not before month_start."
+          },
+          "account_start": {
+            "type": "string",
+            "description": "First account number of the range, e.g. 11050501. Leave out to start at the first account."
+          },
+          "account_end": {
+            "type": "string",
+            "description": "Last account number of the range. Leave out to end at the last account."
+          },
+          "includes_tax_difference": {
+            "type": "boolean",
+            "default": false,
+            "description": "true to include the tax-difference accounts. Default false."
+          }
+        },
+        "required": [
+          "year",
+          "month_start",
+          "month_end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/test-balance-report",
+        "timeoutMs": 120000,
+        "bodyMapping": {
+          "account_start": "$account_start",
+          "account_end": "$account_end",
+          "year": "$year",
+          "month_start": "$month_start",
+          "month_end": "$month_end",
+          "includes_tax_difference": "$includes_tax_difference"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_generate_trial_balance_by_third_party",
+      "description": "Generate the trial balance by third party (balance de prueba por tercero) for a range of months and accounts, for all third parties or one. Siigo builds an Excel file and returns `file_id` and `file_url`, a download link for the user. Nothing is changed in Siigo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "year": {
+            "type": "integer",
+            "minimum": 2000,
+            "maximum": 2100,
+            "description": "Year of the report, four digits."
+          },
+          "month_start": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 13,
+            "description": "First month, 1 to 13."
+          },
+          "month_end": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 13,
+            "description": "Last month, 1 to 13, not before month_start."
+          },
+          "account_start": {
+            "type": "string",
+            "description": "First account number of the range. Leave out to start at the first account."
+          },
+          "account_end": {
+            "type": "string",
+            "description": "Last account number of the range. Leave out to end at the last account."
+          },
+          "includes_tax_difference": {
+            "type": "boolean",
+            "default": false,
+            "description": "true to include the tax-difference accounts. Default false."
+          },
+          "customer": {
+            "type": "object",
+            "description": "Only this third party: `identification` (number without check digit) and optionally `branch_office` (0 to 999). Leave out for all third parties."
+          }
+        },
+        "required": [
+          "year",
+          "month_start",
+          "month_end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/test-balance-report-by-thirdparty",
+        "timeoutMs": 120000,
+        "bodyMapping": {
+          "account_start": "$account_start",
+          "account_end": "$account_end",
+          "year": "$year",
+          "month_start": "$month_start",
+          "month_end": "$month_end",
+          "includes_tax_difference": "$includes_tax_difference",
+          "customer": "$customer"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "siigo_list_accounts_payable",
+      "description": "List accounts payable (cuentas por pagar): one row per open due amount with `due` (prefix, consecutive, quote, date, balance in local currency), `provider` (identification, branch_office, name), `cost_center` and `currency`. Filter by due date and supplier. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "due_date_start": {
+            "type": "string",
+            "format": "date",
+            "description": "Due on or after this date, yyyy-MM-dd."
+          },
+          "due_date_end": {
+            "type": "string",
+            "format": "date",
+            "description": "Due on or before this date, yyyy-MM-dd."
+          },
+          "provider_identification": {
+            "type": "string",
+            "description": "Identification number of the supplier."
+          },
+          "provider_branch_office": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 999,
+            "description": "Branch office of the supplier; needs provider_identification."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. `pagination.total_results` in the answer tells how many rows exist."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Rows per page, default 25, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/accounts-payable",
+        "queryParams": {
+          "due_date_start": "$due_date_start",
+          "due_date_end": "$due_date_end",
+          "provider_identification": "$provider_identification",
+          "provider_branch_office": "$provider_branch_office",
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

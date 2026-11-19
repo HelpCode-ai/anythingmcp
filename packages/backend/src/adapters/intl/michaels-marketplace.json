@@ -1,0 +1,509 @@
+{
+  "slug": "michaels-marketplace",
+  "name": "Michaels Marketplace",
+  "description": "Michaels Marketplace seller API for sellers on the US craft retailer: listings, inventory and prices by seller SKU, and orders with confirmation and shipment tracking. API key.",
+  "instructions": "## Michaels Marketplace\nThis connector works with the **Michaels Marketplace seller API** (`https://www.michaels.com/api/mkp/v1`), for sellers on the marketplace of the US craft retailer Michaels: listings with inventory and prices, and orders with confirmation and shipment tracking.\n\n**Setup (about 5 minutes, production keys need approval)**\n1. Sign in at michaels.com with your seller account and open the API homepage (Developer account).\n2. For a test key open **Developer account, Sandbox**, click **Create an API key**, pick the permissions and submit. For a live key open **Developer account, Request production API keys**, complete the form and wait for the approval.\n3. Copy the key from **Developer account, API keys** into `MICHAELS_API_KEY`, and choose the matching environment in `MICHAELS_API_URL` (Production or Sandbox).\n\nThe key is sent in the `Api-Key` header. A sandbox key only works on the sandbox address and a production key only on the production address.\n\n**Where to start**: `michaels_marketplace_test_authentication` checks the key. `michaels_marketplace_query_orders` with order_status_list `PENDING_CONFIRMATION` lists new orders; `michaels_marketplace_get_order` shows one order with its lines.\n\n**Listings**: `michaels_marketplace_list_all_listings` pages through the whole catalogue with a cursor, `michaels_marketplace_query_listings` takes the filters of the Michaels guide as a query string, and `michaels_marketplace_get_listing` reads one listing by its Michaels SKU number. `michaels_marketplace_get_inventory` and `michaels_marketplace_get_price` read stock and price by the primary SKU number.\n\n**Stock and prices**: `michaels_marketplace_update_inventory` and `michaels_marketplace_update_price` change one SKU per call and address it by your own seller SKU number (sellerSkuNumber), not by the Michaels SKU number. Prices are in USD.\n\n**Orders**: confirm a new order with `michaels_marketplace_confirm_orders` (Michaels expects this within 24 hours), then report the parcel with `michaels_marketplace_ship_order`: carrier UPS, USPS, FEDEX or DHL, the tracking number and the orderItemId and quantity of each line. `michaels_marketplace_cancel_order` is installed switched off, because a cancellation cannot be undone and counts against the seller.\n\n**Not included**: returns, refunds and refund adjustments are not part of this connector; handle them in the Michaels seller portal. The connector never moves money.\n\n**Answers**: every call answers an envelope with `code`, `message` and `data`. Lists of orders carry `pageNum`, `pageSize`, `totalElements` and `totalPages`; the listing list carries `nextCursor`. Two kinds of SKU exist: the Michaels SKU number (skuNumber, primary SKU for a listing with variants) and your own sellerSkuNumber.",
+  "aliases": [
+    "Michaels",
+    "Michaels MakerPlace",
+    "MakerPlace by Michaels",
+    "Michaels seller API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "michaels-marketplace",
+  "docsUrl": "https://www.michaels.com/developer-api/guide?path=api/authentication",
+  "requiredEnvVars": [
+    "MICHAELS_API_URL",
+    "MICHAELS_API_KEY"
+  ],
+  "envVarMeta": {
+    "MICHAELS_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "Production for live keys (they need the approval of Michaels), Sandbox for keys created under Developer account, Sandbox.",
+      "link": "https://www.michaels.com/developer-api/guide?path=api/authentication",
+      "example": "https://www.michaels.com/api/mkp/v1",
+      "pattern": "^https://www\\.michaels\\.com/api/mkp/v1(/uat)?$",
+      "patternMessage": "Choose https://www.michaels.com/api/mkp/v1 (production) or https://www.michaels.com/api/mkp/v1/uat (sandbox).",
+      "options": [
+        {
+          "value": "https://www.michaels.com/api/mkp/v1",
+          "label": "Production"
+        },
+        {
+          "value": "https://www.michaels.com/api/mkp/v1/uat",
+          "label": "Sandbox (UAT)"
+        }
+      ]
+    },
+    "MICHAELS_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Michaels seller account, Developer account, API keys: copy the key. Sandbox keys come from Developer account, Sandbox; production keys from Request production API keys.",
+      "link": "https://www.michaels.com/developer-api/guide?path=api/authentication",
+      "pattern": "^\\S{20,2000}$",
+      "patternMessage": "Paste the API key only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Michaels refused the API key. Copy it again from Developer account, API keys, and check that the environment matches: a sandbox key only works on Sandbox, a production key only on Production.",
+    "403": "Michaels refused the call. The key has no permission for this API (check the permissions chosen when the key was created), or the production key is not approved yet.",
+    "404": "Michaels found no listing or order with that number. Listings are read by the Michaels SKU number, stock and prices are written by your seller SKU number.",
+    "rate_limited": "Michaels limits the number of calls. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "michaels_marketplace_test_authentication",
+    "params": {}
+  },
+  "prerequisites": "A Michaels Marketplace (or MakerPlace) seller account with a developer account. Sandbox API keys can be created at once; production keys are requested in the developer account and approved by Michaels.",
+  "connector": {
+    "name": "Michaels Marketplace seller API",
+    "type": "REST",
+    "baseUrl": "{{MICHAELS_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Api-Key",
+      "apiKey": "{{MICHAELS_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP/1.0"
+    }
+  },
+  "tools": [
+    {
+      "name": "michaels_marketplace_test_authentication",
+      "description": "Check that the API key is accepted by the Michaels seller API. Returns the standard envelope with code and message; a refused key answers 401 or 403. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing/authentication/test-auth"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_list_all_listings",
+      "description": "List every listing of the seller store, page by page: data.listings (each with its Michaels SKU number and your sellerSkuNumber) and data.nextCursor. Pass nextCursor as cursor for the next page; an empty nextCursor means the last page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Listings per page, 1 to 100 (default 100).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100
+          },
+          "cursor": {
+            "type": "string",
+            "description": "data.nextCursor of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing/all-listings",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_query_listings",
+      "description": "Query listings with the filters of the Michaels operation \"Query listing\". The filter names are those of the Michaels API guide (Listing, Query listing); pass them as one query string. Use michaels_marketplace_list_all_listings when no filter is needed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filters": {
+            "type": "string",
+            "description": "Query string with the filters of the Michaels operation Query listing, written as name=value pairs joined with &, exactly as in the Michaels API guide. Leave out to send no filter."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing/query",
+        "queryParams": {
+          "__rawquery": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_get_listing",
+      "description": "Read one listing by its Michaels SKU number, with the listing details Michaels holds for it and its seller SKU number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku_number": {
+            "type": "string",
+            "description": "Michaels SKU number of the listing (skuNumber of michaels_marketplace_list_all_listings).",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          }
+        },
+        "required": [
+          "sku_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing/{sku_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_get_inventory",
+      "description": "Read the inventory (available quantity) Michaels holds for a listing, addressed by its primary SKU number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "primary_sku_number": {
+            "type": "string",
+            "description": "Primary Michaels SKU number of the listing (the parent SKU of a listing with variants).",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          }
+        },
+        "required": [
+          "primary_sku_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing/inventory/{primary_sku_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_get_price",
+      "description": "Read the price Michaels holds for a listing, addressed by its primary SKU number. Prices are in USD. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "primary_sku_number": {
+            "type": "string",
+            "description": "Primary Michaels SKU number of the listing (the parent SKU of a listing with variants).",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          }
+        },
+        "required": [
+          "primary_sku_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/listing/price/{primary_sku_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_update_inventory",
+      "description": "Set the available quantity of one SKU, addressed by your own seller SKU number. The new quantity replaces the old one. Answers the standard envelope with code and message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_sku_number": {
+            "type": "string",
+            "description": "Your own SKU for the item (sellerSkuNumber of the listing).",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "available_quantity": {
+            "type": "integer",
+            "description": "New available quantity, 0 or more.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "seller_sku_number",
+          "available_quantity"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listing/inventory/update-inventory-by-seller-sku-number",
+        "bodyMapping": [
+          {
+            "sellerSkuNumber": "$seller_sku_number",
+            "availableQuantity": "$available_quantity"
+          }
+        ]
+      }
+    },
+    {
+      "name": "michaels_marketplace_update_price",
+      "description": "Publish a new price for one SKU, addressed by your own seller SKU number. The price is in USD and must be above 0. Answers the standard envelope with code and message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "seller_sku_number": {
+            "type": "string",
+            "description": "Your own SKU for the item (sellerSkuNumber of the listing).",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "price": {
+            "type": "number",
+            "description": "New price in USD, e.g. 12.99.",
+            "exclusiveMinimum": 0
+          }
+        },
+        "required": [
+          "seller_sku_number",
+          "price"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/listing/price/publish-by-seller-sku-number",
+        "bodyMapping": [
+          {
+            "sellerSkuNumber": "$seller_sku_number",
+            "price": "$price"
+          }
+        ]
+      }
+    },
+    {
+      "name": "michaels_marketplace_query_orders",
+      "description": "List orders, optionally by status: data.pageData with orderNumber, status, createdTime, updatedTime, promiseShipDate, buyer name, phone and shipping address, totals in USD (itemsSubtotal, estimatedTax, shippingHandlingCharge, totalDiscount, grandTotalCollected) and orderLines with orderItemId, skuNumber, sellerSkuNumber, productName, quantity, fulfilledQuantity and price. data.totalElements and data.totalPages tell how many pages there are. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_status_list": {
+            "type": "string",
+            "description": "Order status to filter on, as Michaels names it, e.g. PENDING_CONFIRMATION for new orders waiting for your confirmation. Leave out for all statuses.",
+            "pattern": "^[A-Za-z_, ]{2,300}$"
+          },
+          "page_num": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page, e.g. 50.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/query",
+        "queryParams": {
+          "orderStatusList": "$order_status_list",
+          "pageNum": "$page_num",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_get_order",
+      "description": "Read one order by its order number: status, dates, buyer and shipping address, totals in USD, the order lines with their orderItemId, SKUs, quantities and prices, and the shipments already reported. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Michaels order number, as returned in orderNumber by michaels_marketplace_query_orders.",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          }
+        },
+        "required": [
+          "order_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/order/{order_number}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "michaels_marketplace_confirm_orders",
+      "description": "Confirm (acknowledge) one or more new orders, which tells Michaels you will fulfil them. Michaels expects a confirmation within 24 hours. Answers the standard envelope with code and message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_numbers": {
+            "type": "array",
+            "description": "Order numbers to confirm, e.g. [\"1234567890\"].",
+            "items": {
+              "type": "string",
+              "pattern": "^[A-Za-z0-9._-]{1,64}$"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "order_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/confirm",
+        "bodyMapping": {
+          "orderNumbers": "$order_numbers"
+        }
+      }
+    },
+    {
+      "name": "michaels_marketplace_ship_order",
+      "description": "Report the shipment of order items with the carrier and tracking number. One call can hold several parcels, each with its own tracking number and items. Nothing is bought: this only tells Michaels and the buyer what you shipped. Answers the standard envelope with code and message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Michaels order number, as returned in orderNumber by michaels_marketplace_query_orders.",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "shipments": {
+            "type": "array",
+            "description": "Parcels shipped, e.g. [{\"trackingNumber\": \"1Z999AA10123456784\", \"carrier\": \"UPS\", \"shipmentItemList\": [{\"orderItemId\": \"10001\", \"quantity\": 1}]}]. carrier is UPS, USPS, FEDEX or DHL.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "trackingNumber": {
+                  "type": "string",
+                  "description": "Tracking number of the parcel."
+                },
+                "carrier": {
+                  "type": "string",
+                  "enum": [
+                    "UPS",
+                    "USPS",
+                    "FEDEX",
+                    "DHL"
+                  ],
+                  "description": "Carrier of the parcel: UPS, USPS, FEDEX or DHL."
+                },
+                "shipmentItemList": {
+                  "type": "array",
+                  "description": "Order lines in this parcel.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "orderItemId": {
+                        "type": "string",
+                        "description": "orderItemId of the order line, from michaels_marketplace_get_order."
+                      },
+                      "quantity": {
+                        "type": "integer",
+                        "description": "Quantity shipped in this parcel.",
+                        "minimum": 1
+                      }
+                    },
+                    "required": [
+                      "orderItemId",
+                      "quantity"
+                    ]
+                  },
+                  "minItems": 1
+                }
+              },
+              "required": [
+                "trackingNumber",
+                "carrier",
+                "shipmentItemList"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "order_number",
+          "shipments"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/shipped",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "shipmentsList": "$shipments"
+        }
+      }
+    },
+    {
+      "name": "michaels_marketplace_cancel_order",
+      "description": "Cancel order lines you cannot fulfil, with a reason. A cancellation cannot be undone and counts against the seller performance. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Michaels order number, as returned in orderNumber by michaels_marketplace_query_orders.",
+            "pattern": "^[A-Za-z0-9._-]{1,64}$"
+          },
+          "cancel_reason": {
+            "type": "string",
+            "description": "Reason for the cancellation of the order as a whole. Optional; the reason per line goes in cancel_order_lines."
+          },
+          "cancel_order_lines": {
+            "type": "array",
+            "description": "Order lines to cancel, e.g. [{\"orderItemId\": \"10001\", \"orderItemCancelReason\": \"Out of Stock\"}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "orderItemId": {
+                  "type": "string",
+                  "description": "orderItemId of the order line."
+                },
+                "orderItemCancelReason": {
+                  "type": "string",
+                  "description": "Reason for cancelling this line."
+                }
+              },
+              "required": [
+                "orderItemId"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "order_number",
+          "cancel_order_lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/order/cancel-order",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "cancelReason": "$cancel_reason",
+          "cancelOrderLines": "$cancel_order_lines"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

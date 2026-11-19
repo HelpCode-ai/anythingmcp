@@ -1,0 +1,1430 @@
+{
+  "slug": "tenderplan",
+  "name": "Tenderplan",
+  "aliases": [
+    "Тендерплан",
+    "tenderplan.ru",
+    "Tenderplan API"
+  ],
+  "description": "Tenderplan (tenderplan.ru) API for Russian tender monitoring: tenders found by your saved keys, marks, full tender data with protocols, contracts and complaints, tender search with analytics, comments, tasks, organizations with EGRUL data, the unreliable supplier register, notifications and the tender calendar. Personal access token.",
+  "instructions": "## Tenderplan\nThis connector works with the **Tenderplan API** (`https://tenderplan.ru/api`, version 3.5), the Russian service that finds and tracks public (44-ФЗ, 223-ФЗ) and commercial tenders: the tenders your saved keys found, marks (labels), full tender data with protocols, contracts, explanations and complaints, tender search with analytics, comments, tasks, organizations with EGRUL data, the register of unreliable suppliers (РНП), notifications and the tender calendar.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://tenderplan.ru/app and open your profile settings, tab **Интеграции с сервисами** (Integrations with services).\n2. In the block **Тендерплан API** click **Настроить** (Set up), type a name under **Название токена** and tick the permissions under **Выберите права, которые будут передаваться по API**. For all tools tick `firm:read`, `user:read`, `users:read`, `keys:read`, `marks:read`, `relations:read`, `relations:write`, `resources:external`, `resources:personal`, `comments:read`, `comments:write`, `notifications:read` and `calendar:read`. For a read-only setup leave out the two `write` permissions.\n3. Click **Сгенерировать токен** (Generate token), copy the token and paste it into `TENDERPLAN_API_TOKEN`. Your tokens are listed under **Мои токены**, where a token can be revoked.\n\nYour Tenderplan role must be allowed to add API access; if the API block is missing, ask the administrator of your firm. The token is sent as `Authorization: Bearer`. An OAuth 2.0 access token of an application registered with Tenderplan works in the same field (a client credentials token only for the tools that need `resources:external`); the connector does not renew tokens.\n\n**Where to start**: `tenderplan_get_firm` proves the token works and `tenderplan_get_current_user` tells who it acts for. `tenderplan_list_keys` (saved searches) and `tenderplan_list_marks` (labels) give the ids for `tenderplan_list_tenders`; `tenderplan_get_tender` reads one tender in full. `tenderplan_list_reference_values` translates the numeric ids for status, placing way, platform and region.\n\n**Tenders**: `tenderplan_list_tenders` lists monitored tenders by one key or mark; `tenderplan_filter_tenders` is the newer list with status, date window, kind, comment and task filters, and `tenderplan_list_saved_filters` shows the filters the user saved for it. `tenderplan_search_tenders` searches the whole database with key conditions and returns tenders or analytics on customers, participants and products. `tenderplan_find_tender_by_number` turns a notice number into a Tenderplan id. `tenderplan_get_tender_related_info` returns the related records of a tender in one call, `tenderplan_list_tender_records` one type at a time (protocols, contracts, stages, explanations, complaints, bank guarantees, РНП entries, attachments).\n\n**Teamwork**: `tenderplan_list_comments` and `tenderplan_add_comment`; `tenderplan_list_open_tasks`, `tenderplan_list_tender_tasks`, `tenderplan_add_task` and `tenderplan_complete_task`; `tenderplan_add_tender_marks` and `tenderplan_mark_tenders_read`; `tenderplan_list_users` for user ids; `tenderplan_list_notifications` and `tenderplan_list_calendar_events`. `tenderplan_remove_tender_marks` is installed switched off: switch it on only if the assistant may take labels off tenders.\n\n**Organizations**: `tenderplan_search_organizations` finds a customer or supplier by name or INN; `tenderplan_get_organization`, `tenderplan_get_organization_egrul` and `tenderplan_get_organization_contacts` read its profile, register data and contact persons; `tenderplan_list_rnp_records` checks a supplier against the register of unreliable suppliers.\n\n**Field notes**\n- **Ids** of tenders, keys, marks, users, tasks, comments and organizations are 24-character hex strings. The notice number (`number`) is a different thing: resolve it first.\n- **Dates** are Unix time in milliseconds (`1647873410678`), in filters and in answers. Tender times are moments, not local dates: convert them for the user (Moscow is UTC+3).\n- **Codes** are numbers: `status` 1 accepting bids, 2 commission at work, 3 placement finished, 4 cancelled, 5 failed, 6 execution finished, 7 in execution, 8 terminated; `kind` 0 tender, 1 plan schedule entry, 2 price request; `placingWay`, `type` (platform) and `region` come from the reference lists.\n- **Prices**: `maxPrice` is the initial maximum contract price (НМЦ) in the tender's `currency`.\n- **Paging**: `page` starts at 0 and the page size is fixed by Tenderplan; read on until a page comes back empty. Open tasks page with `cursor`, organizations with `from` and `size`.\n- **Search words** on tender lists need at least 3 characters.\n- **Undocumented answers**: the public docs describe the answers of the search, comment, task, РНП and saved filter calls; for the other calls read the fields from the answer itself.\n- **Rate limits**: at most 100 calls in 10 seconds and 500 in 60 seconds per user; tender lists 60 per minute, `tenderplan_get_tender` 300 per minute. Over the limit the API answers 429: wait a minute.\n- **Permissions**: every tool description names the permission it needs; a 403 means the token was created without it. The task tools need `tasks:read` and `tasks:write`, which the published permission list does not show: if they answer 403, this token cannot use tasks.\n- **Not included**: orders, invoices and tariff purchases, editing keys and marks, user administration and file uploads. No tool moves money.",
+  "region": "intl",
+  "category": "data",
+  "icon": "tenderplan",
+  "docsUrl": "https://tenderplan.ru/api/doc/",
+  "requiredEnvVars": [
+    "TENDERPLAN_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "TENDERPLAN_API_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Tenderplan profile settings, tab Интеграции с сервисами, block Тендерплан API: click Настроить, name the token, tick the permissions and click Сгенерировать токен. An OAuth access token of a registered application works too.",
+      "link": "https://tenderplan.ru/api/doc/",
+      "pattern": "^[A-Za-z0-9._~+/=-]{8,4096}$",
+      "patternMessage": "Paste the token only, without the word Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Tenderplan did not accept the token: it was mistyped, revoked or has expired. Create a new one in your profile settings, tab Интеграции с сервисами, block Тендерплан API, and paste it without the word Bearer.",
+    "403": "The token is valid but was created without the permission this call needs (the connection test needs firm:read). Create a token with the permissions listed in the setup steps.",
+    "404": "Tenderplan found nothing under that id or path. Tender, organization and other ids are 24-character hex strings, not notice numbers.",
+    "rate_limited": "Tenderplan allows 100 calls in 10 seconds and 500 in 60 seconds, tender lists 60 per minute. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "tenderplan_get_firm",
+    "params": {}
+  },
+  "prerequisites": "A Tenderplan account (tenderplan.ru) whose role may add API access, and a personal access token created in the profile settings with the permissions the tools need. About 3 minutes.",
+  "connector": {
+    "name": "Tenderplan API",
+    "type": "REST",
+    "baseUrl": "https://tenderplan.ru",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{TENDERPLAN_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "tenderplan_get_firm",
+      "description": "Read the firm (company account) the token belongs to: the firm record of your Tenderplan account. The cheapest call to prove that the token works. The answer is not described field by field in the public docs; ids are 24-character hex strings and time stamps Unix milliseconds. Needs the `firm:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/info/firm"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_get_current_user",
+      "description": "Read the user the token acts for: that user's own record. Use the user's `_id` as responsible user, task assignee or mention in the other tools. The answer is not described field by field in the public docs. Needs the `user:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/info/user"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_users",
+      "description": "List the users of your firm in Tenderplan. Use their ids for `user_ids` filters, as task `assignee_id` and for comment mentions. No paging parameters. The answer is not described field by field in the public docs. Needs the `users:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/users/getall"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_keys",
+      "description": "List the firm's keys: the saved searches Tenderplan runs continuously to collect new tenders. A key has an id, a name and search conditions (words, regions, platforms, classifier codes, price range and so on, the same fields as `key` in tenderplan_search_tenders). Pass a key id as `key_id` to tenderplan_list_tenders. No paging parameters. Needs the `keys:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/keys/getall"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_marks",
+      "description": "List the firm's marks: the labels users put on tenders to sort them and track the work on them. Pass a mark id as `mark_id` to tenderplan_list_tenders or in `mark_ids` to tenderplan_add_tender_marks. No paging parameters. The answer is not described field by field in the public docs. Needs the `marks:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/marks/getall"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_tenders",
+      "description": "List the short models of the tenders your firm monitors, filtered by one key (saved search) or one mark (label). The docs describe the short model in the search answer: tender `_id`, `number`, `orderName`, `maxPrice` (initial maximum price) with `currency`, `status`, `placingWay`, `type` (platform), `region`, `customers`, `publicationDateTime` and `submissionCloseDateTime` in Unix milliseconds, `isRead`, `isChanged`, `marks` and `users`. Paged with `page`. Limit: 60 calls per minute. Needs the `relations:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Only tenders found by this key (id from tenderplan_list_keys)."
+          },
+          "mark_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Only tenders carrying this mark (id from tenderplan_list_marks)."
+          },
+          "q": {
+            "type": "string",
+            "minLength": 3,
+            "description": "Search words, at least 3 characters: matches the tender name, number and classifier codes."
+          },
+          "is_actual": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Current versus finished tenders. The API takes 1 or -1 and does not say which is which: 1 is expected to mean current (still open), -1 finished. Check `submissionCloseDateTime` in the answer."
+          },
+          "from_submission_close": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bid deadline (`submissionCloseDateTime`) not before this moment. Unix time in milliseconds."
+          },
+          "to_submission_close": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bid deadline not after this moment. Unix time in milliseconds."
+          },
+          "placing_way": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Placing way id (procurement method), from tenderplan_list_reference_values with list_name placingways, e.g. 15 for electronic auction."
+          },
+          "kind": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 tender, 1 plan schedule entry (план-график), 2 price request."
+          },
+          "smp": {
+            "type": "boolean",
+            "description": "true: only tenders with advantages for small businesses (СМП)."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tenders with one of these responsible users (ids from tenderplan_list_users)."
+          },
+          "is_deleted": {
+            "type": "boolean",
+            "description": "true: tenders in the bin instead of the active ones."
+          },
+          "sort_submission_close": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by bid deadline. 1 ascending, -1 descending."
+          },
+          "sort_publication": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by publication date on the platform. 1 ascending, -1 descending."
+          },
+          "sort_max_price": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by initial maximum price. 1 ascending, -1 descending."
+          },
+          "sort_changed": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by the changed flag. 1 ascending, -1 descending."
+          },
+          "sort_read": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by the read flag. 1 ascending, -1 descending."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0. The page size is fixed by Tenderplan; ask for the next page until the list comes back empty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tenders/getlist",
+        "queryParams": {
+          "key": "$key_id",
+          "mark": "$mark_id",
+          "q": "$q",
+          "isActual": "$is_actual",
+          "fromSubmissionCloseDateTime": "$from_submission_close",
+          "toSubmissionCloseDateTime": "$to_submission_close",
+          "placingWay": "$placing_way",
+          "kind": "$kind",
+          "smp": "$smp",
+          "users": "$user_ids",
+          "isDeleted": "$is_deleted",
+          "submissionCloseDateTime": "$sort_submission_close",
+          "publicationDateTime": "$sort_publication",
+          "maxPrice": "$sort_max_price",
+          "isChanged": "$sort_changed",
+          "isRead": "$sort_read",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_filter_tenders",
+      "description": "List monitored tenders with the newer, richer filter (list version 2): pick a subset (by key, mark, user, bin, legal requests or tasks), then narrow by status, marks, responsible users, publication and bid deadline windows, placing ways, kinds, comment and task state. Returns `tenders`, a list of short tender models (see tenderplan_list_tenders). Paged with `page` from 0. Limit: 60 calls per minute. Needs the `relations:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subset_type": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "description": "Which subset to list: 0 by key, 1 by mark, 2 by user, 3 bin, 4 legal requests, 5 tasks."
+          },
+          "subset_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Id of the key, mark or user the subset is about. Leave out to cover the whole subset (all keys, all marks and so on)."
+          },
+          "responsible": {
+            "type": "boolean",
+            "description": "With subset_type 2: true leaves out tenders where the user is only a task assignee, not the responsible user."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Tender status ids: 1 accepting bids, 2 commission at work, 3 placement finished, 4 cancelled, 5 failed, 6 execution finished, 7 in execution, 8 terminated, 0 unknown."
+          },
+          "mark_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tenders with one of these marks."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tenders with one of these responsible users."
+          },
+          "from_publication": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Published not before this moment. Unix time in milliseconds."
+          },
+          "to_publication": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Published not after this moment. Unix time in milliseconds."
+          },
+          "from_submission_close": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bid deadline not before this moment. Unix time in milliseconds."
+          },
+          "to_submission_close": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Bid deadline not after this moment. Unix time in milliseconds."
+          },
+          "placing_ways": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Placing way ids, from tenderplan_list_reference_values with list_name placingways."
+          },
+          "kinds": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Kinds: 0 tender, 1 plan schedule entry, 2 price request."
+          },
+          "comment_statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Comment state: 0 tenders whose comments are read, 1 tenders with new comments."
+          },
+          "task_statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                0,
+                1,
+                2,
+                3
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Task state: 0 with a due date, 1 open, 2 overdue, 3 closed."
+          },
+          "task_assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tenders with tasks assigned to one of these users."
+          },
+          "from_task_due": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Task due date not before this moment. Unix time in milliseconds."
+          },
+          "to_task_due": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Task due date not after this moment. Unix time in milliseconds."
+          },
+          "q": {
+            "type": "string",
+            "minLength": 3,
+            "description": "Search words, at least 3 characters: matches the tender name, number and classifier codes."
+          },
+          "sort_submission_close": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by bid deadline. 1 ascending, -1 descending."
+          },
+          "sort_publication": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by publication date. 1 ascending, -1 descending."
+          },
+          "sort_max_price": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Sort by initial maximum price. 1 ascending, -1 descending."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0. The page size is fixed by Tenderplan; ask for the next page until the list comes back empty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tenders/v2/getlist",
+        "queryParams": {
+          "type": "$subset_type",
+          "id": "$subset_id",
+          "responsible": "$responsible",
+          "statuses": "$statuses",
+          "marks": "$mark_ids",
+          "users": "$user_ids",
+          "fromPublicationDateTime": "$from_publication",
+          "toPublicationDateTime": "$to_publication",
+          "fromSubmissionCloseDateTime": "$from_submission_close",
+          "toSubmissionCloseDateTime": "$to_submission_close",
+          "placingWays": "$placing_ways",
+          "kinds": "$kinds",
+          "commentStatuses": "$comment_statuses",
+          "taskStatuses": "$task_statuses",
+          "taskAssignees": "$task_assignee_ids",
+          "fromTaskDueCompleteAtDateTime": "$from_task_due",
+          "toTaskDueCompleteAtDateTime": "$to_task_due",
+          "q": "$q",
+          "submissionCloseDateTime": "$sort_submission_close",
+          "publicationDateTime": "$sort_publication",
+          "maxPrice": "$sort_max_price",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_get_tender",
+      "description": "Read the full model of one tender by its Tenderplan id: everything Tenderplan holds about the notice, beyond the short model of the list tools (number, name, customers, platform, placing way, initial maximum price and currency, status, dates in Unix milliseconds). The full model can be large and is not described field by field in the public docs. Limit: 300 calls per minute. Works with any valid token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          }
+        },
+        "required": [
+          "tender_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tenders/get",
+        "queryParams": {
+          "id": "$tender_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_get_tender_related_info",
+      "description": "Read what happened around one tender in a single call: the related records Tenderplan collected for it, such as protocols, contracts and bank guarantees (version 2 of the tender info method). Use tenderplan_list_tender_records for one record type only. The answer is not described field by field in the public docs. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          }
+        },
+        "required": [
+          "tender_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tenders/v2/info",
+        "queryParams": {
+          "id": "$tender_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_tender_records",
+      "description": "List one type of record attached to a tender: protocols, contracts, contract stages, explanations (clarifications of the documentation), complaints, bank guarantees, entries of the unreliable supplier register (rnp) or the tender's attachments (documentation files). Returns the whole array for that tender, no paging. The record fields are not described in the public docs. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "section": {
+            "type": "string",
+            "enum": [
+              "protocols",
+              "contracts",
+              "stages",
+              "explanations",
+              "complaints",
+              "bankguarantees",
+              "rnp",
+              "attachments"
+            ],
+            "description": "Record type: protocols, contracts, stages (contract stages), explanations, complaints, bankguarantees, rnp (unreliable supplier register entries) or attachments (tender documentation files)."
+          },
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          }
+        },
+        "required": [
+          "section",
+          "tender_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tenders/{section}",
+        "queryParams": {
+          "id": "$tender_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_search_tenders",
+      "description": "Search the whole Tenderplan tender database (not only your monitored tenders) with key conditions, and read the analytics of the result. With set actual, closed or future the answer has `count` and `tenders`: `_id`, `number`, `orderName`, `maxPrice`, `currency`, `status`, `placingWay`, `type`, `region`, `customers`, `participants`, `participantsCount`, `winner`, `priceDropPercent`, `publicationDateTime` and `submissionCloseDateTime` (Unix milliseconds). With set customers or participants it has organizations with `name`, `guid`, `winnerCount`, `winPriceSum` and `priceDropPercentAvg`; with set products it has `name`, `unit`, `priceMin`, `priceMax`, `priceAvg` and `quantityAvg`. Paged with `page`. Sends a POST but changes nothing. Needs the `resources:personal` permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "set": {
+            "type": "string",
+            "enum": [
+              "actual",
+              "closed",
+              "future",
+              "participants",
+              "customers",
+              "products"
+            ],
+            "default": "actual",
+            "description": "Result tab: actual (open tenders, default), closed (finished), future (plan schedule entries), participants (suppliers that took part), customers (buyers) or products (purchased items with prices)."
+          },
+          "key": {
+            "type": "object",
+            "description": "Search conditions, the same object Tenderplan stores for a saved key. All fields are optional: `words` and `docWords` (objects with `value`: the search words, `excluded`: words to exclude, `slop`: integer; `docWords` looks inside the tender documents), `regions` (region ids), `types` (platform ids), `placingWayNames` (placing way ids), `statuses` (status ids), `classificators` (list of objects with `name`: okpd2, okpd or okdp and `value`: list of codes), `minPrice` and `maxPrice` (numbers), `guaranteeAppMax`, `guaranteeContractMax` and `prepayment` (numbers), `customers`, `excludedCustomers`, `participants`, `excludedParticipants` (strings), `preference` and `excludedPreference` (lists of ids), `kind` (list of integers), `deliveryPlaces` (KLADR codes of 13 to 20 digits), `garDeliveryPlaces` (strings), `condition`, `classificatorCondition` and `regionCondition` (or, and; default or) and `inDocs` (boolean). Ids come from tenderplan_list_reference_values. Example: `{\"words\": {\"value\": \"медицинское оборудование\"}, \"regions\": [77], \"minPrice\": 1000000}`."
+          },
+          "filter": {
+            "type": "object",
+            "description": "Extra filter on the result. All fields are optional: `date` (object with `fromPublicationDateTime`, `toPublicationDateTime`, `fromSubmissionCloseDateTime`, `toSubmissionCloseDateTime`, `fromReceiveDateTime`, `toReceiveDateTime`, all Unix milliseconds), `status` (status ids), `marks` (label ids), `users` (user ids), `keys` (list of key objects as in `key`), `placed` (boolean: the purchase was placed), `currentYear` (boolean: placed in the current year), `withNotes` (boolean: only with a note), `conflicts` (any of explanations, complaints, fines, changes, rejections, debtPay, debtExecution), `rivals` (any of tracked, trackedCustomers, without, one, 2-3, 4-6, 6+), `priceDrop` (any of 0, 0-1, 1-24, 25-50, 51-100, as strings) and `events` (any of comments, tasks, prepayment, notAdmitted, winner). Example: `{\"date\": {\"fromPublicationDateTime\": 1763510400000}, \"status\": [1]}`."
+          },
+          "mark_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tenders with one of these marks of your firm."
+          },
+          "q": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Extra search words inside the result."
+          },
+          "sort_max_price": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Tender tabs: sort by price. 1 ascending, -1 descending."
+          },
+          "sort_submission_close": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Tender tabs: sort by bid deadline. 1 ascending, -1 descending."
+          },
+          "sort_submission_start": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Tender tabs: sort by placement date (planned period for plan schedule entries). 1 ascending, -1 descending."
+          },
+          "sort_participants_count": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Tender tabs: sort by number of participants. 1 ascending, -1 descending."
+          },
+          "sort_price_drop": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Tender tabs: sort by price drop. 1 ascending, -1 descending."
+          },
+          "sort_tenders_count": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Organization tabs: sort by number of tenders. 1 ascending, -1 descending."
+          },
+          "sort_win_price": {
+            "type": "integer",
+            "enum": [
+              1,
+              -1
+            ],
+            "description": "Organization tabs: sort by the sum of contracts won. 1 ascending, -1 descending."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0. `count` in the answer is the total."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/search/v2/list",
+        "queryParams": {
+          "set": "$set",
+          "q": "$q",
+          "maxPrice": "$sort_max_price",
+          "submissionCloseDateTime": "$sort_submission_close",
+          "submissionStartDateTime": "$sort_submission_start",
+          "participantsCount": "$sort_participants_count",
+          "priceDrop": "$sort_price_drop",
+          "tendersCount": "$sort_tenders_count",
+          "winPrice": "$sort_win_price",
+          "page": "$page"
+        },
+        "bodyMapping": {
+          "key": "$key",
+          "filter": "$filter",
+          "marks": "$mark_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_find_tender_by_number",
+      "description": "Find tenders by their notice number (the number on zakupki.gov.ru or on the trading platform) anywhere in the Tenderplan database. Use it to turn a number into the Tenderplan tender id that the other tools need. Paged with `page`. The answer is not described field by field in the public docs. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 100,
+            "description": "Notice number as printed on the platform, e.g. 0373100064625000012. Digits and letters only as they appear, no spaces."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0."
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/search/tender",
+        "queryParams": {
+          "number": "$number",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_saved_filters",
+      "description": "List the list filters the current user saved in Tenderplan (version 2): per subset (`type` 0 key, 1 mark, 2 user, 3 bin, 4 legal requests, 5 tasks, and the `id` of that key, mark or user) the saved `statuses`, `marks`, `users`, `placingWays`, `kinds`, date windows in Unix milliseconds and sort order. The fields match the parameters of tenderplan_filter_tenders, so a saved filter can be replayed there. No paging parameters. Needs the `user:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/searchfilters/v2/getall"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_comments",
+      "description": "List all comments your firm wrote on one tender. Returns `comments` with `_id`, `text` (plain text or a rich text object with `blocks`), `creatorId`, `mentions`, `createDateTime` and `updateDateTime` (Unix milliseconds), `isRead`, `isDeleted`, `markId` and attachment ids, plus `attachments` with file `name` and `size`. No paging parameters. Needs the `comments:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          }
+        },
+        "required": [
+          "tender_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/comments/getall",
+        "queryParams": {
+          "id": "$tender_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_add_comment",
+      "description": "Write a comment on a tender in the name of the token's user. Colleagues in the firm see it in Tenderplan, which has a notification for new comments. Returns the stored comment with its `_id`, `creatorId` and `createDateTime`. Needs the `comments:write` permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 10000,
+            "description": "Comment text, plain text."
+          },
+          "mention_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Users to mention (ids from tenderplan_list_users)."
+          }
+        },
+        "required": [
+          "tender_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/comments/add",
+        "bodyMapping": {
+          "tenderId": "$tender_id",
+          "text": "$text",
+          "mentions": "$mention_user_ids"
+        }
+      }
+    },
+    {
+      "name": "tenderplan_list_open_tasks",
+      "description": "List the open tasks across all tenders of your firm. Returns `tasks` with `_id`, `name`, `desc` (notes), `tenderId`, `assigneeId`, `dueAt`, `dueReminderAt` and `createdAt` (Unix milliseconds), `createdBy` and `type` (task or partition, a section heading), plus `cursor` for the next page (null when there are no more). Needs the `tasks:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assignee_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^([0-9a-fA-F]{24}|none)$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tasks assigned to these users (ids from tenderplan_list_users). The word none selects tasks without an assignee."
+          },
+          "q": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Search words in the task name and notes."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "`cursor` of the previous answer, for the next page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tasks/getlist",
+        "queryParams": {
+          "assignees": "$assignee_ids",
+          "q": "$q",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_tender_tasks",
+      "description": "List the tasks and sections of one tender, open and closed. Returns `tasks` (`_id`, `name`, `desc`, `assigneeId`, `dueAt`, `dueCompleteAt` set when done, `createdAt`, `type` task or partition, `isDeleted`), `tasksOrder` (ids in display order) and `attachments` (file `name` and `size`). Time stamps are Unix milliseconds. Needs the `tasks:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          }
+        },
+        "required": [
+          "tender_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tasks/getall",
+        "queryParams": {
+          "tenderId": "$tender_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_add_task",
+      "description": "Add a task to a tender, optionally with an assignee, a due date and a reminder. Returns the stored task with its `_id`, `createdBy` and `createdAt`. Colleagues see the task on the tender. Needs the `tasks:write` permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 1000,
+            "description": "Task title, at most 1000 characters."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes on the task (the API field `desc`)."
+          },
+          "assignee_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "User who has to do it (id from tenderplan_list_users)."
+          },
+          "due_at": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Due date and time. Unix time in milliseconds."
+          },
+          "reminder_at": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "When to remind the assignee. Unix time in milliseconds."
+          }
+        },
+        "required": [
+          "tender_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/tasks/add",
+        "bodyMapping": {
+          "type": "task",
+          "tenderId": "$tender_id",
+          "name": "$name",
+          "desc": "$notes",
+          "assigneeId": "$assignee_id",
+          "dueAt": "$due_at",
+          "dueReminderAt": "$reminder_at"
+        }
+      }
+    },
+    {
+      "name": "tenderplan_complete_task",
+      "description": "Close a task of a tender, or reopen a closed one. Returns the task with `dueCompleteAt` set when it is closed. Needs the `tasks:write` permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Id of the task (`_id` from tenderplan_list_open_tasks or tenderplan_list_tender_tasks)."
+          },
+          "complete": {
+            "type": "boolean",
+            "default": true,
+            "description": "true closes the task (default), false reopens it."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/tasks/complete",
+        "bodyMapping": {
+          "_id": "$task_id",
+          "complete": "$complete"
+        }
+      }
+    },
+    {
+      "name": "tenderplan_search_organizations",
+      "description": "Search the organizations Tenderplan knows as customers (buyers) and suppliers (participants), by name or by INN. Use the organization id of a hit with tenderplan_get_organization, tenderplan_get_organization_egrul, tenderplan_get_organization_contacts and tenderplan_list_rnp_records. Paged with `from` and `size` (at most 50 per call). The answer is not described field by field in the public docs. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 300,
+            "description": "Name or INN. An INN is sent as plain digits. The Tenderplan web app sends a name with a trailing `*` to match by prefix, e.g. `газпром*`."
+          },
+          "kpp": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z]{9}$",
+            "description": "KPP (9 characters), to tell branches with the same INN apart."
+          },
+          "from": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Offset of the first row, starting at 0."
+          },
+          "size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 50,
+            "description": "Rows per call, 1 to 50."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organizations/search",
+        "queryParams": {
+          "query": "$query",
+          "kpp": "$kpp",
+          "from": "$from",
+          "size": "$size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_get_organization",
+      "description": "Read the card of one organization (customer or supplier) by its Tenderplan organization id: what Tenderplan holds about that legal entity. The answer is not described field by field in the public docs. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan organization id (24 hex characters): the `guid` of a customer, participant or winner in a tender, or the id of a search hit."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organizations/get",
+        "queryParams": {
+          "id": "$organization_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_get_organization_egrul",
+      "description": "Read data of one organization from the Russian state register of legal entities (ЕГРЮЛ, EGRUL): its branches, representative offices, founders, the history of register changes or arbitration cases. One set per call. The answer is not described field by field in the public docs. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan organization id (24 hex characters)."
+          },
+          "set": {
+            "type": "string",
+            "enum": [
+              "branches",
+              "agencies",
+              "founders",
+              "changes",
+              "arbitration"
+            ],
+            "description": "Which part to read: branches, agencies (representative offices), founders, changes (register history) or arbitration (court cases)."
+          },
+          "q": {
+            "type": "string",
+            "description": "Search words inside the chosen set."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organizations/data/egrul",
+        "queryParams": {
+          "id": "$organization_id",
+          "set": "$set",
+          "q": "$q"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_get_organization_contacts",
+      "description": "Read the contacts of one organization as Tenderplan collected them from its tenders. This can include personal data of contact persons: use it only for the tender work it was published for. The answer is not described field by field in the public docs. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan organization id (24 hex characters)."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "How many contacts to return (the API parameter `count`; the docs give no default)."
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/organizations/getcontacts",
+        "queryParams": {
+          "id": "$organization_id",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_rnp_records",
+      "description": "List the entries of one supplier in the register of unreliable suppliers (РНП, version 2). Each entry has `_id`, `id` (register number), `participant` and `customer` (`guid`, `name`, `region`), `object` (what the contract was about), `createReason`, `publishDateTime` and `excludeDateTime` (Unix milliseconds; the exclusion date tells whether the entry is still in force). An empty list means no entry. Needs the `resources:external` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "participant_id": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 64,
+            "description": "Tenderplan organization id of the supplier (from tenderplan_search_organizations or a tender's participants)."
+          }
+        },
+        "required": [
+          "participant_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/rnp/v2/getlist",
+        "queryParams": {
+          "participant": "$participant_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_notifications",
+      "description": "List the current user's notifications as short tender models (version 2): `tenders` with the tenders the notifications are about. Filter by notification type. Paged with `page` from 0. Needs the `notifications:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "enum": [
+                1,
+                2,
+                3,
+                4,
+                5,
+                6,
+                7,
+                8,
+                9
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Notification types: 1 task reminder, 2 new comment, 3 you were made responsible, 4 new tasks from a checklist, 5 tender got a mark, 6 changes, 7 results, 8 tender published for a plan schedule entry, 9 bid deadline is near."
+          },
+          "q": {
+            "type": "string",
+            "minLength": 3,
+            "description": "Search words, at least 3 characters: matches the tender name, number and classifier codes."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Page number, starting at 0. The page size is fixed by Tenderplan; ask for the next page until the list comes back empty."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/notifications/v2/getlist",
+        "queryParams": {
+          "types": "$types",
+          "q": "$q",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_calendar_events",
+      "description": "List the events of the firm's tender calendar in a time window (version 2): the dated events of the tenders your firm monitors. Both ends of the window are required, in Unix milliseconds. Narrow by marks, responsible users or placing ways. The answer is not described field by field in the public docs. Needs the `calendar:read` permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start of the window. Unix time in milliseconds."
+          },
+          "to": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "End of the window. Unix time in milliseconds."
+          },
+          "mark_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tenders with one of these marks."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Only tenders with one of these responsible users."
+          },
+          "placing_ways": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Placing way ids, from tenderplan_list_reference_values with list_name placingways."
+          },
+          "without_users": {
+            "type": "boolean",
+            "description": "The API flag `withoutUsers`. The docs do not describe it; by its name it selects tenders without a responsible user."
+          },
+          "without_marks": {
+            "type": "boolean",
+            "description": "The API flag `withoutMarks`. The docs do not describe it; by its name it selects tenders without a mark."
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/calendar/v2/events",
+        "queryParams": {
+          "from": "$from",
+          "to": "$to",
+          "marks": "$mark_ids",
+          "users": "$user_ids",
+          "placingWays": "$placing_ways",
+          "withoutUsers": "$without_users",
+          "withoutMarks": "$without_marks"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_list_reference_values",
+      "description": "Read one of Tenderplan's reference lists to translate the numeric ids in tenders and filters: statuses (9 rows: `_id`, `name`, `shortName`), placingways (about 30 procurement methods: `_id`, `name`, `shortName`), types (about 230 platforms and laws such as 44-ФЗ and 223-ФЗ: `_id`, `slug`, `name`, `url`, `isCommercial`; about 60 KB) and regions (about 120 rows: `_id`, `name`, `shortName`, `district`, `timezone` as an offset in milliseconds). Names are in Russian. The lists rarely change: read each once. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "list_name": {
+            "type": "string",
+            "enum": [
+              "statuses",
+              "placingways",
+              "types",
+              "regions"
+            ],
+            "description": "statuses (tender statuses), placingways (procurement methods), types (platforms and laws) or regions."
+          }
+        },
+        "required": [
+          "list_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/tools/{list_name}/list"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tenderplan_add_tender_marks",
+      "description": "Put one or more marks (labels) on a tender, keeping the marks it already has. Tenderplan has a notification for marked tenders, so colleagues may be told. The answer is not described in the public docs. Needs the `relations:write` permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          },
+          "mark_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Marks to add (ids from tenderplan_list_marks)."
+          }
+        },
+        "required": [
+          "tender_id",
+          "mark_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/relations/marks/add",
+        "bodyMapping": {
+          "tenders": [
+            "$tender_id"
+          ],
+          "marks": "$mark_ids"
+        }
+      }
+    },
+    {
+      "name": "tenderplan_mark_tenders_read",
+      "description": "Mark tenders as read for the token's user, the way opening them in Tenderplan does. Up to 100 tenders per call. The answer is not described in the public docs. Needs the `relations:write` permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Tenderplan ids of the tenders to mark as read."
+          }
+        },
+        "required": [
+          "tender_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/relations/read",
+        "bodyMapping": {
+          "tenders": "$tender_ids"
+        }
+      }
+    },
+    {
+      "name": "tenderplan_remove_tender_marks",
+      "description": "Take marks (labels) off a tender. Installed switched off: removing a mark drops the tender from that label's list for the whole firm. The answer is not described in the public docs. Needs the `relations:write` permission.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tender_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{24}$",
+            "description": "Tenderplan id of the tender (24 hex characters, `_id` of a tender in a list or search answer). Not the notice number: resolve a number with tenderplan_find_tender_by_number."
+          },
+          "mark_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{24}$"
+            },
+            "minItems": 1,
+            "maxItems": 20,
+            "description": "Marks to remove (ids from tenderplan_list_marks)."
+          }
+        },
+        "required": [
+          "tender_id",
+          "mark_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/relations/marks/remove",
+        "bodyMapping": {
+          "tenders": [
+            "$tender_id"
+          ],
+          "marks": "$mark_ids"
+        }
+      }
+    }
+  ]
+}

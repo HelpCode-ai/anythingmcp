@@ -1,0 +1,860 @@
+{
+  "slug": "sipgate",
+  "name": "sipgate",
+  "aliases": [
+    "sipgate team",
+    "sipgate.io",
+    "sipgate basic",
+    "sipgate trunking"
+  ],
+  "description": "Let your AI work with your sipgate phone system: the history of calls, voicemails, SMS and faxes, users, devices, phone numbers, forwardings and groups, the address book, calls in progress and the balance. Sending SMS and starting calls are included but switched off. Personal access token.",
+  "instructions": "## sipgate\nThis connector works with the **sipgate REST API v2** (`https://api.sipgate.com/v2`) of one sipgate account (sipgate team, trunking or basic, in Germany or the UK): the account and its balance, users, devices, phone numbers, phone lines and forwardings, the history of calls, voicemails, SMS and faxes, the address book, call groups, calls in progress and the blocklist. Sending an SMS and starting a call are included but switched off at install, because both cost money.\n\n**Setup (about 3 minutes)**\n1. Sign in at https://app.sipgate.com and open https://app.sipgate.com/personal-access-token (in the menu: your user, **Personal access tokens**).\n2. Create a token, give it a name and tick the scopes you need (list below). sipgate shows a **Token ID** (it looks like `token-AB12CD`) and the **token** itself (a long code), the token only once.\n3. Paste the Token ID into `SIPGATE_TOKEN_ID` and the token into `SIPGATE_TOKEN`. They are sent as HTTP Basic credentials (Token ID as user name, token as password).\n\n**Scopes to tick** (read scopes are enough for every tool that is switched on, except notes and new contacts)\n- Always useful: `account:read`, `balance:read`, `users:read`, `devices:read`, `numbers:read`, `phonelines:read`, `phonelines:forwardings:read`.\n- History: `history:read`; `history:write` for notes, stars and archiving.\n- Address book: `contacts:read`; `contacts:write` to add contacts.\n- Others: `voicemails:read`, `blacklist:read`, `groups:read`, `groups:users:read`, `rtcm:read` (calls in progress), `sms:read`.\n- Only if you switch the paid tools on: `sessions:sms:write` (send SMS) and `sessions:calls:write` (start calls).\nA call that needs a scope the token does not have answers 403.\n\n**Where to start**: `sipgate_get_user_info` checks the token and returns your user id (`sub`, e.g. `w0`). `sipgate_list_history` is the call list; `sipgate_list_users` and `sipgate_list_numbers` show how the account is set up.\n\n**Account**: `sipgate_get_account`, `sipgate_get_balance`, `sipgate_list_users`, `sipgate_get_user`, `sipgate_list_devices`, `sipgate_get_device`, `sipgate_list_numbers`, `sipgate_list_user_numbers`, `sipgate_list_phonelines`, `sipgate_list_forwardings`, `sipgate_list_groups`, `sipgate_list_group_users`, `sipgate_list_blocklist`.\n\n**Calls and messages**: `sipgate_list_history` (filter by type, direction, time and number), `sipgate_get_history_entry`, `sipgate_update_history_entry` (note, read, star, archive), `sipgate_list_active_calls`, `sipgate_list_voicemails` (the boxes; the messages are history entries of type VOICEMAIL).\n\n**Address book**: `sipgate_list_contacts`, `sipgate_get_contact`, `sipgate_create_contact`.\n\n**Paid actions, switched off at install**: `sipgate_send_sms` (needs the id from `sipgate_list_sms_extensions`) and `sipgate_start_call`.\n\n**Field notes**\n- Ids are a letter and a number: users `w0`, VoIP phones `e0`, mobile devices `y0`, external devices `x0`, phone lines `p0`, groups `g0`, SMS extensions `s0`, voicemail boxes `v0`, fax lines `f0`.\n- Phone numbers are in international format with `+` (e.g. `+4915799912345`).\n- Times in the history are ISO 8601 in UTC. sipgate keeps the history only as long as the plan says (`historyLifeTime` of the account: none, 30 days or unlimited).\n- The balance amount is in ten-thousandths: divide by 10000 to get euros or pounds.\n- A token sees what its user sees. Entries of other users (`include_all_users`) and the full user list need an administrator.\n- sipgate throttles clients that poll quickly; ask for a filtered page of the history instead of reading everything again.\n- Not covered: changing forwardings, devices or numbers, fax sending, and the newer AI and webhook settings.",
+  "region": "de",
+  "category": "messaging",
+  "icon": "sipgate",
+  "docsUrl": "https://api.sipgate.com/v2/doc",
+  "prerequisites": "A sipgate account and a personal access token created in the sipgate web app, with the read scopes of the areas you need. About 3 minutes.",
+  "requiredEnvVars": [
+    "SIPGATE_TOKEN_ID",
+    "SIPGATE_TOKEN"
+  ],
+  "envVarMeta": {
+    "SIPGATE_TOKEN_ID": {
+      "label": "Token ID",
+      "kind": "credential",
+      "help": "sipgate web app, Personal access tokens: the Token ID of the token you created. It starts with token-.",
+      "link": "https://app.sipgate.com/personal-access-token",
+      "example": "token-AB12CD",
+      "pattern": "^token-[A-Za-z0-9]{4,20}$",
+      "patternMessage": "The Token ID starts with token- followed by letters and digits, e.g. token-AB12CD."
+    },
+    "SIPGATE_TOKEN": {
+      "label": "Personal access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The token shown once when it was created, next to the Token ID. Create a new token if it was lost.",
+      "link": "https://app.sipgate.com/personal-access-token",
+      "pattern": "^[A-Za-z0-9-]{20,80}$",
+      "patternMessage": "Paste the token only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "sipgate refused the token. Check that Token ID and token belong together and were not swapped, and that the token was not deleted.",
+    "402": "The account balance is too low for this SMS or call.",
+    "403": "The token lacks the scope for this call, or the user is not an administrator. Create a token with the scope named in the tool description.",
+    "404": "sipgate found nothing with that id. Check the id: users are w0, devices e0, phone lines p0, groups g0, SMS extensions s0.",
+    "rate_limited": "sipgate is throttling this token. Wait a moment and ask for fewer, filtered pages."
+  },
+  "probe": {
+    "tool": "sipgate_get_user_info"
+  },
+  "connector": {
+    "name": "sipgate REST API v2",
+    "type": "REST",
+    "baseUrl": "https://api.sipgate.com/v2",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SIPGATE_TOKEN_ID}}",
+      "password": "{{SIPGATE_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "sipgate_get_user_info",
+      "description": "Read who the access token belongs to: sub (the user id, e.g. w0, needed by the per-user tools), domain (sipgate.de or sipgate.co.uk), locale and masterSipId (the account number). Needs no scope, so it is the quickest check of the token. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/authorization/userinfo"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_get_account",
+      "description": "Read the sipgate account: company, the account holder's first and last name and e-mail, mainProductType (BASIC, TEAM, TRUNKING and so on), verified, and how long the call history is kept (historyLifeTime). Scope account:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_get_balance",
+      "description": "Read the prepaid balance of the account: amount and currency. The amount is in ten-thousandths of the currency unit: 35000 means 3.50 EUR, so divide by 10000. Scope balance:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/balance"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_users",
+      "description": "List the users of the account: id (w0, w1 and so on), firstname, lastname, email, admin, defaultDevice, busyOnBusy, directDialIds and timezone. Only administrators see all users. Scope users:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_get_user",
+      "description": "Read one user of the account: firstname, lastname, email, admin, defaultDevice, busyOnBusy, addressId, directDialIds and timezone. Scope users:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "sipgate user id, a letter w and a number such as w0 (the sub of sipgate_get_user_info is the token owner; sipgate_list_users lists everyone).",
+            "pattern": "^w[0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_devices",
+      "description": "List the devices of a user: id (e for a VoIP phone, y for a mobile SIM, x for an external number, followed by a number), alias, type (REGISTER, MOBILE, EXTERNAL), online, dnd (do not disturb) and the phone lines and groups that ring on it. Scope devices:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "sipgate user id, a letter w and a number such as w0 (the sub of sipgate_get_user_info is the token owner; sipgate_list_users lists everyone).",
+            "pattern": "^w[0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{user_id}/devices"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_get_device",
+      "description": "Read one device: alias, type, online, dnd and the active phone lines and groups routed to it. Scope devices:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "device_id": {
+            "type": "string",
+            "description": "Device id such as e0, y0 or x0 (from sipgate_list_devices).",
+            "pattern": "^[a-z][0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "device_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/devices/{device_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_numbers",
+      "description": "List the phone numbers of the account: number (international format), localized, type (LANDLINE, MOBILE, QUICKDIAL, INTERNATIONAL), and where each number is routed: endpointId (a phone line p, a group g, a fax line f) and endpointAlias. Scope numbers:read. Read-only; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Numbers to skip, for paging.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Numbers to return.",
+            "minimum": 1,
+            "maximum": 5000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/numbers",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_user_numbers",
+      "description": "List the phone numbers routed to one user: number, localized, type, endpointId and endpointAlias. Scope numbers:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "sipgate user id, a letter w and a number such as w0 (the sub of sipgate_get_user_info is the token owner; sipgate_list_users lists everyone).",
+            "pattern": "^w[0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{user_id}/numbers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_phonelines",
+      "description": "List the phone lines (connections) of a user: id (p0, p1 and so on) and alias. A phone line carries the numbers, forwardings and voicemail of that user. Scope phonelines:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "sipgate user id, a letter w and a number such as w0 (the sub of sipgate_get_user_info is the token owner; sipgate_list_users lists everyone).",
+            "pattern": "^w[0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{user_id}/phonelines"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_forwardings",
+      "description": "List the call forwarding rules of a phone line: destination (a number or a device), alias, timeout (seconds until the next step rings) and active. Scope phonelines:forwardings:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "sipgate user id, a letter w and a number such as w0 (the sub of sipgate_get_user_info is the token owner; sipgate_list_users lists everyone).",
+            "pattern": "^w[0-9]{1,6}$"
+          },
+          "phoneline_id": {
+            "type": "string",
+            "description": "Phone line id such as p0 (from sipgate_list_phonelines).",
+            "pattern": "^p[0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "user_id",
+          "phoneline_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{user_id}/phonelines/{phoneline_id}/forwardings"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_history",
+      "description": "List the call history: calls, voicemails, SMS and faxes, newest first. Each entry has id, type, direction (INCOMING, OUTGOING, MISSED_INCOMING, MISSED_OUTGOING), status (PICKUP, NOPICKUP, BUSY, FORWARD), source and target with their aliases, created and lastModified (UTC), read, starred, archived, note, labels, connectionIds and the endpoints the call moved through; depending on the type sipgate adds further fields, such as the text of an SMS or the link to a voicemail recording. totalCount is the number of matches. Without include_all_users only the entries of the token owner. Scope history:read. Read-only; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "types": {
+            "type": "array",
+            "description": "Only these kinds of entries.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "CALL",
+                "VOICEMAIL",
+                "SMS",
+                "FAX"
+              ]
+            }
+          },
+          "directions": {
+            "type": "array",
+            "description": "Only these directions.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "INCOMING",
+                "OUTGOING",
+                "MISSED_INCOMING",
+                "MISSED_OUTGOING"
+              ]
+            }
+          },
+          "from": {
+            "type": "string",
+            "description": "Only entries at or after this moment, ISO 8601 in UTC (e.g. 2026-11-01T00:00:00Z)."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only entries at or before this moment, ISO 8601 in UTC."
+          },
+          "phonenumber": {
+            "type": "string",
+            "description": "Only entries to or from this number."
+          },
+          "connection_ids": {
+            "type": "array",
+            "description": "Only entries of these phone lines, groups or other endpoints (ids such as p0 or g0).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "starred": {
+            "type": "array",
+            "description": "Only starred or only unstarred entries.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "STARRED",
+                "UNSTARRED"
+              ]
+            }
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true lists archived entries instead of current ones."
+          },
+          "include_all_users": {
+            "type": "boolean",
+            "description": "true returns the entries of all users of the account. Administrators only."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Entries to skip, for paging.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Entries to return (default 20).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/history",
+        "queryParams": {
+          "types": "$types",
+          "directions": "$directions",
+          "from": "$from",
+          "to": "$to",
+          "phonenumber": "$phonenumber",
+          "connectionIds": "$connection_ids",
+          "starred": "$starred",
+          "archived": "$archived",
+          "includeAllUsers": "$include_all_users",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_get_history_entry",
+      "description": "Read one entry of the history (a call, voicemail, SMS or fax) by its id: type, direction, status, source, target, created, the endpoints the call moved through, note, labels and the type-specific fields sipgate adds. Scope history:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "Id of the history entry (from sipgate_list_history).",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/history/{entry_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_update_history_entry",
+      "description": "Change the bookkeeping of one history entry: write a note on a call, mark it as read, star it or archive it. Only the fields you pass change. The call itself is not affected. Scope history:write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "string",
+            "description": "Id of the history entry (from sipgate_list_history).",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "note": {
+            "type": "string",
+            "description": "Note shown with the entry in the sipgate app."
+          },
+          "read": {
+            "type": "boolean",
+            "description": "true marks the entry as read, false as unread."
+          },
+          "starred": {
+            "type": "boolean",
+            "description": "true stars the entry, false removes the star."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true moves the entry to the archive, false brings it back."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/history/{entry_id}",
+        "bodyMapping": {
+          "note": "$note",
+          "read": "$read",
+          "starred": "$starred",
+          "archived": "$archived"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_contacts",
+      "description": "List the contacts of the address book: id, name, givenname, familyname, numbers (number and type), emails, addresses, organization, note and scope (PRIVATE for the token owner, SHARED for the whole account, INTERNAL for colleagues), plus totalCount. Scope contacts:read. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "phonenumbers": {
+            "type": "array",
+            "description": "Only contacts with one of these phone numbers (international format).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "scopes": {
+            "type": "array",
+            "description": "Only these address books. Leave out for all.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PRIVATE",
+                "SHARED",
+                "INTERNAL"
+              ]
+            }
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Contacts to return (default 100).",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Contacts to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "phonenumbers": "$phonenumbers",
+          "scopes": "$scopes",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_get_contact",
+      "description": "Read one contact of the address book by its id: name, numbers, emails, addresses, organization, note and scope. Scope contacts:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id, a UUID (from sipgate_list_contacts).",
+            "pattern": "^[A-Za-z0-9-]{8,64}$"
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_create_contact",
+      "description": "Add a contact to the address book, so that calls from its numbers show the name. Answers with status 201 and an empty body. A SHARED contact is visible to every user of the account, a PRIVATE one only to the token owner. Scope contacts:write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Full name as it is shown, e.g. Ada Lovelace."
+          },
+          "given": {
+            "type": "string",
+            "description": "Given name."
+          },
+          "family": {
+            "type": "string",
+            "description": "Family name."
+          },
+          "numbers": {
+            "type": "array",
+            "description": "Phone numbers, e.g. `[{\"number\":\"+4915799912345\",\"type\":[\"cell\"]}]`. type is a list such as work, home or cell and may be empty.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "number": {
+                  "type": "string",
+                  "description": "Phone number in international format."
+                },
+                "type": {
+                  "type": "array",
+                  "description": "Labels such as work, home, cell.",
+                  "items": {
+                    "type": "string"
+                  }
+                }
+              },
+              "required": [
+                "number"
+              ]
+            }
+          },
+          "emails": {
+            "type": "array",
+            "description": "E-mail addresses, e.g. `[{\"email\":\"ada@example.com\",\"type\":[\"work\"]}]`.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "organization": {
+            "type": "array",
+            "description": "Company and department as a list of lists, e.g. `[[\"Analytical Engines Ltd\",\"Research\"]]`.",
+            "items": {
+              "type": "array",
+              "items": {
+                "type": "string"
+              }
+            }
+          },
+          "note": {
+            "type": "string",
+            "description": "Free text note on the contact."
+          },
+          "scope": {
+            "type": "string",
+            "description": "PRIVATE (only the token owner) or SHARED (all users of the account).",
+            "enum": [
+              "PRIVATE",
+              "SHARED"
+            ],
+            "default": "SHARED"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "name": "$name",
+          "given": "$given",
+          "family": "$family",
+          "numbers": "$numbers",
+          "emails": "$emails",
+          "organization": "$organization",
+          "note": "$note",
+          "scope": "$scope"
+        }
+      }
+    },
+    {
+      "name": "sipgate_list_voicemails",
+      "description": "List the voicemail boxes of the account: id (v0 and so on), alias and the phone line or group each belongs to. The recorded messages themselves are in the history: call sipgate_list_history with types VOICEMAIL. Scope voicemails:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/voicemails"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_blocklist",
+      "description": "List the numbers blocked for incoming calls: phoneNumber and isBlock (true when every number starting with it is blocked, which blocks a whole number range). Scope blacklist:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/blacklist/incoming"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_groups",
+      "description": "List the call groups (hunt groups) of the account: id (g0 and so on) and alias. With user_id only the groups that user is in. A group rings several users for one number. Scope groups:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Only groups of this user (e.g. w0). Leave out for all groups.",
+            "pattern": "^w[0-9]{1,6}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups",
+        "queryParams": {
+          "userId": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_group_users",
+      "description": "List the members of a call group: id, firstname and lastname of each user. Scope groups:users:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "description": "Group id such as g0 (from sipgate_list_groups).",
+            "pattern": "^g[0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_active_calls",
+      "description": "List the calls that are connected right now: callId, the participants with their phone numbers, and whether the call is muted, on hold or being recorded. Ringing calls are not included. Scope rtcm:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calls"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_list_sms_extensions",
+      "description": "List the SMS extensions of a user: id (s0 and so on), alias and callerId (the sender number). The id is the sms_id that sipgate_send_sms needs. Scope sms:read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "sipgate user id, a letter w and a number such as w0 (the sub of sipgate_get_user_info is the token owner; sipgate_list_users lists everyone).",
+            "pattern": "^w[0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{user_id}/sms"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sipgate_send_sms",
+      "description": "Send an SMS from an SMS extension of the account. sipgate charges every SMS to the account balance, so the tool is installed switched off; when it is switched on, confirm number and text with the user. Answers with an empty body and status 204. Scope sessions:sms:write.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sms_id": {
+            "type": "string",
+            "description": "SMS extension to send from, such as s0 (from sipgate_list_sms_extensions).",
+            "pattern": "^s[0-9]{1,6}$"
+          },
+          "recipient": {
+            "type": "string",
+            "description": "Recipient number in international format, e.g. +4915799912345.",
+            "pattern": "^\\+?[1-9][0-9]{4,14}$"
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the SMS. More than 160 characters are sent, and charged, as several SMS."
+          },
+          "send_at": {
+            "type": "integer",
+            "description": "Send later: Unix time in seconds, at most one month ahead. Leave out to send at once.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "sms_id",
+          "recipient",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sessions/sms",
+        "bodyMapping": {
+          "smsId": "$sms_id",
+          "recipient": "$recipient",
+          "message": "$message",
+          "sendAt": "$send_at"
+        }
+      }
+    },
+    {
+      "name": "sipgate_start_call",
+      "description": "Start a phone call (click to call): sipgate first rings the caller's device and, once it is picked up, dials the callee. A real call is placed and charged at the account's rates, so the tool is installed switched off; when it is switched on, confirm both numbers with the user. Returns sessionId. Works on classic sipgate team accounts. Scope sessions:calls:write.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "caller": {
+            "type": "string",
+            "description": "Who rings first: a device id of the user (e.g. e0) or a phone number in international format.",
+            "pattern": "^([a-z][0-9]{1,6}|\\+?[1-9][0-9]{4,14})$"
+          },
+          "callee": {
+            "type": "string",
+            "description": "Number to call in international format, e.g. +4915799912345.",
+            "pattern": "^\\+?[1-9][0-9]{4,14}$"
+          },
+          "caller_id": {
+            "type": "string",
+            "description": "Number shown to the callee; must be a number of the account. Leave out for the default in international format, e.g. +4915799912345.",
+            "pattern": "^\\+?[1-9][0-9]{4,14}$"
+          },
+          "device_id": {
+            "type": "string",
+            "description": "Device whose line is used and billed (e.g. e0). Needed when caller is a phone number.",
+            "pattern": "^[a-z][0-9]{1,6}$"
+          }
+        },
+        "required": [
+          "caller",
+          "callee"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sessions/calls",
+        "bodyMapping": {
+          "caller": "$caller",
+          "callee": "$callee",
+          "callerId": "$caller_id",
+          "deviceId": "$device_id"
+        }
+      }
+    }
+  ]
+}

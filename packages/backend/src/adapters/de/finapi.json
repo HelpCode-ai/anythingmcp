@@ -1,0 +1,1016 @@
+{
+  "slug": "finapi",
+  "name": "finAPI",
+  "aliases": [
+    "finAPI Access",
+    "finAPI Open Banking"
+  ],
+  "description": "finAPI Access (Open Banking) account information, read-only: bank accounts and balances, daily balance history, transactions and pending transactions, cash flows per category, securities, standing orders, bank connections and the bank database. Client credentials plus a finAPI user.",
+  "instructions": "## finAPI\nThis connector reads account information from **finAPI Access** (Open Banking, API v2) at `https://live.finapi.io` or `https://sandbox.finapi.io`: the bank accounts, balances, transactions, pending transactions, securities, standing orders, categories and cash flows of one finAPI user, plus finAPI's bank database. It is **read-only**: no payments, no standing order changes, no bank imports and no user management.\n\n**How finAPI is organised**: your company is a finAPI *client* (client id and secret). Each end user is a finAPI *user* with an id and a password, created by your client. The user's banks are connected through finAPI's Web Form; finAPI then stores accounts and transactions, which this connector reads with the user's token.\n\n**Setup (about 10 minutes when client and user exist)**\n1. Choose the environment in `FINAPI_HOST`: Live for real banks, Sandbox for tests. Client credentials and users of one do not work on the other.\n2. Enter the **client id** and **client secret** of your finAPI client in `FINAPI_CLIENT_ID` and `FINAPI_CLIENT_SECRET`. Sandbox credentials are free at https://www.finapi.io/jetzt-testen/; live credentials come with a finAPI contract.\n3. Enter the id and password of the finAPI user whose banking data should be read in `FINAPI_USER_ID` and `FINAPI_USER_PASSWORD`. If you have no user yet, create one with your client credentials (finAPI docs, `POST /api/v2/users`) and connect a bank for it through the finAPI Web Form.\n\nThe connector requests a token at `/api/v2/oauth/token` with the password grant (client id, client secret, user id, password) and renews it by itself; a token lasts one hour by default.\n\n**Where to start**: `finapi_list_accounts` shows every account with its stored balance. `finapi_list_bank_connections` tells how current the data is.\n\n**Accounts and balances**: `finapi_list_accounts`, `finapi_get_account`, `finapi_get_daily_balances` (balance history, at most one year per call), `finapi_list_bank_balances` (balances as the bank reported them).\n\n**Transactions**: `finapi_list_transactions` (search by text, counterpart, purpose, amount, dates, category, label), `finapi_get_transaction`, `finapi_list_pending_transactions`. `finapi_get_cash_flows` adds up income and spending per category; `finapi_list_categories`, `finapi_get_category` and `finapi_list_labels` give the ids for the filters.\n\n**Banks and connections**: `finapi_list_bank_connections`, `finapi_get_bank_connection`, `finapi_search_banks`, `finapi_get_bank`.\n\n**Investments and recurring payments**: `finapi_list_securities`, `finapi_get_security`, `finapi_list_standing_orders`. **User**: `finapi_get_user`.\n\n**The data is a stored copy**: finAPI returns what it downloaded at the last update of a bank connection, not live bank data. Check `lastSuccessfulUpdate` on the account and `updateStatus` on the bank connection before stating a current balance. Updates are triggered in your own finAPI application (Web Form) or by finAPI's automatic daily update when it is enabled for the user (`isAutoUpdateEnabled` in `finapi_get_user`). When an interface shows `userActionRequired`, the user has to renew the bank consent there.\n\n**Amounts and dates**: amounts are decimal numbers in the currency of the account; spending is negative. Dates are `YYYY-MM-DD`. A transaction has three dates: `bankBookingDate` (as booked by the bank), `valueDate` and `finapiBookingDate` (finAPI's own, used for balance history).\n\n**Lists**: id filters take one id or several separated by commas. Paged lists answer `paging` with page, perPage, pageCount and totalCount; pages start at 1 with 20 records, at most 500 per page. `order` is `field,asc` or `field,desc`.\n\n**Errors**: a failed call answers `errors` (each with message, code and type) and a `requestId` to quote to finAPI support. 401 means the token request or the token was refused (wrong client or user credentials, or the wrong environment); 403 the user is not verified yet or the client may not call the service; 404 no such id for this user; 423 the finAPI user is locked after too many failed logins, or a bank connection is locked while finAPI imports or updates it (retry a little later).\n\n**Personal data**: the answers contain real banking data of the user (IBANs, counterparts, purposes). Use it only for what the user asked for.",
+  "region": "de",
+  "category": "banking",
+  "icon": "finapi",
+  "docsUrl": "https://docs.finapi.io/",
+  "prerequisites": "A finAPI Access client (client id and secret; sandbox credentials are free, live ones need a finAPI contract) and a finAPI user of that client with at least one bank connected through the finAPI Web Form.",
+  "requiredEnvVars": [
+    "FINAPI_HOST",
+    "FINAPI_CLIENT_ID",
+    "FINAPI_CLIENT_SECRET",
+    "FINAPI_USER_ID",
+    "FINAPI_USER_PASSWORD"
+  ],
+  "envVarMeta": {
+    "FINAPI_HOST": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "Live for real banks, Sandbox for tests with finAPI test banks. Credentials of one environment do not work on the other.",
+      "options": [
+        {
+          "value": "https://live.finapi.io",
+          "label": "Live"
+        },
+        {
+          "value": "https://sandbox.finapi.io",
+          "label": "Sandbox"
+        }
+      ]
+    },
+    "FINAPI_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "The client identifier of your finAPI client, a UUID.",
+      "link": "https://www.finapi.io/jetzt-testen/",
+      "pattern": "^[A-Za-z0-9-]{8,100}$",
+      "patternMessage": "Paste the client ID only, without spaces."
+    },
+    "FINAPI_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "The client secret that belongs to the client ID.",
+      "link": "https://www.finapi.io/jetzt-testen/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the client secret without spaces."
+    },
+    "FINAPI_USER_ID": {
+      "label": "finAPI user ID",
+      "kind": "credential",
+      "help": "The identifier of the finAPI user whose banking data is read (the id given when the user was created with POST /api/v2/users). Not a bank login.",
+      "pattern": "^\\S{1,200}$",
+      "patternMessage": "Enter the finAPI user ID without spaces."
+    },
+    "FINAPI_USER_PASSWORD": {
+      "label": "finAPI user password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that finAPI user, as returned when the user was created. Not the online banking password.",
+      "pattern": "^\\S{1,200}$",
+      "patternMessage": "Enter the password without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "finAPI issued no token. Check the client ID and secret, the finAPI user ID and password, and that the environment (Live or Sandbox) is the one these credentials belong to.",
+    "403": "finAPI refused the call: the user is not verified by the client yet, or the client is not allowed to use this service. The message names the reason.",
+    "404": "finAPI found no object with that id for this user.",
+    "423": "The finAPI user is locked after too many failed logins (unlock it in your finAPI client), or a bank connection is being updated right now. Check the password, then try again in a minute.",
+    "rate_limited": "finAPI is throttling this client. Wait a moment and use larger pages instead of many small calls."
+  },
+  "probe": {
+    "tool": "finapi_list_accounts",
+    "params": {}
+  },
+  "connector": {
+    "name": "finAPI Access API v2",
+    "type": "REST",
+    "baseUrl": "{{FINAPI_HOST}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "password",
+      "tokenUrl": "{{FINAPI_HOST}}/api/v2/oauth/token",
+      "clientId": "{{FINAPI_CLIENT_ID}}",
+      "clientSecret": "{{FINAPI_CLIENT_SECRET}}",
+      "username": "{{FINAPI_USER_ID}}",
+      "password": "{{FINAPI_USER_PASSWORD}}",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "finapi_list_accounts",
+      "description": "List the bank accounts of the finAPI user: id, bankConnectionId, accountName, iban, accountNumber, accountHolderName, accountCurrency, accountType (Checking, Savings, CreditCard, Security, Loan, Membership, Bausparen), balance, overdraft, overdraftLimit, availableFunds and per interface status and lastSuccessfulUpdate. The balance is the one finAPI stored at the last bank update, not a live value. Answer: `accounts`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Only these accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "search": {
+            "type": "string",
+            "description": "Only accounts whose accountName, iban, accountNumber or subAccountNumber contains this text. Several words must all match."
+          },
+          "account_types": {
+            "type": "string",
+            "description": "Only these account types, separated by commas: Checking, Savings, CreditCard, Security, Loan, Membership, Bausparen.",
+            "pattern": "^(Checking|Savings|CreditCard|Security|Loan|Membership|Bausparen)(,(Checking|Savings|CreditCard|Security|Loan|Membership|Bausparen))*$"
+          },
+          "bank_connection_ids": {
+            "type": "string",
+            "description": "Only accounts of these bank connections: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "min_balance": {
+            "type": "number",
+            "description": "Only accounts with at least this balance, e.g. -300.12."
+          },
+          "max_balance": {
+            "type": "number",
+            "description": "Only accounts with at most this balance."
+          },
+          "min_last_successful_update": {
+            "type": "string",
+            "description": "Only accounts updated on or after this day. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "max_last_successful_update": {
+            "type": "string",
+            "description": "Only accounts last updated on or before this day (to find stale accounts). Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts",
+        "queryParams": {
+          "ids": "$ids",
+          "search": "$search",
+          "accountTypes": "$account_types",
+          "bankConnectionIds": "$bank_connection_ids",
+          "minBalance": "$min_balance",
+          "maxBalance": "$max_balance",
+          "minLastSuccessfulUpdate": "$min_last_successful_update",
+          "maxLastSuccessfulUpdate": "$max_last_successful_update"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_account",
+      "description": "Read one bank account by id: name, IBAN, holder, currency, type, balance, overdraft and overdraft limit, available funds, whether it is seized, and per banking interface the status (UPDATED, UPDATED_FIXED, DOWNLOAD_IN_PROGRESS, DOWNLOAD_FAILED, DEPRECATED), capabilities and the time of the last successful update. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Account id from finapi_list_accounts.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts/{account_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_daily_balances",
+      "description": "Read the balance at the end of each day for a period of at most one year: per day date, balance, income, spending and the ids of the transactions of that day. The values are summed over all given accounts, so pass one account id for a single account, and never mix accounts of different currencies. Calculated by finAPI from the current balance and the stored transactions. Answer: `dailyBalances`, `latestCommonBalanceTimestamp` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_ids": {
+            "type": "string",
+            "description": "Accounts to sum up (not security accounts). Leave out for all accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day of the period. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day of the period, default today. The period may not exceed 366 days. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "with_projection": {
+            "type": "boolean",
+            "description": "true (default): every day of the period gets a balance, also before the first and after the last known one. false: only days with real data."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: date, balance, income, spending. Default `date,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts/dailyBalances",
+        "queryParams": {
+          "accountIds": "$account_ids",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "withProjection": "$with_projection",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_bank_balances",
+      "description": "List the balances exactly as the bank reported them at the last update: id, accountId, amount, currency, isoType and bankType (kind of balance, e.g. closing booked or expected), referenceDate, lastChangeDateTime and creditLimitIncluded. An account can have several. Answer: `bankBalanceResources` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_ids": {
+            "type": "string",
+            "description": "Only balances of these accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: id, amount, isoType, bankType, referenceDate, lastChangeDateTime. Default `id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/accounts/balances",
+        "queryParams": {
+          "accountIds": "$account_ids",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_transactions",
+      "description": "Search the booked transactions of the user: id, accountId, valueDate, bankBookingDate, finapiBookingDate, amount (negative for spending), currency, purpose, counterpartName, counterpartIban, counterpartBic, counterpartMandateReference, type, category (id, name), labels, isNew and isPotentialDuplicate. The answer also carries `income`, `spending` and `balance` summed over all matching transactions, and `paging` (page, perPage, pageCount, totalCount). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Only transactions whose purpose, end-to-end reference or counterpart fields (name, IBAN, BIC, mandate reference, creditor id) contain this text. Several words must all match."
+          },
+          "counterpart": {
+            "type": "string",
+            "description": "Only transactions whose counterpart fields contain this text (name, account number, IBAN, BIC)."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Only transactions whose purpose contains this text."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Only transactions in this currency: three-letter ISO 4217 code such as EUR.",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "account_ids": {
+            "type": "string",
+            "description": "Only transactions of these accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "min_bank_booking_date": {
+            "type": "string",
+            "description": "Booked by the bank on or after this day. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "max_bank_booking_date": {
+            "type": "string",
+            "description": "Booked by the bank on or before this day. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "min_amount": {
+            "type": "number",
+            "description": "Amount at least this value. Spending is negative, so -50 to 0 selects small payments."
+          },
+          "max_amount": {
+            "type": "number",
+            "description": "Amount at most this value."
+          },
+          "direction": {
+            "type": "string",
+            "description": "income (amount 0 or more), spending (amount below 0) or all.",
+            "enum": [
+              "all",
+              "income",
+              "spending"
+            ],
+            "default": "all"
+          },
+          "label_ids": {
+            "type": "string",
+            "description": "Only transactions that carry one of these labels: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Only transactions of these categories. 0 selects transactions without a category: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "is_new": {
+            "type": "boolean",
+            "description": "true: only transactions still flagged as new. false: only the others."
+          },
+          "include_child_categories": {
+            "type": "boolean",
+            "description": "With category_ids: false matches only exactly those categories. Default true, which includes their sub-categories."
+          },
+          "min_import_date": {
+            "type": "string",
+            "description": "Imported into finAPI on or after this day. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "max_import_date": {
+            "type": "string",
+            "description": "Imported into finAPI on or before this day. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "view": {
+            "type": "string",
+            "description": "userView (default) returns the parts of transactions the user has split instead of the original; bankView returns transactions as the bank delivered them.",
+            "enum": [
+              "userView",
+              "bankView"
+            ],
+            "default": "userView"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: id, accountId, valueDate, bankBookingDate, finapiBookingDate, amount, purpose, counterpartName, type, category.name, isNew, importDate. Default `id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/transactions",
+        "queryParams": {
+          "view": "$view",
+          "search": "$search",
+          "counterpart": "$counterpart",
+          "purpose": "$purpose",
+          "currency": "$currency",
+          "accountIds": "$account_ids",
+          "minBankBookingDate": "$min_bank_booking_date",
+          "maxBankBookingDate": "$max_bank_booking_date",
+          "minAmount": "$min_amount",
+          "maxAmount": "$max_amount",
+          "direction": "$direction",
+          "labelIds": "$label_ids",
+          "categoryIds": "$category_ids",
+          "isNew": "$is_new",
+          "includeChildCategories": "$include_child_categories",
+          "minImportDate": "$min_import_date",
+          "maxImportDate": "$max_import_date",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_transaction",
+      "description": "Read one transaction by id with every field: dates, amount, currency, purpose, additional information, all counterpart details, SEPA and bank transaction codes, primanota, category, labels and, for a split transaction, its children. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "description": "Transaction id from finapi_list_transactions.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/transactions/{transaction_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_pending_transactions",
+      "description": "List transactions the bank reports as pending (not booked yet): id, accountId, valueDate, bankBookingDate, amount, currency, purpose, counterpartyName, counterpartyIban and type. Only banks and interfaces that deliver pending transactions fill this list; it is replaced at every bank update. Answer: `pendingTransactions` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_ids": {
+            "type": "string",
+            "description": "Only pending transactions of these accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: id, accountId, valueDate, bankBookingDate, importDate, amount. Default `id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/pendingTransactions",
+        "queryParams": {
+          "accountIds": "$account_ids",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_cash_flows",
+      "description": "Calculate income, spending and balance per category for the matching transactions: per category `income`, `spending`, `balance` and the transaction counts, plus `totalIncome`, `totalSpending` and `totalBalance`. Use it for questions such as what was spent on rent or groceries in a period. Amounts of different currencies are added without conversion, so filter by currency when accounts differ. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Only transactions whose purpose, end-to-end reference or counterpart fields (name, IBAN, BIC, mandate reference, creditor id) contain this text. Several words must all match."
+          },
+          "counterpart": {
+            "type": "string",
+            "description": "Only transactions whose counterpart fields contain this text (name, account number, IBAN, BIC)."
+          },
+          "purpose": {
+            "type": "string",
+            "description": "Only transactions whose purpose contains this text."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Only transactions in this currency: three-letter ISO 4217 code such as EUR.",
+            "pattern": "^[A-Z]{3}$"
+          },
+          "account_ids": {
+            "type": "string",
+            "description": "Only transactions of these accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "min_bank_booking_date": {
+            "type": "string",
+            "description": "Booked by the bank on or after this day. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "max_bank_booking_date": {
+            "type": "string",
+            "description": "Booked by the bank on or before this day. Date as YYYY-MM-DD, e.g. `2026-10-01`.",
+            "format": "date"
+          },
+          "min_amount": {
+            "type": "number",
+            "description": "Amount at least this value. Spending is negative, so -50 to 0 selects small payments."
+          },
+          "max_amount": {
+            "type": "number",
+            "description": "Amount at most this value."
+          },
+          "direction": {
+            "type": "string",
+            "description": "income (amount 0 or more), spending (amount below 0) or all.",
+            "enum": [
+              "all",
+              "income",
+              "spending"
+            ],
+            "default": "all"
+          },
+          "label_ids": {
+            "type": "string",
+            "description": "Only transactions that carry one of these labels: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "category_ids": {
+            "type": "string",
+            "description": "Only transactions of these categories. 0 selects transactions without a category: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "is_new": {
+            "type": "boolean",
+            "description": "true: only transactions still flagged as new. false: only the others."
+          },
+          "include_sub_cash_flows": {
+            "type": "boolean",
+            "description": "true (default): the figures of a category include its sub-categories. false: only transactions assigned to exactly that category."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: income, spending, balance, category.id, category.name. Default `category.id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/categories/cashFlows",
+        "queryParams": {
+          "search": "$search",
+          "counterpart": "$counterpart",
+          "purpose": "$purpose",
+          "currency": "$currency",
+          "accountIds": "$account_ids",
+          "minBankBookingDate": "$min_bank_booking_date",
+          "maxBankBookingDate": "$max_bank_booking_date",
+          "minAmount": "$min_amount",
+          "maxAmount": "$max_amount",
+          "direction": "$direction",
+          "labelIds": "$label_ids",
+          "categoryIds": "$category_ids",
+          "isNew": "$is_new",
+          "includeSubCashFlows": "$include_sub_cash_flows",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_bank_connections",
+      "description": "List the bank connections of the user (one per bank login): id, name, bank (id, name, bic, blz), accountIds, updateStatus (IN_PROGRESS or READY), categorizationStatus, owners and per interface the time of the last manual and automatic update, the consent (aisConsent with its expiry) and userActionRequired. Shows whether the data is current and whether the user must renew a consent. Answer: `connections`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Only these bank connections: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/bankConnections",
+        "queryParams": {
+          "ids": "$ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_bank_connection",
+      "description": "Read one bank connection by id: bank, accounts, update and categorization status, owners, and per interface the last updates, the consent and whether user action is required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_connection_id": {
+            "type": "integer",
+            "description": "Bank connection id from finapi_list_bank_connections.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "bank_connection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/bankConnections/{bank_connection_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_search_banks",
+      "description": "Search the bank database of finAPI: id, name, bic, blz, location (country), city, isTestBank, popularity and per interface (XS2A, FINTS_SERVER, WEB_SCRAPER) whether account information and payments are supported and its health in percent. An IBAN as search text finds the bank it belongs to. Answer: `banks` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text in the bank name, BLZ, BIC or city, or a whole IBAN. Several words must all match."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Only these banks: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "location": {
+            "type": "string",
+            "description": "Only banks in these countries: two-letter ISO codes separated by commas, e.g. `DE,AT`.",
+            "pattern": "^[A-Za-z]{2}(,[A-Za-z]{2})*$"
+          },
+          "supported_banking_interfaces": {
+            "type": "string",
+            "description": "Only banks that offer one of these interfaces, separated by commas: XS2A, FINTS_SERVER, WEB_SCRAPER.",
+            "pattern": "^(XS2A|FINTS_SERVER|WEB_SCRAPER)(,(XS2A|FINTS_SERVER|WEB_SCRAPER))*$"
+          },
+          "is_test_bank": {
+            "type": "boolean",
+            "description": "true: only finAPI test banks (sandbox). false: only real banks."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: id, name, blz, bic, popularity. Default `id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/banks",
+        "queryParams": {
+          "search": "$search",
+          "ids": "$ids",
+          "location": "$location",
+          "supportedBankingInterfaces": "$supported_banking_interfaces",
+          "isTestBank": "$is_test_bank",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_bank",
+      "description": "Read one bank by id: name, BIC, BLZ, country, city, and per interface the login fields, supported account types, capabilities, health and the time of the last successful communication. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bank_id": {
+            "type": "integer",
+            "description": "Bank id from finapi_search_banks or from a bank connection.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "bank_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/banks/{bank_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_categories",
+      "description": "List the transaction categories: the global finAPI categories and the custom ones of the user, with id, name, parentId, parentName, isCustom and children (ids of sub-categories). Category ids filter finapi_list_transactions and finapi_get_cash_flows. Answer: `categories` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Only categories whose name contains this text."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Only these categories: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "is_custom": {
+            "type": "boolean",
+            "description": "true: only categories the user created. false: only the global finAPI categories."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500; use 500 to get the whole tree at once.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: id, name, isCustom. Default `id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/categories",
+        "queryParams": {
+          "search": "$search",
+          "ids": "$ids",
+          "isCustom": "$is_custom",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_category",
+      "description": "Read one transaction category by id: name, parent category, whether it is a custom category of the user, and the ids of its sub-categories. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "description": "Category id from finapi_list_categories.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/categories/{category_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_labels",
+      "description": "List the labels the user defined to tag transactions: id and name. Label ids filter finapi_list_transactions and finapi_get_cash_flows. Answer: `labels` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Only labels whose name contains this text."
+          },
+          "ids": {
+            "type": "string",
+            "description": "Only these labels: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/labels",
+        "queryParams": {
+          "search": "$search",
+          "ids": "$ids",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_securities",
+      "description": "List the security positions of the depot accounts of the user: id, accountId, name, isin, wkn, quote with quoteCurrency, quoteType and quoteDate, quantityNominal, marketValue with marketValueCurrency, entryQuote and profitOrLoss. Ids change at every update of a depot, so do not store them. Answer: `securities` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Only securities whose name, ISIN or WKN contains this text."
+          },
+          "account_ids": {
+            "type": "string",
+            "description": "Only positions of these depot accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "ids": {
+            "type": "string",
+            "description": "Only these positions: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: id, name, isin, wkn, quote, quantityNominal, marketValue, entryQuote. Default `id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/securities",
+        "queryParams": {
+          "search": "$search",
+          "accountIds": "$account_ids",
+          "ids": "$ids",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_security",
+      "description": "Read one security position by id: name, ISIN, WKN, quote and its date, quantity, market value, entry quote and profit or loss. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "security_id": {
+            "type": "integer",
+            "description": "Security position id from finapi_list_securities.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "security_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/securities/{security_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_list_standing_orders",
+      "description": "List the standing orders the bank holds for the accounts of the user, as downloaded at the last update: id, accountId, amount, currency, counterpartyName, counterpartyIban, purpose, startDate, endDate, dayOfExecution, frequency and monthsOfExecution. Information only: the connector cannot create or change standing orders. Answer: `standingOrders` and `paging`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_ids": {
+            "type": "string",
+            "description": "Only standing orders of these accounts: one id or several separated by commas (at most 1000), e.g. `12,15`.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Records per page. Default 20, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 20
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort order as `field,asc` or `field,desc`. Fields: id, amount, startDate. Default `id,asc`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/bankSideStandingOrders",
+        "queryParams": {
+          "accountIds": "$account_ids",
+          "page": "$page",
+          "perPage": "$per_page",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "finapi_get_user",
+      "description": "Read the finAPI user the connector is signed in as: id, email, phone, isAutoUpdateEnabled (whether finAPI refreshes the bank data by itself each day) and isAutoUpdateInProgress. Use it to confirm which user the data belongs to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v2/users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "password"
+          ]
+        }
+      }
+    }
+  ]
+}

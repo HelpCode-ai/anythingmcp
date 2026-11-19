@@ -1,0 +1,261 @@
+{
+  "slug": "kuehne-nagel",
+  "name": "Kuehne+Nagel",
+  "description": "Kuehne+Nagel Shipment Tracking API v2: find air, sea and road shipments by tracking number, customer reference or filters, and read their references, parties, cargo, routing milestones and milestone history. Read-only. OAuth2 consumer key and secret from the developer portal.",
+  "instructions": "## Kuehne+Nagel\nThis connector reads the **Kuehne+Nagel Shipment Tracking API v2** (`https://gateway.api.kuehne-nagel.com/track-trace/shipment/v2`): the air, sea and road shipments your company sees in myKN, with references, parties, cargo, routing milestones and their history. It is read-only.\n\n**Before you start**: the API shows what your myKN account shows. Your company needs a myKN Enterprise Visibility setup (the company locations whose shipments you may see); ask your Kuehne+Nagel account manager if you are not sure.\n\n**Setup (about 10 minutes)**\n1. Sign in to the developer portal at https://portal.api.kuehne-nagel.com/devportal/ with the same email address as your myKN account.\n2. Under **Applications** create an application (or open the default one) and subscribe it to the API **ShipmentTracking, version v2**.\n3. In the application open **Production Keys, OAuth2 Tokens**, generate the keys with the grant type Client Credentials, and copy the **Consumer Key** into `KUEHNE_NAGEL_CONSUMER_KEY` and the **Consumer Secret** into `KUEHNE_NAGEL_CONSUMER_SECRET`.\n\nThe connector exchanges them at `https://portal.api.kuehne-nagel.com/oauth2/token` for a bearer token and renews it by itself.\n\n**Where to start**\n- You know the tracking number: `kuehne_nagel_get_shipment`.\n- You know your own reference (order or purchase order number): `kuehne_nagel_find_shipments_by_reference`. The reference is required there and must match completely.\n- You want a list (all sea shipments in transit, everything departing this month): `kuehne_nagel_search_shipments`. All its filters are optional; without filters it lists every visible shipment, newest first.\n- You want to know what changed (a delay, a new estimated arrival): `kuehne_nagel_get_shipment_history` with the shipmentId.\n\n**Two identifiers**: the trackingNumber (letters and digits such as `1056143482TK`) and the numeric shipmentId (such as `19101910`). The details take the tracking number, or `shipment-id:` followed by the shipmentId; the history takes the bare shipmentId.\n\n**Reading the data**: modeOfTransport is AIR, SEA or ROAD. currentStage is BOOKED, IN_TRANSIT, COMPLETED or CANCELLED. The routing lists locations (origin, ports or airports, destination) with milestones; each milestone time carries a condition, PLANNED or ACTUAL, and `reached` tells whether the shipment passed it. Times are ISO 8601. The search pages from `page` 0 with `size` rows; `page.hasNext` tells whether another page follows.\n\n**Errors**: problems are answered as `application/problem+json` with title and detail. 401 means the token was refused, 403 that the application is not subscribed to ShipmentTracking v2, 404 that no visible shipment has that number.",
+  "aliases": [
+    "Kuehne Nagel",
+    "Kühne+Nagel",
+    "Kühne + Nagel",
+    "K+N",
+    "myKN",
+    "Kuehne+Nagel Track and Trace"
+  ],
+  "region": "intl",
+  "category": "logistics",
+  "icon": "kuehne-nagel",
+  "docsUrl": "https://portal.api.kuehne-nagel.com/devportal/apis/6b98ae4c-ef06-4f72-acba-616584ee7f0f/overview",
+  "requiredEnvVars": [
+    "KUEHNE_NAGEL_CONSUMER_KEY",
+    "KUEHNE_NAGEL_CONSUMER_SECRET"
+  ],
+  "envVarMeta": {
+    "KUEHNE_NAGEL_CONSUMER_KEY": {
+      "label": "Consumer key",
+      "kind": "credential",
+      "help": "Kuehne+Nagel developer portal, Applications, your application, Production Keys, OAuth2 Tokens: copy the Consumer Key. The application must be subscribed to ShipmentTracking v2.",
+      "link": "https://portal.api.kuehne-nagel.com/devportal/applications",
+      "pattern": "^[A-Za-z0-9_-]{16,100}$",
+      "patternMessage": "Paste the consumer key only (letters, digits, _ and -), without spaces."
+    },
+    "KUEHNE_NAGEL_CONSUMER_SECRET": {
+      "label": "Consumer secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the Consumer Key under Production Keys, OAuth2 Tokens of your application in the developer portal.",
+      "link": "https://portal.api.kuehne-nagel.com/devportal/applications",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the consumer secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Kuehne+Nagel could not read the request: a tracking number may hold only capital letters and digits, and a search date needs a type with from or to as YYYY-MM-DD.",
+    "401": "Kuehne+Nagel did not issue or accept a token for this consumer key and secret. Copy both again from Production Keys, OAuth2 Tokens of your application in the developer portal (production keys, not sandbox).",
+    "403": "The application is not subscribed to the API ShipmentTracking v2, or your account has no myKN visibility setup. Subscribe the application in the developer portal and ask your Kuehne+Nagel account manager about Enterprise Visibility.",
+    "404": "No shipment visible to your myKN account has that tracking number or id. The history needs the numeric shipmentId, not the tracking number.",
+    "rate_limited": "Kuehne+Nagel throttles the API. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "kuehne_nagel_search_shipments",
+    "params": {
+      "size": 1
+    }
+  },
+  "prerequisites": "A myKN customer account with Enterprise Visibility set up by Kuehne+Nagel, and an account on the Kuehne+Nagel developer portal (same email address) with an application subscribed to ShipmentTracking v2. About 10 minutes once the account exists.",
+  "connector": {
+    "name": "Kuehne+Nagel Shipment Tracking API v2",
+    "type": "REST",
+    "baseUrl": "https://gateway.api.kuehne-nagel.com/track-trace/shipment/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{KUEHNE_NAGEL_CONSUMER_KEY}}",
+      "clientSecret": "{{KUEHNE_NAGEL_CONSUMER_SECRET}}",
+      "tokenUrl": "https://portal.api.kuehne-nagel.com/oauth2/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "kuehne_nagel_search_shipments",
+      "description": "Search the shipments your myKN account can see, newest first, with optional filters on customer reference, mode of transport, current stage, a milestone date range or the master air waybill. Each shipment has shipmentId, trackingNumber, modeOfTransport, currentStage, shipmentCreationDateTime and self (the link to its details). page reports totalElements, totalPages, currentPage, size and hasNext. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "Customer reference of the shipment. It must match completely.",
+            "maxLength": 255
+          },
+          "modes_of_transport": {
+            "type": "array",
+            "description": "Only these modes of transport: AIR, SEA, ROAD.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "AIR",
+                "SEA",
+                "ROAD"
+              ]
+            }
+          },
+          "stages": {
+            "type": "array",
+            "description": "Only shipments in these current stages: BOOKED, IN_TRANSIT, COMPLETED or CANCELLED (PRE_CARRIAGE, MAIN_CARRIAGE and ON_CARRIAGE are obsolete).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "BOOKED",
+                "IN_TRANSIT",
+                "COMPLETED",
+                "CANCELLED",
+                "PRE_CARRIAGE",
+                "MAIN_CARRIAGE",
+                "ON_CARRIAGE"
+              ]
+            }
+          },
+          "date": {
+            "type": "object",
+            "description": "Date range on one milestone, e.g. {\"type\": \"DEPARTURE\", \"from\": \"2026-11-01\", \"to\": \"2026-11-30\"}. type is CURRENT, COMPLETION, ARRIVAL, DEPARTURE or RECEIVING; give from, to or both as YYYY-MM-DD (inclusive).",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Milestone date to filter by: CURRENT (current milestone), COMPLETION (delivery), ARRIVAL (at the destination port or station), DEPARTURE (from the origin port or station) or RECEIVING (pickup).",
+                "enum": [
+                  "CURRENT",
+                  "COMPLETION",
+                  "ARRIVAL",
+                  "DEPARTURE",
+                  "RECEIVING"
+                ]
+              },
+              "from": {
+                "type": "string",
+                "description": "Start of the range, YYYY-MM-DD, inclusive.",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              },
+              "to": {
+                "type": "string",
+                "description": "End of the range, YYYY-MM-DD, inclusive.",
+                "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+              }
+            },
+            "required": [
+              "type"
+            ]
+          },
+          "mawb_number": {
+            "type": "string",
+            "description": "Master air waybill number, e.g. 0120-00390582. It must match completely.",
+            "maxLength": 255
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0 (default 0).",
+            "minimum": 0,
+            "default": 0
+          },
+          "size": {
+            "type": "integer",
+            "description": "Shipments per page (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments-search",
+        "bodyMapping": {
+          "pagination": {
+            "page": "$page",
+            "size": "$size"
+          },
+          "filters": {
+            "reference": "$reference",
+            "modesOfTransport": "$modes_of_transport",
+            "stages": "$stages",
+            "date": "$date",
+            "mawbNumber": "$mawb_number"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kuehne_nagel_find_shipments_by_reference",
+      "description": "Find the shipments that carry a given customer reference (your order or purchase order number). The reference is required and must match completely. Each shipment has shipmentId, trackingNumber, modeOfTransport, currentStage, shipmentCreationDateTime and self (the link to its details). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reference": {
+            "type": "string",
+            "description": "Customer reference to look for, exactly as it was given to Kuehne+Nagel.",
+            "minLength": 1,
+            "maxLength": 255
+          }
+        },
+        "required": [
+          "reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments",
+        "queryParams": {
+          "reference": "$reference"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kuehne_nagel_get_shipment",
+      "description": "Read one shipment in full: shipmentId, trackingNumber, bookingId, modeOfTransport, serviceType, shipmentReferences (HAWB, MAWB, bill of lading, booking and party references), shippingInfo (incoterm, carriers, booked services), parties (shipper, consignee), freightInfo (containers, cargo, weight, volume, dangerous goods), routing with the route locations, their milestones and times (each marked PLANNED or ACTUAL), and emissionInfo (CO2e). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "unique_shipment_reference": {
+            "type": "string",
+            "description": "The tracking number, e.g. N4242 or tracking-number:N4242. Without a tracking number use the shipment id as shipment-id:19101910. Capital letters and digits only.",
+            "pattern": "^(tracking-number:|shipment-id:)?[A-Z0-9]{1,200}$"
+          }
+        },
+        "required": [
+          "unique_shipment_reference"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{unique_shipment_reference}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kuehne_nagel_get_shipment_history",
+      "description": "Read how the milestones of a shipment changed over time, newest change first: milestones with type (ROUTE_LOCATION_MILESTONE or INFORMATION_MILESTONE), key, location, newMilestoneDateTime, oldMilestoneDateTime, remarks (such as the reason for a delay) and updatedAt in UTC. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "description": "Shipment id (shipmentId of a search or of kuehne_nagel_get_shipment), a number such as 19101910. Not the tracking number.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipments/{shipment_id}/history-records"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

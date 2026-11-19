@@ -1,0 +1,1847 @@
+{
+  "slug": "lark",
+  "name": "Lark / Feishu",
+  "aliases": [
+    "Feishu",
+    "飞书",
+    "Lark Suite",
+    "Larksuite",
+    "Lark Base",
+    "Bitable"
+  ],
+  "description": "Let your AI work in Lark (Feishu) as your own custom app and bot: read and send group messages, look up colleagues and departments, read documents and wiki pages, read and write Base (Bitable) records, manage calendar events and tasks, and review approval requests. App ID and App Secret.",
+  "instructions": "## Lark / Feishu\nThis connector works with the **Lark Open Platform** (Feishu, 飞书, in mainland China) through a **custom app** of your own organisation, acting as that app and its bot: group chats and messages, the employee directory, Drive files, document text and wiki pages, Base (Bitable) tables and records, calendars and events, tasks, and approval requests. It uses the app's own identity (a `tenant_access_token`), not a personal login: the app sees what it was given, never a user's private chats or files.\n\n**Setup (about 15 minutes, needs an organisation admin for the release)**\n1. Open the developer console: https://open.larksuite.com/app for Lark (international), https://open.feishu.cn/app for Feishu. Click **Create Custom App**.\n2. Under **Credentials & Basic Info** copy the **App ID** (starts with `cli_`) into `LARK_APP_ID` and the **App Secret** into `LARK_APP_SECRET`. Pick the matching platform in `LARK_BASE_URL`: a Lark app does not work on the Feishu host and the other way round.\n3. Under **Add Features** enable **Bot**.\n4. Under **Permissions & Scopes** add the scopes of the areas you want (list below). For the directory also set the **contacts permission range** (which departments the app may see).\n5. Under **Version Management & Release** create a version and submit it; an organisation admin approves it. Scopes only work after the version that contains them is released.\n6. Add the bot to the group chats it should read or write in, and give the app access to the documents, folders, wikis and Bases it should use (share them with the app, or add it as a document app).\n\nThe connector exchanges App ID and App Secret for a token that lasts about 2 hours and renews it by itself.\n\n**Scopes by area** (add the read-only one where you only read)\n- Messages: `im:message:send_as_bot` to send, `im:message:readonly` (or `im:message`) to read, `im:message.group_msg` to read the history of groups.\n- Chats: `im:chat:readonly` (or `im:chat`).\n- Directory: `contact:contact.base:readonly` and `contact:department.organize:readonly`; `contact:user.id:readonly` to find users by e-mail or mobile; `contact:user.email:readonly`, `contact:user.phone:readonly` and `contact:user.employee_id:readonly` for those fields.\n- Drive and documents: `drive:drive:readonly`, `docx:document:readonly`, `wiki:wiki:readonly`.\n- Base: `bitable:app:readonly` to read, `bitable:app` to write.\n- Calendar: `calendar:calendar:readonly` to read, `calendar:calendar` to create events and invite attendees.\n- Tasks: `task:tasklist:read`, `task:task:read`, `task:task:write`.\n- Approval: `approval:approval:readonly`.\n\n**Where to start**: `lark_get_bot_info` checks the credentials (it needs no scope). `lark_list_chats` shows the groups the bot is in; `lark_list_messages` reads one of them.\n\n**Messages and chats**: `lark_list_chats`, `lark_get_chat`, `lark_list_chat_members`, `lark_list_messages`, `lark_get_message`, `lark_send_text_message`, `lark_send_message` (rich text, cards, shares), `lark_reply_to_message`, `lark_edit_message` and `lark_recall_message` (switched off at install).\n\n**Directory**: `lark_list_child_departments` and `lark_list_department_users` walk the organisation from department `0`; `lark_get_user` reads one person; `lark_lookup_user_ids` turns an e-mail or mobile into a user id.\n\n**Documents**: `lark_list_drive_files`, `lark_get_document_content` (plain text of a docx) and `lark_get_wiki_node` (turns a wiki link into the document or Base behind it).\n\n**Base (Bitable)**: `lark_list_bitable_tables`, `lark_list_bitable_fields`, `lark_search_bitable_records`, `lark_create_bitable_record`, `lark_update_bitable_record` and `lark_delete_bitable_record` (switched off at install).\n\n**Calendar**: `lark_list_calendars`, `lark_list_calendar_events`, `lark_get_calendar_event`, `lark_create_calendar_event` and `lark_add_event_attendees`.\n\n**Tasks and approvals**: `lark_list_tasklists`, `lark_list_tasklist_tasks`, `lark_get_task`, `lark_create_task`, `lark_list_approval_instances` and `lark_get_approval_instance`.\n\n**Field notes**\n- Ids: users are `open_id` (`ou_...`, different per app) by default, chats `oc_...`, messages `om_...`, departments `od-...`. Tokens of documents and Bases are the last part of their URL; a `/wiki/` link must first be resolved to its `obj_token`.\n- Message content is JSON text: a text message is `{\"text\":\"hello\"}`. The text tools build it for you.\n- Times: message filters and calendar times are Unix **seconds**; message `create_time`, tasks and approvals use Unix **milliseconds**. All are passed as text.\n- Errors come as a JSON body with a non-zero `code` and a `msg`, often with HTTP 200 or 400. `99991672` names the scope that is missing: add it and release a new app version. `99991663` means the token was refused (wrong host for the app, or the app is disabled).\n- Access is per resource: a scope alone is not enough. The bot must be a member of a chat, and a document, wiki, Base or calendar must be shared with the app. A \"no permission\" or \"forbidden\" answer for a single item means exactly that.\n- Rate limits: most calls 50 per second and 1,000 per minute per app; sending is limited to 5 messages per second per chat or person; Base calls 20 per second, Base writes 50 per second. Code `99991400` means slow down.\n- Not covered: acting as a user (personal chats, \"my tasks\", document search), uploading files and images, and creating approval requests.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "lark",
+  "docsUrl": "https://open.larksuite.com/document/home/index",
+  "prerequisites": "A Lark or Feishu organisation where you can create a custom app in the developer console and have an admin approve its release, with the Bot feature and the scopes of the areas you need. About 15 minutes.",
+  "requiredEnvVars": [
+    "LARK_BASE_URL",
+    "LARK_APP_ID",
+    "LARK_APP_SECRET"
+  ],
+  "envVarMeta": {
+    "LARK_BASE_URL": {
+      "label": "Platform",
+      "kind": "address",
+      "help": "Lark (international, larksuite.com) or Feishu (mainland China, feishu.cn): the platform your organisation and the app are on.",
+      "options": [
+        {
+          "value": "https://open.larksuite.com",
+          "label": "Lark (international)"
+        },
+        {
+          "value": "https://open.feishu.cn",
+          "label": "Feishu (mainland China)"
+        }
+      ]
+    },
+    "LARK_APP_ID": {
+      "label": "App ID",
+      "kind": "credential",
+      "help": "Developer console, your custom app, Credentials & Basic Info: App ID. It starts with cli_.",
+      "link": "https://open.larksuite.com/app",
+      "example": "cli_a1b2c3d4e5f6g7h8",
+      "pattern": "^cli_[A-Za-z0-9]{8,40}$",
+      "patternMessage": "The App ID starts with cli_ followed by letters and digits."
+    },
+    "LARK_APP_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Developer console, your custom app, Credentials & Basic Info: App Secret. Reset it there if it was exposed.",
+      "link": "https://open.larksuite.com/app",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the App Secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Lark refused the request. The msg names the reason; a field or id of the wrong kind (open_id against user_id, chat against thread) is the usual cause.",
+    "401": "Lark did not accept the app credentials or the token. Check App ID and App Secret, that the platform (Lark or Feishu) matches where the app was created, and that the app is enabled.",
+    "403": "The app lacks a scope or access to this resource. Add the scope Lark names under Permissions & Scopes and release a new app version; for a chat, document, Base or calendar also add the bot or share the item with the app.",
+    "404": "Lark found nothing with that id. Check the id and its kind: a wiki link must first be resolved with lark_get_wiki_node.",
+    "auth_failed": "Lark did not issue a token for this App ID and App Secret. Copy both again from Credentials & Basic Info and pick the platform (Lark or Feishu) the app belongs to.",
+    "rate_limited": "Lark is limiting this app (most calls 50 per second and 1,000 per minute, 5 messages per second per chat). Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "lark_get_bot_info"
+  },
+  "connector": {
+    "name": "Lark Open Platform",
+    "type": "REST",
+    "baseUrl": "{{LARK_BASE_URL}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{LARK_BASE_URL}}/open-apis/auth/v3/tenant_access_token/internal",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json; charset=utf-8"
+      },
+      "loginBody": {
+        "app_id": "${username}",
+        "app_secret": "${password}"
+      },
+      "username": "{{LARK_APP_ID}}",
+      "password": "{{LARK_APP_SECRET}}",
+      "tokenJsonPath": "tenant_access_token",
+      "expiryJsonPath": "expire",
+      "expiryFormat": "ttl_seconds",
+      "tokenTTLSeconds": 7200,
+      "proactiveRefreshSeconds": 600,
+      "refreshOn401": true,
+      "refreshOnBody401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json; charset=utf-8",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "in": [
+            99991661,
+            99991663,
+            99991664,
+            99991668,
+            99991671,
+            99991677
+          ],
+          "messagePath": "msg",
+          "status": 401
+        },
+        {
+          "path": "code",
+          "in": [
+            99991672,
+            99991673,
+            99991676,
+            99991401
+          ],
+          "messagePath": "msg",
+          "status": 403
+        },
+        {
+          "path": "code",
+          "equals": 99991400,
+          "messagePath": "msg",
+          "status": 429
+        },
+        {
+          "path": "code",
+          "matches": "^-?[1-9][0-9]*$",
+          "messagePath": "msg",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "lark_get_bot_info",
+      "description": "Read the bot of this app: app_name, open_id (the id the bot has as a chat member and message sender), avatar_url and activate_status (2 means enabled). Works without any scope once the app has the Bot feature, so it is the quickest check of the credentials. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/bot/v3/info"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_chats",
+      "description": "List the group chats the bot is a member of: chat_id, name, description, owner_id, external (true when people of other organisations take part), tenant_key and chat_status. The bot only sees groups it was added to. Read-only, paged with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sort_type": {
+            "type": "string",
+            "description": "ByCreateTimeAsc (default) or ByActiveTimeDesc (most recently active first).",
+            "enum": [
+              "ByCreateTimeAsc",
+              "ByActiveTimeDesc"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/im/v1/chats",
+        "queryParams": {
+          "sort_type": "$sort_type",
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_chat",
+      "description": "Read one group chat: name, description, owner_id, chat_mode, chat_type (private or public), chat_tag, user_count, bot_count, external, and who may add members, edit the group or mention everyone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id, starts with oc_ (from lark_list_chats).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/im/v1/chats/{chat_id}",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_chat_members",
+      "description": "List the people in a group chat: member_id (open_id by default), name and tenant_key, plus member_total. Bots are not listed. The bot must be in the chat. Read-only, paged with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id, starts with oc_ (from lark_list_chats).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "member_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/im/v1/chats/{chat_id}/members",
+        "queryParams": {
+          "member_id_type": "$member_id_type",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_messages",
+      "description": "Read the message history of a chat (or of a thread): items[] with message_id, msg_type (text, post, image, file, interactive and so on), create_time (Unix milliseconds as text), sender (id, sender_type user or app), body.content (JSON text, for a text message `{\"text\":\"...\"}`), mentions, parent_id and thread_id. The bot must be in the chat; group history needs the scope im:message.group_msg. Read-only, at most 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "container_id": {
+            "type": "string",
+            "description": "The chat id (oc_...) when container_id_type is chat, or the thread id (omt_...) when it is thread.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "container_id_type": {
+            "type": "string",
+            "description": "chat (a group or a one-to-one chat) or thread.",
+            "enum": [
+              "chat",
+              "thread"
+            ],
+            "default": "chat"
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Only messages from this moment on, Unix time in seconds (e.g. 1767225600).",
+            "pattern": "^[0-9]{10}$"
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Only messages up to this moment, Unix time in seconds.",
+            "pattern": "^[0-9]{10}$"
+          },
+          "sort_type": {
+            "type": "string",
+            "description": "ByCreateTimeAsc (oldest first, default) or ByCreateTimeDesc (newest first).",
+            "enum": [
+              "ByCreateTimeAsc",
+              "ByCreateTimeDesc"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 20, at most 50).",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "container_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/im/v1/messages",
+        "queryParams": {
+          "container_id_type": "$container_id_type",
+          "container_id": "$container_id",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "sort_type": "$sort_type",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_message",
+      "description": "Read one message by its id: items[0] with msg_type, create_time, sender, body.content (JSON text), mentions, chat_id and whether it was deleted or updated. The bot must be in the chat of the message. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message, starts with om_.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/im/v1/messages/{message_id}",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_send_text_message",
+      "description": "Send a text message as the bot to a group chat or to a person. Returns the message with message_id. The bot must be in the group, or the person must be within the app's availability range. Lark allows 5 messages per second to the same person or group. Delivered at once, so confirm the text and the recipient with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receive_id_type": {
+            "type": "string",
+            "description": "What receive_id is: chat_id (a group), open_id, user_id or union_id (a person), or email (the person's work e-mail).",
+            "enum": [
+              "chat_id",
+              "open_id",
+              "user_id",
+              "union_id",
+              "email"
+            ]
+          },
+          "receive_id": {
+            "type": "string",
+            "description": "Id of the recipient in the kind named by receive_id_type, e.g. oc_... for a chat, ou_... for a person, or an e-mail address.",
+            "pattern": "^\\S{3,200}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. Mention a user as `<at user_id=\"ou_xxx\">Name</at>`, everyone as `<at user_id=\"all\"></at>`."
+          },
+          "uuid": {
+            "type": "string",
+            "description": "Your own unique text (up to 50 characters) to avoid sending the same message twice: within one hour Lark delivers only one message per uuid.",
+            "maxLength": 50
+          }
+        },
+        "required": [
+          "receive_id_type",
+          "receive_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/im/v1/messages",
+        "queryParams": {
+          "receive_id_type": "$receive_id_type"
+        },
+        "bodyMapping": {
+          "receive_id": "$receive_id",
+          "msg_type": "text",
+          "content": {
+            "__json": {
+              "text": "$text"
+            }
+          },
+          "uuid": "$uuid"
+        }
+      }
+    },
+    {
+      "name": "lark_send_message",
+      "description": "Send a message of any type as the bot: rich text (post), a card (interactive), a shared chat or user, or an image or file already uploaded to Lark. content is the JSON text Lark documents for that msg_type. For plain text use lark_send_text_message. Returns the message with message_id. Delivered at once, so confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receive_id_type": {
+            "type": "string",
+            "description": "What receive_id is: chat_id, open_id, user_id, union_id or email.",
+            "enum": [
+              "chat_id",
+              "open_id",
+              "user_id",
+              "union_id",
+              "email"
+            ]
+          },
+          "receive_id": {
+            "type": "string",
+            "description": "Id of the recipient in the kind named by receive_id_type.",
+            "pattern": "^\\S{3,200}$"
+          },
+          "msg_type": {
+            "type": "string",
+            "description": "Message type.",
+            "enum": [
+              "text",
+              "post",
+              "interactive",
+              "image",
+              "file",
+              "audio",
+              "media",
+              "sticker",
+              "share_chat",
+              "share_user"
+            ]
+          },
+          "content": {
+            "type": "string",
+            "description": "Message content as JSON text. Examples: post `{\"en_us\":{\"title\":\"Report\",\"content\":[[{\"tag\":\"text\",\"text\":\"Done: \"},{\"tag\":\"a\",\"text\":\"link\",\"href\":\"https://example.com\"}]]}}`, share_chat `{\"chat_id\":\"oc_xxx\"}`, image `{\"image_key\":\"img_xxx\"}`. A card is the card JSON itself."
+          },
+          "uuid": {
+            "type": "string",
+            "description": "Your own unique text (up to 50 characters) to avoid sending the same message twice: within one hour Lark delivers only one message per uuid.",
+            "maxLength": 50
+          }
+        },
+        "required": [
+          "receive_id_type",
+          "receive_id",
+          "msg_type",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/im/v1/messages",
+        "queryParams": {
+          "receive_id_type": "$receive_id_type"
+        },
+        "bodyMapping": {
+          "receive_id": "$receive_id",
+          "msg_type": "$msg_type",
+          "content": "$content",
+          "uuid": "$uuid"
+        }
+      }
+    },
+    {
+      "name": "lark_reply_to_message",
+      "description": "Reply with a text message to a message, as the bot, in the same chat or as a thread. Returns the reply with message_id. The bot must be in that chat. Delivered at once, so confirm the text with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to reply to, starts with om_.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. Mention a user as `<at user_id=\"ou_xxx\">Name</at>`, everyone as `<at user_id=\"all\"></at>`."
+          },
+          "reply_in_thread": {
+            "type": "boolean",
+            "description": "true answers in a thread under the message instead of in the main chat."
+          },
+          "uuid": {
+            "type": "string",
+            "description": "Your own unique text (up to 50 characters) to avoid sending the same message twice: within one hour Lark delivers only one message per uuid.",
+            "maxLength": 50
+          }
+        },
+        "required": [
+          "message_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/im/v1/messages/{message_id}/reply",
+        "bodyMapping": {
+          "msg_type": "text",
+          "content": {
+            "__json": {
+              "text": "$text"
+            }
+          },
+          "reply_in_thread": "$reply_in_thread",
+          "uuid": "$uuid"
+        }
+      }
+    },
+    {
+      "name": "lark_edit_message",
+      "description": "Replace the text of a text message the bot sent. Members see it marked as edited. Lark allows a message to be edited up to 20 times. Returns the updated message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the bot's message to edit, starts with om_.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "New message text."
+          }
+        },
+        "required": [
+          "message_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/open-apis/im/v1/messages/{message_id}",
+        "bodyMapping": {
+          "msg_type": "text",
+          "content": {
+            "__json": {
+              "text": "$text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "lark_recall_message",
+      "description": "Recall (delete for everyone) a message the bot sent, within the time the organisation allows for recalls (24 hours by default). As the group owner the bot can also recall messages of others. This cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to recall, starts with om_.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/open-apis/im/v1/messages/{message_id}"
+      }
+    },
+    {
+      "name": "lark_list_department_users",
+      "description": "List the employees directly in a department: name, en_name, open_id, union_id, department_ids, job_title, status (is_activated, is_frozen, is_resigned) and, with the matching field scopes, email, mobile and user_id. Use department_id 0 for the root. Only departments inside the app's contacts permission range are visible. Read-only, at most 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "description": "Department id (od-...), or 0 for the root department.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_@.-]{0,63}$"
+          },
+          "department_id_type": {
+            "type": "string",
+            "description": "Which kind of department id is used: open_department_id (default, starts with od-) or department_id (the custom id).",
+            "enum": [
+              "open_department_id",
+              "department_id"
+            ]
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 10, at most 50).",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "department_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/contact/v3/users/find_by_department",
+        "queryParams": {
+          "department_id": "$department_id",
+          "department_id_type": "$department_id_type",
+          "user_id_type": "$user_id_type",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_user",
+      "description": "Read one employee: name, en_name, open_id, union_id, department_ids, job_title, leader_user_id, city, employee_no, status and, with the matching field scopes, email, mobile and user_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Id of the user in the kind named by user_id_type (open_id ou_... by default).",
+            "pattern": "^[A-Za-z0-9_-]{2,100}$"
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          },
+          "department_id_type": {
+            "type": "string",
+            "description": "Which kind of department id is used: open_department_id (default, starts with od-) or department_id (the custom id).",
+            "enum": [
+              "open_department_id",
+              "department_id"
+            ]
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/contact/v3/users/{user_id}",
+        "queryParams": {
+          "user_id_type": "$user_id_type",
+          "department_id_type": "$department_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_lookup_user_ids",
+      "description": "Find users by work e-mail address or mobile number: user_list[] with the email or mobile asked for and the user_id found (open_id by default); an entry without user_id means nobody matched or the person is outside the app's range. Up to 50 e-mails and 50 mobiles per call. Needs the scope contact:user.id:readonly. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "emails": {
+            "type": "array",
+            "description": "Work e-mail addresses to look up.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "mobiles": {
+            "type": "array",
+            "description": "Mobile numbers to look up; outside mainland China with the country code, e.g. +4915112345678.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 50
+          },
+          "include_resigned": {
+            "type": "boolean",
+            "description": "true also finds people who left the organisation."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/contact/v3/users/batch_get_id",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        },
+        "bodyMapping": {
+          "emails": "$emails",
+          "mobiles": "$mobiles",
+          "include_resigned": "$include_resigned"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_child_departments",
+      "description": "List the departments below a department: name, open_department_id, department_id, parent_department_id, leader_user_id, member_count and status. Use department_id 0 for the root; fetch_child true returns the whole subtree. Read-only, at most 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "description": "Parent department id (od-...), or 0 for the root department.",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_@.-]{0,63}$"
+          },
+          "fetch_child": {
+            "type": "boolean",
+            "description": "true returns all levels below, not only the direct children."
+          },
+          "department_id_type": {
+            "type": "string",
+            "description": "Which kind of department id is used: open_department_id (default, starts with od-) or department_id (the custom id).",
+            "enum": [
+              "open_department_id",
+              "department_id"
+            ]
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 10, at most 50).",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "department_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/contact/v3/departments/{department_id}/children",
+        "queryParams": {
+          "fetch_child": "$fetch_child",
+          "department_id_type": "$department_id_type",
+          "user_id_type": "$user_id_type",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_drive_files",
+      "description": "List the files and folders in a Drive folder the app can see: files[] with token, name, type (doc, docx, sheet, bitable, mindnote, file, folder, shortcut), parent_token and url, plus next_page_token. Without folder_token it lists the root of the app's own space, which is empty until something is shared with or created by the app. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "folder_token": {
+            "type": "string",
+            "description": "Token of the folder: the last part of the folder URL. Leave out for the root.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 50, at most 200).",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "page_token": {
+            "type": "string",
+            "description": "next_page_token of the previous answer; leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/drive/v1/files",
+        "queryParams": {
+          "folder_token": "$folder_token",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_document_content",
+      "description": "Read the plain text of a Lark document (new Docs, type docx): data.content holds the whole text without formatting. The app needs read access to that document (share it with the app, or put it in a folder or wiki the app can read). A document inside a wiki is addressed by its obj_token, see lark_get_wiki_node. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "string",
+            "description": "Document id: the part of the URL after /docx/ (starts with dox or a random token).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "lang": {
+            "type": "integer",
+            "description": "Language used for user mentions in the text: 0 Chinese (default), 1 English, 2 Japanese.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/docx/v1/documents/{document_id}/raw_content",
+        "queryParams": {
+          "lang": "$lang"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_wiki_node",
+      "description": "Resolve a wiki page to the document behind it: node with space_id, title, obj_type (docx, doc, sheet, bitable, mindnote, file), obj_token (the id to read that document or Base with), parent_node_token and has_child. Use it for any link that contains /wiki/. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "token": {
+            "type": "string",
+            "description": "Wiki node token: the part of the URL after /wiki/.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          }
+        },
+        "required": [
+          "token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/wiki/v2/spaces/get_node",
+        "queryParams": {
+          "token": "$token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_bitable_tables",
+      "description": "List the tables of a Base (Bitable): items[] with table_id, name and revision, plus total. The app needs access to the Base (add it under More, Add document app, or share the Base with it). Read-only, paged with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_token": {
+            "type": "string",
+            "description": "Token of the Base (Bitable app): the part of its URL after /base/. For a Base inside a wiki, resolve the wiki link with lark_get_wiki_node and use obj_token.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "app_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/bitable/v1/apps/{app_token}/tables",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_bitable_fields",
+      "description": "List the fields (columns) of a Base table: field_name, field_id, type (1 text, 2 number, 3 single select, 4 multi select, 5 date, 7 checkbox, 11 person, 13 phone, 15 link, 17 attachment, 18 and 21 linked records, 20 formula), ui_type, is_primary and property with the select options. Read it before filtering or writing records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_token": {
+            "type": "string",
+            "description": "Token of the Base (Bitable app): the part of its URL after /base/. For a Base inside a wiki, resolve the wiki link with lark_get_wiki_node and use obj_token.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id, starts with tbl (from lark_list_bitable_tables, or the table= part of the URL).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "view_id": {
+            "type": "string",
+            "description": "Only the fields shown in this view (id starts with vew).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "app_token",
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/fields",
+        "queryParams": {
+          "view_id": "$view_id",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_search_bitable_records",
+      "description": "Read the records (rows) of a Base table, optionally filtered and sorted: items[] with record_id and fields (keyed by field name; text fields come back as a list of text segments), plus total, has_more and page_token. Read-only although it is a POST; at most 500 per page, 20 calls per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_token": {
+            "type": "string",
+            "description": "Token of the Base (Bitable app): the part of its URL after /base/. For a Base inside a wiki, resolve the wiki link with lark_get_wiki_node and use obj_token.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id, starts with tbl (from lark_list_bitable_tables, or the table= part of the URL).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "view_id": {
+            "type": "string",
+            "description": "Only records of this view (id starts with vew).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "field_names": {
+            "type": "array",
+            "description": "Only these fields, by name. Leave out for all fields.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "filter": {
+            "type": "object",
+            "description": "Filter: an object with conjunction (`and` or `or`) and conditions, each with field_name, operator (is, isNot, contains, doesNotContain, isEmpty, isNotEmpty, isGreater, isGreaterEqual, isLess, isLessEqual) and value (a list of text values). Example: `{\"conjunction\":\"and\",\"conditions\":[{\"field_name\":\"Status\",\"operator\":\"is\",\"value\":[\"Open\"]}]}`."
+          },
+          "sort": {
+            "type": "array",
+            "description": "Sort order, e.g. `[{\"field_name\":\"Due\",\"desc\":true}]`.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "automatic_fields": {
+            "type": "boolean",
+            "description": "true adds created_by, created_time, last_modified_by and last_modified_time to each record."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 20, at most 500).",
+            "minimum": 1,
+            "maximum": 500
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "app_token",
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/search",
+        "queryParams": {
+          "user_id_type": "$user_id_type",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        },
+        "bodyMapping": {
+          "view_id": "$view_id",
+          "field_names": "$field_names",
+          "filter": "$filter",
+          "sort": "$sort",
+          "automatic_fields": "$automatic_fields"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_create_bitable_record",
+      "description": "Add one record (row) to a Base table. Returns the record with record_id and the stored fields. The app needs edit access to the Base. Field names must match exactly and values must fit the field type, otherwise Lark refuses the call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_token": {
+            "type": "string",
+            "description": "Token of the Base (Bitable app): the part of its URL after /base/. For a Base inside a wiki, resolve the wiki link with lark_get_wiki_node and use obj_token.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id, starts with tbl (from lark_list_bitable_tables, or the table= part of the URL).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values keyed by field name, e.g. `{\"Task\":\"Call supplier\",\"Status\":\"Open\",\"Due\":1767225600000}`. Text is a string, a number a number, a single select the option name, a multi select a list of names, a date Unix milliseconds, a checkbox true or false, a person `[{\"id\":\"ou_...\"}]`, a link `{\"text\":\"Site\",\"link\":\"https://example.com\"}`. Read the field types with lark_list_bitable_fields first."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "app_token",
+          "table_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        },
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "lark_update_bitable_record",
+      "description": "Change fields of one record of a Base table. Only the fields you pass are overwritten; the others keep their values. Returns the updated record. The app needs edit access to the Base.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_token": {
+            "type": "string",
+            "description": "Token of the Base (Bitable app): the part of its URL after /base/. For a Base inside a wiki, resolve the wiki link with lark_get_wiki_node and use obj_token.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id, starts with tbl (from lark_list_bitable_tables, or the table= part of the URL).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "record_id": {
+            "type": "string",
+            "description": "Record id, starts with rec.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "fields": {
+            "type": "object",
+            "description": "Field values keyed by field name, e.g. `{\"Task\":\"Call supplier\",\"Status\":\"Open\",\"Due\":1767225600000}`. Text is a string, a number a number, a single select the option name, a multi select a list of names, a date Unix milliseconds, a checkbox true or false, a person `[{\"id\":\"ou_...\"}]`, a link `{\"text\":\"Site\",\"link\":\"https://example.com\"}`. Read the field types with lark_list_bitable_fields first."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "app_token",
+          "table_id",
+          "record_id",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/{record_id}",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        },
+        "bodyMapping": {
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "lark_delete_bitable_record",
+      "description": "Delete one record (row) from a Base table. The row is gone for everyone and can only be brought back from the Base history by a person. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "app_token": {
+            "type": "string",
+            "description": "Token of the Base (Bitable app): the part of its URL after /base/. For a Base inside a wiki, resolve the wiki link with lark_get_wiki_node and use obj_token.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id, starts with tbl (from lark_list_bitable_tables, or the table= part of the URL).",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          },
+          "record_id": {
+            "type": "string",
+            "description": "Record id, starts with rec.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          }
+        },
+        "required": [
+          "app_token",
+          "table_id",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/open-apis/bitable/v1/apps/{app_token}/tables/{table_id}/records/{record_id}"
+      }
+    },
+    {
+      "name": "lark_list_calendars",
+      "description": "List the calendars the app can see: calendar_list[] with calendar_id, summary, description, type (primary, shared, resource), permissions and role (owner, writer, reader, free_busy_reader). With the app's own identity this is the bot's primary calendar plus calendars shared with or subscribed by the bot. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Calendars per page, 50 to 1000 (default 500).",
+            "minimum": 50,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/calendar/v4/calendars",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_calendar_events",
+      "description": "List the events of a calendar, optionally within a time range: items[] with event_id, summary, description, start_time and end_time (timestamp in Unix seconds as text, with timezone, or date for all-day events), status (confirmed, tentative, cancelled), location, recurrence, visibility and event_organizer. Recurring events come as one row with their rule, not as single occurrences. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id (from lark_list_calendars), e.g. feishu.cn_xxxxxxxx@group.calendar.feishu.cn.",
+            "pattern": "^[^\\s/]{4,200}$"
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Start of the range, Unix time in seconds. Use together with end_time.",
+            "pattern": "^[0-9]{10}$"
+          },
+          "end_time": {
+            "type": "string",
+            "description": "End of the range, Unix time in seconds. Use together with start_time.",
+            "pattern": "^[0-9]{10}$"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Events per page, 50 to 1000 (default 500).",
+            "minimum": 50,
+            "maximum": 1000
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/calendar/v4/calendars/{calendar_id}/events",
+        "queryParams": {
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_calendar_event",
+      "description": "Read one calendar event: summary, description, start_time, end_time, status, location, vchat (meeting link), recurrence, reminders and, with need_attendee true, the attendees with their answer (accept, decline, tentative, needs_action). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id (from lark_list_calendars), e.g. feishu.cn_xxxxxxxx@group.calendar.feishu.cn.",
+            "pattern": "^[^\\s/]{4,200}$"
+          },
+          "event_id": {
+            "type": "string",
+            "description": "Event id (from lark_list_calendar_events), e.g. 75d28f9b-e35c-4230-8a83-123_0.",
+            "pattern": "^[^\\s/]{4,200}$"
+          },
+          "need_attendee": {
+            "type": "boolean",
+            "description": "true also returns the attendees (up to 10 unless max_attendee_num is set)."
+          },
+          "max_attendee_num": {
+            "type": "integer",
+            "description": "How many attendees to return, 1 to 100.",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id",
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/calendar/v4/calendars/{calendar_id}/events/{event_id}",
+        "queryParams": {
+          "need_attendee": "$need_attendee",
+          "max_attendee_num": "$max_attendee_num",
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_create_calendar_event",
+      "description": "Create an event in a calendar the app may write to (its own primary calendar, or a shared calendar where it is a writer). Returns the event with event_id. The event has no attendees yet: invite people with lark_add_event_attendees. Confirm title, time and time zone with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id (from lark_list_calendars), e.g. feishu.cn_xxxxxxxx@group.calendar.feishu.cn.",
+            "pattern": "^[^\\s/]{4,200}$"
+          },
+          "summary": {
+            "type": "string",
+            "description": "Title of the event."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the event."
+          },
+          "start_timestamp": {
+            "type": "string",
+            "description": "Start, Unix time in seconds (e.g. 1767258000).",
+            "pattern": "^[0-9]{10}$"
+          },
+          "end_timestamp": {
+            "type": "string",
+            "description": "End, Unix time in seconds; later than the start.",
+            "pattern": "^[0-9]{10}$"
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the event is shown in, e.g. Europe/Berlin or Asia/Shanghai.",
+            "default": "UTC",
+            "pattern": "^[A-Za-z_]+(/[A-Za-z0-9_+-]+)*$"
+          },
+          "location": {
+            "type": "object",
+            "description": "Place of the event, e.g. `{\"name\":\"Meeting room 2\",\"address\":\"Main street 1\"}`."
+          },
+          "visibility": {
+            "type": "string",
+            "description": "default (follows the calendar), public or private.",
+            "enum": [
+              "default",
+              "public",
+              "private"
+            ]
+          },
+          "need_notification": {
+            "type": "boolean",
+            "description": "false creates the event without notifying anyone."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "Your own unique text (a UUID) so that repeating the call does not create the event twice.",
+            "maxLength": 100
+          }
+        },
+        "required": [
+          "calendar_id",
+          "summary",
+          "start_timestamp",
+          "end_timestamp"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/calendar/v4/calendars/{calendar_id}/events",
+        "queryParams": {
+          "idempotency_key": "$idempotency_key"
+        },
+        "bodyMapping": {
+          "summary": "$summary",
+          "description": "$description",
+          "start_time": {
+            "timestamp": "$start_timestamp",
+            "timezone": "$timezone"
+          },
+          "end_time": {
+            "timestamp": "$end_timestamp",
+            "timezone": "$timezone"
+          },
+          "location": "$location",
+          "visibility": "$visibility",
+          "need_notification": "$need_notification"
+        }
+      }
+    },
+    {
+      "name": "lark_add_event_attendees",
+      "description": "Invite people, group chats or meeting rooms to a calendar event. Returns the attendees with their attendee_id and rsvp_status. Invited people get a calendar invitation unless need_notification is false, so confirm the list with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar id (from lark_list_calendars), e.g. feishu.cn_xxxxxxxx@group.calendar.feishu.cn.",
+            "pattern": "^[^\\s/]{4,200}$"
+          },
+          "event_id": {
+            "type": "string",
+            "description": "Event id (from lark_list_calendar_events), e.g. 75d28f9b-e35c-4230-8a83-123_0.",
+            "pattern": "^[^\\s/]{4,200}$"
+          },
+          "attendees": {
+            "type": "array",
+            "description": "Who to invite, e.g. `[{\"type\":\"user\",\"user_id\":\"ou_xxx\"},{\"type\":\"chat\",\"chat_id\":\"oc_xxx\"},{\"type\":\"third_party\",\"third_party_email\":\"guest@example.com\"}]`. type is user, chat, resource (a room, with room_id) or third_party (an e-mail address).",
+            "items": {
+              "type": "object"
+            },
+            "minItems": 1
+          },
+          "need_notification": {
+            "type": "boolean",
+            "description": "false adds the attendees without sending them an invitation."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "calendar_id",
+          "event_id",
+          "attendees"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/calendar/v4/calendars/{calendar_id}/events/{event_id}/attendees",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        },
+        "bodyMapping": {
+          "attendees": "$attendees",
+          "need_notification": "$need_notification"
+        }
+      }
+    },
+    {
+      "name": "lark_list_tasklists",
+      "description": "List the task lists the app can read: items[] with guid, name, creator, owner, members, url, created_at and updated_at (Unix milliseconds). With the app's own identity these are lists the app created or was added to as a member. Read-only, paged with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 50, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/task/v2/tasklists",
+        "queryParams": {
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_list_tasklist_tasks",
+      "description": "List the tasks of a task list: items[] with guid, summary, completed_at (0 while open), start, due (timestamp in Unix milliseconds), members and subtask_count. Read-only, paged with page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tasklist_guid": {
+            "type": "string",
+            "description": "GUID of the task list (from lark_list_tasklists).",
+            "pattern": "^[A-Za-z0-9-]{8,100}$"
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "true only completed tasks, false only open ones. Leave out for both."
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only tasks created at or after this moment, Unix time in milliseconds.",
+            "pattern": "^[0-9]{13}$"
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only tasks created at or before this moment, Unix time in milliseconds.",
+            "pattern": "^[0-9]{13}$"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 50, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "tasklist_guid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/task/v2/tasklists/{tasklist_guid}/tasks",
+        "queryParams": {
+          "completed": "$completed",
+          "created_from": "$created_from",
+          "created_to": "$created_to",
+          "page_size": "$page_size",
+          "page_token": "$page_token",
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_task",
+      "description": "Read one task: summary, description, start, due, completed_at, status (todo or done), members (assignees and followers), tasklists, reminders, repeat_rule, parent_task_guid, subtask_count, custom_fields and url. Read-only, 10 calls per second.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_guid": {
+            "type": "string",
+            "description": "GUID of the task.",
+            "pattern": "^[A-Za-z0-9-]{8,100}$"
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "task_guid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/task/v2/tasks/{task_guid}",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_create_task",
+      "description": "Create a task, optionally with a due date, assignees and a task list. Returns the task with guid and url. A task created by the app without members is only visible to the app, so add at least the person who asked as assignee. Assignees are notified.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "summary": {
+            "type": "string",
+            "description": "Title of the task."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description of the task."
+          },
+          "due": {
+            "type": "object",
+            "description": "Due date: `{\"timestamp\":\"1767225600000\",\"is_all_day\":false}` with Unix milliseconds as text; for an all-day date use midnight UTC and is_all_day true."
+          },
+          "members": {
+            "type": "array",
+            "description": "People on the task, e.g. `[{\"id\":\"ou_xxx\",\"type\":\"user\",\"role\":\"assignee\"}]`. role is assignee or follower.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "tasklists": {
+            "type": "array",
+            "description": "Task lists to put the task in, e.g. `[{\"tasklist_guid\":\"d300a75f-c56a-4be9-80d1-e47653028ceb\"}]`.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "client_token": {
+            "type": "string",
+            "description": "Your own unique text (a UUID) so that repeating the call does not create the task twice.",
+            "maxLength": 100
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "summary"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/open-apis/task/v2/tasks",
+        "queryParams": {
+          "user_id_type": "$user_id_type"
+        },
+        "bodyMapping": {
+          "summary": "$summary",
+          "description": "$description",
+          "due": "$due",
+          "members": "$members",
+          "tasklists": "$tasklists",
+          "client_token": "$client_token"
+        }
+      }
+    },
+    {
+      "name": "lark_list_approval_instances",
+      "description": "List the ids of the approval requests of one approval definition created within a time range: instance_code_list plus page_token and has_more. Read the details of each with lark_get_approval_instance. Read-only, at most 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "approval_code": {
+            "type": "string",
+            "description": "Code of the approval definition: the definitionCode part of its URL in the approval admin console (e.g. 7C468A54-8745-2245-9675-08B7C63E7A85).",
+            "pattern": "^[A-Za-z0-9-]{8,100}$"
+          },
+          "start_time": {
+            "type": "string",
+            "description": "Requests created at or after this moment, Unix time in milliseconds.",
+            "pattern": "^[0-9]{13}$"
+          },
+          "end_time": {
+            "type": "string",
+            "description": "Requests created at or before this moment, Unix time in milliseconds.",
+            "pattern": "^[0-9]{13}$"
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page (default 100, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "page_token": {
+            "type": "string",
+            "description": "page_token of the previous answer; leave out for the first page. More pages exist while has_more is true."
+          }
+        },
+        "required": [
+          "approval_code",
+          "start_time",
+          "end_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/approval/v4/instances",
+        "queryParams": {
+          "approval_code": "$approval_code",
+          "start_time": "$start_time",
+          "end_time": "$end_time",
+          "page_size": "$page_size",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "lark_get_approval_instance",
+      "description": "Read one approval request: approval_name, status (PENDING, APPROVED, REJECTED, CANCELED, DELETED), the applicant (user_id, open_id, department_id), start_time and end_time (Unix milliseconds), form (the filled-in fields as JSON text), task_list (who has to decide and their status), comment_list and timeline. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instance_id": {
+            "type": "string",
+            "description": "Instance code of the approval request (from lark_list_approval_instances).",
+            "pattern": "^[A-Za-z0-9-]{8,100}$"
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the texts: zh-CN, en-US or ja-JP.",
+            "enum": [
+              "zh-CN",
+              "en-US",
+              "ja-JP"
+            ]
+          },
+          "user_id_type": {
+            "type": "string",
+            "description": "Which kind of user id the call uses and returns: open_id (default, starts with ou_), union_id (on_) or user_id (the organisation-wide employee id, needs the scope contact:user.employee_id:readonly).",
+            "enum": [
+              "open_id",
+              "union_id",
+              "user_id"
+            ]
+          }
+        },
+        "required": [
+          "instance_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/open-apis/approval/v4/instances/{instance_id}",
+        "queryParams": {
+          "locale": "$locale",
+          "user_id_type": "$user_id_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

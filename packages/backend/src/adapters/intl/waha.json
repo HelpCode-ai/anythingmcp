@@ -1,0 +1,1085 @@
+{
+  "slug": "waha",
+  "name": "WAHA (WhatsApp HTTP API)",
+  "aliases": [
+    "WhatsApp HTTP API",
+    "WAHA WhatsApp",
+    "devlikeapro"
+  ],
+  "description": "Let your AI use a WhatsApp account through your own WAHA server, the self-hosted open-source WhatsApp HTTP API: read chats, messages, contacts and groups, check numbers, and send text, images and files. Unofficial gateway; for Meta's official API use WhatsApp Business Cloud API.",
+  "instructions": "## WAHA (WhatsApp HTTP API)\nThis connector talks to a **WAHA** server (WhatsApp HTTP API by devlike.pro), an open-source gateway that you host yourself and that drives a normal WhatsApp or WhatsApp Business account through WhatsApp Web: sessions, chats and messages, contacts, groups, and sending text, images and files.\n\n**Unofficial gateway, read this first.** WAHA is not a Meta product. It automates a personal or business WhatsApp account that you link by QR code, the way WhatsApp Web does. WhatsApp does not support this and can limit or ban numbers that send automated or unsolicited messages. The official route is the **WhatsApp Business Cloud API** connector in this catalog (Meta's API, with approved templates). Use WAHA only with a number you own, for conversations people expect, and at a human pace.\n\n**Setup (about 10 minutes, you run the server)**\n1. Run WAHA, for example with Docker (`devlikeapro/waha`), following https://waha.devlike.pro/docs/overview/quick-start/. On AnythingMCP Cloud the server must be reachable from the internet over HTTPS; a self-hosted AnythingMCP can reach it on the local network.\n2. Set an API key in WAHA (environment variable `WAHA_API_KEY`) and restart it. Recent versions print a generated key in the start-up log when none is set. Never run WAHA on the internet without a key: anyone could read and send your WhatsApp messages.\n3. Open the WAHA dashboard (`/dashboard`), start the session `default` and scan the QR code with WhatsApp on the phone (Linked devices). The session must show **WORKING**.\n4. Fill in `WAHA_URL` (the address of the server, without `/api`) and `WAHA_API_KEY`. `WAHA_SESSION` is only needed when your session is not called `default` (WAHA Plus allows several).\n\n**Where to start**: `waha_list_sessions` shows whether the session is WORKING (`waha_get_session` and `waha_get_account` give the details and the own number). `waha_get_chats_overview` lists the latest conversations; `waha_list_chat_messages` reads one of them.\n\n**Reading**: `waha_list_chats`, `waha_get_chats_overview`, `waha_list_chat_messages`, `waha_get_message`, `waha_list_contacts`, `waha_get_contact`, `waha_check_number_exists`, `waha_list_groups`, `waha_get_group`, `waha_list_group_participants`.\n\n**Writing**: `waha_send_text`, `waha_send_image` and `waha_send_file` (media by URL), `waha_react_to_message`, `waha_edit_message`, `waha_delete_message` (switched off at install), `waha_send_seen` (marks as read), `waha_start_typing` and `waha_stop_typing`. Every send leaves at once from the linked phone number: confirm the recipient and the text with the user.\n\n**Field notes**\n- Chat ids: a person is `<number>@c.us` with the number in international format without `+` (Germany 49..., Italy 39...); a group ends in `@g.us`, a channel in `@newsletter`. WhatsApp increasingly returns `@lid` ids that hide the phone number: pass them back exactly as received.\n- Unknown numbers: call `waha_check_number_exists` and write to the `chatId` it returns.\n- Message ids look like `false_4915112345678@c.us_3EB0...`; the first part is `true` for messages the account sent.\n- Timestamps are Unix seconds. `ack` states: PENDING, SERVER (one tick), DEVICE (two ticks), READ (blue ticks), PLAYED.\n- Only what the session has synced is readable: history from before the phone was linked may be missing, depending on the engine (WEBJS, NOWEB or GOWS) and its store settings.\n- A call on a session that is not WORKING answers 422. Open the WAHA dashboard, restart the session or scan the QR code again.\n- Some features (several sessions, sending media on older versions, some engines) depend on the WAHA edition. A 422 or 501 with a message about the engine or the Plus version means the server cannot do that.\n- Pace: wait a few seconds between messages and do not write to people who never contacted the number; that is what gets numbers banned.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "waha",
+  "docsUrl": "https://waha.devlike.pro/docs/overview/introduction/",
+  "prerequisites": "Your own WAHA server (self-hosted, e.g. with Docker) with an API key set, reachable from AnythingMCP (on Cloud: public over HTTPS), and a WhatsApp account linked to it by QR code. WAHA is an unofficial gateway; the official route is the WhatsApp Business Cloud API connector.",
+  "requiredEnvVars": [
+    "WAHA_URL",
+    "WAHA_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "WAHA_SESSION"
+  ],
+  "envVarMeta": {
+    "WAHA_URL": {
+      "label": "WAHA server address",
+      "kind": "address",
+      "help": "The address of your WAHA server, without /api and without a trailing slash. On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "https://waha.example.com",
+      "pattern": "^(?!.*/api/?$)https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https:// or http://, without /api and without a trailing slash, e.g. https://waha.example.com or http://192.168.1.10:3000."
+    },
+    "WAHA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The key your WAHA server was started with (environment variable WAHA_API_KEY, or the key printed in its start-up log). Set one before exposing WAHA.",
+      "link": "https://waha.devlike.pro/docs/how-to/security/",
+      "pattern": "^\\S{6,}$",
+      "patternMessage": "Paste the API key without spaces."
+    },
+    "WAHA_SESSION": {
+      "label": "Session name",
+      "kind": "setting",
+      "help": "Only when your WhatsApp session in WAHA is not called default. Leave empty otherwise.",
+      "example": "default",
+      "pattern": "^[A-Za-z0-9_-]{1,100}$",
+      "patternMessage": "Use the session name as shown in the WAHA dashboard: letters, digits, dashes and underscores."
+    }
+  },
+  "instructionFacts": [
+    "This workspace uses the WAHA session {{WAHA_SESSION}}; the tools use it by themselves when session is left out."
+  ],
+  "verifyHints": {
+    "401": "WAHA refused the API key. Use the key the server was started with (WAHA_API_KEY in its environment, or the one in its start-up log).",
+    "404": "Nothing answered at this path. Check WAHA_URL (the server address without /api) and that the session name exists.",
+    "422": "The WhatsApp session is not ready. Open the WAHA dashboard, start the session and scan the QR code until it shows WORKING.",
+    "unreachable": "The WAHA server did not answer. Check WAHA_URL and that the server is running; on AnythingMCP Cloud it must be reachable from the internet over HTTPS."
+  },
+  "probe": {
+    "tool": "waha_list_sessions"
+  },
+  "connector": {
+    "name": "WAHA WhatsApp HTTP API",
+    "type": "REST",
+    "baseUrl": "{{WAHA_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Api-Key",
+      "apiKey": "{{WAHA_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "waha_list_sessions",
+      "description": "List the WhatsApp sessions of this WAHA server: name, status (STOPPED, STARTING, SCAN_QR_CODE, WORKING, FAILED), me (id and pushName of the linked account) and config. A session must be WORKING before chats can be read or messages sent. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "all": {
+            "type": "boolean",
+            "description": "true also lists stopped sessions."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sessions",
+        "queryParams": {
+          "all": "$all"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_get_session",
+      "description": "Read one session: status (STOPPED, STARTING, SCAN_QR_CODE, WORKING, FAILED), the linked account (me.id, me.pushName), the engine and its configuration such as webhooks. SCAN_QR_CODE means the phone still has to be linked in the WAHA dashboard. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sessions/{session}",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_get_account",
+      "description": "Read the WhatsApp account linked to a session: id (the own number as a chat id), lid, pushName and, when WhatsApp reported them, reach-out restrictions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/sessions/{session}/me",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_list_chats",
+      "description": "List the chats of the linked account (people, groups, channels) as the WhatsApp engine stores them: id, name and the time of the last message, with engine-specific fields. For names and last messages in one answer use waha_get_chats_overview. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort by conversationTimestamp (last activity), id or name.",
+            "enum": [
+              "conversationTimestamp",
+              "id",
+              "name"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "desc or asc.",
+            "enum": [
+              "desc",
+              "asc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many to return (default 20).",
+            "minimum": 1,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{session}/chats",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "sortBy": "$sort_by",
+          "sortOrder": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_get_chats_overview",
+      "description": "List chats the way the WhatsApp start screen shows them, most recent first: id, name, picture and lastMessage (text, time, sender, delivery state). The quickest way to see who wrote last. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many to return (default 20).",
+            "minimum": 1,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{session}/chats/overview",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_list_chat_messages",
+      "description": "Read the messages of one chat, newest first: id, timestamp (Unix seconds), from, fromMe, participant (the sender in a group), body (the text), hasMedia with media details, ack and ackName (PENDING, SERVER, DEVICE, READ, PLAYED) and replyTo. Only messages the session has synced are available. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many to return (default 20, at most 100).",
+            "minimum": 1,
+            "default": 20,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          },
+          "from_timestamp": {
+            "type": "integer",
+            "description": "Only messages at or after this moment, Unix time in seconds.",
+            "minimum": 0
+          },
+          "to_timestamp": {
+            "type": "integer",
+            "description": "Only messages at or before this moment, Unix time in seconds.",
+            "minimum": 0
+          },
+          "from_me": {
+            "type": "boolean",
+            "description": "true only messages the linked account sent, false only received ones."
+          },
+          "download_media": {
+            "type": "boolean",
+            "description": "true makes WAHA download attached media and return a link to each file. Slower; leave false to read text.",
+            "default": false
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{session}/chats/{chat_id}/messages",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "filter.timestamp.gte": "$from_timestamp",
+          "filter.timestamp.lte": "$to_timestamp",
+          "filter.fromMe": "$from_me",
+          "downloadMedia": "$download_media"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_get_message",
+      "description": "Read one message of a chat by its id: timestamp, from, fromMe, body, media details, ack state and the quoted message. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message, exactly as WAHA returned it (e.g. false_4915112345678@c.us_3EB0A1B2C3D4E5F6A7B8).",
+            "pattern": "^[^\\s/]{3,300}$"
+          },
+          "download_media": {
+            "type": "boolean",
+            "description": "true makes WAHA download the attached media and return a link to the file.",
+            "default": false
+          }
+        },
+        "required": [
+          "chat_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{session}/chats/{chat_id}/messages/{message_id}",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "downloadMedia": "$download_media"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_send_text",
+      "description": "Send a WhatsApp text message from the linked account to a person or group. Returns the sent message with its id. The message leaves at once and is seen as coming from that phone number, so confirm the text and the recipient with the user first. Check an unknown number with waha_check_number_exists before writing to it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Recipient chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. WhatsApp formatting works: *bold*, _italic_, ~strikethrough~."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Id of a message to quote as a reply, as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,300}$"
+          },
+          "link_preview": {
+            "type": "boolean",
+            "description": "false sends links without a preview (default true)."
+          },
+          "mentions": {
+            "type": "array",
+            "description": "Group members to mention, as chat ids ending in @c.us; the text must contain @ followed by the number.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "chat_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/sendText",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "bodyMapping": {
+          "session": "$session",
+          "chatId": "$chat_id",
+          "text": "$text",
+          "reply_to": "$reply_to",
+          "linkPreview": "$link_preview",
+          "mentions": "$mentions"
+        }
+      }
+    },
+    {
+      "name": "waha_send_image",
+      "description": "Send an image from a URL as a WhatsApp message, with an optional caption. WAHA downloads the file from the URL, so it must be reachable from the WAHA server. Returns the sent message. Leaves at once, so confirm with the user. Sending media needs a WAHA edition and engine that support it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Recipient chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "file_url": {
+            "type": "string",
+            "description": "URL of the image (JPEG or PNG).",
+            "format": "uri",
+            "pattern": "^https?://\\S+$"
+          },
+          "mimetype": {
+            "type": "string",
+            "description": "MIME type of the image, e.g. image/jpeg or image/png.",
+            "default": "image/jpeg",
+            "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name shown to the recipient, e.g. photo.jpg."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Text shown under the image."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Id of a message to quote as a reply, as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,300}$"
+          }
+        },
+        "required": [
+          "chat_id",
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/sendImage",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "bodyMapping": {
+          "session": "$session",
+          "chatId": "$chat_id",
+          "file": {
+            "mimetype": "$mimetype",
+            "filename": "$filename",
+            "url": "$file_url"
+          },
+          "caption": "$caption",
+          "reply_to": "$reply_to"
+        }
+      }
+    },
+    {
+      "name": "waha_send_file",
+      "description": "Send a document (PDF, spreadsheet, archive, any file) from a URL as a WhatsApp message, with an optional caption. WAHA downloads the file from the URL, so it must be reachable from the WAHA server. Returns the sent message. Leaves at once, so confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Recipient chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "file_url": {
+            "type": "string",
+            "description": "URL of the file.",
+            "format": "uri",
+            "pattern": "^https?://\\S+$"
+          },
+          "mimetype": {
+            "type": "string",
+            "description": "MIME type of the file, e.g. application/pdf.",
+            "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+          },
+          "filename": {
+            "type": "string",
+            "description": "File name shown to the recipient, e.g. offer.pdf."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Text shown with the file."
+          },
+          "reply_to": {
+            "type": "string",
+            "description": "Id of a message to quote as a reply, as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,300}$"
+          }
+        },
+        "required": [
+          "chat_id",
+          "file_url",
+          "mimetype"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/sendFile",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "bodyMapping": {
+          "session": "$session",
+          "chatId": "$chat_id",
+          "file": {
+            "mimetype": "$mimetype",
+            "filename": "$filename",
+            "url": "$file_url"
+          },
+          "caption": "$caption",
+          "reply_to": "$reply_to"
+        }
+      }
+    },
+    {
+      "name": "waha_send_seen",
+      "description": "Mark messages of a chat as read (the blue ticks the sender sees). Without message_ids the latest messages of the chat are marked. The sender notices, so only do it when the user wants the chat to count as read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "message_ids": {
+            "type": "array",
+            "description": "Ids of the messages to mark as read, as WAHA returned them.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "participant": {
+            "type": "string",
+            "description": "In a group: chat id (@c.us) of the member who sent the messages."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/sendSeen",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "bodyMapping": {
+          "session": "$session",
+          "chatId": "$chat_id",
+          "messageIds": "$message_ids",
+          "participant": "$participant"
+        }
+      }
+    },
+    {
+      "name": "waha_start_typing",
+      "description": "Show \"typing...\" in a chat on behalf of the linked account. It stays until waha_stop_typing is called or a message is sent. Used to make automated answers look natural.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/startTyping",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "bodyMapping": {
+          "session": "$session",
+          "chatId": "$chat_id"
+        }
+      }
+    },
+    {
+      "name": "waha_stop_typing",
+      "description": "Stop showing \"typing...\" in a chat after waha_start_typing. Nothing is sent to the chat itself and the call answers with an empty result.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/stopTyping",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "bodyMapping": {
+          "session": "$session",
+          "chatId": "$chat_id"
+        }
+      }
+    },
+    {
+      "name": "waha_react_to_message",
+      "description": "Put an emoji reaction of the linked account on a message, or remove it with an empty reaction. The other side sees the reaction at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to react to, exactly as WAHA returned it (e.g. false_4915112345678@c.us_3EB0A1B2C3D4E5F6A7B8).",
+            "pattern": "^[^\\s/]{3,300}$"
+          },
+          "reaction": {
+            "type": "string",
+            "description": "One emoji, e.g. 👍. An empty text removes the reaction."
+          }
+        },
+        "required": [
+          "message_id",
+          "reaction"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/reaction",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "bodyMapping": {
+          "session": "$session",
+          "messageId": "$message_id",
+          "reaction": "$reaction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "waha_edit_message",
+      "description": "Change the text of a message the linked account sent. WhatsApp allows edits for about 15 minutes after sending and marks the message as edited for everyone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to edit, exactly as WAHA returned it (e.g. false_4915112345678@c.us_3EB0A1B2C3D4E5F6A7B8).",
+            "pattern": "^[^\\s/]{3,300}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "New message text."
+          },
+          "link_preview": {
+            "type": "boolean",
+            "description": "false leaves out the link preview (default true)."
+          }
+        },
+        "required": [
+          "chat_id",
+          "message_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/api/{session}/chats/{chat_id}/messages/{message_id}",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true,
+        "bodyMapping": {
+          "text": "$text",
+          "linkPreview": "$link_preview"
+        }
+      }
+    },
+    {
+      "name": "waha_delete_message",
+      "description": "Delete a message from a chat for everyone. Works for messages the linked account sent (and, as a group admin, for those of others) within WhatsApp's time limit. This cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the phone number in international format without + followed by @c.us for a person (e.g. 4915112345678@c.us), an id ending in @g.us for a group, @newsletter for a channel, or an @lid id exactly as WAHA returned it.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to delete, exactly as WAHA returned it (e.g. false_4915112345678@c.us_3EB0A1B2C3D4E5F6A7B8).",
+            "pattern": "^[^\\s/]{3,300}$"
+          }
+        },
+        "required": [
+          "chat_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/api/{session}/chats/{chat_id}/messages/{message_id}",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "waha_list_contacts",
+      "description": "List the contacts WhatsApp knows for the linked account: id, number, name (as saved in the phone book), pushname (the name the person chose), isMyContact, isBusiness and isBlocked; the fields depend on the engine. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort by id or name.",
+            "enum": [
+              "id",
+              "name"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "desc or asc.",
+            "enum": [
+              "desc",
+              "asc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many to return (default 100).",
+            "minimum": 1,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts/all",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "queryParams": {
+          "session": "$session",
+          "sortBy": "$sort_by",
+          "sortOrder": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_get_contact",
+      "description": "Read the basic details of one contact by chat id or number: id, number, name, pushname and the business and block flags. It always answers, even for a number that is not on WhatsApp; use waha_check_number_exists for that. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "contact_id": {
+            "type": "string",
+            "description": "Chat id of the person (e.g. 4915112345678@c.us) or the bare phone number without +.",
+            "pattern": "^[^\\s/]{3,200}$"
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "queryParams": {
+          "session": "$session",
+          "contactId": "$contact_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_check_number_exists",
+      "description": "Check whether a phone number is registered on WhatsApp: numberExists (true or false) and chatId, the id to write to. Always use the returned chatId, because WhatsApp rewrites some national numbers (Brazil, Mexico, Argentina). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in international format, digits only, without + or spaces (e.g. 4915112345678).",
+            "pattern": "^\\+?[0-9]{6,20}$"
+          }
+        },
+        "required": [
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/contacts/check-exists",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "queryParams": {
+          "session": "$session",
+          "phone": "$phone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_list_groups",
+      "description": "List the WhatsApp groups the linked account is in: id (ends in @g.us), subject (the group name), description, owner, creation time and, unless left out, the participants. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort by id or subject.",
+            "enum": [
+              "id",
+              "subject"
+            ]
+          },
+          "sort_order": {
+            "type": "string",
+            "description": "desc or asc.",
+            "enum": [
+              "desc",
+              "asc"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "How many to return (default 50).",
+            "minimum": 1,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "How many to skip, for paging.",
+            "minimum": 0
+          },
+          "exclude_participants": {
+            "type": "string",
+            "description": "Pass participants to leave the member lists out, which makes the answer much smaller.",
+            "enum": [
+              "participants"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{session}/groups",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true,
+        "queryParams": {
+          "sortBy": "$sort_by",
+          "sortOrder": "$sort_order",
+          "limit": "$limit",
+          "offset": "$offset",
+          "exclude": "$exclude_participants"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_get_group",
+      "description": "Read one WhatsApp group: subject, description, owner, creation time, settings and participants with their roles. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id ending in @g.us, from waha_list_groups.",
+            "pattern": "^[^\\s/]{3,200}$"
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{session}/groups/{group_id}",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "waha_list_group_participants",
+      "description": "List the members of a WhatsApp group: id of each participant and the role (participant, admin or superadmin). Ids can be @lid ids when WhatsApp hides the phone number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "session": {
+            "type": "string",
+            "description": "WAHA session (the linked WhatsApp account). Leave out to use the connector's session, which is `default` unless another one was configured.",
+            "default": "default",
+            "pattern": "^[A-Za-z0-9_-]{1,100}$"
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id ending in @g.us, from waha_list_groups.",
+            "pattern": "^[^\\s/]{3,200}$"
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/{session}/groups/{group_id}/participants",
+        "envDefaults": {
+          "session": "WAHA_SESSION"
+        },
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

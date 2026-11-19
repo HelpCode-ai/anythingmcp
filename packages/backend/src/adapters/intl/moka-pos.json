@@ -1,0 +1,1689 @@
+{
+  "slug": "moka-pos",
+  "name": "Moka POS",
+  "aliases": [
+    "Moka",
+    "MokaPOS",
+    "GoTo Moka"
+  ],
+  "description": "Moka POS, the Indonesian point of sale of GoTo: outlets, sales summary and reports by item, category, payment method, discount, tax and staff, transactions with line items, invoices, the item library with variants and prices, stock summaries, purchase orders, customers and loyalty. Signed in with your own Moka app.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "moka-pos",
+  "docsUrl": "https://api.mokapos.com/docs",
+  "appRegistrationUrl": "https://api.mokapos.com/users/sign_in",
+  "prerequisites": "A Moka POS business and an application in the Moka Developer Platform (sign in with a Moka Backoffice account) with the redirect URL below and the permissions profile, library, report, transaction and customer. A private app for your own business needs no review; only apps for other merchants in the Moka App Market are published by Moka. About 10 minutes.",
+  "requiredEnvVars": [
+    "MOKA_CLIENT_ID",
+    "MOKA_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "MOKA_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Moka Developer Platform, your application: the client ID (Moka also calls it application ID).",
+      "link": "https://api.mokapos.com/users/sign_in",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the client ID only, without spaces."
+    },
+    "MOKA_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the client ID of your application in the Moka Developer Platform.",
+      "link": "https://api.mokapos.com/users/sign_in",
+      "pattern": "^[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste the client secret only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Moka refused the access token: it was revoked or has expired. Click Authorize with Provider again; if the application was deleted or its secret changed, update MOKA_CLIENT_ID and MOKA_CLIENT_SECRET first.",
+    "403": "Moka refused the call: the application lacks the permission this tool needs (profile, library, report, transaction or customer), or the outlet's Moka subscription has expired. Add the permission to the application and authorize again, or renew the outlet in the Moka Backoffice.",
+    "404": "Moka found nothing under this id. Take business and outlet ids from moka_pos_get_profile and record ids from the list tools.",
+    "rate_limited": "Moka answered Quota limit exceeded. Wait a minute before calling again and ask for fewer pages at a time."
+  },
+  "probe": {
+    "tool": "moka_pos_get_profile"
+  },
+  "connector": {
+    "name": "Moka API",
+    "type": "REST",
+    "baseUrl": "https://api.mokapos.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{MOKA_CLIENT_ID}}",
+      "clientSecret": "{{MOKA_CLIENT_SECRET}}",
+      "authorizationUrl": "https://api.mokapos.com/oauth/authorize",
+      "tokenUrl": "https://api.mokapos.com/oauth/token",
+      "tokenAuthMethod": "client_secret_post",
+      "pkce": false,
+      "scopes": "profile library report transaction customer"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "instructions": "## Moka POS\nThis connector works with the **Moka API** (`https://api.mokapos.com`) of Moka POS, the Indonesian point of sale of GoTo: business and outlets, the item library (categories, items with variants, modifiers, discounts, taxes, sales types, promos), stock summaries and purchase orders, customers with loyalty, sales reports, transactions and invoices. It signs in with **OAuth 2.0** through a Moka app of your own, as the Moka user who authorizes it.\n\n**Setup (about 10 minutes)**\n1. Open the Moka Developer Platform at https://api.mokapos.com/users/sign_in and sign in with a Moka Backoffice account (the owner account of the business is the simplest choice).\n2. Create an application. As its redirect URL enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character.\n3. Give the application the permissions `profile`, `library`, `report`, `transaction` and `customer`. The connector asks for exactly these five; Moka refuses the sign-in when the application lacks one of them.\n4. Copy the client ID and client secret of the application into `MOKA_CLIENT_ID` and `MOKA_CLIENT_SECRET` and install the connector.\n5. On the connector page click **Authorize with Provider**, sign in to Moka as the owner of the business and allow the permissions.\n\nAn application for your own business is a private app: it stays in the status In Review in the developer dashboard and works anyway. Only an app that should appear in the Moka App Market for other merchants needs Moka to publish it (support@mokapos.com). The access token lasts about 180 days and is renewed with the refresh token automatically.\n\n**Where to start**: `moka_pos_get_profile` returns the `business_id` and the `outlet_ids` every other tool needs. `moka_pos_get_business` and `moka_pos_list_outlets` add the details. Almost everything in Moka belongs to one outlet, so ask which outlet is meant when there are several.\n\n**Sales reports** (per outlet, `start` and `end` as `DD/MM/YYYY`): `moka_pos_get_sales_summary` for the totals of a period, `moka_pos_get_item_sales`, `moka_pos_get_category_sales` and `moka_pos_get_modifier_sales` for what was sold, `moka_pos_get_discount_sales` and `moka_pos_get_tax_sales`, `moka_pos_get_payment_methods_report` for cash, card, invoice and other payment types, `moka_pos_get_collector_sales` and `moka_pos_get_server_sales` per staff member, and `moka_pos_get_sales_type_report` per sales type. For a comparison of periods call the same report once per period.\n\n**Transactions**: `moka_pos_list_latest_transactions` returns single payments with their line items, newest first, filtered with `since` and `until` as Unix epoch seconds; while `completed` is false, call again with a lower `until`. `moka_pos_get_transactions_report` is the older report by date that Moka no longer supports. Sales on account are in `moka_pos_list_invoices` and `moka_pos_get_invoice`.\n\n**Library**: `moka_pos_list_categories`, `moka_pos_list_items` (variants carry SKU, price and stock), `moka_pos_list_modifiers`, `moka_pos_list_discounts`, `moka_pos_list_taxes`, `moka_pos_list_sales_types` and `moka_pos_list_promos`. `moka_pos_create_item` and `moka_pos_update_item` write items; `moka_pos_delete_item` is installed switched off.\n\n**Stock**: `moka_pos_list_item_stock_summaries` shows beginning, purchase order, sales, transfer, adjustment and ending quantities per variant for a period. `moka_pos_list_purchase_orders` and `moka_pos_get_purchase_order` read purchase orders. `moka_pos_adjust_item_stock` records a stock count: it sets the absolute quantity of each variant.\n\n**Customers and loyalty**: `moka_pos_list_customers` (add `include_loyalty` for point balances), `moka_pos_list_loyalty_programs` and `moka_pos_list_loyalty_point_activities`. The connector only reads loyalty points.\n\n**Not included**: the Checkout API and Advanced Orderings (they create sales and orders on the register), image uploads and webhooks. No tool takes a payment or moves money.\n\n**Field notes**\n- Amounts are Indonesian rupiah without decimals in the library; report totals can carry decimals from tax and discount splits.\n- Timestamps in answers are ISO 8601 with the +07:00 offset of Jakarta. Report dates are calendar days as `DD/MM/YYYY`; `since` and `until` are Unix epoch seconds.\n- Lists answer `total_pages` and `total_count`; page with `page` and `per_page`. Records are soft-deleted: `is_deleted` true rows only come with `include_deleted`.\n- 401 means the token was revoked or expired: authorize again. 403 names a missing permission, or an outlet whose Moka subscription expired (the owner renews it in the Backoffice). 429 with Quota limit exceeded means too many calls: wait before retrying.",
+  "tools": [
+    {
+      "name": "moka_pos_get_profile",
+      "description": "Check the connection and return who authorized it: user id, email, full_name, business_id, business_name, and the outlets the user can reach as outlet_ids with outlet_names in the same order. Call this first: every other tool needs the business_id or an outlet id from here. Needs the profile permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/profile/self"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_business",
+      "description": "Read the business behind the connection: id, name, address, city, province, postal_code, phone, email, website, coordinates, outlet_slot (number of outlets in the plan), is_trial, current_plan and expired_at. Needs the profile permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/businesses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_outlets",
+      "description": "List the outlets (stores) of a business: id, name, address, city, province, postal_code, phone_number, coordinates, is_deleted, start_date, end_date and is_paying. An outlet whose subscription ended answers 403 on every outlet tool. Needs the profile permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Business id (business_id of moka_pos_get_profile)."
+          }
+        },
+        "required": [
+          "business_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/businesses/{business_id}/outlets"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_customers",
+      "description": "List the customers of a business: id, name, email, phone, address, city, state, postal_code, birthday, outlet_id, is_deleted, created_at and updated_at, and with include_loyalty the loyalty point_balance and join_date. Page with page and per_page, or sync changes with since and until. Needs the customer permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Business id (business_id of moka_pos_get_profile)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only records changed at or after this time, as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "Only records changed at or before this time, as Unix epoch seconds."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records (is_deleted true)."
+          },
+          "include_loyalty": {
+            "type": "boolean",
+            "description": "true to add the loyalty block (point balance, join date) to each customer."
+          }
+        },
+        "required": [
+          "business_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/businesses/{business_id}/customers",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "since": "$since",
+          "until": "$until",
+          "include_deleted": "$include_deleted",
+          "include_loyalty": "$include_loyalty"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_loyalty_programs",
+      "description": "List the loyalty programs of a business: id, status, new_member_point, the earning_rules (type, point, amount in IDR spent per point) and the rewards (reward_type, discount, discount_type, redeem_point, min_purchase_amount, max_discount_amount). Needs the customer permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "business_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Business id (business_id of moka_pos_get_profile)."
+          }
+        },
+        "required": [
+          "business_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/businesses/{business_id}/loyalties/programs"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_loyalty_point_activities",
+      "description": "List the loyalty point history of one customer: type, points, initial_points, new_member_points, redeem_reward, payment_uuid, total_collected_amount, outlet_id, outlet_name and created_at per activity. It only reads points and never changes a balance. Needs the customer permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer id from moka_pos_list_customers."
+          },
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only activities of this outlet."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only activities at or after this time, as Unix epoch seconds."
+          },
+          "reorder_type": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort order by time."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/loyalties/point-activities",
+        "queryParams": {
+          "customer_id": "$customer_id",
+          "outlet_id": "$outlet_id",
+          "since": "$since",
+          "reorder_type": "$reorder_type",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_categories",
+      "description": "List the item categories of an outlet: id, name, description, is_deleted, created_at and updated_at. The answer carries total_pages and total_count next to the category list. Page with page and per_page, or sync changes with since and until. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only records changed at or after this time, as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "Only records changed at or before this time, as Unix epoch seconds."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records (is_deleted true)."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/categories",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "since": "$since",
+          "until": "$until",
+          "include_deleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_items",
+      "description": "List the items (products) of an outlet: id, name, description, category_id with the category, image, is_recipe, is_sales_type_price and item_variants (id, name, sku, price, in_stock, stock_alert, track_stock, cogs, track_cogs and sales_type_items with a price per sales type). Prices are whole rupiah. The answer carries total_pages and total_count next to the items list. Page with page and per_page, or sync changes with since and until. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only records changed at or after this time, as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "Only records changed at or before this time, as Unix epoch seconds."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records (is_deleted true)."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/items",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "since": "$since",
+          "until": "$until",
+          "include_deleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_modifiers",
+      "description": "List the modifier groups of an outlet: id, name, min_no_of_options, max_no_of_options, active_options (the options with their prices) and active_item_modifiers (the items that use the group). The answer carries total_pages and total_count next to the modifier list. Page with page and per_page, or sync changes with since and until. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only records changed at or after this time, as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "Only records changed at or before this time, as Unix epoch seconds."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records (is_deleted true)."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/modifiers",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "since": "$since",
+          "until": "$until",
+          "include_deleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_discounts",
+      "description": "List the discounts of an outlet: id, name, amount, type (percentage or cash), amount_format and is_deleted. The answer carries total_pages and total_count next to the discount list. Page with page and per_page, or sync changes with since and until. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only records changed at or after this time, as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "Only records changed at or before this time, as Unix epoch seconds."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records (is_deleted true)."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/discounts",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "since": "$since",
+          "until": "$until",
+          "include_deleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_taxes",
+      "description": "List the taxes of an outlet: id, name, amount (percent) and is_deleted. The answer carries total_pages and total_count next to the tax list. Page with page and per_page, or sync changes with since and until. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only records changed at or after this time, as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "Only records changed at or before this time, as Unix epoch seconds."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true to include deleted records (is_deleted true)."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/taxes",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "since": "$since",
+          "until": "$until",
+          "include_deleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_sales_types",
+      "description": "List the sales types of an outlet (Dine In, Take Away, delivery channels): id, name, default_state, active_state, the gratuities applied and is_deleted, under results with total_pages and total_count. Sales type ids appear in item prices and transactions. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "since": {
+            "type": "number",
+            "description": "Only records changed at or after this time, as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "Only records changed at or before this time, as Unix epoch seconds."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/sales_type",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_promos",
+      "description": "List the promos of an outlet: promo_id, promo_name, promo_type, promo_description, promo_start_date, promo_end_date, promo_status, promo_requirement, promo_reward and promo_configuration. promo_status can still say active after promo_end_date has passed: compare the dates yourself. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active promos only, false for inactive only; leave out for both."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/promos",
+        "queryParams": {
+          "active": "$active",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_item_stock_summaries",
+      "description": "Stock movement per item variant of an outlet for a period: item_id, item_name, category, outlet and per variant beginning, purchase_order, sales, transfer, adjustment and ending quantities. Only variants with stock tracking that had a movement or were created in the period appear. The answer carries total_pages and total_counts next to results. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "optional_keyword": {
+            "type": "string",
+            "description": "Only items whose name contains this text."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/inventory/item_summaries",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "optional_keyword": "$optional_keyword",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_purchase_orders",
+      "description": "List the purchase orders of an outlet created in a period, newest first: id, order_no (not guaranteed unique), total cost, supplier_id and supplier_name (No Supplier when none), created_at and updated_at, with total_pages and total_count. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/inventory/purchase_orders",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_purchase_order",
+      "description": "Read one purchase order: id, order_no, note, total, status (Created, Updated, Cancelled or Fulfilled), the supplier contact fields, creator, updater, activities and history_details with item_id, item_variant_id, item_name, quantity and price per line. Needs the library permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "purchase_order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Purchase order id from moka_pos_list_purchase_orders."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "purchase_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/inventory/purchase_orders/{purchase_order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_sales_summary",
+      "description": "Sales summary for an outlet and a date range: gross_sales, discounts, refunds, net_sales, gratuities, taxes, total_collected, number_of_transactions, rounding_amount and redemption. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/sales_summary",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_item_sales",
+      "description": "Sales per item for an outlet and a date range: item_sales rows with name, sku, category_name, item_sold, item_refunded, gross_sales, discount, refund, net_sales, cogs and gross_profit, plus total_item_sold, total_gross_sales, total_discounts, total_net_sales and total_refund. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/outlets/{outlet_id}/reports/item_sales",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_category_sales",
+      "description": "Sales per item category for an outlet and a date range: category_sales rows with name, items_sold, gross_sales, discount, refund and net_sales, plus the totals. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/category_sales",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_modifier_sales",
+      "description": "Sales per modifier for an outlet and a date range: modifiers rows with modifier_id, modifier_name, quantity, gross_sales, discount, refund, net_sales and the same per modifier option, plus the totals. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/modifier_sales",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_discount_sales",
+      "description": "Discounts given for an outlet and a date range: discounts rows with discount_id, name, amount, discount_type (percentage or cash), count, discount_applied, refund and net_discount, plus total_count, total_discounts_applied and total_refunds. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/discount_sales",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_tax_sales",
+      "description": "Taxes collected for an outlet and a date range: reports_taxes rows with name, amount (percent), taxable_amount and tax_collected, plus total_tax_collected. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/tax_sales",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_payment_methods_report",
+      "description": "Takings per payment method for an outlet and a date range: total_number_of_transactions, total_collected and reports grouped as cash_or_card, invoice and other, each row with payment_type, number_of_transactions and collected. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/payment_methods",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_collector_sales",
+      "description": "Takings per staff member who collected the payment for an outlet and a date range: reports rows with name, title, number_of_transactions and total, plus total_number_of_transactions and grand_total. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/collector_sales",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_server_sales",
+      "description": "Takings per server (the staff member who served) for an outlet and a date range: servers rows with server_id, server_name, server_title, number_transaction and collected, plus total_collected and total_number_of_transactions. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/server_sales",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_sales_type_report",
+      "description": "Sales per sales type (Dine In, Take Away, delivery channels) for an outlet and a date range: sales_types rows with sales_type, count and total_collected. Amounts are rupiah (IDR). Needs the report permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/outlets/{outlet_id}/reports/sales_types",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_transactions_report",
+      "description": "Transactions of an outlet for a date range in one answer: the totals gross_sales, net_sales, discounts, gratuity, tax, refunds, total_collected and number_of_transactions, and payments with payment_no, status, payment_type, the amounts, customer_id and created_at per transaction. Moka marks this report as deprecated and no longer supports it: for line items and paging use moka_pos_list_latest_transactions. Amounts are rupiah. Needs the transaction permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "time_filter": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "synchronized_at"
+            ],
+            "description": "Which timestamp the period applies to (default created_at)."
+          },
+          "reorder_type": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort order by time."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/outlets/{outlet_id}/reports/transactions",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "time_filter": "$time_filter",
+          "reorder_type": "$reorder_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_latest_transactions",
+      "description": "List the sales transactions (payments) of an outlet, newest first, with full detail: id, payment_no, created_at, payment_type, subtotal, total_collected, tendered, change, discounts, taxes, gratuities, customer_name, collected_by, served_by, table_name, is_refunded, refund_amount, payment_refunds and checkouts (the line items with item_name, item_variant_name, sku, category_name, quantity, item_price, discount_amount, net_sales, sales_type_name and modifiers). completed false means older transactions remain: call again with until set to the epoch time of the oldest created_at you received. Amounts are rupiah. Needs the transaction permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "since": {
+            "type": "number",
+            "description": "Start of the period as Unix epoch seconds (e.g. 1767200400)."
+          },
+          "until": {
+            "type": "number",
+            "description": "End of the period as Unix epoch seconds. Lower it to page back in time."
+          },
+          "time_filter": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "synchronized_at"
+            ],
+            "description": "Which timestamp the period applies to (default created_at)."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Transactions per call (Moka answers 50 when left out)."
+          },
+          "include_promo": {
+            "type": "boolean",
+            "description": "true to add promo details to each transaction."
+          },
+          "exclude_bundle": {
+            "type": "boolean",
+            "description": "true to leave out transactions that contain bundle package items."
+          },
+          "reorder_type": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort order by time."
+          }
+        },
+        "required": [
+          "outlet_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/outlets/{outlet_id}/reports/get_latest_transactions",
+        "queryParams": {
+          "since": "$since",
+          "until": "$until",
+          "time_filter": "$time_filter",
+          "per_page": "$per_page",
+          "include_promo": "$include_promo",
+          "exclude_bundle": "$exclude_bundle",
+          "reorder_type": "$reorder_type"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.next_url"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_list_invoices",
+      "description": "List the invoices (sales on account) of an outlet for a date range: id (a UUID), invoice_no, payment_no, status, invoice_status (paid or unpaid), invoice_due_date, invoice_deposit_amount, total_checkouts_amount, total_collected_amount, total_tax_amount, customer_id, server_name and created_at. completed false means more pages: raise page. Amounts are rupiah. Needs the transaction permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "start": {
+            "type": "string",
+            "description": "First day of the period as DD/MM/YYYY in the outlet time zone, e.g. 01/11/2026."
+          },
+          "end": {
+            "type": "string",
+            "description": "Last day of the period as DD/MM/YYYY, e.g. 30/11/2026. Use the same day as start for one day."
+          },
+          "time_filter": {
+            "type": "string",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "synchronized_at"
+            ],
+            "description": "Which timestamp the period applies to (default created_at)."
+          },
+          "reorder_type": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "Sort order by time."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number, starting at 1."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "description": "Rows per page."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/outlets/{outlet_id}/reports/invoices",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "time_filter": "$time_filter",
+          "reorder_type": "$reorder_type",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "data.next_url"
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_get_invoice",
+      "description": "Read one invoice by its UUID: status, payment_no, payment_type, amount_pay, amount_change, the discount, gratuity, tax and item totals, total_collected_amount, is_refunded with refund_amount and refunded_reason, customer_id, server_name, note and created_at. Needs the transaction permission. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice UUID (id of moka_pos_list_invoices), e.g. 112cc68d-321f-48e4-b55a-81af98718444."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/outlets/{outlet_id}/invoices/{invoice_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moka_pos_create_item",
+      "description": "Create an item (product) in the library of an outlet with its variants, prices and optional stock tracking. Returns the new item with its id and the ids of its item_variants. Prices are whole rupiah. Show the user the item and wait for confirmation; a repeated call creates a duplicate. Needs the library permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Item name, e.g. Nasi Goreng."
+          },
+          "description": {
+            "type": "string",
+            "description": "Item description."
+          },
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id from moka_pos_list_categories."
+          },
+          "item_variants": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Variant name, e.g. Large or Red. Empty for an item with one variant."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "Stock keeping unit."
+                },
+                "price": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Price in whole rupiah. Required unless the item uses a price per sales type."
+                },
+                "in_stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Opening stock."
+                },
+                "track_stock": {
+                  "type": "boolean",
+                  "description": "true to track stock for this variant."
+                },
+                "cogs": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Cost of goods sold per unit in rupiah."
+                },
+                "track_cogs": {
+                  "type": "boolean",
+                  "description": "true to track the cost of goods."
+                }
+              }
+            },
+            "description": "Variants of the item; at least one. Example: `[{\"name\": \"\", \"sku\": \"AMR-01\", \"price\": 25000, \"track_stock\": true, \"in_stock\": 40}]`."
+          },
+          "is_sales_type_price": {
+            "type": "boolean",
+            "description": "true when the item has a separate price per sales type (default false)."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "name",
+          "item_variants"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/outlets/{outlet_id}/items",
+        "bodyMapping": {
+          "item": {
+            "name": "$name",
+            "description": "$description",
+            "category_id": "$category_id",
+            "item_variants": "$item_variants",
+            "is_sales_type_price": "$is_sales_type_price"
+          }
+        }
+      }
+    },
+    {
+      "name": "moka_pos_update_item",
+      "description": "Change an item of an outlet: name, description, category, and the name, SKU, price and tracking flags of its variants. Moka documents the same body as for creating an item and does not say that fields left out are kept, so read the item with moka_pos_list_items first and send its name and every variant with its id next to your changes. Returns the updated item. Needs the library permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Item id from moka_pos_list_items."
+          },
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Item name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Item description."
+          },
+          "category_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Category id from moka_pos_list_categories."
+          },
+          "item_variants": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Variant id from moka_pos_list_items. Leave out to add a new variant."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Variant name."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "Stock keeping unit."
+                },
+                "price": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Price in whole rupiah."
+                },
+                "track_stock": {
+                  "type": "boolean",
+                  "description": "true to track stock for this variant."
+                },
+                "track_cogs": {
+                  "type": "boolean",
+                  "description": "true to track the cost of goods."
+                }
+              }
+            },
+            "description": "Variants with their id. Example: `[{\"id\": 1130275, \"price\": 27000}]`. Stock is not changed here: use moka_pos_adjust_item_stock."
+          },
+          "is_sales_type_price": {
+            "type": "boolean",
+            "description": "true when the item has a separate price per sales type."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "item_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v1/outlets/{outlet_id}/items/{item_id}",
+        "bodyMapping": {
+          "item": {
+            "name": "$name",
+            "description": "$description",
+            "category_id": "$category_id",
+            "item_variants": "$item_variants",
+            "is_sales_type_price": "$is_sales_type_price"
+          }
+        }
+      }
+    },
+    {
+      "name": "moka_pos_adjust_item_stock",
+      "description": "Record a stock adjustment for an outlet: set the counted stock of one or more item variants and leave a note. actual_stock is the new absolute quantity, not a difference, and cannot be negative. Returns the adjustment with its id, note and history_details. Show the user the variants and quantities and wait for confirmation. Needs the library permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "note": {
+            "type": "string",
+            "description": "Reason for the adjustment, e.g. Stock count 30 November."
+          },
+          "history_details": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_id": {
+                  "type": "integer",
+                  "description": "Item id."
+                },
+                "item_variant_id": {
+                  "type": "integer",
+                  "description": "Variant id of that item."
+                },
+                "actual_stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Counted quantity now in stock."
+                }
+              },
+              "required": [
+                "item_id",
+                "item_variant_id",
+                "actual_stock"
+              ]
+            },
+            "description": "Variants to adjust. Example: `[{\"item_id\": 788987, \"item_variant_id\": 1130275, \"actual_stock\": 36}]`."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "history_details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/outlets/{outlet_id}/adjustment/items",
+        "bodyMapping": {
+          "adjustment": {
+            "note": "$note",
+            "history_details": "$history_details"
+          }
+        }
+      }
+    },
+    {
+      "name": "moka_pos_delete_item",
+      "description": "Delete an item from the library of an outlet. It disappears from the register and cannot be restored through the API; past sales keep their lines. Returns the deleted item. Installed switched off. Needs the library permission.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "outlet_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Outlet id (outlet_ids of moka_pos_get_profile, or id of moka_pos_list_outlets)."
+          },
+          "item_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Item id from moka_pos_list_items."
+          }
+        },
+        "required": [
+          "outlet_id",
+          "item_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v1/outlets/{outlet_id}/items/{item_id}"
+      },
+      "enabled": false
+    }
+  ]
+}

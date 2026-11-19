@@ -1,0 +1,1445 @@
+{
+  "slug": "hotmart",
+  "name": "Hotmart",
+  "description": "Hotmart API for creators and affiliates selling digital products: sales history and totals, buyers and participants, commissions and price breakdowns, subscriptions with their charges, products, offers, plans and coupons, Members Area (Club) students, modules and progress, and event tickets. Read-only; refunds and subscription changes are switched off. Client ID and secret.",
+  "aliases": [
+    "Hotmart Club",
+    "Hotmart API",
+    "Hotmart Developers"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "hotmart",
+  "docsUrl": "https://developers.hotmart.com/docs/en/",
+  "prerequisites": "A Hotmart account (creator, co-producer or affiliate) with access to Tools, Developer Credentials to create a credential. About 3 minutes.",
+  "requiredEnvVars": [
+    "HOTMART_CLIENT_ID",
+    "HOTMART_CLIENT_SECRET",
+    "HOTMART_API_URL"
+  ],
+  "envVarMeta": {
+    "HOTMART_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Hotmart, Tools, Developer Credentials: create a credential and copy its Client ID.",
+      "link": "https://developers.hotmart.com/docs/en/start/app-auth/",
+      "pattern": "^[A-Za-z0-9-]{8,100}$",
+      "patternMessage": "Paste the Client ID only (letters, digits and dashes), without spaces."
+    },
+    "HOTMART_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the Client ID of the credential. Not the Basic value.",
+      "link": "https://developers.hotmart.com/docs/en/start/app-auth/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the Client Secret without spaces, and without the word Basic."
+    },
+    "HOTMART_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "Production for a normal credential. Sandbox only for a credential created with the sandbox box ticked: it returns fictional data.",
+      "link": "https://developers.hotmart.com/docs/en/start/sandbox/",
+      "options": [
+        {
+          "value": "https://developers.hotmart.com",
+          "label": "Production"
+        },
+        {
+          "value": "https://sandbox.hotmart.com",
+          "label": "Sandbox (test data)"
+        }
+      ]
+    }
+  },
+  "verifyHints": {
+    "401": "Hotmart did not accept the credential or its token. Copy the Client ID and Client Secret again from Tools, Developer Credentials, and check that the environment matches the credential type (a sandbox credential only works on Sandbox).",
+    "403": "Hotmart refused the call: this account has no access to that product, Members Area or event.",
+    "404": "Hotmart found nothing at this address. Check the id or code; on the sandbox some endpoints, such as the user profile, do not exist.",
+    "rate_limited": "Hotmart allows 500 calls per minute. Wait for the RateLimit-Reset seconds and try again.",
+    "invalid_token": "Hotmart refused the access token. Check that the environment matches the credential type: a sandbox credential only works on Sandbox, a production one only on Production.",
+    "unauthorized_client": "Hotmart refused the credential. Copy the Client ID and Client Secret again from Tools, Developer Credentials.",
+    "invalid_parameter": "Hotmart rejected a filter. Dates must be Unix timestamps in milliseconds and statuses must be spelled exactly as listed; a product without plans also answers this way."
+  },
+  "probe": {
+    "tool": "hotmart_list_products",
+    "params": {
+      "max_results": 1
+    }
+  },
+  "instructions": "## Hotmart\nThis connector reads a creator, co-producer or affiliate account on **Hotmart**, the platform for selling digital products, through the Hotmart API at `https://developers.hotmart.com`: sales with buyers, commissions and price breakdowns, subscriptions and their charges, products with offers, plans and coupons, the Members Area (Club) with students, modules and progress, and event tickets.\n\n**Setup (about 3 minutes)**\n1. Sign in to Hotmart and open **Tools, Developer Credentials** (Ferramentas, Credenciais de desenvolvedor).\n2. Click **Create Credential** and name it. Leave the sandbox box empty for real data; tick it only for a test credential, which cannot be changed to production later.\n3. Copy the **Client ID** into `HOTMART_CLIENT_ID` and the **Client Secret** into `HOTMART_CLIENT_SECRET`. The third value Hotmart shows, Basic, is just the two combined and is not needed.\n4. Choose **Production** as environment, or **Sandbox** for a sandbox credential (fictional data).\n\nThe connector exchanges the credential at `https://api-sec-vlc.hotmart.com/security/oauth/token` for a token that lasts about 48 hours and renews it by itself.\n\n**Where to start**: `hotmart_list_products` gives the product ids; `hotmart_get_sales_summary` totals a period; `hotmart_list_sales` lists the sales behind it. `hotmart_get_user` shows whose account this is.\n\n**Sales**: `hotmart_list_sales`, `hotmart_get_sales_summary`, `hotmart_list_sales_participants` (buyer contact, affiliate), `hotmart_list_sales_commissions` and `hotmart_list_sales_price_details` share their filters. Two pitfalls: without `transaction_status` (or a `transaction`) only APPROVED and COMPLETE sales are returned, so refunds and chargebacks must be asked for by status; and dates are Unix timestamps in **milliseconds**, both in filters and in answers. `hotmart_refund_sale` is installed switched off.\n\n**Subscriptions**: `hotmart_list_subscriptions` (filter by one or more statuses; DELAYED and OVERDUE are the late payers), `hotmart_get_subscriptions_summary`, `hotmart_list_subscription_purchases` (every charge of one subscriber code) and `hotmart_list_subscription_transactions`. `hotmart_cancel_subscription` and `hotmart_reactivate_subscription` are installed switched off; the reactivation never triggers an immediate charge.\n\n**Products**: `hotmart_list_products`, `hotmart_list_product_offers`, `hotmart_list_product_plans` and `hotmart_list_coupons`. A product has a 7-digit `id` (used by sales, subscriptions and coupons) and a `ucode` UUID (used by offers and plans).\n\n**Members Area (Club)**: `hotmart_list_club_students`, `hotmart_list_club_modules`, `hotmart_list_club_pages` and `hotmart_get_club_student_progress`. The Club tools take the `subdomain` of the Members Area, the pages tool the product id.\n\n**Events**: `hotmart_get_event_info` and `hotmart_list_event_participants` for products sold as tickets.\n\n**Paging**: lists return `items` and `page_info` with `next_page_token`, `prev_page_token`, `results_per_page` and sometimes `total_results`. Pass `next_page_token` as `page_token` until it is no longer returned.\n\n**Reading answers**: amounts are numbers with their own `currency_code` (a seller can be paid in several currencies: never add values across currencies). Some endpoints answer 200 with an empty body when there is nothing to return, which can also mean the credential cannot see that product or Club. Errors are JSON with `error` and `error_description`: `invalid_token` or `unauthorized_client` for the credential, `invalid_parameter` for a filter Hotmart does not accept.\n\n**Limits**: 500 calls per minute; a 429 carries the `RateLimit-Reset` header. The connector creates no coupons, payment links or products.",
+  "connector": {
+    "name": "Hotmart API",
+    "type": "REST",
+    "baseUrl": "{{HOTMART_API_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{HOTMART_CLIENT_ID}}",
+      "clientSecret": "{{HOTMART_CLIENT_SECRET}}",
+      "tokenUrl": "https://api-sec-vlc.hotmart.com/security/oauth/token",
+      "tokenAuthMethod": "client_secret_basic"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "hotmart_get_user",
+      "description": "Read the Hotmart account the credential belongs to: id, name, email and address. A quick check that the credential works. Not available on the sandbox, which answers 404. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/api/v1/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_products",
+      "description": "List the products of the account: id (7 digits), name, ucode (UUID, needed for offers and plans), status, format (ONLINE_COURSE, EBOOK, ETICKET, COMMUNITY and others), is_subscription, warranty_period and created_at in milliseconds. Cursor paging through `page_info.next_page_token`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Only the product with this id (7-digit number)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "DRAFT",
+              "ACTIVE",
+              "PAUSED",
+              "NOT_APPROVED",
+              "IN_REVIEW",
+              "DELETED",
+              "CHANGES_PENDING_ON_PRODUCT"
+            ],
+            "description": "Product status, e.g. ACTIVE."
+          },
+          "format": {
+            "type": "string",
+            "enum": [
+              "EBOOK",
+              "SOFTWARE",
+              "MOBILE_APPS",
+              "VIDEOS",
+              "AUDIOS",
+              "TEMPLATES",
+              "IMAGES",
+              "ONLINE_COURSE",
+              "SERIAL_CODES",
+              "ETICKET",
+              "ONLINE_SERVICE",
+              "ONLINE_EVENT",
+              "BUNDLE",
+              "COMMUNITY",
+              "AGENT"
+            ],
+            "description": "Product format, e.g. ONLINE_COURSE."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/api/v1/products",
+        "queryParams": {
+          "id": "$id",
+          "status": "$status",
+          "format": "$format",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_product_offers",
+      "description": "List the offers of one product: code, name, description, price (value and currency_code), payment_mode and whether it is the main offer. The offer code is the `offer_code` filter of the sales tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ucode": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "UUID of the product (`ucode` of hotmart_list_products)."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "ucode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/api/v1/products/{ucode}/offers",
+        "queryParams": {
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_product_plans",
+      "description": "List the subscription plans of one product: code, name, description, value, periodicity (WEEKLY, MONTHLY, BIMONTHLY, QUARTERLY, BIANNUAL, ANNUAL), max_installments, currency_code and trial_period. Hotmart answers 400 invalid_parameter for a product without plans. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ucode": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F-]{32,36}$",
+            "description": "UUID of the product (`ucode` of hotmart_list_products)."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "ucode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/api/v1/products/{ucode}/plans",
+        "queryParams": {
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_coupons",
+      "description": "List the discount coupons of one product: id, coupon_code, discount, status, active, start_date in milliseconds and time_zone. An empty answer means the product has no coupons. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "code": {
+            "type": "string",
+            "description": "Only the coupon with this code."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/api/v1/coupon/product/{product_id}",
+        "queryParams": {
+          "code": "$code",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_sales",
+      "description": "List sales (sales history): per sale the product (id, name), buyer (name, email, ucode), producer, and under `purchase` the transaction code, order_date and approved_date in milliseconds, status, price (value, currency_code), payment (method, type, installments_number), offer code, tracking source, hotmart_fee, whether it is a subscription and its recurrency_number. Only APPROVED and COMPLETE sales are returned unless transaction_status or transaction is given. Cursor paging through `page_info.next_page_token`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "start_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "End of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          },
+          "transaction_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "BLOCKED",
+              "CANCELLED",
+              "CHARGEBACK",
+              "COMPLETE",
+              "EXPIRED",
+              "NO_FUNDS",
+              "OVERDUE",
+              "PARTIALLY_REFUNDED",
+              "PRE_ORDER",
+              "PRINTED_BILLET",
+              "PROCESSING_TRANSACTION",
+              "PROTESTED",
+              "REFUNDED",
+              "STARTED",
+              "UNDER_ANALISYS",
+              "WAITING_PAYMENT"
+            ],
+            "description": "Purchase status to return. Without this filter (and without `transaction`) only APPROVED and COMPLETE sales come back, so pass REFUNDED, CHARGEBACK, CANCELLED and so on explicitly to see them. UNDER_ANALISYS is spelled as Hotmart spells it."
+          },
+          "buyer_email": {
+            "type": "string",
+            "description": "Email address of the buyer."
+          },
+          "buyer_name": {
+            "type": "string",
+            "description": "Name of the buyer."
+          },
+          "payment_type": {
+            "type": "string",
+            "enum": [
+              "BILLET",
+              "CASH_PAYMENT",
+              "CREDIT_CARD",
+              "DIRECT_BANK_TRANSFER",
+              "DIRECT_DEBIT",
+              "FINANCED_BILLET",
+              "FINANCED_INSTALLMENT",
+              "GOOGLE_PAY",
+              "HOTCARD",
+              "HYBRID",
+              "MANUAL_TRANSFER",
+              "PAYPAL",
+              "PAYPAL_INTERNACIONAL",
+              "PICPAY",
+              "PIX",
+              "SAMSUNG_PAY",
+              "WALLET"
+            ],
+            "description": "Payment method the buyer chose, e.g. CREDIT_CARD, PIX, BILLET or PAYPAL."
+          },
+          "offer_code": {
+            "type": "string",
+            "description": "Offer code of the product."
+          },
+          "sales_source": {
+            "type": "string",
+            "description": "SRC tracking code used in the checkout link (the src= value)."
+          },
+          "commission_as": {
+            "type": "string",
+            "enum": [
+              "PRODUCER",
+              "COPRODUCER",
+              "AFFILIATE"
+            ],
+            "description": "The role in which this account earned on the sale: PRODUCER, COPRODUCER or AFFILIATE."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/sales/history",
+        "queryParams": {
+          "product_id": "$product_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "transaction": "$transaction",
+          "transaction_status": "$transaction_status",
+          "buyer_email": "$buyer_email",
+          "buyer_name": "$buyer_name",
+          "payment_type": "$payment_type",
+          "offer_code": "$offer_code",
+          "sales_source": "$sales_source",
+          "commission_as": "$commission_as",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_get_sales_summary",
+      "description": "Total the sales of a period: `total_items` (number of sales) and `total_value` per currency (currency_code and value). Same filters as the sales history; only APPROVED and COMPLETE sales count unless transaction_status is given. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "start_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "End of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          },
+          "transaction_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "BLOCKED",
+              "CANCELLED",
+              "CHARGEBACK",
+              "COMPLETE",
+              "EXPIRED",
+              "NO_FUNDS",
+              "OVERDUE",
+              "PARTIALLY_REFUNDED",
+              "PRE_ORDER",
+              "PRINTED_BILLET",
+              "PROCESSING_TRANSACTION",
+              "PROTESTED",
+              "REFUNDED",
+              "STARTED",
+              "UNDER_ANALISYS",
+              "WAITING_PAYMENT"
+            ],
+            "description": "Purchase status to return. Without this filter (and without `transaction`) only APPROVED and COMPLETE sales come back, so pass REFUNDED, CHARGEBACK, CANCELLED and so on explicitly to see them. UNDER_ANALISYS is spelled as Hotmart spells it."
+          },
+          "payment_type": {
+            "type": "string",
+            "enum": [
+              "BILLET",
+              "CASH_PAYMENT",
+              "CREDIT_CARD",
+              "DIRECT_BANK_TRANSFER",
+              "DIRECT_DEBIT",
+              "FINANCED_BILLET",
+              "FINANCED_INSTALLMENT",
+              "GOOGLE_PAY",
+              "HOTCARD",
+              "HYBRID",
+              "MANUAL_TRANSFER",
+              "PAYPAL",
+              "PAYPAL_INTERNACIONAL",
+              "PICPAY",
+              "PIX",
+              "SAMSUNG_PAY",
+              "WALLET"
+            ],
+            "description": "Payment method the buyer chose, e.g. CREDIT_CARD, PIX, BILLET or PAYPAL."
+          },
+          "offer_code": {
+            "type": "string",
+            "description": "Offer code of the product."
+          },
+          "sales_source": {
+            "type": "string",
+            "description": "SRC tracking code used in the checkout link."
+          },
+          "affiliate_name": {
+            "type": "string",
+            "description": "Name of the affiliate who made the sale."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/sales/summary",
+        "queryParams": {
+          "product_id": "$product_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "transaction": "$transaction",
+          "transaction_status": "$transaction_status",
+          "payment_type": "$payment_type",
+          "offer_code": "$offer_code",
+          "sales_source": "$sales_source",
+          "affiliate_name": "$affiliate_name",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_sales_participants",
+      "description": "List who took part in each sale: per transaction the product and `users` with their role (PRODUCER, BUYER, COPRODUCER, AFFILIATE) and details such as name, email, phone, document and address where the buyer gave them. Use it for the buyer contact of a transaction or the affiliate behind a sale. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "start_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "End of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          },
+          "transaction_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "BLOCKED",
+              "CANCELLED",
+              "CHARGEBACK",
+              "COMPLETE",
+              "EXPIRED",
+              "NO_FUNDS",
+              "OVERDUE",
+              "PARTIALLY_REFUNDED",
+              "PRE_ORDER",
+              "PRINTED_BILLET",
+              "PROCESSING_TRANSACTION",
+              "PROTESTED",
+              "REFUNDED",
+              "STARTED",
+              "UNDER_ANALISYS",
+              "WAITING_PAYMENT"
+            ],
+            "description": "Purchase status to return. Without this filter (and without `transaction`) only APPROVED and COMPLETE sales come back, so pass REFUNDED, CHARGEBACK, CANCELLED and so on explicitly to see them. UNDER_ANALISYS is spelled as Hotmart spells it."
+          },
+          "buyer_email": {
+            "type": "string",
+            "description": "Email address of the buyer."
+          },
+          "buyer_name": {
+            "type": "string",
+            "description": "Name of the buyer."
+          },
+          "affiliate_name": {
+            "type": "string",
+            "description": "Name of the affiliate who made the sale."
+          },
+          "sales_source": {
+            "type": "string",
+            "description": "SRC tracking code used in the checkout link."
+          },
+          "commission_as": {
+            "type": "string",
+            "enum": [
+              "PRODUCER",
+              "COPRODUCER",
+              "AFFILIATE"
+            ],
+            "description": "The role in which this account earned on the sale: PRODUCER, COPRODUCER or AFFILIATE."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/sales/users",
+        "queryParams": {
+          "product_id": "$product_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "transaction": "$transaction",
+          "transaction_status": "$transaction_status",
+          "buyer_email": "$buyer_email",
+          "buyer_name": "$buyer_name",
+          "affiliate_name": "$affiliate_name",
+          "sales_source": "$sales_source",
+          "commission_as": "$commission_as",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_sales_commissions",
+      "description": "List the commissions of each sale: per transaction the product, the exchange rate to the payout currency and `commissions` with each participant, the role they earned as and the amount (value and currency_code). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "start_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "End of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          },
+          "transaction_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "BLOCKED",
+              "CANCELLED",
+              "CHARGEBACK",
+              "COMPLETE",
+              "EXPIRED",
+              "NO_FUNDS",
+              "OVERDUE",
+              "PARTIALLY_REFUNDED",
+              "PRE_ORDER",
+              "PRINTED_BILLET",
+              "PROCESSING_TRANSACTION",
+              "PROTESTED",
+              "REFUNDED",
+              "STARTED",
+              "UNDER_ANALISYS",
+              "WAITING_PAYMENT"
+            ],
+            "description": "Purchase status to return. Without this filter (and without `transaction`) only APPROVED and COMPLETE sales come back, so pass REFUNDED, CHARGEBACK, CANCELLED and so on explicitly to see them. UNDER_ANALISYS is spelled as Hotmart spells it."
+          },
+          "commission_as": {
+            "type": "string",
+            "enum": [
+              "PRODUCER",
+              "COPRODUCER",
+              "AFFILIATE"
+            ],
+            "description": "The role in which this account earned on the sale: PRODUCER, COPRODUCER or AFFILIATE."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/sales/commissions",
+        "queryParams": {
+          "product_id": "$product_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "transaction": "$transaction",
+          "transaction_status": "$transaction_status",
+          "commission_as": "$commission_as",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_sales_price_details",
+      "description": "Break down the price of each sale: per transaction the product, the base amount commissions are split from, the total the buyer paid, vat, fee, the coupon used and the real_conversion_rate, each amount with its currency_code. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "start_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Start of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "End of the period, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          },
+          "transaction_status": {
+            "type": "string",
+            "enum": [
+              "APPROVED",
+              "BLOCKED",
+              "CANCELLED",
+              "CHARGEBACK",
+              "COMPLETE",
+              "EXPIRED",
+              "NO_FUNDS",
+              "OVERDUE",
+              "PARTIALLY_REFUNDED",
+              "PRE_ORDER",
+              "PRINTED_BILLET",
+              "PROCESSING_TRANSACTION",
+              "PROTESTED",
+              "REFUNDED",
+              "STARTED",
+              "UNDER_ANALISYS",
+              "WAITING_PAYMENT"
+            ],
+            "description": "Purchase status to return. Without this filter (and without `transaction`) only APPROVED and COMPLETE sales come back, so pass REFUNDED, CHARGEBACK, CANCELLED and so on explicitly to see them. UNDER_ANALISYS is spelled as Hotmart spells it."
+          },
+          "payment_type": {
+            "type": "string",
+            "enum": [
+              "BILLET",
+              "CASH_PAYMENT",
+              "CREDIT_CARD",
+              "DIRECT_BANK_TRANSFER",
+              "DIRECT_DEBIT",
+              "FINANCED_BILLET",
+              "FINANCED_INSTALLMENT",
+              "GOOGLE_PAY",
+              "HOTCARD",
+              "HYBRID",
+              "MANUAL_TRANSFER",
+              "PAYPAL",
+              "PAYPAL_INTERNACIONAL",
+              "PICPAY",
+              "PIX",
+              "SAMSUNG_PAY",
+              "WALLET"
+            ],
+            "description": "Payment method the buyer chose, e.g. CREDIT_CARD, PIX, BILLET or PAYPAL."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/sales/price/details",
+        "queryParams": {
+          "product_id": "$product_id",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "transaction": "$transaction",
+          "transaction_status": "$transaction_status",
+          "payment_type": "$payment_type",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_refund_sale",
+      "enabled": false,
+      "description": "Refund a sale to the buyer. This returns the money, ends the access the purchase gave and cannot be undone; Hotmart only accepts it inside the refund period of the product. The answer has no body: only the HTTP status tells whether it worked. Installed switched off; confirm the transaction and the buyer with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          }
+        },
+        "required": [
+          "transaction"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/payments/api/v1/sales/{transaction}/refund"
+      }
+    },
+    {
+      "name": "hotmart_list_subscriptions",
+      "description": "List subscriptions: subscriber_code, subscription_id, status, accession_date, end_accession_date, request_date, date_next_charge (all in milliseconds), trial, the plan (name, id, recurrency_period, max_charge_cycles), the product, the price and the subscriber (name, email, ucode). Without dates Hotmart looks at the last 30 days of sign-ups. Cursor paging through `page_info.next_page_token`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ACTIVE",
+                "INACTIVE",
+                "DELAYED",
+                "CANCELLED_BY_CUSTOMER",
+                "CANCELLED_BY_SELLER",
+                "CANCELLED_BY_ADMIN",
+                "STARTED",
+                "OVERDUE"
+              ]
+            },
+            "description": "One or more statuses: ACTIVE, INACTIVE, DELAYED (payment late), OVERDUE (period expired), STARTED, CANCELLED_BY_CUSTOMER, CANCELLED_BY_SELLER, CANCELLED_BY_ADMIN."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "plan": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "One or more plan names."
+          },
+          "plan_id": {
+            "type": "integer",
+            "description": "Id of the subscription plan."
+          },
+          "subscriber_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Only the subscription with this subscriber code."
+          },
+          "subscriber_email": {
+            "type": "string",
+            "description": "Email address of the subscriber."
+          },
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          },
+          "trial": {
+            "type": "boolean",
+            "description": "true for subscriptions with a trial period, false for those without."
+          },
+          "accession_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Subscriptions that started on or after this moment (default: 30 days ago), as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_accession_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Subscriptions that started on or before this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "cancelation_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Subscriptions cancelled on or after this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_cancelation_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Subscriptions cancelled on or before this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "date_next_charge": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Next charge on or after this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_date_next_charge": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Next charge on or before this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/subscriptions",
+        "queryParams": {
+          "status": "$status",
+          "product_id": "$product_id",
+          "plan": "$plan",
+          "plan_id": "$plan_id",
+          "subscriber_code": "$subscriber_code",
+          "subscriber_email": "$subscriber_email",
+          "transaction": "$transaction",
+          "trial": "$trial",
+          "accession_date": "$accession_date",
+          "end_accession_date": "$end_accession_date",
+          "cancelation_date": "$cancelation_date",
+          "end_cancelation_date": "$end_cancelation_date",
+          "date_next_charge": "$date_next_charge",
+          "end_date_next_charge": "$end_date_next_charge",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_get_subscriptions_summary",
+      "description": "Summarise subscriptions: per subscription the subscriber_code, subscription_id, status, lifetime (how many charges were paid), accession_date, end_accession_date, trial, plan, product, offer code, the last charge (last_recurrency) and the unpaid ones (unpaid_recurrencies). Use it for retention and lifetime questions. Cursor paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "subscriber_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Only the subscription with this subscriber code."
+          },
+          "accession_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Subscriptions that started on or after this moment (default: 30 days ago), as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_accession_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Subscriptions that started on or before this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "date_next_charge": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Next charge on or after this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/subscriptions/summary",
+        "queryParams": {
+          "product_id": "$product_id",
+          "subscriber_code": "$subscriber_code",
+          "accession_date": "$accession_date",
+          "end_accession_date": "$end_accession_date",
+          "date_next_charge": "$date_next_charge",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_subscription_purchases",
+      "description": "List every charge of one subscription: transaction code, approved_date, payment_engine, status, price (value, currency_code), payment_type, payment_method, recurrency_number and whether it is under warranty. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Subscriber code of the subscription (`subscriber_code` of hotmart_list_subscriptions), e.g. ABC12DEF."
+          }
+        },
+        "required": [
+          "subscriber_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/subscriptions/{subscriber_code}/purchases"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_subscription_transactions",
+      "description": "List the transactions of subscriptions and smart instalments in a period: subscription_id, subscriber_code, status, billing_type (SUBSCRIPTION, SMART_INSTALLMENT or SMART_RECOVERY), the recurrency number, the transaction, its status, payment method and amounts, and the subscriber. Filter by product, buyer, billing type or status. Cursor paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          },
+          "transaction": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Transaction code, e.g. HP17715690036014."
+          },
+          "subscriber_name": {
+            "type": "string",
+            "description": "Name of the subscriber."
+          },
+          "subscriber_email": {
+            "type": "string",
+            "description": "Email address of the subscriber."
+          },
+          "billing_type": {
+            "type": "string",
+            "enum": [
+              "SUBSCRIPTION",
+              "SMART_INSTALLMENT",
+              "SMART_RECOVERY"
+            ],
+            "description": "SUBSCRIPTION, SMART_INSTALLMENT or SMART_RECOVERY."
+          },
+          "subscription_status": {
+            "type": "string",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "DELAYED",
+              "CANCELLED_BY_CUSTOMER",
+              "CANCELLED_BY_SELLER",
+              "CANCELLED_BY_ADMIN",
+              "STARTED",
+              "OVERDUE"
+            ],
+            "description": "Current status of the subscription, e.g. ACTIVE or DELAYED."
+          },
+          "transaction_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Transactions on or after this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "end_transaction_date": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Transactions on or before this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments/api/v1/subscriptions/transactions",
+        "queryParams": {
+          "product_id": "$product_id",
+          "transaction": "$transaction",
+          "subscriber_name": "$subscriber_name",
+          "subscriber_email": "$subscriber_email",
+          "billing_type": "$billing_type",
+          "subscription_status": "$subscription_status",
+          "transaction_date": "$transaction_date",
+          "end_transaction_date": "$end_transaction_date",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_cancel_subscription",
+      "enabled": false,
+      "description": "Cancel one subscription: no further charges are made and the subscriber keeps access until the paid period ends. Returns the subscription with its new status. Installed switched off; confirm the subscriber with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Subscriber code of the subscription (`subscriber_code` of hotmart_list_subscriptions), e.g. ABC12DEF."
+          },
+          "send_mail": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default) emails the subscriber a cancellation notice; false cancels silently."
+          }
+        },
+        "required": [
+          "subscriber_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/api/v1/subscriptions/{subscriber_code}/cancel",
+        "bodyMapping": {
+          "send_mail": "$send_mail"
+        }
+      }
+    },
+    {
+      "name": "hotmart_reactivate_subscription",
+      "enabled": false,
+      "description": "Reactivate a cancelled or inactive subscription without charging the subscriber now: the billing date stays as it was and the next charge happens on it. Returns the subscription with its status. Installed switched off; confirm the subscriber with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subscriber_code": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{4,40}$",
+            "description": "Subscriber code of the subscription (`subscriber_code` of hotmart_list_subscriptions), e.g. ABC12DEF."
+          }
+        },
+        "required": [
+          "subscriber_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payments/api/v1/subscriptions/{subscriber_code}/reactivate",
+        "bodyMapping": {
+          "charge": false
+        }
+      }
+    },
+    {
+      "name": "hotmart_list_club_students",
+      "description": "List the students of a Members Area (Club): user_id, name, email, role (STUDENT, FREE_STUDENT, OWNER, ADMIN, CONTENT_EDITOR, MODERATOR), status, first_access_date and last_access_date in milliseconds, access_count, progress (completed, total, completed_percentage), engagement and purchase_date. Find one by email or part of it. An empty answer can also mean the credential has no access to this Club. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subdomain": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,100}$",
+            "description": "Subdomain of the Members Area (Club), as set in the Club administration: for mycourse.club.hotmart.com pass mycourse."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address of a student, or part of it."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "subdomain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/club/api/v1/users",
+        "queryParams": {
+          "subdomain": "$subdomain",
+          "email": "$email",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_club_modules",
+      "description": "List the modules of a Members Area (Club): module_id, name, sequence, is_public (free module), is_extra, total_pages and the classes it belongs to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subdomain": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,100}$",
+            "description": "Subdomain of the Members Area (Club), as set in the Club administration: for mycourse.club.hotmart.com pass mycourse."
+          },
+          "is_extra": {
+            "type": "boolean",
+            "description": "true returns the extra modules, false (default) the main modules."
+          }
+        },
+        "required": [
+          "subdomain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/club/api/v1/modules",
+        "queryParams": {
+          "subdomain": "$subdomain",
+          "is_extra": "$is_extra"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_club_pages",
+      "description": "List the pages (lessons) of one module of a Members Area: page_id, name, page_order, type (CONTENT, ADVERTISEMENT, QUIZ, WEBINAR), published, total_comments, rates_average and media details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "module_id": {
+            "type": "string",
+            "description": "Module id (`module_id` of hotmart_list_club_modules)."
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Hotmart product id (a 7-digit number, `id` of hotmart_list_products)."
+          }
+        },
+        "required": [
+          "module_id",
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/club/api/v2/modules/{module_id}/pages",
+        "queryParams": {
+          "product_id": "$product_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_get_club_student_progress",
+      "description": "Read the lesson progress of one student in a Members Area: `lessons` with page_id, page_name, module_name, is_module_extra, is_completed and completed_date in milliseconds. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Student id in the Club (`user_id` of hotmart_list_club_students)."
+          },
+          "subdomain": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{1,100}$",
+            "description": "Subdomain of the Members Area (Club), as set in the Club administration: for mycourse.club.hotmart.com pass mycourse."
+          }
+        },
+        "required": [
+          "user_id",
+          "subdomain"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/club/api/v1/users/{user_id}/lessons",
+        "queryParams": {
+          "subdomain": "$subdomain"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_get_event_info",
+      "description": "Read an event sold as tickets: the product (id, name), start_event_date and end_event_date in milliseconds, and `lots` (ticket batches or categories with id and name). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "integer",
+            "description": "Product id of the event (a product with the format ETICKET)."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/api/v1/{event_id}/info"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hotmart_list_event_participants",
+      "description": "List the tickets and participants of an event: per ticket the buyer (name, email), the participant (name, email, document, phone), the e-ticket (ticket_qr_code, id, ticket_status, ticket_type, checkin_status, is_blocked), the lot and the product. Filter by buyer or participant email, lot, ticket status or check-in. Cursor paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "integer",
+            "description": "Product id of the event (a product with the format ETICKET)."
+          },
+          "buyer_email": {
+            "type": "string",
+            "description": "Email address of the buyer."
+          },
+          "participant_email": {
+            "type": "string",
+            "description": "Email address of the participant."
+          },
+          "id_lot": {
+            "type": "integer",
+            "description": "Id of the ticket lot (hotmart_get_event_info)."
+          },
+          "ticket_status": {
+            "type": "string",
+            "enum": [
+              "SOLD",
+              "INVITE",
+              "INVITE_CANCELED",
+              "REFUNDED",
+              "CHARGEBACK",
+              "EXCLUDED",
+              "AVAILABLE",
+              "RESERVED"
+            ],
+            "description": "SOLD (paid), INVITE, INVITE_CANCELED, REFUNDED, CHARGEBACK, EXCLUDED, AVAILABLE or RESERVED."
+          },
+          "ticket_type": {
+            "type": "string",
+            "enum": [
+              "PAID",
+              "FREE",
+              "ALL"
+            ],
+            "description": "PAID, FREE (complimentary) or ALL."
+          },
+          "checkin_status": {
+            "type": "string",
+            "enum": [
+              "PENDING",
+              "PARTIAL",
+              "CONCLUDED",
+              "ALL"
+            ],
+            "description": "Check-in status: PENDING, PARTIAL, CONCLUDED or ALL."
+          },
+          "last_update": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Tickets changed on or after this moment, as a Unix timestamp in milliseconds (UTC), e.g. 1767225600000 for 2026-01-01."
+          },
+          "max_results": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Items per page. Hotmart caps it per endpoint (often 50 by default); a larger value is cut to the cap."
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Cursor for another page: the `page_info.next_page_token` (or `prev_page_token`) of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/api/v1/{event_id}/participants",
+        "queryParams": {
+          "buyer_email": "$buyer_email",
+          "participant_email": "$participant_email",
+          "id_lot": "$id_lot",
+          "ticket_status": "$ticket_status",
+          "ticket_type": "$ticket_type",
+          "checkin_status": "$checkin_status",
+          "last_update": "$last_update",
+          "max_results": "$max_results",
+          "page_token": "$page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

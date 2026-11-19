@@ -1,0 +1,1220 @@
+{
+  "slug": "smartbill",
+  "name": "SmartBill",
+  "description": "SmartBill Cloud API for Romanian invoicing: issue invoices and estimates (proforme) as drafts or final documents, create an invoice from an estimate, check payment status, download PDFs, email documents to clients, and read document series, VAT rates and stock by warehouse. Reversal, cancel, delete and payment registration are switched off. Email and API token.",
+  "aliases": [
+    "SmartBill Cloud",
+    "Smart Bill",
+    "SmartBill Facturare",
+    "SmartBill Gestiune"
+  ],
+  "region": "ro",
+  "category": "accounting",
+  "icon": "smartbill",
+  "docsUrl": "https://api.smartbill.ro/en/",
+  "prerequisites": "A SmartBill Cloud account with access to Contul meu, Integrari, where the API email, token and company CIF are shown. Every document created through the API counts toward the documents of the SmartBill plan. About 2 minutes.",
+  "requiredEnvVars": [
+    "SMARTBILL_EMAIL",
+    "SMARTBILL_API_TOKEN",
+    "SMARTBILL_CIF"
+  ],
+  "envVarMeta": {
+    "SMARTBILL_EMAIL": {
+      "label": "Login email",
+      "kind": "setting",
+      "help": "SmartBill Cloud, Contul meu, Integrari, section API: the Email shown there (the email you sign in to SmartBill with).",
+      "link": "https://cloud.smartbill.ro/core/integrari/",
+      "example": "office@firma.ro",
+      "pattern": "^[^\\s@:]+@[^\\s@:]+\\.[^\\s@:]+$",
+      "patternMessage": "Enter the email address of your SmartBill user, without spaces."
+    },
+    "SMARTBILL_API_TOKEN": {
+      "label": "API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "SmartBill Cloud, Contul meu, Integrari, section API: the Token. It is created with the account; this is the V1 token, not the Bearer token of API V3.",
+      "link": "https://cloud.smartbill.ro/core/integrari/",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the API token without spaces."
+    },
+    "SMARTBILL_CIF": {
+      "label": "Company CIF",
+      "kind": "setting",
+      "help": "The fiscal code (CIF) of your company exactly as SmartBill shows it under Integrari, with RO in front when the company is registered for VAT.",
+      "link": "https://cloud.smartbill.ro/core/integrari/",
+      "example": "RO12345678",
+      "pattern": "^([Rr][Oo] ?)?[0-9]{2,10}$",
+      "patternMessage": "Enter the CIF as shown in SmartBill: 2 to 10 digits, with RO in front for a VAT payer, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "SmartBill rejected the request. Its errorText (or errors[].param) names the cause: an unknown series, VAT rate or unit of measure, a missing product code, or a field with the wrong type.",
+    "401": "SmartBill refused the email and token (Autentificare esuata). Copy both again from Contul meu, Integrari, section API. The token of API V3 does not work here.",
+    "403": {
+      "hint": "This SmartBill user has no right on the company with this CIF, or on the series. Check the CIF and the user rights in SmartBill.",
+      "field": "SMARTBILL_CIF"
+    },
+    "404": "SmartBill found no document with that series and number for this company.",
+    "rate_limited": "SmartBill allows 30 calls per 10 seconds per token and blocks the token for 10 minutes when that is exceeded. Wait and try again."
+  },
+  "probe": {
+    "tool": "smartbill_list_taxes",
+    "params": {}
+  },
+  "instructions": "## SmartBill\nThis connector works with the **SmartBill Cloud API V1** at `https://ws.smartbill.ro/SBORO/api`, the invoicing and stock program used by Romanian companies: issue invoices and estimates (proforme), check whether an invoice is paid, download PDFs, send documents by email, and read document series, VAT rates and stock by warehouse.\n\n**Setup (about 2 minutes)**\n1. Sign in to SmartBill Cloud and open **Contul meu, Integrari**, section **API** (https://cloud.smartbill.ro/core/integrari/).\n2. Copy the **Email** into `SMARTBILL_EMAIL`, the **Token** into `SMARTBILL_API_TOKEN` and the **CIF** of the company into `SMARTBILL_CIF`.\n\nCalls use HTTP Basic authentication with the email as user and the token as password. The connector adds the company CIF to every call, so one connector works on one company; install it again for a second company.\n\n**Where to start**: `smartbill_list_series` (the series names every document needs) and `smartbill_list_taxes` (the VAT rate names). Then `smartbill_create_invoice` or `smartbill_create_estimate`.\n\n**What the API cannot do**: V1 has no list or search of invoices, clients or products and no JSON view of a document. A document is addressed by its series and number, which the user gives or which the create call returned. Keep the `series`, `number` and `documentViewUrl` of what you create.\n\n**Invoices**: `smartbill_create_invoice` saves a draft unless `is_draft` is false. A final invoice gets the next number of the series and is a fiscal document: SmartBill sends it to ANAF e-Factura according to the account settings, which this API does not control. `smartbill_create_invoice_from_estimate` turns a proforma into an invoice. `smartbill_get_invoice_payment_status` tells what is paid and what is due, `smartbill_get_invoice_pdf` downloads the file, `smartbill_send_document_email` emails an invoice or estimate to the client. `smartbill_reverse_invoice` (storno), `smartbill_cancel_invoice`, `smartbill_restore_invoice` and `smartbill_delete_invoice` are installed switched off.\n\n**Estimates (proforme)**: `smartbill_create_estimate`, `smartbill_get_estimate_invoices` (was it invoiced), `smartbill_get_estimate_pdf`; `smartbill_cancel_estimate`, `smartbill_restore_estimate` and `smartbill_delete_estimate` are switched off.\n\n**Payments**: `smartbill_get_fiscal_receipt_text` reads a fiscal receipt. `smartbill_register_payment` (records a collection or issues a receipt), `smartbill_delete_receipt` and `smartbill_delete_payment` are switched off. Nothing here charges a card or moves money: payments are bookkeeping records.\n\n**Stock**: `smartbill_list_stocks` returns quantities per warehouse (gestiune) on a date; warehouse names are case-sensitive.\n\n**Writing a document**: `seriesName`, `taxName` and `measuringUnitName` must match the account exactly; never invent them. Prices are without VAT unless `isTaxIncluded` is true. `taxPercentage` is required on every line (21 is the standard rate since August 2025). If the account uses product codes, every line needs `code`. A discount line needs `numberOfItems` and a negative `discountValue`, otherwise it is silently ignored or added. For a client in Bucuresti the `city` must be Sector 1 to Sector 6, or e-Factura rejects the invoice. Every document, drafts included, counts toward the documents of the SmartBill plan.\n\n**Errors**: the `errorText` of the answer is the cause, in Romanian (for example `Seria nu a fost gasita!` for an unknown series); it can contain HTML, so quote only its first sentence. A request with an unknown field or a wrong type is answered 400 with `errors[].message` and `errors[].param` naming the field. 401 means wrong email or token, 403 that the user has no right on the company or series.\n\n**Limits**: 30 calls per 10 seconds per token; going over blocks the token for 10 minutes. The headers `X-RateLimit-Remaining` and `X-RateLimit-Reset` show what is left.\n\n**Not covered**: the newer API V3 (lists of clients, products, warehouses, suppliers and goods receipt notes) uses a separate Bearer token and is not part of this connector. Fiscal receipts (bon fiscal) need a cash register and are not issued here.",
+  "connector": {
+    "name": "SmartBill Cloud API V1",
+    "type": "REST",
+    "baseUrl": "https://ws.smartbill.ro/SBORO/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SMARTBILL_EMAIL}}",
+      "password": "{{SMARTBILL_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "errorText",
+          "messagePath": "errorText",
+          "messageMatches": "Autentificare",
+          "status": 401
+        },
+        {
+          "path": "errorText",
+          "messagePath": "errorText",
+          "status": 400
+        },
+        {
+          "path": "status.code",
+          "equals": 1,
+          "messagePath": "status.message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "smartbill_list_series",
+      "description": "List the document series configured in SmartBill: `list` with each series `name`, its `nextNumber` and `type` (f invoices, p estimates and proformas, c receipts). Use the exact name as series_name when creating a document. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "f",
+              "p",
+              "c"
+            ],
+            "description": "f invoice series, p estimate (proforma) series, c receipt series. Leave out for all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/series",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_list_taxes",
+      "description": "List the VAT rates configured in SmartBill: `taxes` with each rate `name` (e.g. Normala) and `percentage`. Use the name as taxName and the percentage as taxPercentage on document lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tax",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_list_stocks",
+      "description": "Read stock levels on a date: `list` with one entry per warehouse (`warehouseName`, `warehouseType` en gros or en detail) and its `products` (`productName`, `productCode`, `measuringUnit`, `quantity`). Without filters it returns every product in every warehouse; filter by warehouse, product name or product code. An empty list means no stock for the filters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "The date the stock is wanted for, YYYY-MM-DD (today for the current stock)."
+          },
+          "warehouse_name": {
+            "type": "string",
+            "description": "Only this warehouse (gestiune). The name is case-sensitive."
+          },
+          "product_name": {
+            "type": "string",
+            "description": "Only the product with this name."
+          },
+          "product_code": {
+            "type": "string",
+            "description": "Only the product with this code (SKU)."
+          }
+        },
+        "required": [
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/stocks",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "date": "$date",
+          "warehouseName": "$warehouse_name",
+          "productName": "$product_name",
+          "productCode": "$product_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_create_invoice",
+      "description": "Create an invoice in SmartBill. By default it is saved as a draft (no number), which the user checks and finalizes in SmartBill; with is_draft false it is issued at once with the next number of the series, and SmartBill reports it to ANAF e-Factura when the account is set up to send automatically. Returns `number`, `series`, `documentId`, `documentUrl` (edit link, needs a SmartBill login) and `documentViewUrl` (public PDF link for the client). Every document, drafts included, counts toward the documents of the SmartBill subscription. Confirm client, lines and VAT with the user before issuing a final invoice.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the invoice series, exactly as configured in SmartBill. Read it with smartbill_list_series; never invent one."
+          },
+          "client": {
+            "type": "object",
+            "description": "The customer: `name` and `country` are required (country as a name such as Romania). Optional: `vatCode` (CUI or CIF, or a foreign VAT code), `isTaxPayer` (true when registered for VAT), `regCom`, `address`, `city` (for county Bucuresti it must be Sector 1 to Sector 6), `county`, `email`, `phone`, `contact`, `iban`, `bank`, `code`, and `saveToDb` (true saves a new client in the SmartBill catalogue)."
+          },
+          "products": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            },
+            "description": "Document lines. Each line needs `name`, `quantity`, `price` (unit price, without VAT unless `isTaxIncluded` is true), `measuringUnitName` (as configured in SmartBill, e.g. buc) and `taxPercentage`; optional `code` (required when the account uses product codes), `taxName` (name from smartbill_list_taxes), `isService`, `productDescription`, `currency`, `warehouseName` (for stock discharge, case-sensitive) and `saveToDb`. A discount is its own line with `isDiscount` true, `numberOfItems` (how many preceding lines it applies to), `discountType` 1 with a negative `discountValue` or 2 with `discountPercentage`."
+          },
+          "is_draft": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): saved as a draft without a number, to be checked and finalized in SmartBill. false: issued at once with the next number of the series."
+          },
+          "issue_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Issue date, YYYY-MM-DD. Leave out for today."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RON",
+              "EUR",
+              "USD",
+              "GBP",
+              "CAD",
+              "AUD",
+              "CHF",
+              "TRY",
+              "CZK",
+              "DKK",
+              "HUF",
+              "MDL",
+              "SEK",
+              "NOK"
+            ],
+            "description": "Document currency. Leave out for RON."
+          },
+          "exchange_rate": {
+            "type": "number",
+            "description": "Exchange rate to RON for a foreign-currency document. Leave out for the rate SmartBill has for the issue date."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "RO",
+              "EN",
+              "DE",
+              "FR",
+              "IT",
+              "ES"
+            ],
+            "description": "Document language, default RO."
+          },
+          "precision": {
+            "type": "integer",
+            "enum": [
+              2,
+              3,
+              4
+            ],
+            "description": "Decimals used for amounts: 2, 3 or 4."
+          },
+          "observations": {
+            "type": "string",
+            "description": "Observations printed on the document."
+          },
+          "mentions": {
+            "type": "string",
+            "description": "Mentions printed on the document."
+          },
+          "use_intra_cif": {
+            "type": "boolean",
+            "description": "true to use the intra-community VAT number of the client."
+          },
+          "send_email": {
+            "type": "boolean",
+            "default": false,
+            "description": "true sends the document to the client by email right after it is created (needs the email settings in SmartBill). Default false."
+          },
+          "email": {
+            "type": "object",
+            "description": "Recipients when send_email is true: `to` (default: the client email), `cc`, `bcc`."
+          },
+          "delivery_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Delivery date, YYYY-MM-DD."
+          },
+          "use_stock": {
+            "type": "boolean",
+            "description": "true discharges stock when the invoice is issued; each product line then needs its `warehouseName`."
+          },
+          "use_payment_tax": {
+            "type": "boolean",
+            "description": "true applies VAT on collection (TVA la incasare)."
+          },
+          "aviz": {
+            "type": "string",
+            "description": "Number of the delivery note (aviz) the invoice is based on, e.g. AV-1908."
+          }
+        },
+        "required": [
+          "series_name",
+          "client",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice/v2",
+        "bodyMapping": {
+          "companyVatCode": "{{SMARTBILL_CIF}}",
+          "seriesName": "$series_name",
+          "client": "$client",
+          "products": "$products",
+          "isDraft": "$is_draft",
+          "issueDate": "$issue_date",
+          "dueDate": "$due_date",
+          "currency": "$currency",
+          "exchangeRate": "$exchange_rate",
+          "language": "$language",
+          "precision": "$precision",
+          "observations": "$observations",
+          "mentions": "$mentions",
+          "useIntraCif": "$use_intra_cif",
+          "sendEmail": "$send_email",
+          "email": "$email",
+          "deliveryDate": "$delivery_date",
+          "useStock": "$use_stock",
+          "usePaymentTax": "$use_payment_tax",
+          "aviz": "$aviz"
+        }
+      }
+    },
+    {
+      "name": "smartbill_create_invoice_from_estimate",
+      "description": "Create an invoice from an existing estimate (proforma): client and lines are copied from the estimate. By default the invoice is saved as a draft; with is_draft false it is issued at once with the next number of the invoice series. Returns `number`, `series`, `documentId`, `documentUrl` and `documentViewUrl`. Check afterwards with smartbill_get_estimate_invoices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the invoice series to issue on (smartbill_list_series, type f)."
+          },
+          "estimate_series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the source estimate, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "estimate_number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the source estimate within its series, with its leading zeros, e.g. 0123."
+          },
+          "is_draft": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): draft without a number. false: issued at once."
+          },
+          "issue_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Issue date, YYYY-MM-DD. Leave out for today."
+          },
+          "use_stock": {
+            "type": "boolean",
+            "description": "true discharges stock when the invoice is issued."
+          }
+        },
+        "required": [
+          "series_name",
+          "estimate_series_name",
+          "estimate_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice/v2",
+        "bodyMapping": {
+          "companyVatCode": "{{SMARTBILL_CIF}}",
+          "seriesName": "$series_name",
+          "isDraft": "$is_draft",
+          "issueDate": "$issue_date",
+          "useEstimateDetails": true,
+          "estimate": {
+            "seriesName": "$estimate_series_name",
+            "number": "$estimate_number"
+          },
+          "useStock": "$use_stock"
+        }
+      }
+    },
+    {
+      "name": "smartbill_get_invoice_payment_status",
+      "description": "Check whether an invoice is paid: `invoiceTotalAmount` (total with VAT), `paidAmount`, `unpaidAmount` and `paid` (true when fully paid). Amounts are in the invoice currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the invoice, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the invoice within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/paymentstatus",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_get_invoice_pdf",
+      "description": "Download an issued invoice as a PDF file. The answer is the file itself, handed over as an attachment; the API has no JSON view of an invoice. A wrong series or number is answered with 502 and an HTML page instead of an error message. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the invoice, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the invoice within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoice/pdf",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        },
+        "headers": {
+          "Accept": "application/octet-stream"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_send_document_email",
+      "description": "Send an issued invoice or estimate to the client by email as an attachment, with the subject and text of the email template configured in SmartBill. Needs the email server set up in SmartBill (Configurare, Email). Returns `status.code` 0 on success. Confirm the recipient with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "factura",
+              "proforma"
+            ],
+            "description": "factura for an invoice, proforma for an estimate."
+          },
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the document, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the document within its series, with its leading zeros, e.g. 0123."
+          },
+          "to": {
+            "type": "string",
+            "description": "Recipient email address. Leave out to use the client email saved on the document."
+          },
+          "cc": {
+            "type": "string",
+            "description": "CC recipients, comma-separated."
+          },
+          "bcc": {
+            "type": "string",
+            "description": "BCC recipients, comma-separated."
+          }
+        },
+        "required": [
+          "type",
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/document/send",
+        "bodyMapping": {
+          "companyVatCode": "{{SMARTBILL_CIF}}",
+          "seriesName": "$series_name",
+          "number": "$number",
+          "type": "$type",
+          "to": "$to",
+          "cc": "$cc",
+          "bcc": "$bcc"
+        }
+      }
+    },
+    {
+      "name": "smartbill_reverse_invoice",
+      "enabled": false,
+      "description": "Issue a reversal (storno) invoice for an existing invoice: a new fiscal document with negative amounts on the same series. It counts toward the subscription documents and is reported to e-Factura like any invoice. Installed switched off; confirm the invoice with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the invoice to reverse, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the invoice to reverse within its series, with its leading zeros, e.g. 0123."
+          },
+          "issue_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Issue date of the reversal, YYYY-MM-DD. Leave out for today."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoice/reverse",
+        "bodyMapping": {
+          "companyVatCode": "{{SMARTBILL_CIF}}",
+          "seriesName": "$series_name",
+          "number": "$number",
+          "issueDate": "$issue_date"
+        }
+      }
+    },
+    {
+      "name": "smartbill_cancel_invoice",
+      "enabled": false,
+      "description": "Cancel (anulare) an issued invoice. The invoice keeps its number and is marked cancelled; it can be restored with smartbill_restore_invoice. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the invoice, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the invoice within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/invoice/cancel",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "smartbill_restore_invoice",
+      "enabled": false,
+      "description": "Restore an invoice that was cancelled, making it valid again. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the cancelled invoice, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the cancelled invoice within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/invoice/restore",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "smartbill_delete_invoice",
+      "enabled": false,
+      "description": "Delete an invoice permanently. Only the last invoice of a series can be deleted, and this cannot be undone. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the invoice, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the invoice within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/invoice",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "smartbill_create_estimate",
+      "description": "Create an estimate (proforma) in SmartBill. By default it is saved as a draft (no number); with is_draft false it is issued at once with the next number of the series. Returns `number`, `series`, `documentId`, `documentUrl` and `documentViewUrl` (public PDF link). Estimates are not fiscal documents, but every one, drafts included, counts toward the documents of the SmartBill subscription.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Name of the estimate series, exactly as configured in SmartBill. Read it with smartbill_list_series; never invent one."
+          },
+          "client": {
+            "type": "object",
+            "description": "The customer: `name` and `country` are required (country as a name such as Romania). Optional: `vatCode` (CUI or CIF, or a foreign VAT code), `isTaxPayer` (true when registered for VAT), `regCom`, `address`, `city` (for county Bucuresti it must be Sector 1 to Sector 6), `county`, `email`, `phone`, `contact`, `iban`, `bank`, `code`, and `saveToDb` (true saves a new client in the SmartBill catalogue)."
+          },
+          "products": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            },
+            "description": "Document lines. Each line needs `name`, `quantity`, `price` (unit price, without VAT unless `isTaxIncluded` is true), `measuringUnitName` (as configured in SmartBill, e.g. buc) and `taxPercentage`; optional `code` (required when the account uses product codes), `taxName` (name from smartbill_list_taxes), `isService`, `productDescription`, `currency`, `warehouseName` (for stock discharge, case-sensitive) and `saveToDb`. A discount is its own line with `isDiscount` true, `numberOfItems` (how many preceding lines it applies to), `discountType` 1 with a negative `discountValue` or 2 with `discountPercentage`."
+          },
+          "is_draft": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): saved as a draft without a number, to be checked and finalized in SmartBill. false: issued at once with the next number of the series."
+          },
+          "issue_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Issue date, YYYY-MM-DD. Leave out for today."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RON",
+              "EUR",
+              "USD",
+              "GBP",
+              "CAD",
+              "AUD",
+              "CHF",
+              "TRY",
+              "CZK",
+              "DKK",
+              "HUF",
+              "MDL",
+              "SEK",
+              "NOK"
+            ],
+            "description": "Document currency. Leave out for RON."
+          },
+          "exchange_rate": {
+            "type": "number",
+            "description": "Exchange rate to RON for a foreign-currency document. Leave out for the rate SmartBill has for the issue date."
+          },
+          "language": {
+            "type": "string",
+            "enum": [
+              "RO",
+              "EN",
+              "DE",
+              "FR",
+              "IT",
+              "ES"
+            ],
+            "description": "Document language, default RO."
+          },
+          "precision": {
+            "type": "integer",
+            "enum": [
+              2,
+              3,
+              4
+            ],
+            "description": "Decimals used for amounts: 2, 3 or 4."
+          },
+          "observations": {
+            "type": "string",
+            "description": "Observations printed on the document."
+          },
+          "mentions": {
+            "type": "string",
+            "description": "Mentions printed on the document."
+          },
+          "use_intra_cif": {
+            "type": "boolean",
+            "description": "true to use the intra-community VAT number of the client."
+          },
+          "send_email": {
+            "type": "boolean",
+            "default": false,
+            "description": "true sends the document to the client by email right after it is created (needs the email settings in SmartBill). Default false."
+          },
+          "email": {
+            "type": "object",
+            "description": "Recipients when send_email is true: `to` (default: the client email), `cc`, `bcc`."
+          }
+        },
+        "required": [
+          "series_name",
+          "client",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/estimate/v2",
+        "bodyMapping": {
+          "companyVatCode": "{{SMARTBILL_CIF}}",
+          "seriesName": "$series_name",
+          "client": "$client",
+          "products": "$products",
+          "isDraft": "$is_draft",
+          "issueDate": "$issue_date",
+          "dueDate": "$due_date",
+          "currency": "$currency",
+          "exchangeRate": "$exchange_rate",
+          "language": "$language",
+          "precision": "$precision",
+          "observations": "$observations",
+          "mentions": "$mentions",
+          "useIntraCif": "$use_intra_cif",
+          "sendEmail": "$send_email",
+          "email": "$email"
+        }
+      }
+    },
+    {
+      "name": "smartbill_get_estimate_invoices",
+      "description": "Check whether an estimate (proforma) was invoiced: `areInvoicesCreated` and `invoices` with the `series` and `number` of each invoice made from it. A draft invoice counts too and appears with an empty number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the estimate, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the estimate within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimate/invoices",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_get_estimate_pdf",
+      "description": "Download an estimate (proforma) as a PDF file. The answer is the file itself, handed over as an attachment. A wrong series or number is answered with 400 and an errorText. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the estimate, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the estimate within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimate/pdf",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        },
+        "headers": {
+          "Accept": "application/octet-stream"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_cancel_estimate",
+      "enabled": false,
+      "description": "Cancel an estimate (proforma). It keeps its number and can be restored with smartbill_restore_estimate. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the estimate, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the estimate within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/estimate/cancel",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "smartbill_restore_estimate",
+      "enabled": false,
+      "description": "Restore an estimate (proforma) that was cancelled. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the cancelled estimate, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the cancelled estimate within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/estimate/restore",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "smartbill_delete_estimate",
+      "enabled": false,
+      "description": "Delete an estimate (proforma) permanently. This cannot be undone. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the estimate, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the estimate within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/estimate",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "smartbill_register_payment",
+      "enabled": false,
+      "description": "Record a payment received from a client in SmartBill, optionally against invoices. The type decides what is created: Chitanta issues a numbered receipt on a receipt series, the other types (Card, Ordin plata, Extras de cont and so on) only record the collection. It records money already received; it does not charge anyone. Returns `number` and `series` of the receipt when one is issued. Every payment counts toward the subscription documents. Installed switched off; confirm amount, type and invoice with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "Chitanta",
+              "Card",
+              "Card online",
+              "Ordin plata",
+              "CEC",
+              "Bilet ordin",
+              "Mandat postal",
+              "Extras de cont",
+              "Ramburs",
+              "Alta incasare"
+            ],
+            "description": "Payment type. Chitanta issues a cash receipt and needs series_name; fiscal receipts (Bon) are not offered here."
+          },
+          "value": {
+            "type": "number",
+            "description": "Amount received, in the payment currency. With use_invoice_details it can be left out to take the invoice total."
+          },
+          "issue_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Payment date, YYYY-MM-DD. Leave out for today."
+          },
+          "series_name": {
+            "type": "string",
+            "description": "Receipt series (smartbill_list_series, type c). Required for type Chitanta."
+          },
+          "is_cash": {
+            "type": "boolean",
+            "description": "true marks the payment as cash."
+          },
+          "client": {
+            "type": "object",
+            "description": "The paying client, as on an invoice: `name` and `country` required, `vatCode` and address fields optional. Not needed with use_invoice_details."
+          },
+          "invoices": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Invoices this payment settles: objects with `seriesName` and `number`."
+          },
+          "use_invoice_details": {
+            "type": "boolean",
+            "description": "true takes the client and the amount from the invoice in `invoices`."
+          },
+          "currency": {
+            "type": "string",
+            "enum": [
+              "RON",
+              "EUR",
+              "USD",
+              "GBP",
+              "CAD",
+              "AUD",
+              "CHF",
+              "TRY",
+              "CZK",
+              "DKK",
+              "HUF",
+              "MDL",
+              "SEK",
+              "NOK"
+            ],
+            "description": "Payment currency. Leave out for RON."
+          },
+          "text": {
+            "type": "string",
+            "description": "What the payment is for, printed on the receipt, e.g. Plata factura FCT 0123."
+          },
+          "observation": {
+            "type": "string",
+            "description": "Additional notes about the payment."
+          },
+          "is_draft": {
+            "type": "boolean",
+            "description": "true saves a receipt as a draft, where the type supports it."
+          }
+        },
+        "required": [
+          "type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/payment",
+        "bodyMapping": {
+          "companyVatCode": "{{SMARTBILL_CIF}}",
+          "type": "$type",
+          "value": "$value",
+          "issueDate": "$issue_date",
+          "seriesName": "$series_name",
+          "isCash": "$is_cash",
+          "client": "$client",
+          "invoicesList": "$invoices",
+          "useInvoiceDetails": "$use_invoice_details",
+          "currency": "$currency",
+          "text": "$text",
+          "observation": "$observation",
+          "isDraft": "$is_draft"
+        }
+      }
+    },
+    {
+      "name": "smartbill_get_fiscal_receipt_text",
+      "description": "Read the content of a fiscal receipt (bon fiscal) by its id: `message` holds the receipt text for the fiscal printer, Base64-encoded, in the format of the default cash register of the calling user. Only fiscal receipts have such an id; ordinary payments do not. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Internal id of the fiscal receipt, returned by SmartBill when the receipt was issued."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payment/text",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "id": "$id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "smartbill_delete_receipt",
+      "enabled": false,
+      "description": "Delete a receipt (chitanta) permanently. Only the last receipt of a series can be deleted. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "series_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Series of the receipt, exactly as configured in SmartBill (smartbill_list_series), e.g. FCT."
+          },
+          "number": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,30}$",
+            "description": "Number of the receipt within its series, with its leading zeros, e.g. 0123."
+          }
+        },
+        "required": [
+          "series_name",
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/payment/chitanta",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "seriesname": "$series_name",
+          "number": "$number"
+        }
+      }
+    },
+    {
+      "name": "smartbill_delete_payment",
+      "enabled": false,
+      "description": "Delete a recorded payment that is not a receipt (Card, Ordin plata, CEC and so on). Identify it by the invoice it settles (invoice_series and invoice_number), or by payment_date, payment_value, client_name and client_cif together. Installed switched off; confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_type": {
+            "type": "string",
+            "enum": [
+              "Card",
+              "Card online",
+              "CEC",
+              "Bilet ordin",
+              "Ordin plata",
+              "Mandat postal",
+              "Extras de cont",
+              "Ramburs",
+              "Alta incasare"
+            ],
+            "description": "Type of the payment, exactly as it was recorded (case-sensitive)."
+          },
+          "invoice_series": {
+            "type": "string",
+            "description": "Series of the invoice the payment settles."
+          },
+          "invoice_number": {
+            "type": "string",
+            "description": "Number of the invoice the payment settles."
+          },
+          "payment_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Payment date, YYYY-MM-DD (when no invoice is given)."
+          },
+          "payment_value": {
+            "type": "number",
+            "description": "Payment amount (when no invoice is given)."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Client name (when no invoice is given)."
+          },
+          "client_cif": {
+            "type": "string",
+            "description": "Client fiscal code (when no invoice is given)."
+          }
+        },
+        "required": [
+          "payment_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/payment/v2",
+        "queryParams": {
+          "cif": "{{SMARTBILL_CIF}}",
+          "paymentType": "$payment_type",
+          "invoiceSeries": "$invoice_series",
+          "invoiceNumber": "$invoice_number",
+          "paymentDate": "$payment_date",
+          "paymentValue": "$payment_value",
+          "clientName": "$client_name",
+          "clientCif": "$client_cif"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,231 @@
+{
+  "slug": "rechtspraak",
+  "name": "Rechtspraak.nl Open Data",
+  "aliases": [
+    "de Rechtspraak",
+    "Dutch case law",
+    "uitspraken.rechtspraak.nl",
+    "ECLI Netherlands",
+    "Hoge Raad"
+  ],
+  "description": "Dutch court decisions from the judiciary's open data service, no API key: search the ECLI index by date, court, area of law and type, and read the full text and metadata of any published decision of the Supreme Court, Council of State, courts of appeal and district courts.",
+  "instructions": "## Rechtspraak (Dutch case law)\nThis connector reads the **Open Data van de Rechtspraak** service of the Dutch Council for the Judiciary (`https://data.rechtspraak.nl`): the ECLI index of Dutch court decisions and the full text of every published decision, as shown on uitspraken.rechtspraak.nl. No account or API key; everything is read-only. Texts are in Dutch.\n\n**Setup**: nothing to configure. Try `rechtspraak_get_decision_metadata` with ECLI:NL:RVS:2024:2.\n\n**What it can and cannot do**\n- It finds decisions by **metadata**: decision date, court, area of law, type, modification date, or a former LJN number. There is **no full-text or keyword search** in this API: to find decisions about a topic, narrow by court, area of law and period with `rechtspraak_search_decisions`, read the summaries in the result, then open the promising ones.\n- With an ECLI in hand, `rechtspraak_get_decision` returns the whole text and `rechtspraak_get_decision_metadata` only the header data.\n\n**Where to start**\n- `rechtspraak_search_decisions` with `date_from` and `date_to` (a range), optionally `court` and `legal_area`. Add `with_text_only` DOC, because many index entries have no published text.\n- `rechtspraak_list_courts` and `rechtspraak_list_legal_areas` give the identifier URIs the filters need; pass them unchanged. `rechtspraak_list_procedure_types` and `rechtspraak_list_formal_relations` decode fields of a decision.\n\n**ECLI**: `ECLI:NL:HR:2024:300` reads country NL, court code HR, year 2024, number 300. Common court codes: HR Supreme Court (Hoge Raad), PHR its Advocate General's office (conclusions), RVS Council of State, CRVB Central Appeals Tribunal, CBB Trade and Industry Appeals Tribunal, GH plus city for courts of appeal (GHAMS, GHARL, GHDHA, GHSHE), RB plus region for district courts (RBAMS, RBDHA, RBROT). Decisions before 2013 carry their old LJN as the number (ECLI:NL:HR:2013:BZ9225).\n\n**Reading the answers** (XML converted to JSON; attributes sit next to the text, which is then under `#text`)\n- Search: `feed.subtitle` holds the total number of hits; `feed.entry` is the list (missing when there are none, a single object when there is one). Long summaries are cut off in the list; the full one is in the decision.\n- Decision: `open-rechtspraak.RDF.Description` is a list of two blocks, the first about the decision (creator, date, zaaknummer, procedure, subject, relation, references), the second about its web page. The text is under `uitspraak` (or `conclusie`), as sections and `para` lists in reading order.\n- Names of private persons are anonymised in the source ([appellant], [verweerder]).\n\n**Paging and limits**: a search returns at most 1000 entries per call (`max`, default here 50); continue with `offset`. Results are ordered by modification date, not decision date. The service publishes no rate limit: keep the request rate moderate, and use the Council's bulk archives for whole-collection downloads.\n\n**Reuse**: the decisions are public and free to reuse; cite the ECLI. Personal data that remains in a text falls under data protection law.",
+  "region": "nl",
+  "category": "government",
+  "icon": "rechtspraak",
+  "docsUrl": "https://www.rechtspraak.nl/Uitspraken/Paginas/Open-Data.aspx",
+  "requiredEnvVars": [],
+  "verifyHints": {
+    "400": "The service refused a parameter: dates must be YYYY-MM-DD, modification times YYYY-MM-DDTHH:MM:SS, and max between 1 and 1000.",
+    "404": "No decision with this ECLI is in the index. Check the court code, year and number, or look it up with a search."
+  },
+  "probe": {
+    "tool": "rechtspraak_get_decision_metadata",
+    "params": {
+      "id": "ECLI:NL:RVS:2024:2"
+    }
+  },
+  "connector": {
+    "name": "Rechtspraak Open Data",
+    "type": "REST",
+    "baseUrl": "https://data.rechtspraak.nl",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/xml",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "rechtspraak_search_decisions",
+      "description": "Search the Dutch judiciary's ECLI index (about 3.8 million decisions) by date, court, area of law and type. There is no keyword search: the API filters on metadata only. Returns an Atom feed parsed to JSON: feed.subtitle holds the total (\"Aantal gevonden ECLI's: N\") and feed.entry the decisions, each with id (the ECLI), title (ECLI, court, decision date, case number), summary (the published summary, cut off when long and empty when there is none), updated and link.href to the public page. A single hit comes back as one object instead of a list. Results are ordered by modification date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "Decision date, YYYY-MM-DD. Alone it means exactly that day; together with date_to it starts a range."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "End of the decision date range, YYYY-MM-DD, inclusive. Use together with date_from."
+          },
+          "modified_from": {
+            "type": "string",
+            "description": "Only documents changed in the index from this moment, YYYY-MM-DDTHH:MM:SS. Alone it means from then until now. For keeping a copy in sync."
+          },
+          "modified_to": {
+            "type": "string",
+            "description": "Only documents changed up to this moment, YYYY-MM-DDTHH:MM:SS. Use together with modified_from."
+          },
+          "court": {
+            "type": "string",
+            "description": "Court, as its identifier URI from rechtspraak_list_courts, e.g. http://standaarden.overheid.nl/owms/terms/Hoge_Raad_der_Nederlanden (Supreme Court) or http://standaarden.overheid.nl/owms/terms/Raad_van_State."
+          },
+          "legal_area": {
+            "type": "string",
+            "description": "Area of law, as its identifier URI from rechtspraak_list_legal_areas: http://psi.rechtspraak.nl/rechtsgebied#bestuursrecht (administrative), #civielRecht (civil), #strafrecht (criminal), #internationaalPubliekrecht, or a sub-area such as #bestuursrecht_belastingrecht (tax). The spelling is case-sensitive."
+          },
+          "type": {
+            "type": "string",
+            "description": "Uitspraak (a court decision) or Conclusie (an advisory opinion of the Advocate General at the Supreme Court).",
+            "enum": [
+              "Uitspraak",
+              "Conclusie"
+            ]
+          },
+          "with_text_only": {
+            "type": "string",
+            "description": "Set to DOC to return only decisions whose full text is published; by default the index also lists decisions with metadata only.",
+            "enum": [
+              "DOC"
+            ]
+          },
+          "replaces": {
+            "type": "string",
+            "description": "A former LJN number (two letters and four digits, e.g. BZ9225): returns the ECLI or ECLIs that replaced it."
+          },
+          "max": {
+            "type": "integer",
+            "description": "Number of results per call, 1 to 1000. Default 50.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of results to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Order by modification date: ASC (oldest change first, default) or DESC (most recently changed first).",
+            "enum": [
+              "ASC",
+              "DESC"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uitspraken/zoeken",
+        "queryParams": {
+          "date": [
+            "$date_from",
+            "$date_to"
+          ],
+          "modified": [
+            "$modified_from",
+            "$modified_to"
+          ],
+          "creator": "$court",
+          "subject": "$legal_area",
+          "type": "$type",
+          "return": "$with_text_only",
+          "replaces": "$replaces",
+          "max": "$max",
+          "from": "$offset",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "rechtspraak_get_decision",
+      "description": "Get one decision by ECLI with its full text, parsed from XML to JSON under open-rechtspraak: RDF.Description (metadata: court in creator, decision date in date, case number in zaaknummer, procedure, area of law in subject, references and relations to other decisions, publication places), inhoudsindicatie (the summary) and uitspraak or conclusie (the text as nested sections with title and para lists). Decisions without published text return the metadata only. Inline markup such as emphasis and footnotes becomes nested objects, so a paragraph can be split into text parts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "European Case Law Identifier of the decision, e.g. ECLI:NL:HR:2024:300 (ECLI, country, court code, year, number, separated by colons).",
+            "pattern": "^[Ee][Cc][Ll][Ii]:[A-Za-z]{2}:[A-Za-z0-9.]{1,10}:[0-9]{4}:[A-Za-z0-9.]{1,25}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uitspraken/content",
+        "queryParams": {
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "rechtspraak_get_decision_metadata",
+      "description": "Get only the metadata of a decision by ECLI, without the text: court (creator), decision date (date), publication date (issued), last change (modified), case number (zaaknummer), type, procedure, area of law (subject), relations to earlier and later instances (relation), cited legislation (references) and publication places (hasVersion). Much smaller than the full decision.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "European Case Law Identifier of the decision, e.g. ECLI:NL:HR:2024:300 (ECLI, country, court code, year, number, separated by colons).",
+            "pattern": "^[Ee][Cc][Ll][Ii]:[A-Za-z]{2}:[A-Za-z0-9.]{1,10}:[0-9]{4}:[A-Za-z0-9.]{1,25}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/uitspraken/content",
+        "queryParams": {
+          "return": "META",
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "rechtspraak_list_courts",
+      "description": "List every court and judicial body in the index (Instanties): Identifier (the URI for the court filter), Naam, Afkorting (the court code used inside ECLIs, e.g. HR, RVS, RBAMS, GHARL), Type and the dates the body existed. About 260 entries, including abolished courts.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Waardelijst/Instanties"
+      }
+    },
+    {
+      "name": "rechtspraak_list_legal_areas",
+      "description": "List the areas of law (Rechtsgebieden) as a two-level tree: Identifier (the URI for the legal_area filter) and Naam, with the sub-areas of administrative, civil and criminal law nested inside their parent.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Waardelijst/Rechtsgebieden"
+      }
+    },
+    {
+      "name": "rechtspraak_list_procedure_types",
+      "description": "List the procedure types (Proceduresoorten) that appear in decision metadata, such as first instance, appeal, cassation or interim relief: Identifier and Naam. For decoding the procedure field; the search cannot filter on it.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Waardelijst/Proceduresoorten"
+      }
+    },
+    {
+      "name": "rechtspraak_list_formal_relations",
+      "description": "List the kinds of formal relation between decisions (FormeleRelaties), such as appeal, cassation, referral or the opinion that belongs to a judgment: Naam, Identifier and the roles of the earlier and later instance. For decoding the relation field of a decision.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Waardelijst/FormeleRelaties"
+      }
+    }
+  ]
+}

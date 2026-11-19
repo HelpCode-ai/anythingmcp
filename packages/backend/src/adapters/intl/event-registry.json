@@ -1,0 +1,1376 @@
+{
+  "slug": "event-registry",
+  "name": "Event Registry (NewsAPI.ai)",
+  "aliases": [
+    "NewsAPI.ai",
+    "EventRegistry",
+    "News API AI",
+    "eventregistry.org"
+  ],
+  "description": "News intelligence from Event Registry, also sold as NewsAPI.ai (not the same service as NewsAPI.org): search articles from 150,000 sources by keyword, concept, source, category, place and language, read full text, group coverage into events, follow breaking events and trends, and summarise coverage. API key.",
+  "instructions": "## Event Registry (NewsAPI.ai)\nThis connector works with the **Event Registry API**, sold as **NewsAPI.ai** (`https://eventregistry.org`): news intelligence over more than 150,000 sources in 60 languages, with articles tagged by concept, category, place and sentiment, and grouped into **events** (the same story across outlets and languages). It is a different company from NewsAPI.org, which has its own connector: keys are not interchangeable.\n\n**Setup (2 minutes)**\n1. Create an account at https://newsapi.ai (free plan: 2,000 tokens, searches over the last 30 days only).\n2. Open the dashboard at https://newsapi.ai/dashboard and copy **Your API key**.\n3. Paste it as `EVENT_REGISTRY_API_KEY`. The key is sent as the `apiKey` parameter of every call.\n\n**Tokens**: the plan is counted in tokens, and calls differ in cost. Recent data (last 30 days): article search 1 token, summary 5 to 10, event search 5, text to event 3. Archive (since 2014, paid plans only): article search 5 tokens per searched year, event search 20, summaries 10 to 50. Minute streams: 1 token per 100 articles, 5 per 50 events. Always set `date_start` and `date_end` on archive searches to keep the searched years few. `event_registry_get_usage` shows what is left and costs nothing.\n\n**Where to start**\n- Resolve names to URIs first: `event_registry_suggest_concepts`, `event_registry_suggest_sources`, `event_registry_suggest_categories`, `event_registry_suggest_locations`, `event_registry_suggest_authors`. Filters on concepts, sources, categories and places only accept these URIs.\n- Articles: `event_registry_search_articles` lists them; `event_registry_summarize_articles` returns a timeline, top sources, top concepts or sentiment for the same filters; `event_registry_get_article` reads one by URI; `event_registry_map_article_url` finds the URI of a web address; `event_registry_extract_article_info` reads any article page, indexed or not.\n- Events: `event_registry_search_events`, then `event_registry_get_event` and `event_registry_get_event_articles`. `event_registry_get_breaking_events` shows what is breaking now, `event_registry_find_events_for_text` matches a text to recent events, `event_registry_get_trending_concepts` lists who and what is trending.\n- Monitoring: `event_registry_get_recent_articles` and `event_registry_get_recent_events` return what was added in the last minutes (up to 4 hours back).\n\n**Keywords or concepts**: a keyword matches the literal words in one language; a concept URI (a Wikipedia address) matches the entity in every language and avoids namesakes (Apple the company, not the fruit). Prefer concepts for people, companies and places; use keywords for phrases and jargon. List-valued filters take several values: concepts and keywords combine with AND by default (`concept_oper`, `keyword_oper`), sources, categories and languages with OR.\n\n**Reading the answers**\n- Lists are under a named block (`articles`, `events`, `breakingEvents`) with `results`, `totalResults`, `page`, `count` and `pages`.\n- Languages are ISO 639-3 codes (`eng`, `deu`, `fra`). Times are UTC: `date` YYYY-MM-DD, `time` HH:MM:SS, `dateTime` ISO 8601.\n- `sentiment` runs from -1 to 1 and exists for English articles only. `isDuplicate` marks a republished copy: set `is_duplicate_filter` to skipDuplicates for clean lists.\n- An article `uri` is a number as text; an event `uri` looks like `eng-9876543`. `eventUri` on an article is null until it is clustered.\n- Article bodies are returned in full by the API; this connector asks for the first 1,000 characters unless `article_body_len` says otherwise (-1 for everything).\n\n**Errors**: a wrong or missing key answers 401 with a plain text message. An exhausted token allowance or a date range outside the plan answers with an error text naming the limit. Full article text is for analysis; republishing it needs the publisher's permission.",
+  "region": "intl",
+  "category": "data",
+  "icon": "event-registry",
+  "docsUrl": "https://newsapi.ai/documentation",
+  "requiredEnvVars": [
+    "EVENT_REGISTRY_API_KEY"
+  ],
+  "envVarMeta": {
+    "EVENT_REGISTRY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "NewsAPI.ai dashboard, Your API key. The free plan gives 2,000 tokens and searches over the last 30 days. This is not a NewsAPI.org key.",
+      "link": "https://newsapi.ai/dashboard",
+      "pattern": "^[A-Za-z0-9-]{20,64}$",
+      "patternMessage": "Paste the key from the NewsAPI.ai dashboard: letters, digits and dashes, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Event Registry does not recognise this API key. Copy it again from the NewsAPI.ai dashboard (https://newsapi.ai/dashboard). A key from NewsAPI.org does not work here.",
+      "field": "EVENT_REGISTRY_API_KEY"
+    },
+    "403": "The plan of this key does not include the request, usually archive data older than 30 days on the free plan, or the token allowance is used up. Check the plan and usage in the NewsAPI.ai dashboard.",
+    "rate_limited": "Too many requests at once or the token allowance is exhausted. Wait a moment, then check the balance with event_registry_get_usage."
+  },
+  "probe": {
+    "tool": "event_registry_get_usage",
+    "params": {}
+  },
+  "prerequisites": "A NewsAPI.ai (Event Registry) account and its API key from the dashboard. The free plan has 2,000 tokens and covers the last 30 days; archive searches need a paid plan.",
+  "connector": {
+    "name": "Event Registry API",
+    "type": "REST",
+    "baseUrl": "https://eventregistry.org",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "apiKey": "{{EVENT_REGISTRY_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "event_registry_search_articles",
+      "description": "Search news articles from over 150,000 sources worldwide by keywords, concepts, categories, sources, places, language and date. Returns articles.results with uri, url, title, body, date, time and dateTime (UTC), lang, dataType, isDuplicate, source (uri, title), authors, image, eventUri, sentiment and relevance, plus articles.totalResults, page and pages. Give at least one condition. Sorted by date, newest first, unless articles_sort_by is set. Cost: 1 token per call for the last 30 days, 5 tokens per searched year in the archive.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keywords or phrases the article must mention (up to 60). Each entry is one phrase; all must match unless keyword_oper is or."
+          },
+          "keyword_oper": {
+            "type": "string",
+            "description": "How several keywords combine: and (default, all must appear) or or (any).",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "keyword_loc": {
+            "type": "string",
+            "description": "Where keywords are searched: body (default), title, or title,body for both.",
+            "enum": [
+              "body",
+              "title",
+              "title,body"
+            ]
+          },
+          "keyword_search_mode": {
+            "type": "string",
+            "description": "phrase (default): each keyword is an exact phrase. simple: the words may appear anywhere in any order. exact: the keyword is a query expression with AND, OR, NOT and parentheses.",
+            "enum": [
+              "simple",
+              "exact",
+              "phrase"
+            ]
+          },
+          "concept_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Concept URIs the article must be about, from event_registry_suggest_concepts, e.g. http://en.wikipedia.org/wiki/Tesla,_Inc. (up to 50). More precise than keywords and language-independent."
+          },
+          "concept_oper": {
+            "type": "string",
+            "description": "How several concepts combine: and (default) or or.",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "category_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category URIs from event_registry_suggest_categories, e.g. news/Business or dmoz/Business/Energy (up to 20, any of them matches)."
+          },
+          "source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "News source URIs from event_registry_suggest_sources, e.g. bbc.com or reuters.com (any of them matches)."
+          },
+          "source_location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only sources based in these places: location URIs of countries or cities from event_registry_suggest_locations, e.g. http://en.wikipedia.org/wiki/Germany."
+          },
+          "author_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author URIs from event_registry_suggest_authors."
+          },
+          "location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items about something that happened at these places: location URIs from event_registry_suggest_locations."
+          },
+          "lang": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Article languages as ISO 639-3 codes (up to 5), e.g. eng, deu, fra, spa, ita. Supported: eng, deu, fra, spa, ita, por, nld, rus, zho, ara, tur, pol, swe, dan, fin, ces, slk, slv, hrv, srp, hun, ron, bul, ukr, ell, cat, eus, ind, vie, hin, urd, fas. Default: all languages."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "First publication day, YYYY-MM-DD. The free plan and the cheapest searches cover the last 30 days; older dates are archive searches and cost more tokens."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Last publication day, YYYY-MM-DD."
+          },
+          "ignore_keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exclude articles that mention any of these keywords or phrases."
+          },
+          "ignore_source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exclude these news sources (source URIs)."
+          },
+          "is_duplicate_filter": {
+            "type": "string",
+            "description": "Duplicates (the same text republished by other sites): skipDuplicates removes them, keepOnlyDuplicates returns only them, keepAll (default) keeps everything. skipDuplicates is usually what you want.",
+            "enum": [
+              "skipDuplicates",
+              "keepOnlyDuplicates",
+              "keepAll"
+            ]
+          },
+          "start_source_rank_percentile": {
+            "type": "integer",
+            "description": "Lower bound of the source ranking percentile, 0 to 90 in steps of 10 (default 0). 0 to 10 are the top 10 percent of sources.",
+            "minimum": 0,
+            "maximum": 90
+          },
+          "end_source_rank_percentile": {
+            "type": "integer",
+            "description": "Upper bound of the source ranking percentile, 10 to 100 in steps of 10 (default 100). Set 10 or 20 to keep only leading sources.",
+            "minimum": 10,
+            "maximum": 100
+          },
+          "min_sentiment": {
+            "type": "number",
+            "description": "Minimum sentiment, -1 (very negative) to 1 (very positive). Sentiment exists for English articles only, so setting it drops other languages.",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "max_sentiment": {
+            "type": "number",
+            "description": "Maximum sentiment, -1 to 1.",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "data_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Content types to search: news (default), pr (press releases), blog."
+          },
+          "articles_page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1.",
+            "minimum": 1
+          },
+          "articles_count": {
+            "type": "integer",
+            "description": "Articles per page, 1 to 100. Default here 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "articles_sort_by": {
+            "type": "string",
+            "description": "Sort order: date (default), rel (relevance to the query), sourceImportance (leading sources first), sourceAlexaGlobalRank, cosSim, or none.",
+            "enum": [
+              "date",
+              "rel",
+              "sourceImportance",
+              "sourceImportanceRank",
+              "sourceAlexaGlobalRank",
+              "sourceAlexaCountryRank",
+              "cosSim",
+              "none"
+            ]
+          },
+          "articles_sort_by_asc": {
+            "type": "boolean",
+            "description": "true: ascending order (oldest or least relevant first)."
+          },
+          "article_body_len": {
+            "type": "integer",
+            "description": "Characters of article body to return per article; -1 for the full text. Default here 1000 to keep answers small.",
+            "minimum": -1,
+            "default": 1000
+          },
+          "include_article_concepts": {
+            "type": "boolean",
+            "description": "true: add the concepts (people, organisations, places, topics) detected in each article."
+          },
+          "include_article_categories": {
+            "type": "boolean",
+            "description": "true: add the categories of each article."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/article/getArticles",
+        "queryParams": {
+          "resultType": "articles",
+          "keyword": "$keyword",
+          "keywordOper": "$keyword_oper",
+          "keywordLoc": "$keyword_loc",
+          "keywordSearchMode": "$keyword_search_mode",
+          "conceptUri": "$concept_uri",
+          "conceptOper": "$concept_oper",
+          "categoryUri": "$category_uri",
+          "sourceUri": "$source_uri",
+          "sourceLocationUri": "$source_location_uri",
+          "authorUri": "$author_uri",
+          "locationUri": "$location_uri",
+          "lang": "$lang",
+          "dateStart": "$date_start",
+          "dateEnd": "$date_end",
+          "ignoreKeyword": "$ignore_keyword",
+          "ignoreSourceUri": "$ignore_source_uri",
+          "isDuplicateFilter": "$is_duplicate_filter",
+          "startSourceRankPercentile": "$start_source_rank_percentile",
+          "endSourceRankPercentile": "$end_source_rank_percentile",
+          "minSentiment": "$min_sentiment",
+          "maxSentiment": "$max_sentiment",
+          "dataType": "$data_type",
+          "articlesPage": "$articles_page",
+          "articlesCount": "$articles_count",
+          "articlesSortBy": "$articles_sort_by",
+          "articlesSortByAsc": "$articles_sort_by_asc",
+          "articleBodyLen": "$article_body_len",
+          "includeArticleConcepts": "$include_article_concepts",
+          "includeArticleCategories": "$include_article_categories"
+        }
+      }
+    },
+    {
+      "name": "event_registry_summarize_articles",
+      "description": "Summarise the articles that match a search instead of listing them: a timeline, the top sources, concepts, categories, keywords, languages, places or the sentiment distribution, depending on result_type. Takes the same filters as event_registry_search_articles and returns one block named after the result type. Cost: 5 tokens per call for the last 30 days (10 for conceptTrends and dateMentionAggr), 10 to 50 tokens per searched year in the archive.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "result_type": {
+            "type": "string",
+            "description": "The summary to compute: timeAggr (articles per day), sourceAggr (top sources), conceptAggr (top concepts), categoryAggr (categories), keywordAggr (top keywords, a tag cloud), langAggr (languages), locAggr (places), sentimentAggr (sentiment), authorAggr (top authors), dateMentionAggr (dates mentioned in the texts), conceptTrends (concept frequency over time), conceptGraph (which concepts occur together).",
+            "enum": [
+              "timeAggr",
+              "sourceAggr",
+              "conceptAggr",
+              "categoryAggr",
+              "keywordAggr",
+              "langAggr",
+              "locAggr",
+              "sentimentAggr",
+              "authorAggr",
+              "dateMentionAggr",
+              "conceptTrends",
+              "conceptGraph"
+            ]
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keywords or phrases the article must mention (up to 60). Each entry is one phrase; all must match unless keyword_oper is or."
+          },
+          "keyword_oper": {
+            "type": "string",
+            "description": "How several keywords combine: and (default, all must appear) or or (any).",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "keyword_loc": {
+            "type": "string",
+            "description": "Where keywords are searched: body (default), title, or title,body for both.",
+            "enum": [
+              "body",
+              "title",
+              "title,body"
+            ]
+          },
+          "keyword_search_mode": {
+            "type": "string",
+            "description": "phrase (default): each keyword is an exact phrase. simple: the words may appear anywhere in any order. exact: the keyword is a query expression with AND, OR, NOT and parentheses.",
+            "enum": [
+              "simple",
+              "exact",
+              "phrase"
+            ]
+          },
+          "concept_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Concept URIs the article must be about, from event_registry_suggest_concepts, e.g. http://en.wikipedia.org/wiki/Tesla,_Inc. (up to 50). More precise than keywords and language-independent."
+          },
+          "concept_oper": {
+            "type": "string",
+            "description": "How several concepts combine: and (default) or or.",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "category_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category URIs from event_registry_suggest_categories, e.g. news/Business or dmoz/Business/Energy (up to 20, any of them matches)."
+          },
+          "source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "News source URIs from event_registry_suggest_sources, e.g. bbc.com or reuters.com (any of them matches)."
+          },
+          "source_location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only sources based in these places: location URIs of countries or cities from event_registry_suggest_locations, e.g. http://en.wikipedia.org/wiki/Germany."
+          },
+          "author_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Author URIs from event_registry_suggest_authors."
+          },
+          "location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items about something that happened at these places: location URIs from event_registry_suggest_locations."
+          },
+          "lang": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Article languages as ISO 639-3 codes (up to 5), e.g. eng, deu, fra, spa, ita. Supported: eng, deu, fra, spa, ita, por, nld, rus, zho, ara, tur, pol, swe, dan, fin, ces, slk, slv, hrv, srp, hun, ron, bul, ukr, ell, cat, eus, ind, vie, hin, urd, fas. Default: all languages."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "First publication day, YYYY-MM-DD. The free plan and the cheapest searches cover the last 30 days; older dates are archive searches and cost more tokens."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Last publication day, YYYY-MM-DD."
+          },
+          "ignore_keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exclude articles that mention any of these keywords or phrases."
+          },
+          "ignore_source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exclude these news sources (source URIs)."
+          },
+          "is_duplicate_filter": {
+            "type": "string",
+            "description": "Duplicates (the same text republished by other sites): skipDuplicates removes them, keepOnlyDuplicates returns only them, keepAll (default) keeps everything. skipDuplicates is usually what you want.",
+            "enum": [
+              "skipDuplicates",
+              "keepOnlyDuplicates",
+              "keepAll"
+            ]
+          },
+          "start_source_rank_percentile": {
+            "type": "integer",
+            "description": "Lower bound of the source ranking percentile, 0 to 90 in steps of 10 (default 0). 0 to 10 are the top 10 percent of sources.",
+            "minimum": 0,
+            "maximum": 90
+          },
+          "end_source_rank_percentile": {
+            "type": "integer",
+            "description": "Upper bound of the source ranking percentile, 10 to 100 in steps of 10 (default 100). Set 10 or 20 to keep only leading sources.",
+            "minimum": 10,
+            "maximum": 100
+          },
+          "min_sentiment": {
+            "type": "number",
+            "description": "Minimum sentiment, -1 (very negative) to 1 (very positive). Sentiment exists for English articles only, so setting it drops other languages.",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "max_sentiment": {
+            "type": "number",
+            "description": "Maximum sentiment, -1 to 1.",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "data_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Content types to search: news (default), pr (press releases), blog."
+          }
+        },
+        "required": [
+          "result_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/article/getArticles",
+        "queryParams": {
+          "resultType": "$result_type",
+          "keyword": "$keyword",
+          "keywordOper": "$keyword_oper",
+          "keywordLoc": "$keyword_loc",
+          "keywordSearchMode": "$keyword_search_mode",
+          "conceptUri": "$concept_uri",
+          "conceptOper": "$concept_oper",
+          "categoryUri": "$category_uri",
+          "sourceUri": "$source_uri",
+          "sourceLocationUri": "$source_location_uri",
+          "authorUri": "$author_uri",
+          "locationUri": "$location_uri",
+          "lang": "$lang",
+          "dateStart": "$date_start",
+          "dateEnd": "$date_end",
+          "ignoreKeyword": "$ignore_keyword",
+          "ignoreSourceUri": "$ignore_source_uri",
+          "isDuplicateFilter": "$is_duplicate_filter",
+          "startSourceRankPercentile": "$start_source_rank_percentile",
+          "endSourceRankPercentile": "$end_source_rank_percentile",
+          "minSentiment": "$min_sentiment",
+          "maxSentiment": "$max_sentiment",
+          "dataType": "$data_type"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_article",
+      "description": "Get one or several articles by their Event Registry URI (the uri field of a search result, a number such as 8414859652). Returns an object keyed by URI, each with info: uri, url, title, body, date, time and dateTime (UTC), lang, dataType, isDuplicate, source (uri, title), authors, image, eventUri, sentiment and relevance. For an article you only know by its web address, call event_registry_map_article_url first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Article URIs, e.g. 8414859652. Several are answered in one call."
+          },
+          "article_body_len": {
+            "type": "integer",
+            "description": "Characters of body text to return; -1 for the full text (default 300).",
+            "minimum": -1
+          },
+          "include_article_concepts": {
+            "type": "boolean",
+            "description": "true: add the concepts (people, organisations, places, topics) detected in each article."
+          },
+          "include_article_categories": {
+            "type": "boolean",
+            "description": "true: add the categories of each article."
+          }
+        },
+        "required": [
+          "article_uri"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/article/getArticle",
+        "queryParams": {
+          "articleUri": "$article_uri",
+          "infoArticleBodyLen": "$article_body_len",
+          "includeArticleConcepts": "$include_article_concepts",
+          "includeArticleCategories": "$include_article_categories"
+        }
+      }
+    },
+    {
+      "name": "event_registry_map_article_url",
+      "description": "Find the Event Registry article URI for a web address, to check whether an article is in the index. Returns an object mapping the URL to its URI, or null when the article is not indexed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_url": {
+            "type": "string",
+            "description": "Full web address of the article, e.g. https://www.bbc.com/news/articles/xyz."
+          },
+          "include_all_versions": {
+            "type": "boolean",
+            "description": "true: return the URIs of every stored version of the article instead of one."
+          },
+          "deep": {
+            "type": "boolean",
+            "description": "true: also match the address after following redirects and stripping tracking parameters (slower)."
+          }
+        },
+        "required": [
+          "article_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/articleMapper",
+        "queryParams": {
+          "articleUrl": "$article_url",
+          "includeAllVersions": "$include_all_versions",
+          "deep": "$deep"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_recent_articles",
+      "description": "Get the articles added to Event Registry in the last minutes (the minute stream), optionally filtered, for monitoring a topic or source without repeating a search. Returns recentActivityArticles.activity (articles as in the search) and the newestUri values to pass along for the next call. Cost: 1 token per 100 returned articles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_article_count": {
+            "type": "integer",
+            "description": "Maximum articles to return, up to 2,000 (default 100). Tokens are charged per 100 returned.",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 100
+          },
+          "updates_after_mins_ago": {
+            "type": "integer",
+            "description": "Return articles added in the last N minutes instead of only the last one, at most 240. Lets a filtered monitor run every few minutes.",
+            "minimum": 1,
+            "maximum": 240
+          },
+          "updates_after_tm": {
+            "type": "string",
+            "description": "Return articles collected after this UTC time, YYYY-MM-DDTHH:MM:SS, at most 4 hours back. Alternative to updates_after_mins_ago."
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keywords or phrases the article must mention (up to 60). Each entry is one phrase; all must match unless keyword_oper is or."
+          },
+          "keyword_oper": {
+            "type": "string",
+            "description": "How several keywords combine: and (default, all must appear) or or (any).",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "keyword_loc": {
+            "type": "string",
+            "description": "Where keywords are searched: body (default), title, or title,body for both.",
+            "enum": [
+              "body",
+              "title",
+              "title,body"
+            ]
+          },
+          "concept_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Concept URIs the article must be about, from event_registry_suggest_concepts, e.g. http://en.wikipedia.org/wiki/Tesla,_Inc. (up to 50). More precise than keywords and language-independent."
+          },
+          "concept_oper": {
+            "type": "string",
+            "description": "How several concepts combine: and (default) or or.",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "category_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category URIs from event_registry_suggest_categories, e.g. news/Business or dmoz/Business/Energy (up to 20, any of them matches)."
+          },
+          "source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "News source URIs from event_registry_suggest_sources, e.g. bbc.com or reuters.com (any of them matches)."
+          },
+          "source_location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only sources based in these places: location URIs of countries or cities from event_registry_suggest_locations, e.g. http://en.wikipedia.org/wiki/Germany."
+          },
+          "location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items about something that happened at these places: location URIs from event_registry_suggest_locations."
+          },
+          "lang": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Article languages as ISO 639-3 codes (up to 5), e.g. eng, deu, fra, spa, ita. Supported: eng, deu, fra, spa, ita, por, nld, rus, zho, ara, tur, pol, swe, dan, fin, ces, slk, slv, hrv, srp, hun, ron, bul, ukr, ell, cat, eus, ind, vie, hin, urd, fas. Default: all languages."
+          },
+          "is_duplicate_filter": {
+            "type": "string",
+            "description": "Duplicates (the same text republished by other sites): skipDuplicates removes them, keepOnlyDuplicates returns only them, keepAll (default) keeps everything. skipDuplicates is usually what you want.",
+            "enum": [
+              "skipDuplicates",
+              "keepOnlyDuplicates",
+              "keepAll"
+            ]
+          },
+          "data_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Content types to search: news (default), pr (press releases), blog."
+          },
+          "article_body_len": {
+            "type": "integer",
+            "description": "Characters of article body to return per article; -1 for the full text. Default here 1000 to keep answers small.",
+            "minimum": -1,
+            "default": 1000
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/minuteStreamArticles",
+        "queryParams": {
+          "recentActivityArticlesMaxArticleCount": "$max_article_count",
+          "recentActivityArticlesUpdatesAfterMinsAgo": "$updates_after_mins_ago",
+          "recentActivityArticlesUpdatesAfterTm": "$updates_after_tm",
+          "keyword": "$keyword",
+          "keywordOper": "$keyword_oper",
+          "keywordLoc": "$keyword_loc",
+          "conceptUri": "$concept_uri",
+          "conceptOper": "$concept_oper",
+          "categoryUri": "$category_uri",
+          "sourceUri": "$source_uri",
+          "sourceLocationUri": "$source_location_uri",
+          "locationUri": "$location_uri",
+          "lang": "$lang",
+          "isDuplicateFilter": "$is_duplicate_filter",
+          "dataType": "$data_type",
+          "articleBodyLen": "$article_body_len"
+        }
+      }
+    },
+    {
+      "name": "event_registry_search_events",
+      "description": "Search events: clusters of articles, across languages, that report the same real-world happening. Returns events.results with uri (such as eng-9876543), title and summary per language, eventDate, totalArticleCount, articleCounts per language, concepts, categories, location, sentiment and wgt, plus events.totalResults and pages. Use it to see what happened about a topic without reading every article. Cost: 5 tokens per call for the last 30 days, 20 tokens per searched year in the archive.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keywords or phrases the article must mention (up to 60). Each entry is one phrase; all must match unless keyword_oper is or."
+          },
+          "keyword_oper": {
+            "type": "string",
+            "description": "How several keywords combine: and (default, all must appear) or or (any).",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "keyword_loc": {
+            "type": "string",
+            "description": "Where keywords are searched: body (default), title, or title,body for both.",
+            "enum": [
+              "body",
+              "title",
+              "title,body"
+            ]
+          },
+          "concept_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Concept URIs the article must be about, from event_registry_suggest_concepts, e.g. http://en.wikipedia.org/wiki/Tesla,_Inc. (up to 50). More precise than keywords and language-independent."
+          },
+          "concept_oper": {
+            "type": "string",
+            "description": "How several concepts combine: and (default) or or.",
+            "enum": [
+              "and",
+              "or"
+            ]
+          },
+          "category_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category URIs from event_registry_suggest_categories, e.g. news/Business or dmoz/Business/Energy (up to 20, any of them matches)."
+          },
+          "source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "News source URIs from event_registry_suggest_sources, e.g. bbc.com or reuters.com (any of them matches)."
+          },
+          "source_location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only sources based in these places: location URIs of countries or cities from event_registry_suggest_locations, e.g. http://en.wikipedia.org/wiki/Germany."
+          },
+          "location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items about something that happened at these places: location URIs from event_registry_suggest_locations."
+          },
+          "lang": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Article languages as ISO 639-3 codes (up to 5), e.g. eng, deu, fra, spa, ita. Supported: eng, deu, fra, spa, ita, por, nld, rus, zho, ara, tur, pol, swe, dan, fin, ces, slk, slv, hrv, srp, hun, ron, bul, ukr, ell, cat, eus, ind, vie, hin, urd, fas. Default: all languages."
+          },
+          "date_start": {
+            "type": "string",
+            "description": "Events that happened on or after this day, YYYY-MM-DD. The event date is taken from the articles and can differ from their publication dates."
+          },
+          "date_end": {
+            "type": "string",
+            "description": "Events that happened on or before this day, YYYY-MM-DD."
+          },
+          "min_articles_in_event": {
+            "type": "integer",
+            "description": "Only events reported in at least this many articles (any language). Raises the importance threshold.",
+            "minimum": 1
+          },
+          "max_articles_in_event": {
+            "type": "integer",
+            "description": "Only events reported in at most this many articles.",
+            "minimum": 1
+          },
+          "min_sentiment": {
+            "type": "number",
+            "description": "Minimum sentiment, -1 (very negative) to 1 (very positive). Sentiment exists for English articles only, so setting it drops other languages.",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "max_sentiment": {
+            "type": "number",
+            "description": "Maximum sentiment, -1 to 1.",
+            "minimum": -1,
+            "maximum": 1
+          },
+          "ignore_keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exclude articles that mention any of these keywords or phrases."
+          },
+          "ignore_source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Exclude these news sources (source URIs)."
+          },
+          "events_page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1.",
+            "minimum": 1
+          },
+          "events_count": {
+            "type": "integer",
+            "description": "Events per page, 1 to 50. Default here 20.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "events_sort_by": {
+            "type": "string",
+            "description": "Sort order: date (default, event date), rel (relevance), size (number of articles) or none.",
+            "enum": [
+              "date",
+              "rel",
+              "size",
+              "none"
+            ]
+          },
+          "events_sort_by_asc": {
+            "type": "boolean",
+            "description": "true: ascending order."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/event/getEvents",
+        "queryParams": {
+          "resultType": "events",
+          "keyword": "$keyword",
+          "keywordOper": "$keyword_oper",
+          "keywordLoc": "$keyword_loc",
+          "conceptUri": "$concept_uri",
+          "conceptOper": "$concept_oper",
+          "categoryUri": "$category_uri",
+          "sourceUri": "$source_uri",
+          "sourceLocationUri": "$source_location_uri",
+          "locationUri": "$location_uri",
+          "lang": "$lang",
+          "dateStart": "$date_start",
+          "dateEnd": "$date_end",
+          "minArticlesInEvent": "$min_articles_in_event",
+          "maxArticlesInEvent": "$max_articles_in_event",
+          "minSentiment": "$min_sentiment",
+          "maxSentiment": "$max_sentiment",
+          "ignoreKeyword": "$ignore_keyword",
+          "ignoreSourceUri": "$ignore_source_uri",
+          "eventsPage": "$events_page",
+          "eventsCount": "$events_count",
+          "eventsSortBy": "$events_sort_by",
+          "eventsSortByAsc": "$events_sort_by_asc"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_event",
+      "description": "Get the details of one event by its URI: title and summary in each language, eventDate, totalArticleCount and articleCounts per language, concepts with scores, categories, location, sentiment and image. Returns an object keyed by the event URI with an info block. An event merged into another one answers with the new URI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_uri": {
+            "type": "string",
+            "description": "Event URI from a search or from an article's eventUri, e.g. eng-9876543."
+          }
+        },
+        "required": [
+          "event_uri"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/event/getEvent",
+        "queryParams": {
+          "resultType": "info",
+          "eventUri": "$event_uri"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_event_articles",
+      "description": "List the articles that belong to one event. Returns, under the event URI, articles.results with uri, url, title, body, date, time and dateTime (UTC), lang, dataType, isDuplicate, source (uri, title), authors, image, eventUri, sentiment and relevance, plus totalResults and pages. By default the articles closest to the centre of the event come first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_uri": {
+            "type": "string",
+            "description": "Event URI, e.g. eng-9876543."
+          },
+          "articles_page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1.",
+            "minimum": 1
+          },
+          "articles_count": {
+            "type": "integer",
+            "description": "Articles per page, 1 to 100. Default here 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "articles_lang": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only articles in these languages (ISO 639-3 codes such as eng, deu)."
+          },
+          "articles_sort_by": {
+            "type": "string",
+            "description": "Sort order: cosSim (default, closeness to the event), date, rel or sourceImportance.",
+            "enum": [
+              "cosSim",
+              "date",
+              "rel",
+              "sourceImportance"
+            ]
+          },
+          "articles_include_duplicates": {
+            "type": "boolean",
+            "description": "true: also return articles that are copies of other articles."
+          },
+          "article_body_len": {
+            "type": "integer",
+            "description": "Characters of article body to return per article; -1 for the full text. Default here 1000 to keep answers small.",
+            "minimum": -1,
+            "default": 1000
+          }
+        },
+        "required": [
+          "event_uri"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/event/getEvent",
+        "queryParams": {
+          "resultType": "articles",
+          "eventUri": "$event_uri",
+          "articlesPage": "$articles_page",
+          "articlesCount": "$articles_count",
+          "articlesLang": "$articles_lang",
+          "articlesSortBy": "$articles_sort_by",
+          "articlesIncludeDuplicates": "$articles_include_duplicates",
+          "articleBodyLen": "$article_body_len"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_breaking_events",
+      "description": "List the events that are breaking right now: events whose coverage is growing fastest, most breaking first. Returns breakingEvents.results (events as in the event search, each with a breakingScore) and paging fields.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "count": {
+            "type": "integer",
+            "description": "Events to return, 1 to 100 (default 100). Default here 20.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page of results, starting at 1.",
+            "minimum": 1
+          },
+          "min_breaking_score": {
+            "type": "number",
+            "description": "Minimum breaking score, 0 or more (default 0.2). Higher values keep only the strongest spikes.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/event/getBreakingEvents",
+        "queryParams": {
+          "breakingEventsCount": "$count",
+          "breakingEventsPage": "$page",
+          "breakingEventsMinBreakingScore": "$min_breaking_score"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_recent_events",
+      "description": "Get the events that were created or updated in the last minutes (the event minute stream), for monitoring. Returns recentActivityEvents with eventInfo keyed by event URI and the activity list. Cost: 5 tokens per 50 returned events.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "max_event_count": {
+            "type": "integer",
+            "description": "Maximum events to return, up to 2,000 (default 50). 5 tokens are charged per 50 events.",
+            "minimum": 1,
+            "maximum": 2000,
+            "default": 50
+          },
+          "updates_after_mins_ago": {
+            "type": "integer",
+            "description": "Events updated in the last N minutes instead of only the last one, at most 240.",
+            "minimum": 1,
+            "maximum": 240
+          },
+          "updates_after_tm": {
+            "type": "string",
+            "description": "Events updated after this UTC time, YYYY-MM-DDTHH:MM:SS, at most 4 hours back."
+          },
+          "min_articles_in_event": {
+            "type": "integer",
+            "description": "Only events with at least this many articles.",
+            "minimum": 1
+          },
+          "keyword": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Keywords or phrases the article must mention (up to 60). Each entry is one phrase; all must match unless keyword_oper is or."
+          },
+          "concept_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Concept URIs the article must be about, from event_registry_suggest_concepts, e.g. http://en.wikipedia.org/wiki/Tesla,_Inc. (up to 50). More precise than keywords and language-independent."
+          },
+          "category_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Category URIs from event_registry_suggest_categories, e.g. news/Business or dmoz/Business/Energy (up to 20, any of them matches)."
+          },
+          "source_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "News source URIs from event_registry_suggest_sources, e.g. bbc.com or reuters.com (any of them matches)."
+          },
+          "location_uri": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only items about something that happened at these places: location URIs from event_registry_suggest_locations."
+          },
+          "lang": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Article languages as ISO 639-3 codes (up to 5), e.g. eng, deu, fra, spa, ita. Supported: eng, deu, fra, spa, ita, por, nld, rus, zho, ara, tur, pol, swe, dan, fin, ces, slk, slv, hrv, srp, hun, ron, bul, ukr, ell, cat, eus, ind, vie, hin, urd, fas. Default: all languages."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/minuteStreamEvents",
+        "queryParams": {
+          "recentActivityEventsMaxEventCount": "$max_event_count",
+          "recentActivityEventsUpdatesAfterMinsAgo": "$updates_after_mins_ago",
+          "recentActivityEventsUpdatesAfterTm": "$updates_after_tm",
+          "minArticlesInEvent": "$min_articles_in_event",
+          "keyword": "$keyword",
+          "conceptUri": "$concept_uri",
+          "categoryUri": "$category_uri",
+          "sourceUri": "$source_uri",
+          "locationUri": "$location_uri",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "event_registry_find_events_for_text",
+      "description": "Find the recent events that best match a piece of text, such as a draft, a press release or a pasted article. Returns the best matching stories with their event URIs and similarity. Works for recent events only. Cost: 3 tokens per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "The text to match, a paragraph or more. Keep it under a few thousand characters: it travels in the query string."
+          },
+          "lang": {
+            "type": "string",
+            "description": "Language of the text as an ISO 639-3 code, e.g. eng. Detected automatically when left out."
+          },
+          "top_clusters_count": {
+            "type": "integer",
+            "description": "Number of best matching stories to return, up to 50 (default 10).",
+            "minimum": 1,
+            "maximum": 50
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/getEventForText",
+        "queryParams": {
+          "text": "$text",
+          "lang": "$lang",
+          "topClustersCount": "$top_clusters_count"
+        }
+      }
+    },
+    {
+      "name": "event_registry_suggest_concepts",
+      "description": "Look up the concept URI (a person, organisation, place or topic, identified by its Wikipedia address) that the search filters need. Example: the prefix tesla returns http://en.wikipedia.org/wiki/Tesla,_Inc. with type org and label Tesla, Inc. Returns a list of matches, best first. Autosuggest calls are light; call them before a search instead of guessing a URI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "description": "Beginning of the name to look for (a few letters are enough)."
+          },
+          "lang": {
+            "type": "string",
+            "default": "eng",
+            "description": "Language of the prefix as an ISO 639-3 code (eng, deu, spa, fra, ita...). The API requires it; default eng."
+          }
+        },
+        "required": [
+          "prefix"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/suggestConceptsFast",
+        "queryParams": {
+          "prefix": "$prefix",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "event_registry_suggest_categories",
+      "description": "Look up the category URI that the search filters need. Example: the prefix business returns news/Business and dmoz/Business with their sub-categories. Returns a list of matches, best first. Autosuggest calls are light; call them before a search instead of guessing a URI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "description": "Beginning of the name to look for (a few letters are enough)."
+          }
+        },
+        "required": [
+          "prefix"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/suggestCategoriesFast",
+        "queryParams": {
+          "prefix": "$prefix"
+        }
+      }
+    },
+    {
+      "name": "event_registry_suggest_sources",
+      "description": "Look up the news source URI that the search filters need. Example: the prefix reut returns the source with uri reuters.com and title Reuters. A domain name works as a prefix too. Returns a list of matches, best first. Autosuggest calls are light; call them before a search instead of guessing a URI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "description": "Beginning of the name to look for (a few letters are enough)."
+          }
+        },
+        "required": [
+          "prefix"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/suggestSourcesFast",
+        "queryParams": {
+          "prefix": "$prefix"
+        }
+      }
+    },
+    {
+      "name": "event_registry_suggest_locations",
+      "description": "Look up the location URI of a country or place that the search filters need. Example: the prefix germ returns http://en.wikipedia.org/wiki/Germany with type country. Returns a list of matches, best first. Autosuggest calls are light; call them before a search instead of guessing a URI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "description": "Beginning of the name to look for (a few letters are enough)."
+          },
+          "lang": {
+            "type": "string",
+            "default": "eng",
+            "description": "Language of the prefix as an ISO 639-3 code (eng, deu, spa, fra, ita...). The API requires it; default eng."
+          }
+        },
+        "required": [
+          "prefix"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/suggestLocationsFast",
+        "queryParams": {
+          "prefix": "$prefix",
+          "lang": "$lang"
+        }
+      }
+    },
+    {
+      "name": "event_registry_suggest_authors",
+      "description": "Look up the author URI of a journalist that the search filters need. Example: a name prefix returns authors with uri (the name joined to the source domain), name and the source they write for. Returns a list of matches, best first. Autosuggest calls are light; call them before a search instead of guessing a URI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "prefix": {
+            "type": "string",
+            "description": "Beginning of the name to look for (a few letters are enough)."
+          }
+        },
+        "required": [
+          "prefix"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/suggestAuthorsFast",
+        "queryParams": {
+          "prefix": "$prefix"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_trending_concepts",
+      "description": "List the concepts (people, organisations, places) that are trending in the news right now: mentioned much more often than usual. Returns a list with the concept uri, type, label and trendingScore, highest first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "source": {
+            "type": "string",
+            "description": "Where the trend is measured: news (default), pr (press releases) or blogs.",
+            "enum": [
+              "news",
+              "pr",
+              "blogs"
+            ],
+            "default": "news"
+          },
+          "concept_count": {
+            "type": "integer",
+            "description": "Number of concepts to return (default 20).",
+            "minimum": 1,
+            "default": 20
+          },
+          "concept_type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Concept types to include: person, org, loc, wiki (topics). Default person, org and loc."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/trends",
+        "queryParams": {
+          "action": "getTrendingConcepts",
+          "source": "$source",
+          "dataType": "$source",
+          "conceptCount": "$concept_count",
+          "conceptType": "$concept_type"
+        }
+      }
+    },
+    {
+      "name": "event_registry_extract_article_info",
+      "description": "Extract the title, body text, authors, publication date, language and main image from any article web address (text analytics service; the article does not need to be in the Event Registry index). Returns the extracted fields as one object. Cost: 0.05 tokens per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "Full web address of the article to read."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://analytics.eventregistry.org/api/v1/extractArticleInfo",
+        "queryParams": {
+          "url": "$url"
+        }
+      }
+    },
+    {
+      "name": "event_registry_get_usage",
+      "description": "Check the token balance of the API key: availableTokens (the plan allowance for the period) and usedTokens. Costs no tokens. Call it before a series of archive searches or summaries.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/v1/usage"
+      }
+    }
+  ]
+}

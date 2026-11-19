@@ -1,0 +1,1106 @@
+{
+  "slug": "appwrite",
+  "name": "Appwrite",
+  "aliases": [
+    "Appwrite Cloud",
+    "Appwrite backend"
+  ],
+  "description": "Appwrite backend from any AI agent, Cloud or self-hosted: query and write database rows (TablesDB) or documents (older servers), read the users of your app with their sessions and teams, storage buckets and file descriptions, functions and their execution logs. Project API key. Deleting rows and running functions are switched off.",
+  "instructions": "## Appwrite\nThis connector calls the **Appwrite server API** of one Appwrite project, on Appwrite Cloud or a self-hosted server: databases with tables and rows (TablesDB) or collections and documents (the older Databases API), the users of your app, storage buckets and file descriptions, functions and their executions, and teams. It authenticates with a project API key, which bypasses row and document permissions: it sees everything its scopes allow.\n\n**Setup (about 5 minutes)**\n1. Open the project in the Appwrite Console, go to **Settings** and copy the **API Endpoint** into `APPWRITE_ENDPOINT` and the **Project ID** into `APPWRITE_PROJECT_ID`. On Appwrite Cloud the endpoint carries the region of the project, e.g. `https://fra.cloud.appwrite.io/v1` (Frankfurt), `https://nyc.cloud.appwrite.io/v1`, `https://syd.cloud.appwrite.io/v1`, `https://sfo.cloud.appwrite.io/v1`, `https://sgp.cloud.appwrite.io/v1` or `https://tor.cloud.appwrite.io/v1`. Self-hosted: `https://your-server/v1`.\n2. Go to **Overview, Integrations, API keys** and click **Create API key**. Name it, set an expiry if you want one, and tick the scopes this connector should use:\n   - read everything: `databases.read`, `tables.read`, `columns.read`, `rows.read` (older servers: `collections.read`, `attributes.read`, `documents.read`), `users.read`, `sessions.read`, `buckets.read`, `files.read`, `functions.read`, `execution.read`, `teams.read`;\n   - write rows: `rows.write` (older servers: `documents.write`);\n   - run functions, only if you enable that tool: `execution.write`.\n3. Copy the key (the secret) into `APPWRITE_API_KEY`. It is sent in the `X-Appwrite-Key` header together with `X-Appwrite-Project`.\n\n**Where to start**\n- `appwrite_ping` confirms endpoint, project and key.\n- Data: `appwrite_list_databases`, `appwrite_list_tables`, then `appwrite_get_table` or `appwrite_list_columns` for the column keys, then `appwrite_list_rows` and `appwrite_get_row`. Write with `appwrite_create_row` and `appwrite_update_row`.\n- Self-hosted Appwrite before 1.8 has no TablesDB: use `appwrite_list_legacy_databases`, `appwrite_list_collections`, `appwrite_list_documents`, `appwrite_get_document`, `appwrite_create_document` and `appwrite_update_document`. On newer servers both sets reach the same data; prefer the table tools.\n- Users of your app: `appwrite_list_users`, `appwrite_get_user`, `appwrite_list_user_memberships`, `appwrite_list_user_sessions`. Teams: `appwrite_list_teams`, `appwrite_get_team`, `appwrite_list_team_memberships`.\n- Storage: `appwrite_list_buckets`, `appwrite_get_bucket`, `appwrite_list_files`, `appwrite_get_file` (descriptions only; file content is never downloaded).\n- Functions: `appwrite_list_functions`, `appwrite_get_function`, `appwrite_list_executions`, `appwrite_get_execution` for logs and errors of a run.\n\n**Queries**: list tools take `queries`, a list of strings where each string is one query written as JSON text:\n- filter: `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}`, `{\"method\":\"greaterThan\",\"attribute\":\"total\",\"values\":[100]}`, `{\"method\":\"search\",\"attribute\":\"title\",\"values\":[\"invoice\"]}`, `{\"method\":\"isNull\",\"attribute\":\"paidAt\"}`;\n- sort: `{\"method\":\"orderDesc\",\"attribute\":\"$createdAt\"}`;\n- page: `{\"method\":\"limit\",\"values\":[25]}` with `{\"method\":\"offset\",\"values\":[25]}`, or `{\"method\":\"cursorAfter\",\"values\":[\"LAST_ID\"]}` with the `$id` of the last item;\n- fewer columns: `{\"method\":\"select\",\"values\":[\"name\",\"email\"]}`.\nFiltering and sorting on a column needs an index on it; without one Appwrite answers 400 and names the missing index. Without a limit, 25 items are returned.\n\n**Reading the data**: system fields start with `$`: `$id`, `$createdAt`, `$updatedAt`, `$permissions`. Times are ISO 8601 in UTC. `total` is the number of matches, not of returned items. Ids are at most 36 characters; `unique()` as an id lets Appwrite generate one.\n\n**Switched off at install**: `appwrite_delete_row` (no undo) and `appwrite_create_execution` (runs your own code and counts against the plan). Schema changes (creating tables, columns, buckets, functions), user management and file uploads are not part of this connector.\n\n**Privacy**: user lists hold names, emails and phone numbers of your app's users. Share only what the question needs and never repeat password hashes or session secrets.\n\n**Limits and errors**: API keys are not rate-limited by Appwrite. 401 with `general_unauthorized_scope` names the scope the key is missing: add it to the key in the Console. 401 with `api_key_invalid` or `user_unauthorized`: wrong key, wrong project id, or the endpoint of another region. 404: the id does not exist, or the server is older than the API used (try the legacy tools). 400: a query or a value does not fit the schema; the message says which.",
+  "region": "intl",
+  "category": "database",
+  "icon": "appwrite",
+  "docsUrl": "https://appwrite.io/docs/references",
+  "prerequisites": "An Appwrite project (Appwrite Cloud has a free plan; self-hosted is open source) and access to its Console to create an API key with the scopes you want. You need the API endpoint, the project id and the key. About 5 minutes.",
+  "requiredEnvVars": [
+    "APPWRITE_ENDPOINT",
+    "APPWRITE_PROJECT_ID",
+    "APPWRITE_API_KEY"
+  ],
+  "envVarMeta": {
+    "APPWRITE_ENDPOINT": {
+      "label": "API endpoint",
+      "kind": "address",
+      "help": "Appwrite Console, your project, Settings, API Endpoint. It ends in /v1. On Appwrite Cloud it starts with the region of the project (fra, nyc, syd, sfo, sgp or tor); self-hosted it is your own server.",
+      "example": "https://fra.cloud.appwrite.io/v1",
+      "link": "https://appwrite.io/docs/apis/rest",
+      "pattern": "^https?://[^\\s/]+(/[^\\s/]+)*/v1$",
+      "patternMessage": "Enter the API endpoint starting with https:// and ending in /v1, without a trailing slash, e.g. https://fra.cloud.appwrite.io/v1."
+    },
+    "APPWRITE_PROJECT_ID": {
+      "label": "Project ID",
+      "kind": "setting",
+      "help": "Appwrite Console, your project, Settings, Project ID.",
+      "link": "https://appwrite.io/docs/apis/rest",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9._-]{0,35}$",
+      "patternMessage": "Paste the Project ID as shown in the project settings: up to 36 letters, digits, periods, hyphens or underscores."
+    },
+    "APPWRITE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Appwrite Console, your project, Overview, Integrations, API keys, Create API key. Tick the read scopes (and rows.write if the agent may write rows) and copy the secret.",
+      "link": "https://appwrite.io/docs/advanced/platform/api-keys",
+      "pattern": "^\\S{20,}$",
+      "patternMessage": "Paste the API key secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Appwrite refused the key for this project: the key is wrong or expired, the Project ID is wrong, or the endpoint belongs to another region. If the message names a missing scope, add that scope to the API key in the Console.",
+    "403": "Appwrite refused the call. Check that the project is not paused or blocked and that the key belongs to it.",
+    "404": "Nothing answers at this path. Check APPWRITE_ENDPOINT (it must end in /v1) and the Project ID; on a self-hosted server older than 1.8 use the legacy database tools.",
+    "rate_limited": "Appwrite is limiting requests. Wait a moment and try again; API keys are normally not rate-limited.",
+    "unreachable": "The Appwrite server cannot be reached. Check APPWRITE_ENDPOINT; a self-hosted server on a private network must be allowed in the SSRF allowlist or be public over HTTPS."
+  },
+  "probe": {
+    "tool": "appwrite_ping"
+  },
+  "connector": {
+    "name": "Appwrite server API",
+    "type": "REST",
+    "baseUrl": "{{APPWRITE_ENDPOINT}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Appwrite-Key",
+      "apiKey": "{{APPWRITE_API_KEY}}",
+      "extraHeaders": {
+        "X-Appwrite-Project": "{{APPWRITE_PROJECT_ID}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "appwrite_ping",
+      "description": "Check that the endpoint, the project id and the API key belong together. Appwrite answers with a short Pong text when the project accepts the key; a wrong key, project or region is refused with 401 or 404.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ping"
+      }
+    },
+    {
+      "name": "appwrite_list_databases",
+      "description": "List the databases of the project (TablesDB, Appwrite 1.8 and later and Appwrite Cloud): $id, name, enabled, $createdAt and $updatedAt. Answers total and the list. On an older self-hosted server this path does not exist: use appwrite_list_legacy_databases.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tablesdb",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_list_tables",
+      "description": "List the tables of a database: $id, name, enabled, rowSecurity, $permissions, and the columns and indexes of each table. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name, enabled, rowSecurity. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        },
+        "required": [
+          "database_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tablesdb/{database_id}/tables",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_table",
+      "description": "Get one table with its schema: name, enabled, rowSecurity, $permissions, columns (key, type, required, array, default, size or elements for enums) and indexes. Read it before querying or writing rows, to know the column keys and types.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id from appwrite_list_tables."
+          }
+        },
+        "required": [
+          "database_id",
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tablesdb/{database_id}/tables/{table_id}"
+      }
+    },
+    {
+      "name": "appwrite_list_columns",
+      "description": "List the columns of a table: key, type (string, integer, float, boolean, datetime, email, enum, url, ip, relationship and others), status, required, array and default. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id from appwrite_list_tables."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: key, type, size, required, array, status, error. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "database_id",
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tablesdb/{database_id}/tables/{table_id}/columns",
+        "queryParams": {
+          "queries[]": "$queries"
+        }
+      }
+    },
+    {
+      "name": "appwrite_list_rows",
+      "description": "Query the rows of a table. Returns total and rows; each row has its columns plus $id, $createdAt, $updatedAt and $permissions. Filter, sort and page with queries (equal, notEqual, lessThan, greaterThan, between, contains, search, isNull, orderAsc, orderDesc, limit, offset, cursorAfter, select). Without a limit query 25 rows come back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id from appwrite_list_tables."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: any column of the table that has an index, and the system columns $id, $createdAt, $updatedAt. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "total": {
+            "type": "boolean",
+            "description": "false to skip counting the total, which is faster on large tables. Default true."
+          }
+        },
+        "required": [
+          "database_id",
+          "table_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tablesdb/{database_id}/tables/{table_id}/rows",
+        "queryParams": {
+          "queries[]": "$queries",
+          "total": "$total"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_row",
+      "description": "Get one row of a table by its id, with every column plus $id, $createdAt, $updatedAt and $permissions. A select query limits the columns that are returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id from appwrite_list_tables."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id ($id of a row)."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Optional select query to return only some columns, e.g. `{\"method\":\"select\",\"values\":[\"name\",\"email\"]}`."
+          }
+        },
+        "required": [
+          "database_id",
+          "table_id",
+          "row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tablesdb/{database_id}/tables/{table_id}/rows/{row_id}",
+        "queryParams": {
+          "queries[]": "$queries"
+        }
+      }
+    },
+    {
+      "name": "appwrite_create_row",
+      "description": "Create a row in a table. The data must use the column keys of the table and respect required columns and types (see appwrite_get_table); Appwrite refuses unknown columns. Returns the new row with its $id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id from appwrite_list_tables."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Id of the new row: your own id (letters, digits, period, hyphen, underscore, at most 36 characters) or unique() to let Appwrite generate one. Default unique().",
+            "default": "unique()",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._()-]{0,35}$"
+          },
+          "data": {
+            "type": "object",
+            "description": "The row as an object of column key to value, e.g. `{\"title\":\"Invoice 42\",\"paid\":false}`."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Permission strings for this record, e.g. read(\"any\") or update(\"user:USER_ID\"). Leave out to keep the defaults of the table or collection."
+          }
+        },
+        "required": [
+          "database_id",
+          "table_id",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tablesdb/{database_id}/tables/{table_id}/rows",
+        "bodyMapping": {
+          "rowId": "$row_id",
+          "data": "$data",
+          "permissions": "$permissions"
+        }
+      }
+    },
+    {
+      "name": "appwrite_update_row",
+      "description": "Update a row: only the columns given in data are changed, the others keep their values. Returns the updated row. Passing permissions replaces the permissions of the row.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id from appwrite_list_tables."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id ($id of the row to change)."
+          },
+          "data": {
+            "type": "object",
+            "description": "The columns to change as an object of column key to new value."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Permission strings for this record, e.g. read(\"any\") or update(\"user:USER_ID\"). Leave out to keep the defaults of the table or collection."
+          }
+        },
+        "required": [
+          "database_id",
+          "table_id",
+          "row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/tablesdb/{database_id}/tables/{table_id}/rows/{row_id}",
+        "bodyMapping": {
+          "data": "$data",
+          "permissions": "$permissions"
+        }
+      }
+    },
+    {
+      "name": "appwrite_delete_row",
+      "description": "Delete one row of a table by id. Installed switched off: the row is gone for good and Appwrite has no recycle bin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_databases."
+          },
+          "table_id": {
+            "type": "string",
+            "description": "Table id from appwrite_list_tables."
+          },
+          "row_id": {
+            "type": "string",
+            "description": "Row id ($id of the row to delete)."
+          }
+        },
+        "required": [
+          "database_id",
+          "table_id",
+          "row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/tablesdb/{database_id}/tables/{table_id}/rows/{row_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "appwrite_list_legacy_databases",
+      "description": "List the databases through the older Databases API (collections and documents). Use it on self-hosted Appwrite before 1.8, where the TablesDB paths do not exist; on newer servers it returns the same databases as appwrite_list_databases. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/databases",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_list_collections",
+      "description": "List the collections of a database through the older Databases API: $id, name, enabled, documentSecurity, $permissions, attributes (the fields with key, type, required and array) and indexes. A collection is what TablesDB calls a table. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_legacy_databases."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name, enabled, documentSecurity. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        },
+        "required": [
+          "database_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/databases/{database_id}/collections",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_list_documents",
+      "description": "Query the documents of a collection through the older Databases API. Returns total and documents; each document has its attributes plus $id, $createdAt, $updatedAt and $permissions. Queries work as in appwrite_list_rows. Without a limit query 25 documents come back.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_legacy_databases."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id from appwrite_list_collections."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: any indexed attribute of the collection, and $id, $createdAt, $updatedAt. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "database_id",
+          "collection_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/databases/{database_id}/collections/{collection_id}/documents",
+        "queryParams": {
+          "queries[]": "$queries"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_document",
+      "description": "Get one document of a collection by its id through the older Databases API, with every attribute plus $id, $createdAt, $updatedAt and $permissions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_legacy_databases."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id from appwrite_list_collections."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Document id ($id of a document)."
+          }
+        },
+        "required": [
+          "database_id",
+          "collection_id",
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/databases/{database_id}/collections/{collection_id}/documents/{document_id}"
+      }
+    },
+    {
+      "name": "appwrite_create_document",
+      "description": "Create a document in a collection through the older Databases API. The data must use the attribute keys of the collection and respect required attributes and types (see appwrite_list_collections). Returns the new document with its $id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_legacy_databases."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id from appwrite_list_collections."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Id of the new document: your own id (at most 36 characters) or unique() to let Appwrite generate one. Default unique().",
+            "default": "unique()",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9._()-]{0,35}$"
+          },
+          "data": {
+            "type": "object",
+            "description": "The document as an object of attribute key to value."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Permission strings for this record, e.g. read(\"any\") or update(\"user:USER_ID\"). Leave out to keep the defaults of the table or collection."
+          }
+        },
+        "required": [
+          "database_id",
+          "collection_id",
+          "data"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/databases/{database_id}/collections/{collection_id}/documents",
+        "bodyMapping": {
+          "documentId": "$document_id",
+          "data": "$data",
+          "permissions": "$permissions"
+        }
+      }
+    },
+    {
+      "name": "appwrite_update_document",
+      "description": "Update a document through the older Databases API: only the attributes given in data are changed. Returns the updated document. Passing permissions replaces the permissions of the document.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "database_id": {
+            "type": "string",
+            "description": "Database id from appwrite_list_legacy_databases."
+          },
+          "collection_id": {
+            "type": "string",
+            "description": "Collection id from appwrite_list_collections."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Document id ($id of the document to change)."
+          },
+          "data": {
+            "type": "object",
+            "description": "The attributes to change as an object of key to new value."
+          },
+          "permissions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Permission strings for this record, e.g. read(\"any\") or update(\"user:USER_ID\"). Leave out to keep the defaults of the table or collection."
+          }
+        },
+        "required": [
+          "database_id",
+          "collection_id",
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/databases/{database_id}/collections/{collection_id}/documents/{document_id}",
+        "bodyMapping": {
+          "data": "$data",
+          "permissions": "$permissions"
+        }
+      }
+    },
+    {
+      "name": "appwrite_list_users",
+      "description": "List the users of the project (the people who sign in to your app, not the Appwrite Console team). Each user has $id, name, email, phone, status (false when blocked), emailVerification, phoneVerification, mfa, labels, registration and accessedAt. Password hashes are part of the answer on some versions: never repeat them. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name, email, phone, status, passwordUpdate, registration, emailVerification, phoneVerification, labels. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_user",
+      "description": "Get one user of the project by id: name, email, phone, status, emailVerification, phoneVerification, mfa, labels, prefs, registration, accessedAt and the sign-in targets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id ($id of a user) from appwrite_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "appwrite_list_user_memberships",
+      "description": "List the teams one user belongs to: per membership the teamId, teamName, roles, confirm (invitation accepted), joined and invited. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id from appwrite_list_users."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: userId, teamId, invited, joined, confirm, roles. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/memberships",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_list_user_sessions",
+      "description": "List the active sessions of one user: provider (email, an OAuth provider, phone and others), ip, countryName, osName, clientName, deviceName, $createdAt, expire and current. Use it to see where an account is signed in.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id from appwrite_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}/sessions"
+      }
+    },
+    {
+      "name": "appwrite_list_buckets",
+      "description": "List the storage buckets of the project: $id, name, enabled, fileSecurity, maximumFileSize in bytes, allowedFileExtensions, compression, encryption and antivirus. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: enabled, name, fileSecurity, maximumFileSize, encryption, antivirus. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage/buckets",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_bucket",
+      "description": "Get one storage bucket: name, enabled, fileSecurity, $permissions, maximumFileSize in bytes, allowedFileExtensions, compression, encryption and antivirus.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bucket_id": {
+            "type": "string",
+            "description": "Bucket id from appwrite_list_buckets."
+          }
+        },
+        "required": [
+          "bucket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage/buckets/{bucket_id}"
+      }
+    },
+    {
+      "name": "appwrite_list_files",
+      "description": "List the files of a bucket, as descriptions only: $id, name, mimeType, sizeOriginal in bytes, signature (MD5), $createdAt, $updatedAt and $permissions. The content of the files is not returned. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bucket_id": {
+            "type": "string",
+            "description": "Bucket id from appwrite_list_buckets."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name, signature, mimeType, sizeOriginal, chunksTotal, chunksUploaded. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        },
+        "required": [
+          "bucket_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage/buckets/{bucket_id}/files",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_file",
+      "description": "Get the description of one stored file: name, mimeType, sizeOriginal in bytes, signature (MD5), chunksTotal, chunksUploaded, $createdAt, $updatedAt and $permissions. The content of the file is not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bucket_id": {
+            "type": "string",
+            "description": "Bucket id from appwrite_list_buckets."
+          },
+          "file_id": {
+            "type": "string",
+            "description": "File id ($id of a file) from appwrite_list_files."
+          }
+        },
+        "required": [
+          "bucket_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage/buckets/{bucket_id}/files/{file_id}"
+      }
+    },
+    {
+      "name": "appwrite_list_functions",
+      "description": "List the functions of the project: $id, name, enabled, live, runtime, deploymentId (the active deployment), schedule (cron), events that trigger it, timeout in seconds and the latest deployment status. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name, enabled, runtime, deploymentId, schedule, scheduleNext, schedulePrevious, timeout, entrypoint, commands, installationId. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/functions",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_function",
+      "description": "Get one function: name, enabled, live, runtime, entrypoint, commands, deploymentId, schedule, events, timeout, execute (who may run it), logging and the variables defined for it. Secret variable values are masked by Appwrite.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function_id": {
+            "type": "string",
+            "description": "Function id from appwrite_list_functions."
+          }
+        },
+        "required": [
+          "function_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/functions/{function_id}"
+      }
+    },
+    {
+      "name": "appwrite_list_executions",
+      "description": "List the executions (runs) of a function, newest first by default: $id, $createdAt, trigger (http, schedule or event), status (waiting, processing, completed or failed), requestMethod, requestPath, responseStatusCode, duration in seconds, and logs and errors when logging is on. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function_id": {
+            "type": "string",
+            "description": "Function id from appwrite_list_functions."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: trigger, status, responseStatusCode, duration, requestMethod, requestPath, deploymentId. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "function_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/functions/{function_id}/executions",
+        "queryParams": {
+          "queries[]": "$queries"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_execution",
+      "description": "Get one execution of a function: status, trigger, requestMethod, requestPath, requestHeaders, responseStatusCode, responseBody, responseHeaders, logs, errors and duration in seconds. Use it to see why a run failed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function_id": {
+            "type": "string",
+            "description": "Function id from appwrite_list_functions."
+          },
+          "execution_id": {
+            "type": "string",
+            "description": "Execution id from appwrite_list_executions."
+          }
+        },
+        "required": [
+          "function_id",
+          "execution_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/functions/{function_id}/executions/{execution_id}"
+      }
+    },
+    {
+      "name": "appwrite_create_execution",
+      "description": "Run a function now, with an optional request body, path, method and headers. Installed switched off: the function is your own code with its own side effects, and on Appwrite Cloud executions count against the plan. Returns the execution with its status and, for a synchronous run, the response.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "function_id": {
+            "type": "string",
+            "description": "Function id from appwrite_list_functions."
+          },
+          "body": {
+            "type": "string",
+            "description": "Request body handed to the function, as text (JSON text for a JSON API)."
+          },
+          "async": {
+            "type": "boolean",
+            "description": "true to queue the run and return at once (read the result with appwrite_get_execution); false to wait for the response. Default false."
+          },
+          "path": {
+            "type": "string",
+            "description": "Path and query the function sees, e.g. /orders?status=open. Default /."
+          },
+          "method": {
+            "type": "string",
+            "enum": [
+              "GET",
+              "POST",
+              "PUT",
+              "PATCH",
+              "DELETE",
+              "OPTIONS",
+              "HEAD"
+            ],
+            "description": "HTTP method the function sees. Default POST."
+          },
+          "headers": {
+            "type": "object",
+            "description": "Request headers handed to the function, as an object of header name to value."
+          }
+        },
+        "required": [
+          "function_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/functions/{function_id}/executions",
+        "bodyMapping": {
+          "body": "$body",
+          "async": "$async",
+          "path": "$path",
+          "method": "$method",
+          "headers": "$headers"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "appwrite_list_teams",
+      "description": "List the teams of the project (groups of your app's users): $id, name, total (number of members), prefs and $createdAt. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: name, total. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    },
+    {
+      "name": "appwrite_get_team",
+      "description": "Get one team of the project by id: name, total (number of members), prefs, $createdAt and $updatedAt.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id from appwrite_list_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}"
+      }
+    },
+    {
+      "name": "appwrite_list_team_memberships",
+      "description": "List the members of a team: per membership the userId, userName, userEmail, roles, confirm (invitation accepted), invited and joined. Answers total and the list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id from appwrite_list_teams."
+          },
+          "queries": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Filters, sorting and paging: a list of query strings, each one JSON text such as `{\"method\":\"equal\",\"attribute\":\"status\",\"values\":[\"active\"]}` or `{\"method\":\"limit\",\"values\":[25]}`. At most 100 queries. You may filter on: userId, teamId, invited, joined, confirm, roles. Without a limit query Appwrite returns 25 items.",
+            "maxItems": 100
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search term over the list, at most 256 characters."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/memberships",
+        "queryParams": {
+          "queries[]": "$queries",
+          "search": "$search"
+        }
+      }
+    }
+  ]
+}

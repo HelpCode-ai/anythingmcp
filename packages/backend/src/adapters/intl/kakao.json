@@ -1,0 +1,896 @@
+{
+  "slug": "kakao",
+  "name": "Kakao",
+  "description": "Kakao Developers REST API with your own Kakao app: send KakaoTalk messages to yourself (text, feed, list, custom templates, link previews) and to friends, read the KakaoTalk profile and friends list and the Kakao Account profile, and list, create and update Talk Calendar events. Signed in with Kakao Login.",
+  "aliases": [
+    "KakaoTalk",
+    "Kakao Talk",
+    "카카오",
+    "카카오톡",
+    "Kakao Developers",
+    "Talk Calendar",
+    "톡캘린더"
+  ],
+  "region": "intl",
+  "category": "messaging",
+  "icon": "kakao",
+  "docsUrl": "https://developers.kakao.com/docs/latest/en/kakaotalk-message/rest-api",
+  "appRegistrationUrl": "https://developers.kakao.com/console/app",
+  "prerequisites": "A Kakao Account with KakaoTalk and a free app of your own on developers.kakao.com, with Kakao Login switched on, the redirect URI below and the consent item Send message in KakaoTalk enabled. Sending to friends and the friends list also need a permission that Kakao grants after a review. About 10 minutes.",
+  "requiredEnvVars": [
+    "KAKAO_REST_API_KEY",
+    "KAKAO_CLIENT_SECRET",
+    "KAKAO_SCOPES"
+  ],
+  "envVarMeta": {
+    "KAKAO_REST_API_KEY": {
+      "label": "REST API key",
+      "kind": "credential",
+      "help": "Kakao Developers, your app, App, Platform Key: the REST API key (32 characters). Not the JavaScript, Native app or Admin key.",
+      "link": "https://developers.kakao.com/console/app",
+      "pattern": "^[0-9A-Za-z]{32}$",
+      "patternMessage": "Paste the 32-character REST API key of the app, without spaces."
+    },
+    "KAKAO_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Kakao Developers, your app, App, Platform Key, REST API key: the Client secret code. It is enabled by default; if it is switched off, switch it on.",
+      "link": "https://developers.kakao.com/console/app",
+      "pattern": "^\\S{8,}$",
+      "patternMessage": "Paste the Client secret code without spaces."
+    },
+    "KAKAO_SCOPES": {
+      "label": "What the AI may use",
+      "kind": "setting",
+      "help": "The consent items requested at sign-in. Every item in the choice must be enabled under Kakao Login, Consent items of your app, or the sign-in fails with KOE205. Authorize again after changing it.",
+      "link": "https://developers.kakao.com/docs/latest/en/kakaologin/prerequisite",
+      "options": [
+        {
+          "value": "talk_message",
+          "label": "Messages to me"
+        },
+        {
+          "value": "talk_message,profile_nickname,profile_image",
+          "label": "Messages to me and my profile"
+        },
+        {
+          "value": "talk_message,profile_nickname,profile_image,talk_calendar",
+          "label": "Messages to me, profile and Talk Calendar"
+        },
+        {
+          "value": "talk_message,profile_nickname,profile_image,friends",
+          "label": "Messages to me and friends, profile (friends need a Kakao permission)"
+        },
+        {
+          "value": "talk_message,profile_nickname,profile_image,talk_calendar,friends",
+          "label": "Messages, profile, Talk Calendar and friends (friends need a Kakao permission)"
+        }
+      ]
+    }
+  },
+  "verifyHints": {
+    "400": "Kakao rejected the request. Its msg names the reason: a missing or malformed field (code -2), a used-up quota (code -10), or a recipient who is not a friend or refuses messages (codes -502 and -530).",
+    "401": "Kakao refused the access token (code -401). Click Authorize with Provider again; if the Client secret was regenerated, update KAKAO_CLIENT_SECRET first.",
+    "403": "Kakao refused the call: the user has not agreed to the consent item this call needs (code -402), the feature is not switched on in the app (code -3), or the app lacks the permission for this API (code -5). Pick a wider choice in KAKAO_SCOPES, enable the consent item in the app and authorize again; the friends tools also need the permission Kakao grants after a review.",
+    "rate_limited": "A Kakao quota is used up. Quotas are per app, per day and per month; test apps send at most 30 friend messages a day. See Quota in the app console.",
+    "invalid_scope": "A requested consent item is not enabled in the Kakao app (KOE205). Enable every item of your KAKAO_SCOPES choice under Kakao Login, Consent items, then authorize again.",
+    "invalid_client": "Kakao refused the REST API key or the client secret (KOE010). Copy the REST API key and its Client secret code again from App, Platform Key.",
+    "invalid_grant": "Kakao refused the authorization code or the refresh token: the redirect URI differs from the one registered for the REST API key, or the refresh token expired after two months without use. Click Authorize with Provider again."
+  },
+  "probe": {
+    "tool": "kakao_get_token_info",
+    "params": {}
+  },
+  "instructions": "## Kakao\nThis connector works with the **Kakao Developers REST API** at `https://kapi.kakao.com` on behalf of one Kakao user, signed in through your own Kakao app: KakaoTalk messages to yourself (My Chatroom) and to friends, the KakaoTalk profile and friends list, the Kakao Account profile, and Talk Calendar events.\n\n**Setup (about 10 minutes, free)**\n1. Open https://developers.kakao.com, sign in with your Kakao Account and create an app (My Application, Add an application).\n2. Open the app, **App, Platform Key, REST API key**: copy the REST API key into `KAKAO_REST_API_KEY`, copy the **Client secret** shown there into `KAKAO_CLIENT_SECRET` (it is enabled by default), and add the redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n3. **Kakao Login**: switch Kakao Login on. Under **Consent items** enable every item you chose in `KAKAO_SCOPES`: Send message in KakaoTalk (`talk_message`), and if selected Nickname and Profile image (`profile_nickname`, `profile_image`), Talk Calendar (`talk_calendar`) and Friends list (`friends`). Optional consent is enough. An item that is requested but not enabled makes the sign-in fail with KOE205.\n4. Install the connector, click **Authorize with Provider** and agree on the Kakao consent screen. After changing `KAKAO_SCOPES` authorize again.\n\nAccess tokens last a few hours and are renewed automatically with the refresh token, which lasts two months and is extended while the connector is in use.\n\n**Where to start**: `kakao_get_token_info` confirms the sign-in; `kakao_list_consents` shows which consent items the user agreed to. `kakao_send_text_to_me` sends a note to your own KakaoTalk.\n\n**Messages to yourself**: `kakao_send_text_to_me` (plain text, 200 characters), `kakao_send_template_to_me` (feed, list, location, commerce, text or calendar template as JSON), `kakao_send_custom_template_to_me` (a template built in Tools, Message Template) and `kakao_send_link_preview_to_me` (a web page as a scrape message). These always work for the app owner. Links only open domains registered under **App, Product Link, Web domain**.\n\n**Friends**: `kakao_list_friends` returns the `uuid` of each friend; `kakao_send_text_to_friends`, `kakao_send_template_to_friends` and `kakao_send_custom_template_to_friends` send to up to 5 of them. Kakao restricts this: the friends list and sending to friends need a permission you request under **App, Request additional features** (review of 3 to 5 business days, for apps with a registered business), friends are only listed and reachable when they use the same Kakao app, and without the permission only members of the app team work, with 30 test messages a day. A friend send returns HTTP 200 even when some recipients failed: read `failure_info`.\n\n**Profile**: `kakao_get_user` (Kakao Account: only the items the user consented to are present) and `kakao_get_talk_profile` (KakaoTalk nickname and images).\n\n**Talk Calendar**: `kakao_list_calendars`, `kakao_list_events` (a preset or a period of at most 31 days), `kakao_get_event`, `kakao_create_event`, `kakao_update_event`, and `kakao_delete_event` (installed switched off). Times are RFC 3339 in UTC on 5-minute steps: 12:00 in Seoul is `03:00:00Z`. Without Kakao's Talk Calendar permission the API works for members of the app team only, which covers your own calendar. Events created elsewhere are returned with their time only, and only My Calendar (`primary`) or sub-calendars created by this app accept new events.\n\n**Errors** are JSON with `code` and `msg`: -401 the token is invalid or expired (authorize again), -402 the user has not agreed to the consent item (pick a wider choice in `KAKAO_SCOPES`, enable the item in the app and authorize again), -3 the feature or consent item is not switched on in the app, -5 the app has no permission for this API (request it under Request additional features), -10 a quota is used up (quotas are per app, per day and per month, see Quota in the app console), -2 a parameter is missing or malformed, -501 the Kakao Account has no KakaoTalk user, -502 the recipient is not a friend, -530 the recipient refuses messages, -532 the daily message limit of the sender is reached.\n\n**Not covered**: KakaoTalk chats cannot be read, and messages cannot be sent to chat rooms, to people who are not friends using the same app, or as a Kakao Talk Channel (Alimtalk and Brand Message are separate, paid products). The connector does not use the admin key.",
+  "connector": {
+    "name": "Kakao REST API",
+    "type": "REST",
+    "baseUrl": "https://kapi.kakao.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{KAKAO_REST_API_KEY}}",
+      "clientSecret": "{{KAKAO_CLIENT_SECRET}}",
+      "authorizationUrl": "https://kauth.kakao.com/oauth/authorize",
+      "tokenUrl": "https://kauth.kakao.com/oauth/token",
+      "tokenAuthMethod": "client_secret_post",
+      "scopes": "{{KAKAO_SCOPES}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/v1/user/access_token_info"
+  },
+  "tools": [
+    {
+      "name": "kakao_get_token_info",
+      "description": "Check the signed-in Kakao access token: the service user id (`id`), the seconds until it expires (`expires_in`) and the Kakao app id (`app_id`). A cheap call that proves the authorization works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/access_token_info"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_get_user",
+      "description": "Read the signed-in Kakao user: `id`, `connected_at`, and under `kakao_account` the items the user consented to (profile nickname and image, email, name, phone number, birthday, gender, age range). Each item has a matching needs_agreement flag; an item without consent is simply missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "property_keys": {
+            "type": "string",
+            "pattern": "^\\[[\\s\\S]*\\]$",
+            "description": "Only these fields, as a JSON list in text, e.g. `[\"kakao_account.profile\",\"kakao_account.email\"]`. Leave out for everything the user consented to."
+          },
+          "secure_resource": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): image URLs use https."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/user/me",
+        "queryParams": {
+          "property_keys": "$property_keys",
+          "secure_resource": "$secure_resource"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_list_consents",
+      "description": "List the consent items (scopes) of the Kakao app for the signed-in user: each `id` such as talk_message, friends or talk_calendar, its `display_name`, whether the app uses it (`using`) and whether the user agreed (`agreed`). Use it when a call fails with insufficient scopes to see what is missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scopes": {
+            "type": "string",
+            "pattern": "^\\[[\\s\\S]*\\]$",
+            "description": "Only these scope ids, as a JSON list in text, e.g. `[\"talk_message\",\"friends\"]`. Leave out for all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/user/scopes",
+        "queryParams": {
+          "scopes": "$scopes"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_get_talk_profile",
+      "description": "Read the KakaoTalk profile of the signed-in user: `id`, `nickName`, `profileImageURL` (640 px) and `thumbnailURL` (110 px). Nickname and images are returned only with the profile consent items; without them the answer holds the id alone. Fails with code -501 when the Kakao Account is not linked to KakaoTalk. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/api/talk/profile"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_send_text_to_me",
+      "description": "Send a text message to the signed-in user's own KakaoTalk chat (My Chatroom, the note to self). Up to 200 characters, with an optional link and button label. Returns `result_code` 0 on success. This is the tool for reminders, summaries and alerts to yourself; it cannot write to other people. Needs the consent item talk_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Message text, at most 200 characters. Longer text is cut off by KakaoTalk: split it into several messages."
+          },
+          "web_url": {
+            "type": "string",
+            "description": "Link opened when the message or its button is tapped. Its domain must be registered for the Kakao app (Product Link, Web domain); another domain is replaced by the first registered one. Leave out for a message without a link target."
+          },
+          "button_title": {
+            "type": "string",
+            "description": "Label of the button instead of the default (View details). Leave out for the default."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/api/talk/memo/default/send",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "template_object": {
+            "__json": {
+              "object_type": "text",
+              "text": "$text",
+              "link": {
+                "web_url": "$web_url",
+                "mobile_web_url": "$web_url"
+              },
+              "button_title": "$button_title"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "kakao_send_template_to_me",
+      "description": "Send a rich message to the signed-in user's own KakaoTalk chat with one of Kakao's default templates: feed (image, title, description, buttons), list, location, commerce, text or calendar. Returns `result_code` 0 on success. For plain text use kakao_send_text_to_me. Needs the consent item talk_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_object": {
+            "type": "object",
+            "description": "A default template as a JSON object. `object_type` is feed, list, location, commerce, text or calendar. feed: `content` with `title`, `description`, `image_url` and `link`, optional `buttons` (at most 2, each `title` and `link`). list: `header_title`, `header_link` and `contents` (2 or 3 items with `title`, `description`, `image_url`, `link`). text: `text` (at most 200 characters) and `link`. A `link` holds `web_url` and `mobile_web_url` on a domain registered for the app."
+          }
+        },
+        "required": [
+          "template_object"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/api/talk/memo/default/send",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "template_object": {
+            "__json": "$template_object"
+          }
+        }
+      }
+    },
+    {
+      "name": "kakao_send_custom_template_to_me",
+      "description": "Send a message to the signed-in user's own KakaoTalk chat with a custom template built in Kakao Developers (Tools, Message Template), filling its user arguments. Returns `result_code` 0 on success. Needs the consent item talk_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "template_id": {
+            "type": "integer",
+            "description": "Id of a custom template built in Kakao Developers, Tools, Message Template."
+          },
+          "template_args": {
+            "type": "string",
+            "pattern": "^\\{[\\s\\S]*\\}$",
+            "description": "Values for the user arguments of the template, as JSON text, e.g. `{\"TITLE\":\"Weekly report\"}`. Needed when the template uses arguments; otherwise they show as their raw placeholder."
+          }
+        },
+        "required": [
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/api/talk/memo/send",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "template_id": "$template_id",
+          "template_args": "$template_args"
+        }
+      }
+    },
+    {
+      "name": "kakao_send_link_preview_to_me",
+      "description": "Send a web page to the signed-in user's own KakaoTalk chat as a scrape message: Kakao reads the page title, description and image from the URL and builds the preview. The domain of the page must be registered for the Kakao app (Product Link, Web domain). Returns `result_code` 0 on success. Needs the consent item talk_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "request_url": {
+            "type": "string",
+            "format": "uri",
+            "description": "URL of the page to share, on a domain registered for the Kakao app."
+          },
+          "template_id": {
+            "type": "integer",
+            "description": "Optional custom template id to lay the scraped page out with."
+          },
+          "template_args": {
+            "type": "string",
+            "pattern": "^\\{[\\s\\S]*\\}$",
+            "description": "Values for the user arguments of the template, as JSON text, e.g. `{\"TITLE\":\"Weekly report\"}`. Needed when the template uses arguments; otherwise they show as their raw placeholder."
+          }
+        },
+        "required": [
+          "request_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/api/talk/memo/scrap/send",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "request_url": "$request_url",
+          "template_id": "$template_id",
+          "template_args": "$template_args"
+        }
+      }
+    },
+    {
+      "name": "kakao_list_friends",
+      "description": "List the KakaoTalk friends of the signed-in user who also use this Kakao app: `elements` with `id`, `uuid` (the value the send tools need), `profile_nickname`, `profile_thumbnail_image` and `favorite`, plus `total_count`, `favorite_count` and `after_url` when there is a next page. Needs the consent item friends and Kakao's permission for the friends list; without the permission only members of the app team are returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Position to start from, default 0. Add `limit` for the next page."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10,
+            "description": "Friends per page, default 10, at most 100."
+          },
+          "order": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "asc (default) or desc."
+          },
+          "friend_order": {
+            "type": "string",
+            "enum": [
+              "favorite",
+              "nickname"
+            ],
+            "description": "favorite (default, favourites first) or nickname."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/api/talk/friends",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit",
+          "order": "$order",
+          "friend_order": "$friend_order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_send_text_to_friends",
+      "description": "Send a text message from the signed-in user to up to 5 KakaoTalk friends. Returns `successful_receiver_uuids` and, when some failed, `failure_info` with the error code and the uuids. Kakao only delivers to friends who use the same Kakao app, and the app needs the permission to send messages to friends (granted after a review); before that only app team members can be reached, 30 test messages a day. Confirm the recipients and the text with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver_uuids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "items": {
+              "type": "string"
+            },
+            "description": "The `uuid` of each friend from kakao_list_friends, at most 5 per call. Not the numeric id."
+          },
+          "text": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 200,
+            "description": "Message text, at most 200 characters. Longer text is cut off by KakaoTalk: split it into several messages."
+          },
+          "web_url": {
+            "type": "string",
+            "description": "Link opened when the message or its button is tapped. Its domain must be registered for the Kakao app (Product Link, Web domain); another domain is replaced by the first registered one. Leave out for a message without a link target."
+          },
+          "button_title": {
+            "type": "string",
+            "description": "Label of the button instead of the default (View details). Leave out for the default."
+          }
+        },
+        "required": [
+          "receiver_uuids",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/api/talk/friends/message/default/send",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "receiver_uuids": {
+            "__json": "$receiver_uuids"
+          },
+          "template_object": {
+            "__json": {
+              "object_type": "text",
+              "text": "$text",
+              "link": {
+                "web_url": "$web_url",
+                "mobile_web_url": "$web_url"
+              },
+              "button_title": "$button_title"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "kakao_send_template_to_friends",
+      "description": "Send a rich default-template message (feed, list, location, commerce, text or calendar) from the signed-in user to up to 5 KakaoTalk friends. Returns `successful_receiver_uuids` and `failure_info` for the ones that failed. Same permission and limits as kakao_send_text_to_friends. Confirm the recipients and the content with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver_uuids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "items": {
+              "type": "string"
+            },
+            "description": "The `uuid` of each friend from kakao_list_friends, at most 5 per call. Not the numeric id."
+          },
+          "template_object": {
+            "type": "object",
+            "description": "A default template as a JSON object. `object_type` is feed, list, location, commerce, text or calendar. feed: `content` with `title`, `description`, `image_url` and `link`, optional `buttons` (at most 2, each `title` and `link`). list: `header_title`, `header_link` and `contents` (2 or 3 items with `title`, `description`, `image_url`, `link`). text: `text` (at most 200 characters) and `link`. A `link` holds `web_url` and `mobile_web_url` on a domain registered for the app."
+          }
+        },
+        "required": [
+          "receiver_uuids",
+          "template_object"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/api/talk/friends/message/default/send",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "receiver_uuids": {
+            "__json": "$receiver_uuids"
+          },
+          "template_object": {
+            "__json": "$template_object"
+          }
+        }
+      }
+    },
+    {
+      "name": "kakao_send_custom_template_to_friends",
+      "description": "Send a message built from a custom template of the Kakao app to up to 5 KakaoTalk friends, filling its user arguments. Returns `successful_receiver_uuids` and `failure_info` for the ones that failed. Same permission and limits as kakao_send_text_to_friends. Confirm the recipients with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "receiver_uuids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "items": {
+              "type": "string"
+            },
+            "description": "The `uuid` of each friend from kakao_list_friends, at most 5 per call. Not the numeric id."
+          },
+          "template_id": {
+            "type": "integer",
+            "description": "Id of a custom template built in Kakao Developers, Tools, Message Template."
+          },
+          "template_args": {
+            "type": "string",
+            "pattern": "^\\{[\\s\\S]*\\}$",
+            "description": "Values for the user arguments of the template, as JSON text, e.g. `{\"TITLE\":\"Weekly report\"}`. Needed when the template uses arguments; otherwise they show as their raw placeholder."
+          }
+        },
+        "required": [
+          "receiver_uuids",
+          "template_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v1/api/talk/friends/message/send",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "receiver_uuids": {
+            "__json": "$receiver_uuids"
+          },
+          "template_id": "$template_id",
+          "template_args": "$template_args"
+        }
+      }
+    },
+    {
+      "name": "kakao_list_calendars",
+      "description": "List the Talk Calendar calendars of the signed-in user: `calendars` (My Calendar with id primary and the sub-calendars, each with id, name, color and default reminders) and `subscribe_calendars`. Names and colours are returned only for calendars this Kakao app created. Needs the consent item talk_calendar. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "USER",
+              "SUBSCRIBE"
+            ],
+            "description": "ALL (default), USER (My Calendar and sub-calendars) or SUBSCRIBE (subscribed calendars)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/api/calendar/calendars",
+        "queryParams": {
+          "filter": "$filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_list_events",
+      "description": "List Talk Calendar events of a period: `events` with id, title, type (USER, TEAM, PUBLIC, SUBSCRIBE), calendar_id, is_host, time (start_at, end_at, time_zone, all_day) and color, plus `has_next` and `after_url`. Give either `preset` or both `from` and `to` (at most 31 days apart). Events this Kakao app did not create come back with their time only. Needs talk_calendar. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "preset": {
+            "type": "string",
+            "enum": [
+              "TODAY",
+              "THIS_WEEK",
+              "THIS_MONTH"
+            ],
+            "description": "TODAY, THIS_WEEK (from Sunday) or THIS_MONTH. Used instead of from and to."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period, RFC 3339 in UTC, e.g. 2026-11-01T00:00:00Z. Ignored when preset is given."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period, RFC 3339 in UTC, e.g. 2026-11-30T00:00:00Z, at most 31 days after from."
+          },
+          "calendar_id": {
+            "type": "string",
+            "description": "Only this calendar (primary or an id of kakao_list_calendars). Leave out for all calendars."
+          },
+          "time_zone": {
+            "type": "string",
+            "description": "IANA time zone the preset is worked out in, default Asia/Seoul."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Events per page, default 100, at most 1000."
+          },
+          "next_page_token": {
+            "type": "string",
+            "description": "The next_page_token found in `after_url` of the previous page; from, to and limit are then ignored."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/api/calendar/events",
+        "queryParams": {
+          "preset": "$preset",
+          "from": "$from",
+          "to": "$to",
+          "calendar_id": "$calendar_id",
+          "time_zone": "$time_zone",
+          "limit": "$limit",
+          "next_page_token": "$next_page_token"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_get_event",
+      "description": "Read one personal Talk Calendar event in full: title, type, calendar_id, time, is_host, recurrence (`rrule`, `dt_start`), description, location, reminders and color. For one occurrence of a recurring event pass the occurrence id (event id, underscore, start time). Needs talk_calendar. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id from kakao_list_events, e.g. 6358e3987ec8e318d0b813bc or 6358e3987ec8e318d0b813bc_20220517T120000Z for an occurrence."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/api/calendar/event",
+        "queryParams": {
+          "event_id": "$event_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "kakao_create_event",
+      "description": "Create an event in the signed-in user's Talk Calendar and return its `event_id`. Times are RFC 3339 in UTC; `time_zone` only says how the event is shown. Events can be added to My Calendar (primary) or to a sub-calendar this Kakao app created. Needs the consent item talk_calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 50,
+            "description": "Event title, at most 50 characters."
+          },
+          "start_at": {
+            "type": "string",
+            "description": "Start, RFC 3339 in UTC on a 5-minute step, e.g. 2026-11-27T03:00:00Z (12:00 in Seoul)."
+          },
+          "end_at": {
+            "type": "string",
+            "description": "End, RFC 3339 in UTC on a 5-minute step, after start_at."
+          },
+          "time_zone": {
+            "type": "string",
+            "default": "Asia/Seoul",
+            "description": "IANA time zone of the event, default Asia/Seoul."
+          },
+          "all_day": {
+            "type": "boolean",
+            "default": false,
+            "description": "true for an all-day event; start_at and end_at are then midnight of the first day and of the day after the last."
+          },
+          "calendar_id": {
+            "type": "string",
+            "description": "Calendar to add the event to, default primary (My Calendar)."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 5000,
+            "description": "Event description, at most 5,000 characters."
+          },
+          "rrule": {
+            "type": "string",
+            "description": "Recurrence as an RFC 5545 RRULE, e.g. FREQ=WEEKLY;UNTIL=20261231T000000Z. Leave out for a single event."
+          },
+          "location": {
+            "type": "object",
+            "description": "Place of the event: `name` (required inside it, at most 100 characters) and optionally `address`, `latitude`, `longitude`."
+          },
+          "reminders": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "integer"
+            },
+            "description": "Up to 2 reminders in minutes before the start, in multiples of 5 (0 to 43200). Leave out for the calendar default."
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "BLUE",
+              "ROYAL_BLUE",
+              "NAVY_BLUE",
+              "RED",
+              "PINK",
+              "ORANGE",
+              "GREEN",
+              "LIME",
+              "OLIVE",
+              "MINT",
+              "MAGENTA",
+              "VIOLET",
+              "LAVENDER",
+              "BROWN",
+              "GRAY"
+            ],
+            "description": "Event colour by name. Leave out for the colour of the calendar."
+          }
+        },
+        "required": [
+          "title",
+          "start_at",
+          "end_at"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/api/calendar/create/event",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "calendar_id": "$calendar_id",
+          "event": {
+            "__json": {
+              "title": "$title",
+              "time": {
+                "start_at": "$start_at",
+                "end_at": "$end_at",
+                "time_zone": "$time_zone",
+                "all_day": "$all_day"
+              },
+              "rrule": "$rrule",
+              "description": "$description",
+              "location": "$location",
+              "reminders": "$reminders",
+              "color": "$color"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "kakao_update_event",
+      "description": "Change a personal Talk Calendar event the signed-in user hosts: title, time, recurrence, description, location, reminders or colour. Fields left out keep their value; give at least one. For a recurring event say with `recur_update_type` which occurrences change. Returns the `event_id` (nothing for a recurring event). Needs talk_calendar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, or the occurrence id of a recurring event."
+          },
+          "recur_update_type": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "THIS",
+              "THIS_AND_FOLLOWING"
+            ],
+            "description": "Required for a recurring event: ALL, THIS (this occurrence only; time zone, reminders, colour and recurrence cannot change) or THIS_AND_FOLLOWING."
+          },
+          "title": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "New title, at most 50 characters."
+          },
+          "time": {
+            "type": "object",
+            "description": "New time: `start_at` and `end_at` (RFC 3339 in UTC), and optionally `time_zone`, `all_day`. Parts left out keep their value."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 5000,
+            "description": "Event description, at most 5,000 characters."
+          },
+          "rrule": {
+            "type": "string",
+            "description": "Recurrence as an RFC 5545 RRULE, e.g. FREQ=WEEKLY;UNTIL=20261231T000000Z. Leave out for a single event."
+          },
+          "location": {
+            "type": "object",
+            "description": "Place of the event: `name` (required inside it, at most 100 characters) and optionally `address`, `latitude`, `longitude`."
+          },
+          "reminders": {
+            "type": "array",
+            "maxItems": 2,
+            "items": {
+              "type": "integer"
+            },
+            "description": "Up to 2 reminders in minutes before the start, in multiples of 5 (0 to 43200). Leave out for the calendar default."
+          },
+          "color": {
+            "type": "string",
+            "enum": [
+              "BLUE",
+              "ROYAL_BLUE",
+              "NAVY_BLUE",
+              "RED",
+              "PINK",
+              "ORANGE",
+              "GREEN",
+              "LIME",
+              "OLIVE",
+              "MINT",
+              "MAGENTA",
+              "VIOLET",
+              "LAVENDER",
+              "BROWN",
+              "GRAY"
+            ],
+            "description": "Event colour by name. Leave out for the colour of the calendar."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/api/calendar/update/event/host",
+        "headers": {
+          "Content-Type": "application/x-www-form-urlencoded;charset=utf-8"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "event_id": "$event_id",
+          "recur_update_type": "$recur_update_type",
+          "event": {
+            "__json": {
+              "title": "$title",
+              "time": "$time",
+              "rrule": "$rrule",
+              "description": "$description",
+              "location": "$location",
+              "reminders": "$reminders",
+              "color": "$color"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "kakao_delete_event",
+      "enabled": false,
+      "description": "Delete a personal event (or remove a public event) from the signed-in user's Talk Calendar. This cannot be undone. For a recurring event `recur_update_type` says which occurrences go. Installed switched off; confirm the event with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "string",
+            "description": "Event id, or the occurrence id of a recurring event."
+          },
+          "recur_update_type": {
+            "type": "string",
+            "enum": [
+              "ALL",
+              "THIS",
+              "THIS_AND_FOLLOWING"
+            ],
+            "description": "Required for a recurring event: ALL, THIS or THIS_AND_FOLLOWING."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/api/calendar/delete/event",
+        "queryParams": {
+          "event_id": "$event_id",
+          "recur_update_type": "$recur_update_type"
+        }
+      }
+    }
+  ]
+}

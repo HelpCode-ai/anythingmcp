@@ -1,0 +1,1567 @@
+{
+  "slug": "europa3000",
+  "name": "europa3000",
+  "description": "europa3000 neo, the Swiss ERP by europa3000 AG, through its Web API: addresses, articles with customer prices, supplier articles, sales statistics, debtor open items, offers, orders, delivery notes and invoices with lines, stocks, and generic access to every table. Updates articles and supplier articles, creates addresses. Self-hosted Web API with user and password.",
+  "aliases": [
+    "europa3000 neo",
+    "Europa 3000",
+    "e3k",
+    "E3K Web API"
+  ],
+  "region": "ch",
+  "category": "erp",
+  "icon": "europa3000",
+  "docsUrl": "https://webapi.europa3000.ch",
+  "prerequisites": "europa3000 neo with the Web API add-on, installed by your europa3000 partner and reachable from AnythingMCP over HTTPS, and a Web API user (dashboard, Access Control) whose group has the permissions the AI should have.",
+  "requiredEnvVars": [
+    "EUROPA3000_URL",
+    "EUROPA3000_USERNAME",
+    "EUROPA3000_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "EUROPA3000_API_KEY"
+  ],
+  "envVarMeta": {
+    "EUROPA3000_URL": {
+      "label": "Web API address",
+      "kind": "address",
+      "help": "The address of your europa3000 Web API dashboard, usually ending in /E3k.Web, without /api and without a trailing slash. On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "https://erp.example.ch/E3k.Web",
+      "link": "https://webapi.europa3000.ch",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https:// or http://, without a trailing slash, e.g. https://erp.example.ch/E3k.Web."
+    },
+    "EUROPA3000_USERNAME": {
+      "label": "Web API user",
+      "kind": "credential",
+      "help": "The login of the user created in the Web API dashboard under Access Control, User Manager.",
+      "link": "https://webapi.europa3000.ch",
+      "pattern": "^[^:]+$",
+      "patternMessage": "Enter the user name only, without a colon or password."
+    },
+    "EUROPA3000_PASSWORD": {
+      "label": "Password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that Web API user. It is set and reset in the Web API dashboard, User Manager.",
+      "link": "https://webapi.europa3000.ch"
+    },
+    "EUROPA3000_API_KEY": {
+      "label": "Application API key (only if required)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only needed when the Web API has Anonymous Applications set to Inactive. Dashboard, Access Control, Api-Key Manager: create a key and copy it before saving. 64 characters.",
+      "link": "https://webapi.europa3000.ch",
+      "pattern": "^[A-Za-z0-9]{64}$",
+      "patternMessage": "Paste the 64-character key exactly as the Api-Key Manager showed it."
+    }
+  },
+  "verifyHints": {
+    "401": "The Web API refused the login. Check the user and password (Web API dashboard, Access Control, User Manager) and, if the Web API requires application keys, EUROPA3000_API_KEY.",
+    "403": "The login worked but the user may not use this endpoint. Give its group the permission in the Web API dashboard, Access Control, Group Manager.",
+    "404": "Nothing answered at this address. Check EUROPA3000_URL: the address of the Web API dashboard, usually ending in /E3k.Web, without /api.",
+    "unreachable": "AnythingMCP cannot reach the Web API. It runs on your own server: it must be reachable over HTTPS from AnythingMCP (on Cloud: from the internet)."
+  },
+  "probe": {
+    "tool": "europa3000_get_active_client"
+  },
+  "connector": {
+    "name": "europa3000 Web API",
+    "type": "REST",
+    "baseUrl": "{{EUROPA3000_URL}}/api",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{EUROPA3000_USERNAME}}",
+      "password": "{{EUROPA3000_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "instructions": "## europa3000\nThis connector works with the **europa3000 Web API**, the REST interface of the Swiss ERP europa3000 neo (europa3000 AG): addresses, articles with customer prices, supplier articles, sales statistics, debtor vouchers, sales vouchers with their lines, stocks, and every other table of the system through generic read tools. It can change articles and supplier articles and create addresses. Each company runs its own Web API, so the address is yours.\n\n**Setup**\n1. The Web API is an add-on to europa3000 neo that your europa3000 partner installs on a Windows server (IIS). It must be reachable from AnythingMCP over HTTPS; on AnythingMCP Cloud that means a public address.\n2. Put the address of the Web API into `EUROPA3000_URL`: the address of its dashboard, which usually ends in `/E3k.Web`, without `/api` and without a trailing slash.\n3. In the Web API dashboard open **Access Control**: create a group with the permissions the AI should have (Group Manager), then a user for it (User Manager) and set its password. Enter that user in `EUROPA3000_USERNAME` and `EUROPA3000_PASSWORD`. The connector signs in with HTTP Basic authentication on every call.\n4. Only if the Web API has **Anonymous Applications** set to Inactive: create a key under Access Control, Api-Key Manager, copy it before saving (it is shown in full only once) and paste it into `EUROPA3000_API_KEY`. It is sent as the `E3k-Api-Key` header.\n\n**Where to start**: `europa3000_get_active_client` shows the client (Mandant) the user works in and proves the login. `europa3000_check_readiness` answers without a login and tells whether the Web API reaches its databases. `europa3000_list_clients` lists the clients of the installation; the connector does not switch clients.\n\n**Master data**: `europa3000_list_articles`, `europa3000_get_article` and `europa3000_get_article_price` (the price for one customer and quantity); `europa3000_list_supplier_articles` for purchase conditions; `europa3000_list_addresses` and `europa3000_get_address`; `europa3000_list_stocks` for the warehouses.\n\n**Sales and open items**: `europa3000_list_sales_statistics` (one record per sold line), `europa3000_list_debtor_vouchers` (customer open items with status and balance), `europa3000_list_vouchers` and `europa3000_get_voucher` for offers, order confirmations, orders, delivery notes, dispatch notes, invoices and credit notes.\n\n**Everything else by endpoint**: all objects share the same actions. `europa3000_list_records`, `europa3000_search_records`, `europa3000_get_record_by_key` and `europa3000_count_records` take the endpoint name (Debtor, Creditor, CreditorVoucher, Project, ProductGroup, PurchaseOrder, SerialNumber, ServiceContract and more) and return objects with named properties. `europa3000_get_endpoint_info` returns the table number, the key field and the required fields behind an endpoint.\n\n**Everything else by table**: europa3000 names tables T001 to T999 and fields F001 and up. `europa3000_list_table_fields` and `europa3000_get_table_field_names` describe a table; `europa3000_query_table` reads chosen fields with conditions; `europa3000_count_table_records` and `europa3000_count_table_records_filtered` count; `europa3000_get_table_record` reads one record by id.\n\n**Filters**: a condition is `FieldNumber` (the number of the field), `Value`, `Type` (Equal, NotEqual, Like, BiggerAs, SmallerAs, BiggerOrEqual, SmallerOrEqual, Between) and `Combine`, which says how the next condition is joined: AndClampNo for AND, OrClampNo for OR; the other Combine values open and close brackets. Like uses `%` and `_`. Between takes two values separated by a semicolon. To find empty values use Value `!` with Type SmallerAs.\n\n**Paging**: `top` is the number of records and `start` the list start index. The tools ask for 50 records unless told otherwise; tables can hold hundreds of thousands of rows, so filter first and page in steps.\n\n**Writes**: `europa3000_update_article` and `europa3000_update_supplier_article` change the fields you send and leave the rest; the key field must be in the values. `europa3000_create_address` needs LastName, Postcode and Place. `europa3000_update_table_record` can change any table and is installed switched off. An answer of 0 means the record was not written. Some fields are locked by europa3000 and are ignored or refused. The connector creates no vouchers, books no payments or stock movements and deletes nothing.\n\n**Keys and record ids**: identify records by their key value (address number, article number, voucher number). The record id is reassigned when europa3000 converts a table or imports a client, so never store it. Keep leading zeros in numbers such as 000001.\n\n**Errors**: 401 means the user, the password or the API key was refused; 403 that the user group lacks the permission for that endpoint; 404 that no record matched, or that the address is not a Web API. Error bodies carry `Message` and `Code`. What the user may read and change is decided by the permissions of its group in the Web API dashboard. Plugin endpoints (`api/Extension/...`) are installation specific and not covered.",
+  "tools": [
+    {
+      "name": "europa3000_get_active_client",
+      "description": "Return the client (Mandant) the Web API user is working in, as europa3000 stores it (number, name, department, street, place). All other calls read and write the data of this client. Read-only; a good first call to check the connection.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Client/ActiveFull",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_clients",
+      "description": "List the clients (Mandanten) of the europa3000 installation: Number, ClientNumber, Name, ClientName, Department, Street, Place and record Id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Client",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_check_readiness",
+      "description": "Check whether the Web API and its dependencies are up: the europa3000 system path, the europa3000 database and the Web API database, each with IsRunning. Answers without a login, so it tells a wrong address from a wrong password. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Monitoring/Readiness",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_articles",
+      "description": "List articles (table T066): ArticleNumber, Barcode, ArticleName, Quantity (stock), DescriptionUnit, QuantityPerPrice, ProductGroup, ArticleCode, VatCode, SalesPriceNet, SalesPriceGross, AccountRevenue, DateModified and record Id. Page with `top` and `start`; to filter use europa3000_search_records with endpoint Article. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Article",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_get_article",
+      "description": "Read one article by its article number (the key field): name, barcode, stock quantity, unit, product group, VAT code, net and gross sales price and revenue account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_number": {
+            "type": "string",
+            "description": "Article number as in europa3000, e.g. 200.100."
+          }
+        },
+        "required": [
+          "article_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Article/Key/{article_number}",
+        "encodePathParams": true,
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_get_article_price",
+      "description": "Calculate the price of one article for one customer address, with the customer and quantity conditions europa3000 applies: ArticelNumber, Discount, CAMPrice (the customer article matrix price) and CalculatedPrice. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_number": {
+            "type": "string",
+            "description": "Article number."
+          },
+          "address_number": {
+            "type": "string",
+            "description": "Address number of the customer, e.g. 000001."
+          },
+          "gross_net": {
+            "type": "string",
+            "enum": [
+              "BaseRecord",
+              "Gross",
+              "Net"
+            ],
+            "default": "BaseRecord",
+            "description": "Price basis: Gross, Net, or BaseRecord to use what the master data says. Default BaseRecord."
+          },
+          "quantity": {
+            "type": "number",
+            "description": "Quantity, for quantity scale prices."
+          }
+        },
+        "required": [
+          "article_number",
+          "address_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Article/CalculatedPricesOfArticle",
+        "queryParams": {
+          "article": "$article_number",
+          "address": "$address_number",
+          "voucherGrossNet": "$gross_net",
+          "quantity": "$quantity"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_update_article",
+      "description": "Change fields of one article. Send the article number in the key field F001 plus the fields to change, keyed by field name. Returns the record id of the changed article as text; 0 means nothing was changed. Some fields are locked by europa3000 (for articles F010, F012, F031, F034 to F040, F042 to F044, F048, F050, F096) and cannot be written. Show the user the changes and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Field values of the article, with the article number in F001. All values are strings, keyed by field name, e.g. {\"F001\": \"200.100\", \"F002\": \"5901234123457\"}. The key field must be included; other fields left out stay as they are."
+          },
+          "skip_synchronization": {
+            "type": "boolean",
+            "description": "true leaves the synchronization flag (field F099) untouched. Leave out unless the installation uses that flag for its own sync."
+          }
+        },
+        "required": [
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Article/Update",
+        "queryParams": {
+          "skipSynchronization": "$skip_synchronization"
+        },
+        "bodyMapping": {
+          "__merge": "$values"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_supplier_articles",
+      "description": "List supplier articles (purchase conditions per supplier and article): AddressNumber of the supplier, ArticleNumber, Description, SupplierArticleNumber, PurchasePriceNet, PurchasePriceGross, DiscountPercent, SurchargePercent, DeliveryTime, MinOrderQuantity, QuantityUnit, SupplyOnOrder, LastOrder, LastIncomingGoods and record Id. To filter use europa3000_search_records with endpoint SupplierArticle. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/SupplierArticle",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_update_supplier_article",
+      "description": "Change fields of one supplier article (purchase price, supplier article number, delivery time and so on). Send the key field of the table plus the fields to change, keyed by field name; europa3000_get_endpoint_info with endpoint SupplierArticle names the key field. Returns the record id as text; 0 means nothing was changed. Show the user the changes and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Field values of the supplier article, including its key field. All values are strings, keyed by field name, e.g. {\"F001\": \"200.100\", \"F002\": \"5901234123457\"}. The key field must be included; other fields left out stay as they are."
+          },
+          "skip_synchronization": {
+            "type": "boolean",
+            "description": "true leaves the synchronization flag (field F099) untouched. Leave out unless the installation uses that flag for its own sync."
+          }
+        },
+        "required": [
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/SupplierArticle/Update",
+        "queryParams": {
+          "skipSynchronization": "$skip_synchronization"
+        },
+        "bodyMapping": {
+          "__merge": "$values"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_addresses",
+      "description": "List addresses (table T065: customers, suppliers and other contacts): AddressNumber, Title, Salutation, FirstName, LastName, FAO, Street, PostOfficeBox, Postcode, Place, Country, PhoneBusiness, PhoneHome, PhoneMobile, Email, Homepage, Notes, DateModified and record Id. To filter use europa3000_search_records with endpoint Address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Address",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_get_address",
+      "description": "Read one address by its address number (the key field): name, street, postcode, place, country, phone numbers, email, homepage and notes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address_number": {
+            "type": "string",
+            "description": "Address number as in europa3000, with leading zeros, e.g. 000001."
+          }
+        },
+        "required": [
+          "address_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Address/Key/{address_number}",
+        "encodePathParams": true,
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_create_address",
+      "description": "Create an address. LastName, Postcode and Place are required by europa3000. Returns the record id of the new address as text; 0 means it was not created. Read the address with europa3000_list_records or europa3000_search_records afterwards to learn its address number. Show the user what will be created and wait for their yes; never repeat a create that succeeded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_name": {
+            "type": "string",
+            "description": "Last name, or the company name for a company."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "title": {
+            "type": "string",
+            "description": "Title line of the address."
+          },
+          "salutation": {
+            "type": "string",
+            "description": "Salutation."
+          },
+          "for_attention_of": {
+            "type": "string",
+            "description": "For the attention of (field FAO)."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street and house number."
+          },
+          "post_office_box": {
+            "type": "string",
+            "description": "Post office box."
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Postcode."
+          },
+          "place": {
+            "type": "string",
+            "description": "Town."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country as europa3000 stores it."
+          },
+          "phone_business": {
+            "type": "string",
+            "description": "Business phone."
+          },
+          "phone_mobile": {
+            "type": "string",
+            "description": "Mobile phone."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "homepage": {
+            "type": "string",
+            "description": "Website."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          }
+        },
+        "required": [
+          "last_name",
+          "postcode",
+          "place"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Address/NewObject",
+        "bodyMapping": {
+          "LastName": "$last_name",
+          "FirstName": "$first_name",
+          "Title": "$title",
+          "Salutation": "$salutation",
+          "FAO": "$for_attention_of",
+          "Street": "$street",
+          "PostOfficeBox": "$post_office_box",
+          "Postcode": "$postcode",
+          "Place": "$place",
+          "Country": "$country",
+          "PhoneBusiness": "$phone_business",
+          "PhoneMobile": "$phone_mobile",
+          "Email": "$email",
+          "Homepage": "$homepage",
+          "Notes": "$notes"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_sales_statistics",
+      "description": "List sales statistic records: AddressNumber and Name of the customer, Postcode, ArticleNumber, Date, VoucherNumber, StockOutgoing (quantity sold), SalesNet, VatCode, Time, State and record Id. One record per sold voucher line. To filter by customer, article or date use europa3000_search_records with endpoint SalesStatistic. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/SalesStatistic",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_debtor_vouchers",
+      "description": "List debtor vouchers (customer open items and their history): AddressNumber, VoucherNumber, DateVoucher, Status (OpenInvoice, OpenCredit, OpenAdvancePayment, Completed, ReminderLevel1 to ReminderLevel9 and others), VoucherAmount, Balance, DatePayment, DatePaymentReminder and CreationType. To filter by customer or status use europa3000_search_records with endpoint DebtorVoucher. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/DebtorVoucher",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_vouchers",
+      "description": "List sales vouchers of one kind (offers, order confirmations, orders, delivery notes, dispatch notes, invoices or credit notes), header data only: VoucherNumber, VoucherDate, CustomerNumber, AddressDelivery, Status, OrderNumber, OfferNumber, ExternalNumber, ShippingCost, DownPayment, CostCenter and record Id. Read the lines with europa3000_get_voucher. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voucher_type": {
+            "type": "string",
+            "enum": [
+              "Offer",
+              "OrderConfirmation",
+              "Order",
+              "DeliveryNote",
+              "DispatchNote",
+              "Invoice",
+              "CreditNote"
+            ],
+            "description": "Kind of voucher: Offer, OrderConfirmation, Order, DeliveryNote, DispatchNote, Invoice or CreditNote."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        },
+        "required": [
+          "voucher_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{voucher_type}",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_get_voucher",
+      "description": "Read one sales voucher with all its lines by voucher number: the header (customer, delivery address, dates, status, shipping cost, down payment) and VoucherLines with articles, services, texts, discounts and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "voucher_type": {
+            "type": "string",
+            "enum": [
+              "Offer",
+              "OrderConfirmation",
+              "Order",
+              "DeliveryNote",
+              "DispatchNote",
+              "Invoice",
+              "CreditNote"
+            ],
+            "description": "Kind of voucher: Offer, OrderConfirmation, Order, DeliveryNote, DispatchNote, Invoice or CreditNote."
+          },
+          "voucher_number": {
+            "type": "string",
+            "description": "Voucher number as in europa3000."
+          }
+        },
+        "required": [
+          "voucher_type",
+          "voucher_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{voucher_type}/WithLines/Key/{voucher_number}",
+        "encodePathParams": true,
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_stocks",
+      "description": "List the stocks (warehouses) of the client: Number, Description, whether it is a branch, and the AddressNumber of its location. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/MultipleStock",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_records",
+      "description": "List the records of any europa3000 object by its endpoint name, as objects with named properties (for example Debtor, Creditor, Project, ProductGroup, PurchaseOrder, SerialNumber). Page with `top` and `start`. For conditions use europa3000_search_records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "enum": [
+              "Account",
+              "Address",
+              "Article",
+              "Call",
+              "CashMovement",
+              "Client",
+              "ContactAddress",
+              "ContactPerson",
+              "Coworker",
+              "CreditNote",
+              "Creditor",
+              "CreditorPaymentInstitution",
+              "CreditorVoucher",
+              "CustomerArticleMatrix",
+              "Debtor",
+              "DebtorPayment",
+              "DebtorVoucher",
+              "DeliveryNote",
+              "Deployment",
+              "Diagnosis",
+              "DispatchNote",
+              "Document",
+              "EmailText",
+              "Employee",
+              "Invoice",
+              "Machinery",
+              "Offer",
+              "Order",
+              "OrderConfirmation",
+              "PayrollAccounting",
+              "Performance",
+              "PerformanceInvoice",
+              "Postcode",
+              "PreparedValue",
+              "ProductGroup",
+              "Project",
+              "ProjectService",
+              "PurchaseDeliveryRequest",
+              "PurchaseFrameworkOrder",
+              "PurchaseIncomingGoods",
+              "PurchaseOfferRequest",
+              "PurchaseOrder",
+              "Report",
+              "ReportVoucher",
+              "SalesStatistic",
+              "Schedule",
+              "SerialNumber",
+              "Service",
+              "ServiceContract",
+              "ServiceKind",
+              "Solution",
+              "SubledgerVoucher",
+              "SupplierArticle",
+              "SupplierArticleMatrix",
+              "Technician",
+              "TechnicianStock",
+              "WageType",
+              "WageTypePreAcquisition"
+            ],
+            "description": "The europa3000 object, by its Web API endpoint name, e.g. Address, Article, Debtor, Creditor, DebtorVoucher, CreditorVoucher, Invoice, Order, Offer, PurchaseOrder, Project, ProductGroup, SupplierArticle, SalesStatistic, SerialNumber, ServiceContract."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        },
+        "required": [
+          "endpoint"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{endpoint}",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_search_records",
+      "description": "Find records of any europa3000 object with where conditions and a sort order, as objects with named properties. Conditions name fields by number: look the numbers up with europa3000_get_endpoint_info (table number) and europa3000_list_table_fields. Page with `top` and `start`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "enum": [
+              "Account",
+              "Address",
+              "Article",
+              "Call",
+              "CashMovement",
+              "Client",
+              "ContactAddress",
+              "ContactPerson",
+              "Coworker",
+              "CreditNote",
+              "Creditor",
+              "CreditorPaymentInstitution",
+              "CreditorVoucher",
+              "CustomerArticleMatrix",
+              "Debtor",
+              "DebtorPayment",
+              "DebtorVoucher",
+              "DeliveryNote",
+              "Deployment",
+              "Diagnosis",
+              "DispatchNote",
+              "Document",
+              "EmailText",
+              "Employee",
+              "Invoice",
+              "Machinery",
+              "Offer",
+              "Order",
+              "OrderConfirmation",
+              "PayrollAccounting",
+              "Performance",
+              "PerformanceInvoice",
+              "Postcode",
+              "PreparedValue",
+              "ProductGroup",
+              "Project",
+              "ProjectService",
+              "PurchaseDeliveryRequest",
+              "PurchaseFrameworkOrder",
+              "PurchaseIncomingGoods",
+              "PurchaseOfferRequest",
+              "PurchaseOrder",
+              "Report",
+              "ReportVoucher",
+              "SalesStatistic",
+              "Schedule",
+              "SerialNumber",
+              "Service",
+              "ServiceContract",
+              "ServiceKind",
+              "Solution",
+              "SubledgerVoucher",
+              "SupplierArticle",
+              "SupplierArticleMatrix",
+              "Technician",
+              "TechnicianStock",
+              "WageType",
+              "WageTypePreAcquisition"
+            ],
+            "description": "The europa3000 object, by its Web API endpoint name, e.g. Address, Article, Debtor, Creditor, DebtorVoucher, CreditorVoucher, Invoice, Order, Offer, PurchaseOrder, Project, ProductGroup, SupplierArticle, SalesStatistic, SerialNumber, ServiceContract."
+          },
+          "filters": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "FieldNumber": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of the table field, e.g. 4 for F004."
+                },
+                "Value": {
+                  "type": "string",
+                  "description": "Value to compare with. Like uses % for many characters and _ for one; Between takes two values separated by a semicolon."
+                },
+                "Type": {
+                  "type": "string",
+                  "enum": [
+                    "Equal",
+                    "NotEqual",
+                    "Like",
+                    "BiggerAs",
+                    "SmallerAs",
+                    "BiggerOrEqual",
+                    "SmallerOrEqual",
+                    "Between"
+                  ],
+                  "description": "Comparison: Equal, NotEqual, Like, BiggerAs, SmallerAs, BiggerOrEqual, SmallerOrEqual or Between."
+                },
+                "Combine": {
+                  "type": "string",
+                  "enum": [
+                    "AndClampNo",
+                    "AndClampL",
+                    "AndClampR",
+                    "AndClampLR",
+                    "AndClampS",
+                    "AndClampSL",
+                    "AndClampSR",
+                    "AndClampSLR",
+                    "OrClampNo",
+                    "OrClampL",
+                    "OrClampR",
+                    "OrClampLR",
+                    "OrClampS",
+                    "OrClampSL",
+                    "OrClampSR",
+                    "OrClampSLR"
+                  ],
+                  "description": "How the next filter is joined: AndClampNo (AND) or OrClampNo (OR); the other values add brackets."
+                }
+              },
+              "required": [
+                "FieldNumber",
+                "Value",
+                "Type",
+                "Combine"
+              ]
+            },
+            "description": "Where conditions on table fields, e.g. [{\"FieldNumber\": 4, \"Value\": \"Muster%\", \"Type\": \"Like\", \"Combine\": \"AndClampNo\"}]. Field numbers come from europa3000_list_table_fields. To find empty values use Value \"!\" with Type \"SmallerAs\"."
+          },
+          "sortings": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "properties": {
+                "FieldNumber": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of the table field to sort by."
+                },
+                "Descending": {
+                  "type": "boolean",
+                  "description": "true sorts from high to low."
+                }
+              },
+              "required": [
+                "FieldNumber"
+              ]
+            },
+            "description": "Sort order, e.g. [{\"FieldNumber\": 1, \"Descending\": false}]. Leave out for the table order."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        },
+        "required": [
+          "endpoint",
+          "filters"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/{endpoint}",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "bodyMapping": {
+          "Filters": "$filters",
+          "Sortings": "$sortings"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "europa3000_get_record_by_key",
+      "description": "Read one record of any europa3000 object by the value of its key field (address number, article number, voucher number and so on). europa3000 recommends the key value, not the record id, to identify a record. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "enum": [
+              "Account",
+              "Address",
+              "Article",
+              "Call",
+              "CashMovement",
+              "Client",
+              "ContactAddress",
+              "ContactPerson",
+              "Coworker",
+              "CreditNote",
+              "Creditor",
+              "CreditorPaymentInstitution",
+              "CreditorVoucher",
+              "CustomerArticleMatrix",
+              "Debtor",
+              "DebtorPayment",
+              "DebtorVoucher",
+              "DeliveryNote",
+              "Deployment",
+              "Diagnosis",
+              "DispatchNote",
+              "Document",
+              "EmailText",
+              "Employee",
+              "Invoice",
+              "Machinery",
+              "Offer",
+              "Order",
+              "OrderConfirmation",
+              "PayrollAccounting",
+              "Performance",
+              "PerformanceInvoice",
+              "Postcode",
+              "PreparedValue",
+              "ProductGroup",
+              "Project",
+              "ProjectService",
+              "PurchaseDeliveryRequest",
+              "PurchaseFrameworkOrder",
+              "PurchaseIncomingGoods",
+              "PurchaseOfferRequest",
+              "PurchaseOrder",
+              "Report",
+              "ReportVoucher",
+              "SalesStatistic",
+              "Schedule",
+              "SerialNumber",
+              "Service",
+              "ServiceContract",
+              "ServiceKind",
+              "Solution",
+              "SubledgerVoucher",
+              "SupplierArticle",
+              "SupplierArticleMatrix",
+              "Technician",
+              "TechnicianStock",
+              "WageType",
+              "WageTypePreAcquisition"
+            ],
+            "description": "The europa3000 object, by its Web API endpoint name, e.g. Address, Article, Debtor, Creditor, DebtorVoucher, CreditorVoucher, Invoice, Order, Offer, PurchaseOrder, Project, ProductGroup, SupplierArticle, SalesStatistic, SerialNumber, ServiceContract."
+          },
+          "key": {
+            "type": "string",
+            "description": "Value of the key field, exactly as stored (leading zeros included)."
+          }
+        },
+        "required": [
+          "endpoint",
+          "key"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{endpoint}/Key/{key}",
+        "encodePathParams": true,
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_count_records",
+      "description": "Count the records of any europa3000 object by its endpoint name. Returns one number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "enum": [
+              "Account",
+              "Address",
+              "Article",
+              "Call",
+              "CashMovement",
+              "Client",
+              "ContactAddress",
+              "ContactPerson",
+              "Coworker",
+              "CreditNote",
+              "Creditor",
+              "CreditorPaymentInstitution",
+              "CreditorVoucher",
+              "CustomerArticleMatrix",
+              "Debtor",
+              "DebtorPayment",
+              "DebtorVoucher",
+              "DeliveryNote",
+              "Deployment",
+              "Diagnosis",
+              "DispatchNote",
+              "Document",
+              "EmailText",
+              "Employee",
+              "Invoice",
+              "Machinery",
+              "Offer",
+              "Order",
+              "OrderConfirmation",
+              "PayrollAccounting",
+              "Performance",
+              "PerformanceInvoice",
+              "Postcode",
+              "PreparedValue",
+              "ProductGroup",
+              "Project",
+              "ProjectService",
+              "PurchaseDeliveryRequest",
+              "PurchaseFrameworkOrder",
+              "PurchaseIncomingGoods",
+              "PurchaseOfferRequest",
+              "PurchaseOrder",
+              "Report",
+              "ReportVoucher",
+              "SalesStatistic",
+              "Schedule",
+              "SerialNumber",
+              "Service",
+              "ServiceContract",
+              "ServiceKind",
+              "Solution",
+              "SubledgerVoucher",
+              "SupplierArticle",
+              "SupplierArticleMatrix",
+              "Technician",
+              "TechnicianStock",
+              "WageType",
+              "WageTypePreAcquisition"
+            ],
+            "description": "The europa3000 object, by its Web API endpoint name, e.g. Address, Article, Debtor, Creditor, DebtorVoucher, CreditorVoucher, Invoice, Order, Offer, PurchaseOrder, Project, ProductGroup, SupplierArticle, SalesStatistic, SerialNumber, ServiceContract."
+          }
+        },
+        "required": [
+          "endpoint"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{endpoint}/Count",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_get_endpoint_info",
+      "description": "Return one fact about the table behind an endpoint: Tablenumber (66), Tablename (T066), KeyFieldnumber (1), KeyFieldname (F001) or RequiredFields (the fields a new record needs). Use it before filtering, querying a table or updating a record. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "endpoint": {
+            "type": "string",
+            "enum": [
+              "Account",
+              "Address",
+              "Article",
+              "Call",
+              "CashMovement",
+              "Client",
+              "ContactAddress",
+              "ContactPerson",
+              "Coworker",
+              "CreditNote",
+              "Creditor",
+              "CreditorPaymentInstitution",
+              "CreditorVoucher",
+              "CustomerArticleMatrix",
+              "Debtor",
+              "DebtorPayment",
+              "DebtorVoucher",
+              "DeliveryNote",
+              "Deployment",
+              "Diagnosis",
+              "DispatchNote",
+              "Document",
+              "EmailText",
+              "Employee",
+              "Invoice",
+              "Machinery",
+              "Offer",
+              "Order",
+              "OrderConfirmation",
+              "PayrollAccounting",
+              "Performance",
+              "PerformanceInvoice",
+              "Postcode",
+              "PreparedValue",
+              "ProductGroup",
+              "Project",
+              "ProjectService",
+              "PurchaseDeliveryRequest",
+              "PurchaseFrameworkOrder",
+              "PurchaseIncomingGoods",
+              "PurchaseOfferRequest",
+              "PurchaseOrder",
+              "Report",
+              "ReportVoucher",
+              "SalesStatistic",
+              "Schedule",
+              "SerialNumber",
+              "Service",
+              "ServiceContract",
+              "ServiceKind",
+              "Solution",
+              "SubledgerVoucher",
+              "SupplierArticle",
+              "SupplierArticleMatrix",
+              "Technician",
+              "TechnicianStock",
+              "WageType",
+              "WageTypePreAcquisition"
+            ],
+            "description": "The europa3000 object, by its Web API endpoint name, e.g. Address, Article, Debtor, Creditor, DebtorVoucher, CreditorVoucher, Invoice, Order, Offer, PurchaseOrder, Project, ProductGroup, SupplierArticle, SalesStatistic, SerialNumber, ServiceContract."
+          },
+          "info": {
+            "type": "string",
+            "enum": [
+              "Tablenumber",
+              "Tablename",
+              "KeyFieldnumber",
+              "KeyFieldname",
+              "RequiredFields"
+            ],
+            "default": "Tablenumber",
+            "description": "What to return: Tablenumber (default), Tablename, KeyFieldnumber, KeyFieldname or RequiredFields."
+          }
+        },
+        "required": [
+          "endpoint"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{endpoint}/{info}",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_list_table_fields",
+      "description": "Describe the fields of a table: per field its Number, Name, Length, DataType (String, Boolean, DateTime, Numeric, TimeStamp, Picture), Flag (such as Required or WriteLock), SystemType and localized names. Needed to build filters and field lists. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Table number, 1 to 999, without the T: 65 for T065 (addresses), 66 for T066 (articles). europa3000_get_endpoint_info returns the number behind an endpoint."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Field/Details/{table}",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_get_table_field_names",
+      "description": "Return the localized display names of the fields of a table, per language, to translate F001 style names into what users see in europa3000. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Table number, 1 to 999, without the T: 65 for T065 (addresses), 66 for T066 (articles). europa3000_get_endpoint_info returns the number behind an endpoint."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Field/Localization/{table}",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_query_table",
+      "description": "Read records of any table by number with a field list, where conditions and a sort order. Returns one object per record keyed by field name (F001, F002 and so on) with only the fields asked for. The most direct way to report on data without an endpoint of its own. Page with `top` and `start`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Table number, 1 to 999, without the T: 65 for T065 (addresses), 66 for T066 (articles). europa3000_get_endpoint_info returns the number behind an endpoint."
+          },
+          "fields": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string"
+            },
+            "description": "Fields to return, by field name, e.g. [\"F001\", \"F004\", \"F010\"]."
+          },
+          "filters": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "properties": {
+                "FieldNumber": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of the table field, e.g. 4 for F004."
+                },
+                "Value": {
+                  "type": "string",
+                  "description": "Value to compare with. Like uses % for many characters and _ for one; Between takes two values separated by a semicolon."
+                },
+                "Type": {
+                  "type": "string",
+                  "enum": [
+                    "Equal",
+                    "NotEqual",
+                    "Like",
+                    "BiggerAs",
+                    "SmallerAs",
+                    "BiggerOrEqual",
+                    "SmallerOrEqual",
+                    "Between"
+                  ],
+                  "description": "Comparison: Equal, NotEqual, Like, BiggerAs, SmallerAs, BiggerOrEqual, SmallerOrEqual or Between."
+                },
+                "Combine": {
+                  "type": "string",
+                  "enum": [
+                    "AndClampNo",
+                    "AndClampL",
+                    "AndClampR",
+                    "AndClampLR",
+                    "AndClampS",
+                    "AndClampSL",
+                    "AndClampSR",
+                    "AndClampSLR",
+                    "OrClampNo",
+                    "OrClampL",
+                    "OrClampR",
+                    "OrClampLR",
+                    "OrClampS",
+                    "OrClampSL",
+                    "OrClampSR",
+                    "OrClampSLR"
+                  ],
+                  "description": "How the next filter is joined: AndClampNo (AND) or OrClampNo (OR); the other values add brackets."
+                }
+              },
+              "required": [
+                "FieldNumber",
+                "Value",
+                "Type",
+                "Combine"
+              ]
+            },
+            "description": "Where conditions on table fields, e.g. [{\"FieldNumber\": 4, \"Value\": \"Muster%\", \"Type\": \"Like\", \"Combine\": \"AndClampNo\"}]. Field numbers come from europa3000_list_table_fields. To find empty values use Value \"!\" with Type \"SmallerAs\"."
+          },
+          "sortings": {
+            "type": "array",
+            "default": [],
+            "items": {
+              "type": "object",
+              "properties": {
+                "FieldNumber": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "Number of the table field to sort by."
+                },
+                "Descending": {
+                  "type": "boolean",
+                  "description": "true sorts from high to low."
+                }
+              },
+              "required": [
+                "FieldNumber"
+              ]
+            },
+            "description": "Sort order, e.g. [{\"FieldNumber\": 1, \"Descending\": false}]. Leave out for the table order."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 50,
+            "description": "How many records to return (query parameter `top`). Default 50."
+          },
+          "start": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "List start index (query parameter `start`), for paging: raise it by `top` until fewer records than asked for come back."
+          }
+        },
+        "required": [
+          "table",
+          "fields"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Table/{table}/Custom",
+        "queryParams": {
+          "top": "$top",
+          "start": "$start"
+        },
+        "bodyMapping": {
+          "Fields": "$fields",
+          "Filters": "$filters",
+          "Sortings": "$sortings"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "europa3000_count_table_records",
+      "description": "Count all records of a table by number. Returns one number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Table number, 1 to 999, without the T: 65 for T065 (addresses), 66 for T066 (articles). europa3000_get_endpoint_info returns the number behind an endpoint."
+          }
+        },
+        "required": [
+          "table"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Table/{table}/Count",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_count_table_records_filtered",
+      "description": "Count the records of a table that match one condition on one field, e.g. all articles of a product group. Returns one number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Table number, 1 to 999, without the T: 65 for T065 (addresses), 66 for T066 (articles). europa3000_get_endpoint_info returns the number behind an endpoint."
+          },
+          "field_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of the field to compare, e.g. 4 for F004."
+          },
+          "value": {
+            "type": "string",
+            "description": "Value to compare with. Like uses % and _; Between takes two values separated by a semicolon."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "Equal",
+              "NotEqual",
+              "Like",
+              "BiggerAs",
+              "SmallerAs",
+              "BiggerOrEqual",
+              "SmallerOrEqual",
+              "Between"
+            ],
+            "default": "Equal",
+            "description": "Comparison: Equal (default), NotEqual, Like, BiggerAs, SmallerAs, BiggerOrEqual, SmallerOrEqual or Between."
+          }
+        },
+        "required": [
+          "table",
+          "field_number",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Table/{table}/Count",
+        "bodyMapping": [
+          {
+            "FieldNumber": "$field_number",
+            "Value": "$value",
+            "Type": "$type",
+            "Combine": "AndClampNo"
+          }
+        ],
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "europa3000_get_table_record",
+      "description": "Read one record of any table by its record id, with all fields keyed by field name. Record ids can change when europa3000 converts a table, so use them only right after reading them; use the key value for anything longer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Table number, 1 to 999, without the T: 65 for T065 (addresses), 66 for T066 (articles). europa3000_get_endpoint_info returns the number behind an endpoint."
+          },
+          "record_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Record id (field Id of a record read just before)."
+          }
+        },
+        "required": [
+          "table",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Table/{table}/{record_id}",
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      }
+    },
+    {
+      "name": "europa3000_update_table_record",
+      "description": "Change fields of one record in any table by number. Send the key field of the table plus the fields to change, keyed by field name. Returns the record id as text; 0 means nothing was changed. It can write to every table the Web API user may change, including bookkeeping tables, so it is installed switched off. Show the user the table, the key and the changes and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 999,
+            "description": "Table number, 1 to 999, without the T: 65 for T065 (addresses), 66 for T066 (articles). europa3000_get_endpoint_info returns the number behind an endpoint."
+          },
+          "values": {
+            "type": "object",
+            "additionalProperties": {
+              "type": "string"
+            },
+            "description": "Field values of the record, including the key field of the table. All values are strings, keyed by field name, e.g. {\"F001\": \"200.100\", \"F002\": \"5901234123457\"}. The key field must be included; other fields left out stay as they are."
+          }
+        },
+        "required": [
+          "table",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/Table/{table}/Update",
+        "bodyMapping": {
+          "__merge": "$values"
+        },
+        "headers": {
+          "E3k-Api-Key": "${EUROPA3000_API_KEY}"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

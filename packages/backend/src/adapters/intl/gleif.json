@@ -1,0 +1,701 @@
+{
+  "slug": "gleif",
+  "name": "GLEIF LEI",
+  "aliases": [
+    "LEI",
+    "Legal Entity Identifier",
+    "Global LEI Index",
+    "GLEIF API",
+    "LEI lookup"
+  ],
+  "description": "Global Legal Entity Identifier (LEI) index from GLEIF, no API key: look up a company by LEI, name, BIC, ISIN or register number, read its legal address, legal form and registration status, follow reported parent and subsidiary relationships, list ISINs and decode register and legal form codes.",
+  "instructions": "## GLEIF LEI\nThis connector reads the public **GLEIF API** (`https://api.gleif.org/api/v1`) of the Global Legal Entity Identifier Foundation: the full, daily updated LEI index with reference data for about 3 million legal entities (who is who), their reported parent and child relationships (who owns whom), ISIN and BIC mappings, and the code lists behind the records. No account or API key; everything is read-only and published under CC0.\n\n**Setup**: nothing to configure. Try `gleif_get_lei_record` with 529900W18LQJJN6SJ336.\n\n**Where to start**\n- From a name to an LEI: `gleif_fuzzy_complete` (tolerates typos) or `gleif_autocomplete` (prefix), then `gleif_get_lei_record`. For filtered lists use `gleif_search_lei_records` (by name, country, legal form, register number, BIC, ISIN, status).\n- From an identifier: `gleif_search_lei_records` with `bic`, `isin`, `registered_as` or a comma-separated `lei` list.\n- Group structure: `gleif_get_direct_parent`, `gleif_get_ultimate_parent`, `gleif_list_direct_children`, `gleif_list_ultimate_children`. Details of a link (periods, status): `gleif_get_parent_relationship`, `gleif_list_child_relationships`. No parent reported: `gleif_get_parent_reporting_exception` gives the reason. Funds: `gleif_get_fund_manager`.\n- Securities: `gleif_list_isins`. History: `gleif_list_field_modifications`.\n- Decoding codes: `gleif_get_registration_authority` and `gleif_list_registration_authorities` (registeredAt), `gleif_get_legal_form` (legalForm.id), `gleif_get_lei_issuer`, `gleif_get_lei_issuer_of_record` and `gleif_list_lei_issuers` (managingLou).\n\n**Reading a record**\n- The API is JSON:API: the record is in `data.attributes`, links to related records in `data.relationships`, list paging in `meta.pagination`. `meta.goldenCopy.publishDate` is the date of the data set.\n- `entity.status` (ACTIVE or INACTIVE) is about the company; `registration.status` is about the LEI: ISSUED means valid and renewed, LAPSED means the yearly renewal was missed (the entity usually still exists), RETIRED or MERGED mean the entity ceased or was absorbed (see `successorEntities`).\n- `registration.nextRenewalDate` is when the LEI lapses. `registration.corroborationLevel` says how far the data was checked against the register (FULLY_CORROBORATED is best).\n- `entity.registeredAs` is the number in the business register named by `entity.registeredAt.id`. `entity.legalForm.id` is an ELF code; 8888 means a legal form that is not in the list (see `legalForm.other`), 9999 means none.\n\n**Relationships are accounting consolidation, not shareholdings**: a parent is the entity that fully consolidates the child in its financial statements. Minority stakes are not in the data, and many entities report an exception instead of a parent (natural persons as owners, no consolidation, parent without LEI). A 404 on a parent tool therefore does not mean the entity is independent.\n\n**Paging and limits**: lists return 10 records by default; `page_size` goes up to 200 and `page_number` starts at 1. GLEIF allows 60 requests per minute per client; a 429 answer means wait a minute. For bulk analysis GLEIF offers the Golden Copy files for download instead.\n\n**Search tips**: name filters match whole words in any order, without wildcards. Filters with several comma-separated values mean OR; different filters mean AND. An unknown filter or sort field is refused with HTTP 400. A BIC must be written with 11 characters.",
+  "region": "intl",
+  "category": "data",
+  "icon": "gleif",
+  "docsUrl": "https://www.gleif.org/en/lei-data/gleif-api",
+  "requiredEnvVars": [],
+  "verifyHints": {
+    "400": "GLEIF refused the query: an unknown filter or sort field, a page size above 200, or a completion field that is not supported. The error detail names the parameter.",
+    "404": "GLEIF has no such record. For the parent tools a 404 means no parent with an LEI is reported: read the reporting exception instead.",
+    "rate_limited": "GLEIF allows 60 requests per minute. Wait a minute, and fetch several records in one call with a comma-separated lei filter."
+  },
+  "probe": {
+    "tool": "gleif_get_lei_record",
+    "params": {
+      "lei": "529900W18LQJJN6SJ336"
+    }
+  },
+  "connector": {
+    "name": "GLEIF API",
+    "type": "REST",
+    "baseUrl": "https://api.gleif.org/api/v1",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/vnd.api+json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "gleif_search_lei_records",
+      "description": "Search the global LEI index (about 3 million legal entities) by name, identifier or attributes. Each record has attributes.lei, attributes.entity (legalName, otherNames, legalAddress, headquartersAddress, registeredAt, registeredAs, jurisdiction, category, legalForm, status, creationDate), attributes.registration (initialRegistrationDate, lastUpdateDate, status, nextRenewalDate, managingLou, corroborationLevel) and the mapped identifiers bic, mic, ocid, qcc and spglobal. The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage). Several filters are combined with AND; most filters take comma-separated values as OR. Name filters match whole words, case-insensitive: use gleif_fuzzy_complete first when the spelling is uncertain.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fulltext": {
+            "type": "string",
+            "description": "Words to find anywhere in the record: names, addresses, registration numbers, identifiers. Broadest search."
+          },
+          "legal_name": {
+            "type": "string",
+            "description": "Words of the current legal name, e.g. Siemens Energy."
+          },
+          "names": {
+            "type": "string",
+            "description": "Words of any name of the entity: legal name, former names, trading names and transliterations."
+          },
+          "lei": {
+            "type": "string",
+            "description": "One LEI or several separated by commas (up to 200), to fetch a known set of records in one call."
+          },
+          "bic": {
+            "type": "string",
+            "description": "BIC (SWIFT code) mapped to the entity, 11 characters such as DEUTDEFFXXX. An 8-character BIC finds nothing: append XXX."
+          },
+          "isin": {
+            "type": "string",
+            "description": "ISIN of a security issued by the entity, e.g. DE0005140008."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country of the legal address, ISO 3166-1 alpha-2, e.g. DE. Several separated by commas."
+          },
+          "jurisdiction": {
+            "type": "string",
+            "description": "Jurisdiction of legal formation, ISO 3166-1 alpha-2 or ISO 3166-2 code, e.g. DE or US-DE."
+          },
+          "registered_as": {
+            "type": "string",
+            "description": "Registration number in the business register, exactly as recorded, e.g. HRB 30000."
+          },
+          "registered_at": {
+            "type": "string",
+            "description": "Registration authority code of the business register, e.g. RA000304 (see gleif_list_registration_authorities)."
+          },
+          "legal_form": {
+            "type": "string",
+            "description": "Entity legal form code (ISO 20275 ELF), e.g. 2HBR for a German GmbH (see gleif_get_legal_form)."
+          },
+          "category": {
+            "type": "string",
+            "description": "Entity category: GENERAL, FUND, BRANCH, SOLE_PROPRIETOR, RESIDENT_GOVERNMENT_ENTITY or INTERNATIONAL_ORGANIZATION."
+          },
+          "entity_status": {
+            "type": "string",
+            "description": "Status of the legal entity itself: ACTIVE or INACTIVE."
+          },
+          "registration_status": {
+            "type": "string",
+            "description": "Status of the LEI registration: ISSUED (valid and renewed), LAPSED (not renewed), RETIRED, MERGED, ANNULLED, DUPLICATE, PENDING_TRANSFER or PENDING_ARCHIVAL. Several separated by commas."
+          },
+          "managing_lou": {
+            "type": "string",
+            "description": "LEI of the LEI issuer (Local Operating Unit) that manages the record."
+          },
+          "owns": {
+            "type": "string",
+            "description": "LEI of a child entity: returns the entities that directly or ultimately consolidate it (its parents)."
+          },
+          "owned_by": {
+            "type": "string",
+            "description": "LEI of a parent entity: returns every entity it directly or ultimately consolidates."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field, prefixed with - for descending, e.g. entity.legalName or -registration.initialRegistrationDate. Default: relevance."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records",
+        "queryParams": {
+          "filter[fulltext]": "$fulltext",
+          "filter[entity.legalName]": "$legal_name",
+          "filter[entity.names]": "$names",
+          "filter[lei]": "$lei",
+          "filter[bic]": "$bic",
+          "filter[isin]": "$isin",
+          "filter[entity.legalAddress.country]": "$country",
+          "filter[entity.jurisdiction]": "$jurisdiction",
+          "filter[entity.registeredAs]": "$registered_as",
+          "filter[entity.registeredAt]": "$registered_at",
+          "filter[entity.legalForm]": "$legal_form",
+          "filter[entity.category]": "$category",
+          "filter[entity.status]": "$entity_status",
+          "filter[registration.status]": "$registration_status",
+          "filter[registration.managingLou]": "$managing_lou",
+          "filter[owns]": "$owns",
+          "filter[ownedBy]": "$owned_by",
+          "sort": "$sort",
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_get_lei_record",
+      "description": "Get one LEI record by its LEI: attributes.lei, attributes.entity (legalName, otherNames, legalAddress, headquartersAddress, registeredAt, registeredAs, jurisdiction, category, legalForm, status, creationDate), attributes.registration (initialRegistrationDate, lastUpdateDate, status, nextRenewalDate, managingLou, corroborationLevel) and the mapped identifiers bic, mic, ocid, qcc and spglobal. The relationships block links to parents, children, the LEI issuer and field modifications. Answers 404 for an LEI that does not exist.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}"
+      }
+    },
+    {
+      "name": "gleif_get_direct_parent",
+      "description": "Get the LEI record of the direct accounting consolidating parent of an entity (the next entity up that consolidates it in its financial statements). Answers 404 when no parent with an LEI is reported: then read gleif_get_parent_reporting_exception for the reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/direct-parent"
+      }
+    },
+    {
+      "name": "gleif_get_ultimate_parent",
+      "description": "Get the LEI record of the ultimate accounting consolidating parent of an entity (the top of its group). Answers 404 when none is reported, which is also the case for the group head itself: then read gleif_get_parent_reporting_exception.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/ultimate-parent"
+      }
+    },
+    {
+      "name": "gleif_list_direct_children",
+      "description": "List the LEI records of the entities that an entity directly consolidates (its direct subsidiaries with an LEI). The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/direct-children",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_list_ultimate_children",
+      "description": "List the LEI records of every entity whose ultimate consolidating parent is this entity (the whole group below it, as far as LEIs are reported). The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/ultimate-children",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_get_parent_relationship",
+      "description": "Get the relationship record between an entity and its direct or ultimate parent: start and end node LEIs, relationship type (IS_DIRECTLY_CONSOLIDATED_BY or IS_ULTIMATELY_CONSOLIDATED_BY), status, the accounting, relationship and document filing periods, registration status and the validation documents. Answers 404 when no parent is reported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          },
+          "level": {
+            "type": "string",
+            "description": "direct for the direct parent, ultimate for the ultimate parent.",
+            "enum": [
+              "direct",
+              "ultimate"
+            ]
+          }
+        },
+        "required": [
+          "lei",
+          "level"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/{level}-parent-relationship"
+      }
+    },
+    {
+      "name": "gleif_get_parent_reporting_exception",
+      "description": "Get the reason an entity gave for not reporting a direct or ultimate parent: category and reason (NO_KNOWN_PERSON, NATURAL_PERSONS, NON_CONSOLIDATING, NO_LEI, legal obstacles and similar). Answers 404 when there is no exception, usually because a parent is reported.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          },
+          "level": {
+            "type": "string",
+            "description": "direct for the direct parent, ultimate for the ultimate parent.",
+            "enum": [
+              "direct",
+              "ultimate"
+            ]
+          }
+        },
+        "required": [
+          "lei",
+          "level"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/{level}-parent-reporting-exception"
+      }
+    },
+    {
+      "name": "gleif_list_child_relationships",
+      "description": "List the relationship records between an entity and its direct or ultimate children: child LEI (startNode), relationship type, status, periods and registration data. The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage). Use it for the dates and status of each consolidation link; for the children themselves use gleif_list_direct_children.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          },
+          "level": {
+            "type": "string",
+            "description": "direct or ultimate.",
+            "enum": [
+              "direct",
+              "ultimate"
+            ]
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "lei",
+          "level"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/{level}-child-relationships",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_get_fund_manager",
+      "description": "For a fund: get the LEI record of the entity that manages it (fund management relationship). Answers 404 for entities that are not funds or report no manager.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/fund-manager"
+      }
+    },
+    {
+      "name": "gleif_list_isins",
+      "description": "List the ISINs of securities issued by an entity, from the daily ISIN-to-LEI mapping of the national numbering agencies. Each row has lei and isin. The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage). Large issuers have tens of thousands of ISINs. To go from an ISIN to its issuer use gleif_search_lei_records with isin.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/isins",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_list_field_modifications",
+      "description": "List the change history of an LEI record: one row per changed field with modificationType, field (an XPath into the LEI record), date, valueOld and valueNew, newest first. The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/field-modifications",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_get_lei_issuer_of_record",
+      "description": "Get the LEI issuer (Local Operating Unit) that manages an LEI record: its lei, name, marketingName, website and accreditationDate. This is where the entity renews or corrects its LEI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-records/{lei}/lei-issuer"
+      }
+    },
+    {
+      "name": "gleif_fuzzy_complete",
+      "description": "Typo-tolerant name lookup: returns up to 10 entity names close to the text, each with the LEI of its record in relationships.lei-records.data.id. Use it to resolve a misspelled or partial company name to an LEI.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "The text to match, e.g. deutsche bnk."
+          },
+          "field": {
+            "type": "string",
+            "description": "Where to match: entity.legalName (legal names), fulltext (all fields), owns (names of entities that have children) or ownedBy (names of entities that have parents).",
+            "enum": [
+              "entity.legalName",
+              "fulltext",
+              "owns",
+              "ownedBy"
+            ],
+            "default": "entity.legalName"
+          }
+        },
+        "required": [
+          "q",
+          "field"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fuzzycompletions",
+        "queryParams": {
+          "q": "$q",
+          "field": "$field"
+        }
+      }
+    },
+    {
+      "name": "gleif_autocomplete",
+      "description": "Prefix completion as used by search boxes: returns up to 10 entity names that continue the typed text, with the match in highlighting (HTML bold tags) and the LEI in relationships.lei-records.data.id. Not typo-tolerant: use gleif_fuzzy_complete for misspellings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "The beginning of a name, e.g. deutsche ban."
+          },
+          "field": {
+            "type": "string",
+            "description": "Where to complete: fulltext (all fields), owns or ownedBy.",
+            "enum": [
+              "fulltext",
+              "owns",
+              "ownedBy"
+            ],
+            "default": "fulltext"
+          }
+        },
+        "required": [
+          "q",
+          "field"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/autocompletions",
+        "queryParams": {
+          "q": "$q",
+          "field": "$field"
+        }
+      }
+    },
+    {
+      "name": "gleif_list_registration_authorities",
+      "description": "List the business registers known to GLEIF (about 1,100): code (RA000304), internationalName and localName of the register, the organisation running it, website and jurisdictions. Decodes the registeredAt and validatedAt codes of an LEI record. The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/registration-authorities",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_get_registration_authority",
+      "description": "Get one registration authority by its code: register name (international and local), the organisation running it, website and the countries or jurisdictions it covers.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Registration authority code, e.g. RA000304 (Handelsregister, Amtsgericht München)."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/registration-authorities/{code}"
+      }
+    },
+    {
+      "name": "gleif_get_legal_form",
+      "description": "Decode an entity legal form code (ISO 20275 ELF): country, status and the legal form names in the local language with transliteration, e.g. 2HBR is Gesellschaft mit beschränkter Haftung in Germany.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Four-character ELF code from attributes.entity.legalForm.id, e.g. 2HBR."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity-legal-forms/{code}"
+      }
+    },
+    {
+      "name": "gleif_list_lei_issuers",
+      "description": "List the accredited LEI issuers (Local Operating Units, about 40): lei, name, marketingName, website and accreditationDate. The answer is JSON:API: records in data, paging in meta.pagination (currentPage, perPage, total, lastPage).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Records per page, 1 to 200 (default 10).",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-issuers",
+        "queryParams": {
+          "page[number]": "$page_number",
+          "page[size]": "$page_size"
+        }
+      }
+    },
+    {
+      "name": "gleif_get_lei_issuer",
+      "description": "Get one LEI issuer by its own LEI (the managingLou of a record): name, marketingName, website and accreditationDate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "lei": {
+            "type": "string",
+            "description": "Legal Entity Identifier: 20 letters and digits, e.g. 529900W18LQJJN6SJ336.",
+            "pattern": "^[A-Za-z0-9]{20}$"
+          }
+        },
+        "required": [
+          "lei"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lei-issuers/{lei}"
+      }
+    }
+  ]
+}

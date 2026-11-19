@@ -1,0 +1,834 @@
+{
+  "slug": "vk-teams",
+  "name": "VK Teams",
+  "aliases": [
+    "VK WorkSpace",
+    "VK Teams Bot",
+    "Myteam",
+    "ICQ New",
+    "VK Тимс"
+  ],
+  "description": "Let your AI work as a bot in VK Teams (VK WorkSpace), in the cloud or on-premise: read incoming messages and events, send and edit messages, send files, answer button presses, and look up and manage groups and channels. Bot token.",
+  "instructions": "## VK Teams\nThis connector works with the **VK Teams Bot API** (VK WorkSpace messenger, formerly Myteam and ICQ New): a bot reads the events sent to it, writes and edits messages, sends files, answers button presses, and reads and manages the groups and channels it belongs to. Everything happens as the bot: it reaches users who wrote to it first and chats it was added to.\n\n**Setup (about 3 minutes)**\n1. In VK Teams open a chat with **Metabot** (search for `@metabot`) and send `/newbot`. Choose a name and a nick ending in `bot`. Metabot answers with the bot token, which looks like `001.2659914704.0218887601:747432131`.\n2. Paste the token into `VK_TEAMS_BOT_TOKEN`. It is sent as the `token` query parameter of every call, so it shows up in the URL of each request: treat the address below as trusted infrastructure only.\n3. Set `VK_TEAMS_API_URL` to the Bot API address. For the VK Teams cloud it is `https://myteam.mail.ru/bot/v1`. An on-premise installation has its own address ending in `/bot/v1`; your VK Teams administrator knows it. On AnythingMCP Cloud the address must be reachable from the internet.\n4. To let the bot work in a group or channel, allow it to join groups in Metabot (`/setjoingroups`), then add it as a member (as an administrator for pinning, renaming and the member lists).\n\n**Where to start**: `vk_teams_get_self` checks token and address. `vk_teams_get_events` returns what people wrote to the bot and the ids you need: `payload.chat.chatId` for a chat and `payload.msgId` for a message. There is no call that lists the bot's chats, so keep the ids you see.\n\n**Messages**: `vk_teams_send_text` (plain, MarkdownV2 or HTML; reply, forward and inline buttons), `vk_teams_edit_text`, `vk_teams_delete_messages` (switched off at install). Files: `vk_teams_upload_file` fetches a file from a URL and sends it; `vk_teams_send_file` sends a file that is already on the server by its fileId; `vk_teams_get_file_info` turns a fileId somebody sent into name, size and a download link. `vk_teams_answer_callback_query` answers a button press, `vk_teams_send_chat_actions` shows typing.\n\n**Groups and channels**: `vk_teams_get_chat_info`, `vk_teams_list_chat_admins`, `vk_teams_list_chat_members`, `vk_teams_list_blocked_users`, `vk_teams_list_pending_users`, `vk_teams_pin_message`, `vk_teams_unpin_message`, `vk_teams_set_chat_title` and `vk_teams_set_chat_about`.\n\n**Field notes**\n- `chatId`: a person is addressed by user id (in VK Teams usually the corporate e-mail address) or `@nick`; a group or channel id ends in `@chat.agent`.\n- `msgId` is a 64-bit number. Pass it as text exactly as received; the connector also returns such numbers as text so no digit is lost.\n- Events: `vk_teams_get_events` with `last_event_id` 0 returns everything waiting. Once you pass a higher id, the server forgets the events up to it, so only do that after handling them. Another program polling the same bot takes events away from this one.\n- The API answers HTTP 200 even for a refusal and reports it as `ok: false` with a `description` (for example `Invalid token`); the connector turns that into an error.\n- Most methods are GET requests, including the ones that send; a message is delivered the moment the call is made.\n- Formatting: with `parse_mode` MarkdownV2 escape the characters the format reserves, or use HTML, which is easier to get right.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "vk-teams",
+  "docsUrl": "https://teams.vk.com/botapi/",
+  "prerequisites": "A VK Teams (VK WorkSpace) account and a bot created with Metabot (/newbot), which gives the bot token. For an on-premise installation also its Bot API address. About 3 minutes.",
+  "requiredEnvVars": [
+    "VK_TEAMS_API_URL",
+    "VK_TEAMS_BOT_TOKEN"
+  ],
+  "envVarMeta": {
+    "VK_TEAMS_API_URL": {
+      "label": "Bot API address",
+      "kind": "address",
+      "help": "https://myteam.mail.ru/bot/v1 for the VK Teams cloud. An on-premise installation has its own address ending in /bot/v1; ask your VK Teams administrator.",
+      "example": "https://myteam.mail.ru/bot/v1",
+      "pattern": "^https://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https://, without a trailing slash, e.g. https://myteam.mail.ru/bot/v1.",
+      "link": "https://teams.vk.com/botapi/"
+    },
+    "VK_TEAMS_BOT_TOKEN": {
+      "label": "Bot token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In VK Teams, write /newbot to Metabot (@metabot) and copy the token it answers with.",
+      "link": "https://teams.vk.com/botapi/",
+      "pattern": "^\\S{10,}$",
+      "patternMessage": "Paste the whole token from Metabot, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "VK Teams refused the bot token. Copy it again from Metabot and check that VK_TEAMS_API_URL belongs to the installation the bot was created in.",
+    "403": "VK Teams denied the call: the bot is not a member or not an administrator of that chat.",
+    "404": "Nothing answered at this address. Check VK_TEAMS_API_URL: it must end in /bot/v1 (https://myteam.mail.ru/bot/v1 for the cloud).",
+    "unreachable": "The Bot API address did not answer. Check VK_TEAMS_API_URL; an on-premise installation must be reachable from the AnythingMCP server."
+  },
+  "probe": {
+    "tool": "vk_teams_get_self"
+  },
+  "connector": {
+    "name": "VK Teams Bot API",
+    "type": "REST",
+    "baseUrl": "{{VK_TEAMS_API_URL}}",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "token": "{{VK_TEAMS_BOT_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "largeIntegers": "string",
+      "errorWhen": [
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": "description",
+          "messageMatches": "token",
+          "status": 401
+        },
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": "description",
+          "messageMatches": "permission|denied|forbidden",
+          "status": 403
+        },
+        {
+          "path": "ok",
+          "equals": false,
+          "messagePath": "description",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "vk_teams_get_self",
+      "description": "Read the bot behind the token: userId, nick, firstName, about and photo. Use it to check the token and the API address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/self/get"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vk_teams_get_events",
+      "description": "Read the events waiting for the bot (long polling): events[] with eventId, type (newMessage, editedMessage, deletedMessage, pinnedMessage, unpinnedMessage, newChatMembers, leftChatMembers, callbackQuery) and payload with msgId, chat (chatId, type, title), from (userId, firstName, nick), text, timestamp (Unix seconds) and parts (files, stickers, mentions, replies, forwards). This is how you read what people wrote and find chat ids. Pass the highest eventId you have seen as last_event_id to get only newer events; events up to that id are then dropped by the server.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "last_event_id": {
+            "type": "integer",
+            "description": "Highest eventId already handled; 0 returns everything still waiting.",
+            "minimum": 0,
+            "default": 0
+          },
+          "poll_time": {
+            "type": "integer",
+            "description": "Seconds to wait for a new event when none is waiting, 0 to 25 (default 0, answer at once).",
+            "minimum": 0,
+            "maximum": 25,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/events/get",
+        "queryParams": {
+          "lastEventId": "$last_event_id",
+          "pollTime": "$poll_time"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vk_teams_send_text",
+      "description": "Send a text message as the bot to a user, group or channel, optionally formatted, as a reply, as a forward, or with inline buttons. Returns msgId of the new message and ok. A user must have written to the bot first, and the bot must be a member of a group. Delivered at once, so confirm the text and the chat with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat to write to: a user id or nick for a private chat (e.g. j.smith@example.com or @nick), or the id of a group or channel ending in @chat.agent (e.g. 681869378@chat.agent). Ids arrive in events (vk_teams_get_events, payload.chat.chatId).",
+            "pattern": "^\\S{1,200}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. Mention a user as @[userId]."
+          },
+          "parse_mode": {
+            "type": "string",
+            "description": "How the text is formatted: MarkdownV2 or HTML. Leave out for plain text.",
+            "enum": [
+              "MarkdownV2",
+              "HTML"
+            ]
+          },
+          "reply_msg_id": {
+            "type": "string",
+            "description": "Id of the message to quote as a reply: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          },
+          "forward_chat_id": {
+            "type": "string",
+            "description": "Chat the forwarded message comes from (its chatId). Used together with forward_msg_id.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "forward_msg_id": {
+            "type": "string",
+            "description": "Id of the message to forward; needs forward_chat_id: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          },
+          "inline_keyboard_markup": {
+            "type": "string",
+            "description": "Inline keyboard as JSON text: a list of rows, each a list of buttons with text and either url or callbackData, and an optional style (base, primary, attention). Example: `[[{\"text\":\"Open\",\"url\":\"https://example.com\"},{\"text\":\"Done\",\"callbackData\":\"done\"}]]`."
+          }
+        },
+        "required": [
+          "chat_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/sendText",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "text": "$text",
+          "parseMode": "$parse_mode",
+          "replyMsgId": "$reply_msg_id",
+          "forwardChatId": "$forward_chat_id",
+          "forwardMsgId": "$forward_msg_id",
+          "inlineKeyboardMarkup": "$inline_keyboard_markup"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vk_teams_send_file",
+      "description": "Send a file that is already on the VK Teams servers, by its fileId, with an optional caption. The fileId comes from an earlier upload (vk_teams_upload_file) or from a file somebody sent the bot (payload.parts of an event). Returns msgId and ok. Delivered at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat to write to: a user id or nick for a private chat (e.g. j.smith@example.com or @nick), or the id of a group or channel ending in @chat.agent (e.g. 681869378@chat.agent). Ids arrive in events (vk_teams_get_events, payload.chat.chatId).",
+            "pattern": "^\\S{1,200}$"
+          },
+          "file_id": {
+            "type": "string",
+            "description": "fileId of the file on the VK Teams servers.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "caption": {
+            "type": "string",
+            "description": "Text shown with the file."
+          },
+          "parse_mode": {
+            "type": "string",
+            "description": "How the text is formatted: MarkdownV2 or HTML. Leave out for plain text.",
+            "enum": [
+              "MarkdownV2",
+              "HTML"
+            ]
+          },
+          "reply_msg_id": {
+            "type": "string",
+            "description": "Id of the message to quote as a reply: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          },
+          "forward_chat_id": {
+            "type": "string",
+            "description": "Chat the forwarded message comes from (its chatId). Used together with forward_msg_id.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "forward_msg_id": {
+            "type": "string",
+            "description": "Id of the message to forward; needs forward_chat_id: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          },
+          "inline_keyboard_markup": {
+            "type": "string",
+            "description": "Inline keyboard as JSON text: a list of rows, each a list of buttons with text and either url or callbackData, and an optional style (base, primary, attention). Example: `[[{\"text\":\"Open\",\"url\":\"https://example.com\"},{\"text\":\"Done\",\"callbackData\":\"done\"}]]`."
+          }
+        },
+        "required": [
+          "chat_id",
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/sendFile",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "fileId": "$file_id",
+          "caption": "$caption",
+          "parseMode": "$parse_mode",
+          "replyMsgId": "$reply_msg_id",
+          "forwardChatId": "$forward_chat_id",
+          "forwardMsgId": "$forward_msg_id",
+          "inlineKeyboardMarkup": "$inline_keyboard_markup"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vk_teams_upload_file",
+      "description": "Upload a file from a URL and send it as the bot to a user, group or channel, with an optional caption. The connector downloads the file (up to 10 MB by default) and passes it on to VK Teams. Returns msgId, fileId (reusable with vk_teams_send_file) and ok. Delivered at once, so confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat to write to: a user id or nick for a private chat (e.g. j.smith@example.com or @nick), or the id of a group or channel ending in @chat.agent (e.g. 681869378@chat.agent). Ids arrive in events (vk_teams_get_events, payload.chat.chatId).",
+            "pattern": "^\\S{1,200}$"
+          },
+          "file_url": {
+            "type": "string",
+            "description": "Public URL of the file to send.",
+            "format": "uri"
+          },
+          "caption": {
+            "type": "string",
+            "description": "Text shown with the file."
+          },
+          "parse_mode": {
+            "type": "string",
+            "description": "How the text is formatted: MarkdownV2 or HTML. Leave out for plain text.",
+            "enum": [
+              "MarkdownV2",
+              "HTML"
+            ]
+          },
+          "reply_msg_id": {
+            "type": "string",
+            "description": "Id of the message to quote as a reply: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          },
+          "inline_keyboard_markup": {
+            "type": "string",
+            "description": "Inline keyboard as JSON text: a list of rows, each a list of buttons with text and either url or callbackData, and an optional style (base, primary, attention). Example: `[[{\"text\":\"Open\",\"url\":\"https://example.com\"},{\"text\":\"Done\",\"callbackData\":\"done\"}]]`."
+          }
+        },
+        "required": [
+          "chat_id",
+          "file_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages/sendFile",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "caption": "$caption",
+          "parseMode": "$parse_mode",
+          "replyMsgId": "$reply_msg_id",
+          "inlineKeyboardMarkup": "$inline_keyboard_markup"
+        },
+        "bodyEncoding": "form-data",
+        "bodyMapping": {
+          "file": {
+            "__file": "$file_url"
+          }
+        }
+      }
+    },
+    {
+      "name": "vk_teams_edit_text",
+      "description": "Change the text of a message the bot sent, and optionally its inline buttons. Returns ok. Only the bot's own messages can be edited.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat that holds the message: a user id or nick for a private chat (e.g. j.smith@example.com or @nick), or the id of a group or channel ending in @chat.agent (e.g. 681869378@chat.agent). Ids arrive in events (vk_teams_get_events, payload.chat.chatId).",
+            "pattern": "^\\S{1,200}$"
+          },
+          "msg_id": {
+            "type": "string",
+            "description": "Id of the message to edit: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "New message text."
+          },
+          "parse_mode": {
+            "type": "string",
+            "description": "How the text is formatted: MarkdownV2 or HTML. Leave out for plain text.",
+            "enum": [
+              "MarkdownV2",
+              "HTML"
+            ]
+          },
+          "inline_keyboard_markup": {
+            "type": "string",
+            "description": "Inline keyboard as JSON text: a list of rows, each a list of buttons with text and either url or callbackData, and an optional style (base, primary, attention). Example: `[[{\"text\":\"Open\",\"url\":\"https://example.com\"},{\"text\":\"Done\",\"callbackData\":\"done\"}]]`."
+          }
+        },
+        "required": [
+          "chat_id",
+          "msg_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/editText",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "msgId": "$msg_id",
+          "text": "$text",
+          "parseMode": "$parse_mode",
+          "inlineKeyboardMarkup": "$inline_keyboard_markup"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vk_teams_delete_messages",
+      "description": "Delete one or more messages from a chat for everyone. The bot can delete its own messages within 48 hours and, as an administrator of a group, those of others. This cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat that holds the messages: a user id or nick for a private chat (e.g. j.smith@example.com or @nick), or the id of a group or channel ending in @chat.agent (e.g. 681869378@chat.agent). Ids arrive in events (vk_teams_get_events, payload.chat.chatId).",
+            "pattern": "^\\S{1,200}$"
+          },
+          "msg_ids": {
+            "type": "array",
+            "description": "Ids of the messages to delete, each a long number passed as text.",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,25}$"
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "chat_id",
+          "msg_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/deleteMessages",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "msgId": "$msg_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vk_teams_answer_callback_query",
+      "description": "Answer the press of an inline button (a callbackQuery event): show the user a short notice or an alert, or open a URL. Returns ok. Answer soon after the press, otherwise the button keeps showing a waiting state.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query_id": {
+            "type": "string",
+            "description": "queryId of the callbackQuery event.",
+            "pattern": "^\\S{1,300}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Text of the notice shown to the user."
+          },
+          "show_alert": {
+            "type": "boolean",
+            "description": "true shows the text as an alert the user must close, instead of a brief notice."
+          },
+          "url": {
+            "type": "string",
+            "description": "URL to open on the user's device.",
+            "format": "uri"
+          }
+        },
+        "required": [
+          "query_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/answerCallbackQuery",
+        "queryParams": {
+          "queryId": "$query_id",
+          "text": "$text",
+          "showAlert": "$show_alert",
+          "url": "$url"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vk_teams_send_chat_actions",
+      "description": "Show what the bot is doing in a chat for about 10 seconds: typing a message or looking at the chat. Pass an empty list to stop showing it. Nothing is stored in the chat. Returns ok.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat to act in: a user id or nick for a private chat (e.g. j.smith@example.com or @nick), or the id of a group or channel ending in @chat.agent (e.g. 681869378@chat.agent). Ids arrive in events (vk_teams_get_events, payload.chat.chatId).",
+            "pattern": "^\\S{1,200}$"
+          },
+          "actions": {
+            "type": "array",
+            "description": "Activities to show: typing, looking, both or none.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "typing",
+                "looking"
+              ]
+            }
+          }
+        },
+        "required": [
+          "chat_id",
+          "actions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/sendActions",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "actions": "$actions"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "vk_teams_get_chat_info",
+      "description": "Read a chat: type (private, group or channel) and, for a person, firstName, lastName, nick, about and isBot; for a group or channel, title, about, rules, inviteLink, public and joinModeration. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat to look up: a user id or nick for a private chat (e.g. j.smith@example.com or @nick), or the id of a group or channel ending in @chat.agent (e.g. 681869378@chat.agent). Ids arrive in events (vk_teams_get_events, payload.chat.chatId).",
+            "pattern": "^\\S{1,200}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/getInfo",
+        "queryParams": {
+          "chatId": "$chat_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vk_teams_list_chat_admins",
+      "description": "List the administrators of a group or channel: admins[] with userId and creator (true for the owner). The bot must be a member. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/getAdmins",
+        "queryParams": {
+          "chatId": "$chat_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vk_teams_list_chat_members",
+      "description": "List the members of a group or channel: members[] with userId and the flags creator and admin, plus cursor when more follow. The bot must be a member. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "cursor": {
+            "type": "string",
+            "description": "cursor of the previous answer; leave out for the first page."
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/getMembers",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vk_teams_list_blocked_users",
+      "description": "List the users blocked in a group or channel: users[] with userId. The bot must be an administrator there. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/getBlockedUsers",
+        "queryParams": {
+          "chatId": "$chat_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vk_teams_list_pending_users",
+      "description": "List the users waiting for approval to join a group or channel with join moderation: users[] with userId. The bot must be an administrator there. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/getPendingUsers",
+        "queryParams": {
+          "chatId": "$chat_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "vk_teams_pin_message",
+      "description": "Pin a message in a group or channel so it stays at the top. The bot must be an administrator there. Returns ok.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "msg_id": {
+            "type": "string",
+            "description": "Id of the message to pin: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          }
+        },
+        "required": [
+          "chat_id",
+          "msg_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/pinMessage",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "msgId": "$msg_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vk_teams_unpin_message",
+      "description": "Unpin a pinned message in a group or channel; the message itself stays. The bot must be an administrator there. Returns ok.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "msg_id": {
+            "type": "string",
+            "description": "Id of the pinned message: the msgId of an event or of a send answer, a long number passed as text (e.g. 7052918839419764865).",
+            "pattern": "^[0-9]{1,25}$"
+          }
+        },
+        "required": [
+          "chat_id",
+          "msg_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/unpinMessage",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "msgId": "$msg_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vk_teams_set_chat_title",
+      "description": "Change the title of a group or channel. Every member sees the new title at once, so confirm it with the user. The bot must be an administrator there. Returns ok.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "title": {
+            "type": "string",
+            "description": "New title of the group or channel.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "chat_id",
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/setTitle",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "title": "$title"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vk_teams_set_chat_about",
+      "description": "Change the description (about text) of a group or channel. The bot must be an administrator there. Returns ok.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Id of the group or channel, ending in @chat.agent (e.g. 681869378@chat.agent), or its public @nick.",
+            "pattern": "^\\S{1,200}$"
+          },
+          "about": {
+            "type": "string",
+            "description": "New description of the group or channel."
+          }
+        },
+        "required": [
+          "chat_id",
+          "about"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/setAbout",
+        "queryParams": {
+          "chatId": "$chat_id",
+          "about": "$about"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "vk_teams_get_file_info",
+      "description": "Read the details of a file on the VK Teams servers by its fileId: type (image, video, audio and so on), size in bytes, filename and url, a download link. The fileId comes from payload.parts of an event or from an upload. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "fileId of the file.",
+            "pattern": "^\\S{1,200}$"
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/getInfo",
+        "queryParams": {
+          "fileId": "$file_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,907 @@
+{
+  "slug": "max-messenger",
+  "name": "MAX Messenger",
+  "aliases": [
+    "MAX",
+    "MAX Bot API",
+    "Макс",
+    "MAX мессенджер",
+    "TamTam"
+  ],
+  "description": "Let your AI work as a bot in MAX, the Russian messenger by VK: read incoming messages and events, send and edit messages and images, answer button presses, pin posts, and look up chats, channels, members and comments. Bot token.",
+  "instructions": "## MAX Messenger\nThis connector works with the **MAX Bot API** of MAX, the Russian messenger by VK (formerly the TamTam Bot API): the bot itself, the chats and channels it is in, their members and administrators, messages (read, send, edit, pin), comments under channel posts, button callbacks and incoming events. Everything happens as the bot: it only sees chats it was added to and users who started it.\n\n**Setup (about 5 minutes)**\n1. Create a chat bot for your organisation on the MAX for business platform (https://business.max.ru/self, section **Chat bots**). MAX asks for a verified organisation profile there.\n2. Open the bot, then the three-dot menu, **Settings**, and copy the token. Paste it into `MAX_BOT_TOKEN`. It is sent in the `Authorization` header as it is, without the word Bearer; MAX no longer accepts the token as a query parameter.\n3. Choose the API host in `MAX_API_URL`. `https://platform-api.max.ru` has a certificate every server trusts. MAX now recommends `https://platform-api2.max.ru`, whose certificate is issued by the Russian Trusted Sub CA (Ministry of Digital Development): it only works when the AnythingMCP server trusts that root certificate (on a self-hosted server, add it with `NODE_EXTRA_CA_CERTS`). On AnythingMCP Cloud use the first host.\n4. Add the bot to the group chats and channels it should work in (as an administrator for reading history, pinning and deleting), and send it a message yourself so that a dialog exists.\n\n**Where to start**: `max_messenger_get_me` checks the token. `max_messenger_get_updates` shows what people wrote and, above all, the **chat ids**: MAX has no supported way to list a bot's chats any more, so read `chat_id` from `bot_added`, `bot_started` and `message_created` events and keep it.\n\n**Chats**: `max_messenger_get_chat`, `max_messenger_get_bot_membership` (the bot's rights), `max_messenger_list_chat_members`, `max_messenger_list_chat_admins`, `max_messenger_get_pinned_message`, `max_messenger_pin_message`, `max_messenger_unpin_message`, `max_messenger_send_chat_action` (typing, mark as read) and `max_messenger_leave_chat` (switched off at install).\n\n**Messages**: `max_messenger_send_message` writes to a user (`user_id`) or to a chat or channel (`chat_id`); `max_messenger_send_image` sends a picture from a public URL. `max_messenger_list_messages` reads the history of a chat (the bot must be an administrator there) or single messages by id, `max_messenger_get_message` one message. `max_messenger_edit_message` changes a message of the bot, `max_messenger_delete_message` removes one (switched off at install). `max_messenger_list_comments` and `max_messenger_post_comment` work with comments under channel posts. `max_messenger_get_video_details` resolves a video attachment to playable links.\n\n**Buttons**: attach an inline keyboard with `attachments`. A press arrives as a `message_callback` update; answer it with `max_messenger_answer_callback`.\n\n**Events**: `max_messenger_get_updates` is long polling. Calling it without `marker` only reads; passing the `marker` of the previous answer continues from there and confirms everything before it. If the bot has a webhook (`max_messenger_list_subscriptions`), MAX delivers events to that address and polling stays empty. This connector does not create or remove webhooks.\n\n**Field notes**\n- Ids: `chat_id` and `user_id` are whole numbers (chat ids of groups and channels are negative); pass them as text so no digit is lost. A message id is `body.mid`, a string starting with `mid.`.\n- Times are Unix timestamps in **milliseconds**.\n- Some methods report a refusal inside an HTTP 200 answer as `success: false` with a `code` such as `chat.denied` or `not.found`; the connector turns that into an error. Other methods answer 4xx with the same `code`.\n- Limits: 30 requests per second per bot, and 2 messages per second into the same dialog, chat or channel.\n- Files: images go by URL. Other files, audio and video must first be uploaded to MAX in a two-step binary upload that this connector does not perform; an attachment that already exists on MAX can be sent again with its `token`.\n- Since 9 September 2026 MAX restricts adding members to chats through the API; this connector has no tool for it.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "max-messenger",
+  "docsUrl": "https://dev.max.ru/docs-api",
+  "prerequisites": "A chat bot on the MAX for business platform (business.max.ru), which needs a verified organisation profile in Russia, and its token. About 5 minutes once the bot exists.",
+  "requiredEnvVars": [
+    "MAX_API_URL",
+    "MAX_BOT_TOKEN"
+  ],
+  "envVarMeta": {
+    "MAX_API_URL": {
+      "label": "API host",
+      "kind": "address",
+      "help": "platform-api.max.ru works on every server. platform-api2.max.ru is the host MAX now recommends; its certificate comes from the Russian Trusted Sub CA, so pick it only when your AnythingMCP server trusts that root certificate.",
+      "options": [
+        {
+          "value": "https://platform-api.max.ru",
+          "label": "platform-api.max.ru (publicly trusted certificate)"
+        },
+        {
+          "value": "https://platform-api2.max.ru",
+          "label": "platform-api2.max.ru (needs the Russian Trusted Root CA on the server)"
+        }
+      ]
+    },
+    "MAX_BOT_TOKEN": {
+      "label": "Bot token",
+      "kind": "credential",
+      "secret": true,
+      "help": "MAX for business platform, Chat bots: open the bot, the three-dot menu, Settings, and copy the token.",
+      "link": "https://business.max.ru/self",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "MAX refused the bot token. Copy it again from the MAX for business platform (Chat bots, the bot, Settings); a token that was reissued or revoked no longer works.",
+    "403": "MAX denied the call: the bot is not a member of that chat, was stopped by the user, or lacks the admin permission it needs.",
+    "404": "MAX found no such chat, message or method. Check the id; chat ids come from updates.",
+    "rate_limited": "MAX allows 30 requests per second per bot and 2 messages per second into the same chat. Wait a moment and try again.",
+    "unreachable": "The API host did not answer over a trusted connection. platform-api2.max.ru uses a certificate of the Russian Trusted Sub CA: choose platform-api.max.ru, or add that root certificate to the AnythingMCP server."
+  },
+  "probe": {
+    "tool": "max_messenger_get_me"
+  },
+  "connector": {
+    "name": "MAX Bot API",
+    "type": "REST",
+    "baseUrl": "{{MAX_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "{{MAX_BOT_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "largeIntegers": "string",
+      "errorWhen": [
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "messageMatches": "denied|forbidden|access",
+          "status": 403
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "messageMatches": "not\\.found|not found",
+          "status": 404
+        },
+        {
+          "path": "success",
+          "equals": false,
+          "messagePath": [
+            "code",
+            "message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "max_messenger_get_me",
+      "description": "Read the bot behind the token: user_id, first_name, username, is_bot, description, avatar_url, last_activity_time (Unix time in milliseconds) and its commands. Use it to check the setup. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_get_chat",
+      "description": "Read one chat, channel or dialog: chat_id, type (dialog, chat, channel), status (active, removed, left, closed, suspended), title, description, participants_count, owner_id, is_public, link, the pinned message and last_event_time (Unix ms). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/{chat_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_get_bot_membership",
+      "description": "Read the bot's own membership in a chat or channel: is_owner, is_admin, join_time, last_access_time and, for an admin, its permissions (read_all_messages, write, pin_message, add_remove_members and so on). Use it to see why a call was denied. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/{chat_id}/members/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_list_chat_members",
+      "description": "List the members of a group chat or channel: members[] with user_id, first_name, last_name, username, is_bot, is_owner, is_admin, join_time and last_access_time (Unix ms), plus marker for the next page. The bot must be a member; some chats only show members to administrators. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          },
+          "user_ids": {
+            "type": "string",
+            "description": "Only these members: user ids separated by commas, e.g. 12345,67890. When set, count and marker are ignored.",
+            "pattern": "^[0-9]{1,20}(,[0-9]{1,20})*$"
+          },
+          "count": {
+            "type": "integer",
+            "description": "Members per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "marker": {
+            "type": "string",
+            "description": "marker of the previous page; leave out for the first page.",
+            "pattern": "^-?[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/{chat_id}/members",
+        "queryParams": {
+          "user_ids": "$user_ids",
+          "count": "$count",
+          "marker": "$marker"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_list_chat_admins",
+      "description": "List the administrators of a group chat or channel: members[] with user_id, name, username, is_owner, permissions and alias. The bot must itself be an administrator of that chat. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/{chat_id}/members/admins"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_get_pinned_message",
+      "description": "Read the message pinned in a chat or channel: message with sender, recipient, timestamp (Unix ms) and body (mid, text, attachments). An empty message means nothing is pinned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/{chat_id}/pin"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_pin_message",
+      "description": "Pin a message in a chat or channel; it replaces the message pinned before. The bot needs the pin_message admin permission. Answers with success true or false and a message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Message id (mid) of the message to pin, e.g. mid.0000000000ab12cd0123456789abcdef. It is body.mid of a message.",
+            "pattern": "^[A-Za-z0-9_.-]{1,200}$"
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "false pins silently; by default members get a system message."
+          }
+        },
+        "required": [
+          "chat_id",
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/chats/{chat_id}/pin",
+        "bodyMapping": {
+          "message_id": "$message_id",
+          "notify": "$notify"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "max_messenger_unpin_message",
+      "description": "Remove the pinned message of a chat or channel (the message itself stays). The bot needs the pin_message admin permission. Answers with success true or false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/chats/{chat_id}/pin"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "max_messenger_send_chat_action",
+      "description": "Show a short activity of the bot in a chat, such as \"typing\" before a longer answer, or mark the chat as read (mark_seen). Nothing is stored in the chat. Answers with success true or false.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          },
+          "action": {
+            "type": "string",
+            "description": "The activity to show.",
+            "enum": [
+              "typing_on",
+              "sending_photo",
+              "sending_video",
+              "sending_audio",
+              "sending_file",
+              "mark_seen"
+            ]
+          }
+        },
+        "required": [
+          "chat_id",
+          "action"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chats/{chat_id}/actions",
+        "bodyMapping": {
+          "action": "$action"
+        }
+      }
+    },
+    {
+      "name": "max_messenger_list_messages",
+      "description": "Read messages of a chat or channel, newest first, or specific messages by id: messages[] with sender (user_id, name, username), recipient (chat_id, chat_type), timestamp (Unix ms), body (mid, seq, text, attachments, markup), link (replied or forwarded message) and, in channels, stat.views. Pass chat_id or message_ids. For a chat the bot must be an administrator. Read-only, at most 100 messages per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id). Needed unless message_ids is given.",
+            "pattern": "^-?[0-9]{1,20}$"
+          },
+          "message_ids": {
+            "type": "string",
+            "description": "Specific messages: their mids separated by commas. Needed unless chat_id is given.",
+            "pattern": "^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$"
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only messages sent after this moment, Unix time in milliseconds.",
+            "minimum": 0
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only messages sent before this moment, Unix time in milliseconds. Page backwards by passing the timestamp of the oldest message you already have.",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "Messages to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages",
+        "queryParams": {
+          "chat_id": "$chat_id",
+          "message_ids": "$message_ids",
+          "after": "$after",
+          "before": "$before",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_get_message",
+      "description": "Read one message by its id: sender, recipient, timestamp (Unix ms), body with text and attachments (image, video, audio, file, sticker, contact, location, share, inline keyboard), link and url. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (mid) of the message to read, e.g. mid.0000000000ab12cd0123456789abcdef. It is body.mid of a message.",
+            "pattern": "^[A-Za-z0-9_.-]{1,200}$"
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/{message_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_send_message",
+      "description": "Send a message as the bot to a user (user_id), or to a group chat or channel (chat_id): text of up to 4000 characters, optionally formatted, with attachments, or as a reply or forward. Returns the created message with body.mid. A user must have started the bot first; in a chat or channel the bot must be a member with the right to write. MAX allows 2 messages per second per chat. The message is delivered at once, so confirm the text and the recipient with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id). Give either chat_id or user_id.",
+            "pattern": "^-?[0-9]{1,20}$"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User id to write to in a private dialog, a whole number, e.g. 12345678 (sender.user_id of a message that user sent the bot). Give either user_id or chat_id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text, up to 4000 characters. Needed unless attachments or link carry the content.",
+            "maxLength": 4000
+          },
+          "format": {
+            "type": "string",
+            "description": "How the text is formatted: markdown or html. Leave out for plain text.",
+            "enum": [
+              "markdown",
+              "html"
+            ]
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "false sends without a notification. Channels refuse false."
+          },
+          "disable_link_preview": {
+            "type": "boolean",
+            "description": "true sends no preview for links in the text."
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Attachments as MAX AttachmentRequest objects, each with type and payload. Examples: an inline keyboard `[{\"type\":\"inline_keyboard\",\"payload\":{\"buttons\":[[{\"type\":\"link\",\"text\":\"Open\",\"url\":\"https://example.com\"}]]}}]`, a location `[{\"type\":\"location\",\"latitude\":47.99,\"longitude\":7.84}]`, a file or video already uploaded to MAX `[{\"type\":\"file\",\"payload\":{\"token\":\"...\"}}]` (the token of an attachment in a received message). A file attachment must be the only attachment.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "link": {
+            "type": "object",
+            "description": "Reply to or forward another message: an object with type (`reply` or `forward`) and mid (the id of that message), e.g. `{\"type\":\"reply\",\"mid\":\"mid.000...\"}`."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "queryParams": {
+          "chat_id": "$chat_id",
+          "user_id": "$user_id",
+          "disable_link_preview": "$disable_link_preview"
+        },
+        "bodyMapping": {
+          "text": "$text",
+          "format": "$format",
+          "notify": "$notify",
+          "attachments": "$attachments",
+          "link": "$link"
+        }
+      }
+    },
+    {
+      "name": "max_messenger_send_image",
+      "description": "Send an image from a public URL as the bot, with an optional caption, to a user (user_id) or to a chat or channel (chat_id). MAX downloads the image itself; formats JPG, PNG, GIF, TIFF, BMP and HEIC. Returns the created message. Delivered at once, so confirm with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id). Give either chat_id or user_id.",
+            "pattern": "^-?[0-9]{1,20}$"
+          },
+          "user_id": {
+            "type": "string",
+            "description": "User id to write to in a private dialog, e.g. 12345678. Give either user_id or chat_id.",
+            "pattern": "^[0-9]{1,20}$"
+          },
+          "image_url": {
+            "type": "string",
+            "description": "Public https URL that points straight at the image file.",
+            "format": "uri",
+            "pattern": "^https?://\\S+$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Caption, up to 4000 characters.",
+            "maxLength": 4000
+          },
+          "format": {
+            "type": "string",
+            "description": "How the text is formatted: markdown or html. Leave out for plain text.",
+            "enum": [
+              "markdown",
+              "html"
+            ]
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "false sends without a notification. Channels refuse false."
+          }
+        },
+        "required": [
+          "image_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages",
+        "queryParams": {
+          "chat_id": "$chat_id",
+          "user_id": "$user_id"
+        },
+        "bodyMapping": {
+          "text": "$text",
+          "format": "$format",
+          "notify": "$notify",
+          "attachments": [
+            {
+              "type": "image",
+              "payload": {
+                "url": "$image_url"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "name": "max_messenger_edit_message",
+      "description": "Change a message the bot sent: new text and, optionally, new attachments. Leaving attachments out keeps the current ones; an empty list removes them all. Answers with success true or false. Only the bot's own messages can be edited, for a limited time after sending.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (mid) of the message to edit, e.g. mid.0000000000ab12cd0123456789abcdef. It is body.mid of a message.",
+            "pattern": "^[A-Za-z0-9_.-]{1,200}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "New text, up to 4000 characters.",
+            "maxLength": 4000
+          },
+          "format": {
+            "type": "string",
+            "description": "How the text is formatted: markdown or html. Leave out for plain text.",
+            "enum": [
+              "markdown",
+              "html"
+            ]
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "false edits without a notification."
+          },
+          "attachments": {
+            "type": "array",
+            "description": "Attachments as MAX AttachmentRequest objects, each with type and payload. Examples: an inline keyboard `[{\"type\":\"inline_keyboard\",\"payload\":{\"buttons\":[[{\"type\":\"link\",\"text\":\"Open\",\"url\":\"https://example.com\"}]]}}]`, a location `[{\"type\":\"location\",\"latitude\":47.99,\"longitude\":7.84}]`, a file or video already uploaded to MAX `[{\"type\":\"file\",\"payload\":{\"token\":\"...\"}}]` (the token of an attachment in a received message). A file attachment must be the only attachment.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "link": {
+            "type": "object",
+            "description": "Reply to or forward another message: an object with type (`reply` or `forward`) and mid (the id of that message), e.g. `{\"type\":\"reply\",\"mid\":\"mid.000...\"}`."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/messages",
+        "queryParams": {
+          "message_id": "$message_id"
+        },
+        "bodyMapping": {
+          "text": "$text",
+          "format": "$format",
+          "notify": "$notify",
+          "attachments": "$attachments",
+          "link": "$link"
+        }
+      }
+    },
+    {
+      "name": "max_messenger_delete_message",
+      "description": "Delete a message for everyone in a dialog, chat or channel. The bot can delete its own messages and, as an administrator with the delete permission, those of others. This cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (mid) of the message to delete, e.g. mid.0000000000ab12cd0123456789abcdef. It is body.mid of a message.",
+            "pattern": "^[A-Za-z0-9_.-]{1,200}$"
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/messages",
+        "queryParams": {
+          "message_id": "$message_id"
+        }
+      }
+    },
+    {
+      "name": "max_messenger_answer_callback",
+      "description": "Answer the press of an inline keyboard button (a message_callback update): show the user a one-time notification, replace the message that carried the button, or both. Answers with success true or false. Answer soon after the press; the callback id expires.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "callback_id": {
+            "type": "string",
+            "description": "callback.callback_id of the message_callback update.",
+            "minLength": 1
+          },
+          "notification": {
+            "type": "string",
+            "description": "One-time notification shown to the user who pressed the button."
+          },
+          "message": {
+            "type": "object",
+            "description": "New content for the message with the button, as a NewMessageBody object, e.g. `{\"text\":\"Done\",\"attachments\":[]}`. Leave out to keep the message."
+          },
+          "disable_link_preview": {
+            "type": "boolean",
+            "description": "true sends no preview for links in the new message text."
+          }
+        },
+        "required": [
+          "callback_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/answers",
+        "queryParams": {
+          "callback_id": "$callback_id",
+          "disable_link_preview": "$disable_link_preview"
+        },
+        "bodyMapping": {
+          "notification": "$notification",
+          "message": "$message"
+        }
+      }
+    },
+    {
+      "name": "max_messenger_get_updates",
+      "description": "Read the events MAX holds for the bot (long polling): updates[] with update_type (message_created, message_edited, message_removed, message_callback, bot_started, bot_stopped, bot_added, bot_removed, user_added, user_removed, chat_title_changed and others), timestamp (Unix ms) and the message, chat_id or user, plus marker. This is how you find chat ids and read what people wrote to the bot. Passing the marker of the previous answer continues after it and marks the earlier events as read. It answers nothing while the bot has a webhook subscription (see max_messenger_list_subscriptions). MAX keeps events only for a limited time.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Events to return, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000
+          },
+          "timeout": {
+            "type": "integer",
+            "description": "Seconds to wait for a new event when none is pending, 0 to 25 (default 0, answer at once).",
+            "minimum": 0,
+            "maximum": 25,
+            "default": 0
+          },
+          "marker": {
+            "type": "string",
+            "description": "marker of the previous answer. Leave out to read what is pending without confirming anything.",
+            "pattern": "^-?[0-9]{1,20}$"
+          },
+          "types": {
+            "type": "string",
+            "description": "Only these event types, separated by commas, e.g. message_created,bot_added,message_callback.",
+            "pattern": "^[a-z_]+(,[a-z_]+)*$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/updates",
+        "queryParams": {
+          "limit": "$limit",
+          "timeout": "$timeout",
+          "marker": "$marker",
+          "types": "$types"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_list_subscriptions",
+      "description": "List the bot's webhook subscriptions: subscriptions[] with url, time (Unix ms when it was created) and update_types. While one exists, MAX sends events there and max_messenger_get_updates stays empty. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/subscriptions"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_get_video_details",
+      "description": "Read the details of a video attachment by its token (payload.token of a video attachment in a message): playback urls per quality, thumbnail, width, height and duration in milliseconds. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "video_token": {
+            "type": "string",
+            "description": "Token of the video attachment.",
+            "pattern": "^[A-Za-z0-9_-]+$"
+          }
+        },
+        "required": [
+          "video_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/videos/{video_token}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_list_comments",
+      "description": "Read the comments under a channel post, newest first: comments with sender, timestamp (Unix ms) and body (mid, text), plus the paging marker. The bot needs access to the channel and its comments. Read-only, at most 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (mid) of the channel post, e.g. mid.0000000000ab12cd0123456789abcdef. It is body.mid of a message.",
+            "pattern": "^[A-Za-z0-9_.-]{1,200}$"
+          },
+          "comment_ids": {
+            "type": "string",
+            "description": "Specific comments: their ids separated by commas.",
+            "pattern": "^[A-Za-z0-9_.-]+(,[A-Za-z0-9_.-]+)*$"
+          },
+          "after": {
+            "type": "integer",
+            "description": "Only comments written after this moment, Unix time in milliseconds.",
+            "minimum": 0
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only comments written before this moment, Unix time in milliseconds.",
+            "minimum": 0
+          },
+          "count": {
+            "type": "integer",
+            "description": "Comments to return, 1 to 100 (default 50).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/messages/{message_id}/comments",
+        "queryParams": {
+          "comment_ids": "$comment_ids",
+          "after": "$after",
+          "before": "$before",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "max_messenger_post_comment",
+      "description": "Write a comment as the bot under a channel post. Text only (up to 4000 characters, optional formatting); comments take no attachments. Returns the created comment. Published at once, so confirm the text with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "Message id (mid) of the channel post to comment on, e.g. mid.0000000000ab12cd0123456789abcdef. It is body.mid of a message.",
+            "pattern": "^[A-Za-z0-9_.-]{1,200}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Comment text, up to 4000 characters.",
+            "maxLength": 4000
+          },
+          "format": {
+            "type": "string",
+            "description": "How the text is formatted: markdown or html. Leave out for plain text.",
+            "enum": [
+              "markdown",
+              "html"
+            ]
+          },
+          "link": {
+            "type": "object",
+            "description": "Reply to or forward another message: an object with type (`reply` or `forward`) and mid (the id of that message), e.g. `{\"type\":\"reply\",\"mid\":\"mid.000...\"}`."
+          },
+          "disable_link_preview": {
+            "type": "boolean",
+            "description": "true sends no preview for links in the text."
+          }
+        },
+        "required": [
+          "message_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/messages/{message_id}/comments",
+        "queryParams": {
+          "disable_link_preview": "$disable_link_preview"
+        },
+        "bodyMapping": {
+          "text": "$text",
+          "format": "$format",
+          "link": "$link"
+        }
+      }
+    },
+    {
+      "name": "max_messenger_leave_chat",
+      "description": "Remove the bot from a group chat or channel. The bot stops receiving its messages and can only come back when a member adds it again. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat or channel id, a whole number (negative for group chats and channels), e.g. -70977112345678. It arrives in updates (max_messenger_get_updates, field chat_id).",
+            "pattern": "^-?[0-9]{1,20}$"
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/chats/{chat_id}/members/me"
+      }
+    }
+  ]
+}

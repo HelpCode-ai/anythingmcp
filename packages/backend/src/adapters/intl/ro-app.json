@@ -1,0 +1,2186 @@
+{
+  "slug": "ro-app",
+  "name": "RO App",
+  "description": "RO App (formerly RemOnline) repair-shop and service CRM, Public API v2: orders with statuses and comments, clients, inquiries (leads), products and warehouses, invoices, finance accounts with their transactions, tasks and employees. API key.",
+  "instructions": "## RO App\nThis connector works with the **RO App Public API v2** (`https://api.roapp.io/v2`). RO App, formerly **RemOnline**, is a CRM for repair shops, service centres and field service: orders, clients, inquiries (leads), products and warehouses, invoices, finance accounts and tasks.\n\n**Setup (about 2 minutes)**\n1. In RO App open **Settings, API** (https://web.roapp.io/settings/api).\n2. Copy the API key into `RO_APP_API_KEY`. It is tied to your user profile and can be regenerated on the same page.\n\nThe key is sent as `Authorization: Bearer`. There is no token exchange in API v2. A wrong key answers 403 with the message Invalid token.\n\n**Where to start**: `ro_app_get_company` checks the key. `ro_app_list_orders` lists repair orders; filter by status ids from `ro_app_list_order_statuses`. `ro_app_get_order` and `ro_app_list_order_items` show one order with its parts and services.\n\n**Orders**: `ro_app_list_orders`, `ro_app_get_order`, `ro_app_list_order_items`, `ro_app_create_order`, `ro_app_update_order`, `ro_app_update_order_status`, `ro_app_add_order_comment`, with the reference lists `ro_app_list_order_statuses` and `ro_app_list_order_types`. A new order needs a location (`ro_app_list_locations`), an order type and a client.\n\n**Clients**: a client is a person or an organization. People: `ro_app_list_people`, `ro_app_get_person`, `ro_app_create_person`. Organizations: `ro_app_list_organizations`, `ro_app_get_organization`, `ro_app_create_organization`.\n\n**Leads**: RO App calls them inquiries. `ro_app_list_inquiries`, `ro_app_get_inquiry`, `ro_app_create_inquiry`, `ro_app_update_inquiry_status`, with `ro_app_list_inquiry_statuses` and `ro_app_list_inquiry_types`.\n\n**Inventory**: `ro_app_list_products` and `ro_app_get_product` read the product catalogue, `ro_app_list_warehouses` the warehouses. API v2 documents no call for the stock quantity per warehouse, so stock levels are not available here.\n\n**Invoices and payments (read only)**: `ro_app_list_invoices`, `ro_app_get_invoice`, `ro_app_list_invoice_items`; `ro_app_list_finance_accounts` and `ro_app_list_account_transactions` show cash boxes, bank accounts and the payments booked on them. The connector creates no payments, transfers or refunds.\n\n**Tasks and staff**: `ro_app_list_tasks`, `ro_app_get_task`, `ro_app_create_task`; `ro_app_list_employees` gives the employee ids used for managers and assignees.\n\n**Paging and filters**: lists return up to 50 rows per page with `count` (the total); ask for the next page with `page`. Most filters take lists of ids. Date filters take one or two ISO 8601 date-times: one is the start, two are a range.\n\n**Limits**: 3 requests per second; more answers 429. Nothing is deleted by this connector.",
+  "aliases": [
+    "RemOnline",
+    "Rem Online",
+    "ROApp",
+    "roapp.io",
+    "RO App CRM"
+  ],
+  "region": "intl",
+  "category": "crm",
+  "icon": "ro-app",
+  "docsUrl": "https://roapp.readme.io/reference/getting-started-with-api",
+  "requiredEnvVars": [
+    "RO_APP_API_KEY"
+  ],
+  "envVarMeta": {
+    "RO_APP_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "RO App, Settings, API: copy the API key. It belongs to your user profile and can be regenerated there.",
+      "link": "https://web.roapp.io/settings/api",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9_-]{20,128}$",
+      "patternMessage": "Paste the API key only (letters and digits), without Bearer in front."
+    }
+  },
+  "verifyHints": {
+    "400": "RO App refused the request. The answer names the field: an id that does not exist, a missing required field or a date that is not ISO 8601.",
+    "401": "RO App refused the API key. Copy it again from Settings, API in RO App, or regenerate it there.",
+    "403": "RO App refused the API key: it answers 403 with Invalid token for a wrong or regenerated key. Copy the key again from Settings, API. If the key is right, the user behind it has no permission for this section, or the plan does not include the API.",
+    "404": "RO App found nothing with that id. Orders, clients, inquiries, invoices and tasks each have their own ids; a document number is not an id.",
+    "rate_limited": "RO App allows 3 requests per second. Wait a second and try again."
+  },
+  "probe": {
+    "tool": "ro_app_get_company",
+    "params": {}
+  },
+  "prerequisites": "A RO App (formerly RemOnline) account on a plan with API access, and the API key from Settings, API. About 2 minutes.",
+  "connector": {
+    "name": "RO App Public API v2",
+    "type": "REST",
+    "baseUrl": "https://api.roapp.io/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{RO_APP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "ro_app_get_company",
+      "description": "Read the information RO App holds about the company account behind the API key. Use it to check that the key works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_locations",
+      "description": "List the locations (branches, workshops) of the company: id, name, address and whether archived. The id is the branch_id of orders, inquiries and warehouses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_archived": {
+            "type": "boolean",
+            "description": "true: archived locations, false: active ones."
+          },
+          "legal_entity_id": {
+            "type": "integer",
+            "description": "Only locations of this legal entity.",
+            "minimum": 1
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "name",
+              "-name"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/locations",
+        "queryParams": {
+          "is_archived": "$is_archived",
+          "legal_entity_id": "$legal_entity_id",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_employees",
+      "description": "List the employees of the company: id, name, email, phone, position and group. The id is what managers, assignees and task authors refer to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "groups": {
+            "type": "array",
+            "description": "Only employees of these employee group ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "name",
+              "-name"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/employees",
+        "queryParams": {
+          "groups": "$groups",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_orders",
+      "description": "List repair and service orders: id, document number, status, type, location, client, asset, manager and assignee, problem description, prices and the created, modified, scheduled, due and closed dates. Returns the rows of one page with count (the total number of rows); 50 rows per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Only orders in these status ids (ro_app_list_order_statuses).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "types": {
+            "type": "array",
+            "description": "Only orders of these order type ids (ro_app_list_order_types).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "branch_ids": {
+            "type": "array",
+            "description": "Only orders of these location ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these order ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "numbers": {
+            "type": "array",
+            "description": "Only orders with these document numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "managers": {
+            "type": "array",
+            "description": "Only orders of these manager (employee) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "client_ids": {
+            "type": "array",
+            "description": "Only orders of these client (person or organization) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "client_names": {
+            "type": "array",
+            "description": "Only orders of clients with these names.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "client_phones": {
+            "type": "array",
+            "description": "Only orders of clients with these phone numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "asset_uid": {
+            "type": "array",
+            "description": "Only orders for assets with these serial numbers (VIN, IMEI).",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "array",
+            "description": "Created: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "modified_at": {
+            "type": "array",
+            "description": "Modified: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "closed_at": {
+            "type": "array",
+            "description": "Closed: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "scheduled_for": {
+            "type": "array",
+            "description": "Scheduled from: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "due_date": {
+            "type": "array",
+            "description": "Due: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "modified_at",
+              "-modified_at",
+              "scheduled_for",
+              "-scheduled_for",
+              "due_date",
+              "-due_date",
+              "closed_at",
+              "-closed_at"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "page": "$page",
+          "statuses": "$statuses",
+          "types": "$types",
+          "branch_ids": "$branch_ids",
+          "ids": "$ids",
+          "numbers": "$numbers",
+          "managers": "$managers",
+          "client_ids": "$client_ids",
+          "client_names": "$client_names",
+          "client_phones": "$client_phones",
+          "asset_uid": "$asset_uid",
+          "created_at": "$created_at",
+          "modified_at": "$modified_at",
+          "closed_at": "$closed_at",
+          "scheduled_for": "$scheduled_for",
+          "due_date": "$due_date",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_get_order",
+      "description": "Read one order with all its details: status, type, client and payer, asset, manager and assignee, problem description, notes, conclusion, prices, dates and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id (not the document number).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_order_items",
+      "description": "List the products and services on an order: each item with its name, quantity, price, cost, discount, tax and warranty. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/items"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_create_order",
+      "description": "Create a repair or service order for a client at a location. Fetch the ids first: ro_app_list_locations (branch_id), ro_app_list_order_types (order_type_id) and ro_app_list_people or ro_app_list_organizations (client_id). Returns the new order with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "branch_id": {
+            "type": "integer",
+            "description": "Location id from ro_app_list_locations.",
+            "minimum": 1
+          },
+          "order_type_id": {
+            "type": "integer",
+            "description": "Order type id from ro_app_list_order_types.",
+            "minimum": 1
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Client id: a person or an organization.",
+            "minimum": 1
+          },
+          "manager_id": {
+            "type": "integer",
+            "description": "Employee id of the manager.",
+            "minimum": 1
+          },
+          "assignee_id": {
+            "type": "integer",
+            "description": "Employee id of the assigned technician.",
+            "minimum": 1
+          },
+          "asset_id": {
+            "type": "integer",
+            "description": "Asset (device, vehicle) id.",
+            "minimum": 1
+          },
+          "payer_id": {
+            "type": "integer",
+            "description": "Payer (person or organization) id, when someone else pays.",
+            "minimum": 1
+          },
+          "scheduled_for": {
+            "type": "string",
+            "description": "Scheduled from. ISO 8601, e.g. 2026-11-20T10:00:00Z."
+          },
+          "scheduled_to": {
+            "type": "string",
+            "description": "Scheduled to. ISO 8601, e.g. 2026-11-20T10:00:00Z."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date of the order. ISO 8601, e.g. 2026-11-20T10:00:00Z."
+          },
+          "malfunction": {
+            "type": "string",
+            "description": "Problem description (malfunction text)."
+          },
+          "manager_notes": {
+            "type": "string",
+            "description": "Notes of the manager."
+          },
+          "engineer_notes": {
+            "type": "string",
+            "description": "Notes of the technician."
+          },
+          "resume": {
+            "type": "string",
+            "description": "Conclusion and recommendations for the client."
+          },
+          "estimated_price": {
+            "type": "string",
+            "description": "Estimated price or price range, as text."
+          },
+          "urgent": {
+            "type": "boolean",
+            "description": "true marks the order as urgent."
+          },
+          "custom_fields": {
+            "type": "string",
+            "description": "Custom field values as JSON text, e.g. {\"f123\": \"value\"}, where the key is f followed by the id of the custom field."
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Initial status id. Default: the first status of the order type.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "branch_id",
+          "order_type_id",
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": {
+          "branch_id": "$branch_id",
+          "order_type_id": "$order_type_id",
+          "client_id": "$client_id",
+          "manager_id": "$manager_id",
+          "assignee_id": "$assignee_id",
+          "asset_id": "$asset_id",
+          "payer_id": "$payer_id",
+          "scheduled_for": "$scheduled_for",
+          "scheduled_to": "$scheduled_to",
+          "due_date": "$due_date",
+          "malfunction": "$malfunction",
+          "manager_notes": "$manager_notes",
+          "engineer_notes": "$engineer_notes",
+          "resume": "$resume",
+          "estimated_price": "$estimated_price",
+          "urgent": "$urgent",
+          "custom_fields": "$custom_fields",
+          "status_id": "$status_id"
+        }
+      }
+    },
+    {
+      "name": "ro_app_update_order",
+      "description": "Update an order: client, asset, manager, assignee, schedule, due date, problem description, notes or custom fields. Only the fields given change. The status is changed with ro_app_update_order_status.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id.",
+            "minimum": 1
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Location id.",
+            "minimum": 1
+          },
+          "order_type_id": {
+            "type": "integer",
+            "description": "Order type id.",
+            "minimum": 1
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Client id: a person or an organization.",
+            "minimum": 1
+          },
+          "manager_id": {
+            "type": "integer",
+            "description": "Employee id of the manager.",
+            "minimum": 1
+          },
+          "assignee_id": {
+            "type": "integer",
+            "description": "Employee id of the assigned technician.",
+            "minimum": 1
+          },
+          "asset_id": {
+            "type": "integer",
+            "description": "Asset (device, vehicle) id.",
+            "minimum": 1
+          },
+          "payer_id": {
+            "type": "integer",
+            "description": "Payer (person or organization) id, when someone else pays.",
+            "minimum": 1
+          },
+          "scheduled_for": {
+            "type": "string",
+            "description": "Scheduled from. ISO 8601, e.g. 2026-11-20T10:00:00Z."
+          },
+          "scheduled_to": {
+            "type": "string",
+            "description": "Scheduled to. ISO 8601, e.g. 2026-11-20T10:00:00Z."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date of the order. ISO 8601, e.g. 2026-11-20T10:00:00Z."
+          },
+          "malfunction": {
+            "type": "string",
+            "description": "Problem description (malfunction text)."
+          },
+          "manager_notes": {
+            "type": "string",
+            "description": "Notes of the manager."
+          },
+          "engineer_notes": {
+            "type": "string",
+            "description": "Notes of the technician."
+          },
+          "resume": {
+            "type": "string",
+            "description": "Conclusion and recommendations for the client."
+          },
+          "estimated_price": {
+            "type": "string",
+            "description": "Estimated price or price range, as text."
+          },
+          "urgent": {
+            "type": "boolean",
+            "description": "true marks the order as urgent."
+          },
+          "custom_fields": {
+            "type": "string",
+            "description": "Custom field values as JSON text, e.g. {\"f123\": \"value\"}, where the key is f followed by the id of the custom field."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/orders/{order_id}",
+        "bodyMapping": {
+          "branch_id": "$branch_id",
+          "order_type_id": "$order_type_id",
+          "client_id": "$client_id",
+          "manager_id": "$manager_id",
+          "assignee_id": "$assignee_id",
+          "asset_id": "$asset_id",
+          "payer_id": "$payer_id",
+          "scheduled_for": "$scheduled_for",
+          "scheduled_to": "$scheduled_to",
+          "due_date": "$due_date",
+          "malfunction": "$malfunction",
+          "manager_notes": "$manager_notes",
+          "engineer_notes": "$engineer_notes",
+          "resume": "$resume",
+          "estimated_price": "$estimated_price",
+          "urgent": "$urgent",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "ro_app_update_order_status",
+      "description": "Move an order to another status, with an optional comment. Depending on the status rules of the account this can notify the client or close the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id.",
+            "minimum": 1
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Status id from ro_app_list_order_statuses.",
+            "minimum": 1
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the status change."
+          }
+        },
+        "required": [
+          "order_id",
+          "status_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/status",
+        "bodyMapping": {
+          "status_id": "$status_id",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "ro_app_add_order_comment",
+      "description": "Add a comment to the event feed of an order. A private comment is visible to employees only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Order id.",
+            "minimum": 1
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment text.",
+            "minLength": 1
+          },
+          "is_private": {
+            "type": "boolean",
+            "description": "true keeps the comment private to employees."
+          }
+        },
+        "required": [
+          "order_id",
+          "comment"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/comments",
+        "bodyMapping": {
+          "comment": "$comment",
+          "is_private": "$is_private"
+        }
+      }
+    },
+    {
+      "name": "ro_app_list_order_statuses",
+      "description": "List every status an order can have: id, name, colour and group (new, in progress, ready, closed and others). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/statuses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_order_types",
+      "description": "List the order types of the account (for example repair, sale, maintenance) with their ids. An order needs one. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/types"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_people",
+      "description": "List clients that are people: id, first and last name, email, phones, address, tags, manager, discount and whether a supplier. Returns the rows of one page with count (the total number of rows); 50 rows per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "names": {
+            "type": "array",
+            "description": "Only people with these names.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phones": {
+            "type": "array",
+            "description": "Only people with these phone numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "emails": {
+            "type": "array",
+            "description": "Only people with these email addresses.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "managers": {
+            "type": "array",
+            "description": "Only people of these manager (employee) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Only people with these tags.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "array",
+            "description": "Created: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "modified_at": {
+            "type": "array",
+            "description": "Modified: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "modified_at",
+              "-modified_at",
+              "name",
+              "-name"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/people",
+        "queryParams": {
+          "page": "$page",
+          "names": "$names",
+          "phones": "$phones",
+          "emails": "$emails",
+          "managers": "$managers",
+          "tags": "$tags",
+          "created_at": "$created_at",
+          "modified_at": "$modified_at",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_get_person",
+      "description": "Read one person: names, birthday, email, phones, addresses, tags, manager, discount code, tax number and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_id": {
+            "type": "integer",
+            "description": "Person id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "person_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/people/{person_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_create_person",
+      "description": "Create a client that is a person, with a first name and optionally last name, email, phones, address and tags. Returns the person with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "first_name": {
+            "type": "string",
+            "description": "First name.",
+            "minLength": 1
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phones": {
+            "type": "array",
+            "description": "Phone numbers, e.g. [{\"title\": \"Mobile\", \"phone\": \"+380501234567\", \"notify\": true, \"has_viber\": false, \"has_whatsapp\": true}]. All five fields are required per number.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Name of the number, e.g. Mobile."
+                },
+                "phone": {
+                  "type": "string",
+                  "description": "Phone number in international format."
+                },
+                "notify": {
+                  "type": "boolean",
+                  "description": "true allows SMS to this number."
+                },
+                "has_viber": {
+                  "type": "boolean",
+                  "description": "true allows Viber messages to this number."
+                },
+                "has_whatsapp": {
+                  "type": "boolean",
+                  "description": "true allows WhatsApp messages to this number."
+                }
+              },
+              "required": [
+                "title",
+                "phone",
+                "notify",
+                "has_viber",
+                "has_whatsapp"
+              ]
+            }
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address as one line."
+          },
+          "billing_address": {
+            "type": "object",
+            "description": "Billing address, e.g. {\"country\": \"DE\", \"city\": \"Berlin\", \"address_line_1\": \"Hauptstr. 1\", \"postal_code\": \"10115\"}. country (ISO code) and address_line_1 are required.",
+            "properties": {
+              "country": {
+                "type": "string",
+                "description": "Country ISO code."
+              },
+              "state": {
+                "type": "string",
+                "description": "State, province or region."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "address_line_1": {
+                "type": "string",
+                "description": "Address line 1."
+              },
+              "address_line_2": {
+                "type": "string",
+                "description": "Address line 2."
+              },
+              "postal_code": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "comment": {
+                "type": "string",
+                "description": "Comment."
+              }
+            },
+            "required": [
+              "country",
+              "address_line_1"
+            ]
+          },
+          "supplier": {
+            "type": "boolean",
+            "description": "true marks the contact as a supplier."
+          },
+          "manager_id": {
+            "type": "integer",
+            "description": "Employee id of the responsible manager.",
+            "minimum": 1
+          },
+          "discount_code": {
+            "type": "string",
+            "description": "Discount code."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags, e.g. [\"vip\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tax_identification_number": {
+            "type": "string",
+            "description": "Tax identification number."
+          },
+          "custom_fields": {
+            "type": "string",
+            "description": "Custom field values as JSON text, e.g. {\"f123\": \"value\"}, where the key is f followed by the id of the custom field."
+          }
+        },
+        "required": [
+          "first_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/people",
+        "bodyMapping": {
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "email": "$email",
+          "phones": "$phones",
+          "notes": "$notes",
+          "address": "$address",
+          "billing_address": "$billing_address",
+          "supplier": "$supplier",
+          "manager_id": "$manager_id",
+          "discount_code": "$discount_code",
+          "tags": "$tags",
+          "tax_identification_number": "$tax_identification_number",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "ro_app_list_organizations",
+      "description": "List clients that are organizations (companies): id, name, email, phones, address, tags, manager and whether a supplier. Returns the rows of one page with count (the total number of rows); 50 rows per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "names": {
+            "type": "array",
+            "description": "Only organizations with these names.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "phones": {
+            "type": "array",
+            "description": "Only organizations with these phone numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "emails": {
+            "type": "array",
+            "description": "Only organizations with these email addresses.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "managers": {
+            "type": "array",
+            "description": "Only organizations of these manager (employee) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "tags": {
+            "type": "array",
+            "description": "Only organizations with these tags.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "array",
+            "description": "Created: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "modified_at": {
+            "type": "array",
+            "description": "Modified: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "name",
+              "-name",
+              "modified_at",
+              "-modified_at"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/organizations",
+        "queryParams": {
+          "page": "$page",
+          "names": "$names",
+          "phones": "$phones",
+          "emails": "$emails",
+          "managers": "$managers",
+          "tags": "$tags",
+          "created_at": "$created_at",
+          "modified_at": "$modified_at",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_get_organization",
+      "description": "Read one organization: name, email, phones, addresses, tags, manager, tax and registration numbers and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "integer",
+            "description": "Organization id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "organization_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/organizations/{organization_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_create_organization",
+      "description": "Create a client that is an organization (company), with a name and optionally email, phones, address, tax numbers and tags. Returns the organization with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Organization name.",
+            "minLength": 1
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phones": {
+            "type": "array",
+            "description": "Phone numbers, e.g. [{\"title\": \"Mobile\", \"phone\": \"+380501234567\", \"notify\": true, \"has_viber\": false, \"has_whatsapp\": true}]. All five fields are required per number.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Name of the number, e.g. Mobile."
+                },
+                "phone": {
+                  "type": "string",
+                  "description": "Phone number in international format."
+                },
+                "notify": {
+                  "type": "boolean",
+                  "description": "true allows SMS to this number."
+                },
+                "has_viber": {
+                  "type": "boolean",
+                  "description": "true allows Viber messages to this number."
+                },
+                "has_whatsapp": {
+                  "type": "boolean",
+                  "description": "true allows WhatsApp messages to this number."
+                }
+              },
+              "required": [
+                "title",
+                "phone",
+                "notify",
+                "has_viber",
+                "has_whatsapp"
+              ]
+            }
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address as one line."
+          },
+          "billing_address": {
+            "type": "object",
+            "description": "Billing address, e.g. {\"country\": \"DE\", \"city\": \"Berlin\", \"address_line_1\": \"Hauptstr. 1\", \"postal_code\": \"10115\"}. country (ISO code) and address_line_1 are required.",
+            "properties": {
+              "country": {
+                "type": "string",
+                "description": "Country ISO code."
+              },
+              "state": {
+                "type": "string",
+                "description": "State, province or region."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "address_line_1": {
+                "type": "string",
+                "description": "Address line 1."
+              },
+              "address_line_2": {
+                "type": "string",
+                "description": "Address line 2."
+              },
+              "postal_code": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "comment": {
+                "type": "string",
+                "description": "Comment."
+              }
+            },
+            "required": [
+              "country",
+              "address_line_1"
+            ]
+          },
+          "supplier": {
+            "type": "boolean",
+            "description": "true marks the contact as a supplier."
+          },
+          "manager_id": {
+            "type": "integer",
+            "description": "Employee id of the responsible manager.",
+            "minimum": 1
+          },
+          "discount_code": {
+            "type": "string",
+            "description": "Discount code."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Tags, e.g. [\"vip\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "tax_identification_number": {
+            "type": "string",
+            "description": "Tax identification number."
+          },
+          "custom_fields": {
+            "type": "string",
+            "description": "Custom field values as JSON text, e.g. {\"f123\": \"value\"}, where the key is f followed by the id of the custom field."
+          },
+          "business_registration_number": {
+            "type": "string",
+            "description": "Business registration number."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts/organizations",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "phones": "$phones",
+          "notes": "$notes",
+          "address": "$address",
+          "billing_address": "$billing_address",
+          "supplier": "$supplier",
+          "manager_id": "$manager_id",
+          "discount_code": "$discount_code",
+          "tags": "$tags",
+          "tax_identification_number": "$tax_identification_number",
+          "custom_fields": "$custom_fields",
+          "business_registration_number": "$business_registration_number"
+        }
+      }
+    },
+    {
+      "name": "ro_app_list_inquiries",
+      "description": "List inquiries (leads): id, document number, status, type, location, contact name and phone, client, manager, comment, due date and created date. Returns the rows of one page with count (the total number of rows); 50 rows per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Only inquiries in these status ids (ro_app_list_inquiry_statuses).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "types": {
+            "type": "array",
+            "description": "Only inquiries of these type ids (ro_app_list_inquiry_types).",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these inquiry ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "numbers": {
+            "type": "array",
+            "description": "Only inquiries with these document numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "branch_ids": {
+            "type": "array",
+            "description": "Only inquiries of these location ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "managers": {
+            "type": "array",
+            "description": "Only inquiries of these manager (employee) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "clients_ids": {
+            "type": "array",
+            "description": "Only inquiries of these client (person or organization) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "client_names": {
+            "type": "array",
+            "description": "Only inquiries of clients with these names.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "client_phones": {
+            "type": "array",
+            "description": "Only inquiries with these phone numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "created_at": {
+            "type": "array",
+            "description": "Created: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "due_date": {
+            "type": "array",
+            "description": "Due: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "due_date",
+              "-due_date"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inquiries",
+        "queryParams": {
+          "page": "$page",
+          "statuses": "$statuses",
+          "types": "$types",
+          "ids": "$ids",
+          "numbers": "$numbers",
+          "branch_ids": "$branch_ids",
+          "managers": "$managers",
+          "clients_ids": "$clients_ids",
+          "client_names": "$client_names",
+          "client_phones": "$client_phones",
+          "created_at": "$created_at",
+          "due_date": "$due_date",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_get_inquiry",
+      "description": "Read one inquiry (lead): status, type, contact name, phone and email, client, manager, comment, notes, address, due date and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_id": {
+            "type": "integer",
+            "description": "Inquiry id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "inquiry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inquiries/{inquiry_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_create_inquiry",
+      "description": "Create an inquiry (lead) of a given type, with the contact name and phone or an existing client, a comment and an optional due date. Returns the inquiry with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type_id": {
+            "type": "integer",
+            "description": "Inquiry type id from ro_app_list_inquiry_types.",
+            "minimum": 1
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Location id.",
+            "minimum": 1
+          },
+          "manager_id": {
+            "type": "integer",
+            "description": "Employee id of the manager.",
+            "minimum": 1
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Existing client (person or organization) id.",
+            "minimum": 1
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Contact name, when there is no client record yet."
+          },
+          "client_phone": {
+            "type": "string",
+            "description": "Contact phone."
+          },
+          "email": {
+            "type": "string",
+            "description": "Contact email."
+          },
+          "comment": {
+            "type": "string",
+            "description": "What the lead asks for."
+          },
+          "manager_notes": {
+            "type": "string",
+            "description": "Notes of the manager."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date of the inquiry. ISO 8601, e.g. 2026-11-20T10:00:00Z."
+          },
+          "urgent": {
+            "type": "boolean",
+            "description": "true marks the inquiry as urgent."
+          },
+          "custom_fields": {
+            "type": "string",
+            "description": "Custom field values as JSON text, e.g. {\"f123\": \"value\"}, where the key is f followed by the id of the custom field."
+          }
+        },
+        "required": [
+          "type_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inquiries",
+        "bodyMapping": {
+          "type_id": "$type_id",
+          "branch_id": "$branch_id",
+          "manager_id": "$manager_id",
+          "client_id": "$client_id",
+          "client_name": "$client_name",
+          "client_phone": "$client_phone",
+          "email": "$email",
+          "comment": "$comment",
+          "manager_notes": "$manager_notes",
+          "due_date": "$due_date",
+          "urgent": "$urgent",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "ro_app_update_inquiry_status",
+      "description": "Move an inquiry (lead) to another status, with an optional comment, for example to mark it as won or lost.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inquiry_id": {
+            "type": "integer",
+            "description": "Inquiry id.",
+            "minimum": 1
+          },
+          "status_id": {
+            "type": "integer",
+            "description": "Status id from ro_app_list_inquiry_statuses.",
+            "minimum": 1
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the status change."
+          }
+        },
+        "required": [
+          "inquiry_id",
+          "status_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inquiries/{inquiry_id}/status",
+        "bodyMapping": {
+          "status_id": "$status_id",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "ro_app_list_inquiry_statuses",
+      "description": "List every status an inquiry (lead) can have, with id, name and group. Read-only, no parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inquiries/statuses"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_inquiry_types",
+      "description": "List the inquiry (lead) types of the account with their ids. An inquiry needs one. Read-only, no parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inquiries/types"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_products",
+      "description": "List the products (parts and goods) of the catalogue: id, title, SKU, internal code, barcodes, manufacturer part number, category, unit of measure and prices. Filter by name, barcode, SKU, code or category. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "q": {
+            "type": "string",
+            "description": "Product name or part of it."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Product barcode."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Product SKU."
+          },
+          "code": {
+            "type": "string",
+            "description": "Internal product code."
+          },
+          "mpn": {
+            "type": "string",
+            "description": "Manufacturer part number."
+          },
+          "category_ids": {
+            "type": "array",
+            "description": "Only products of these category ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "title",
+              "-title"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catalog/products",
+        "queryParams": {
+          "q": "$q",
+          "barcode": "$barcode",
+          "sku": "$sku",
+          "code": "$code",
+          "mpn": "$mpn",
+          "category_ids": "$category_ids",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_get_product",
+      "description": "Read one product of the catalogue: title, SKU, code, barcodes, category, unit of measure, warranty, prices and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Product id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/catalog/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_warehouses",
+      "description": "List the warehouses: id, name, type and the location they belong to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Only warehouses of this location.",
+            "minimum": 1
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "name",
+              "-name"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/assets/warehouses",
+        "queryParams": {
+          "page": "$page",
+          "branch_id": "$branch_id",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_invoices",
+      "description": "List invoices: id, document number, status, client and payer, legal entity, payment method, totals, issue date and due date, and the order they belong to. Returns the rows of one page with count (the total number of rows); 50 rows per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Only invoices in these status ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these invoice ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "numbers": {
+            "type": "array",
+            "description": "Only invoices with these document numbers.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "order_id": {
+            "type": "integer",
+            "description": "Only invoices of this order.",
+            "minimum": 1
+          },
+          "client_ids": {
+            "type": "array",
+            "description": "Only invoices of these client ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "payer_ids": {
+            "type": "array",
+            "description": "Only invoices of these payer ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "managers": {
+            "type": "array",
+            "description": "Only invoices of these manager (employee) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "legal_entity_id": {
+            "type": "integer",
+            "description": "Only invoices of this legal entity.",
+            "minimum": 1
+          },
+          "payment_method": {
+            "type": "string",
+            "description": "Only invoices with this payment method.",
+            "enum": [
+              "cash",
+              "cashless",
+              "credit_card"
+            ]
+          },
+          "created_at": {
+            "type": "array",
+            "description": "Created: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "issue_date": {
+            "type": "array",
+            "description": "Issued: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "due_date": {
+            "type": "array",
+            "description": "Due: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "page": "$page",
+          "statuses": "$statuses",
+          "ids": "$ids",
+          "numbers": "$numbers",
+          "order_id": "$order_id",
+          "client_ids": "$client_ids",
+          "payer_ids": "$payer_ids",
+          "managers": "$managers",
+          "legal_entity_id": "$legal_entity_id",
+          "payment_method": "$payment_method",
+          "created_at": "$created_at",
+          "issue_date": "$issue_date",
+          "due_date": "$due_date",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_get_invoice",
+      "description": "Read one invoice: number, status, client and payer, legal entity, payment method, totals with tax and discount, issue and due dates and comments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_invoice_items",
+      "description": "List the products and services on an invoice: each item with name, quantity, price, discount and tax. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "integer",
+            "description": "Invoice id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}/items"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_finance_accounts",
+      "description": "List the finance accounts (cash boxes and bank accounts) of the company with their ids, titles and payment method types. Read-only; this connector records no payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_method": {
+            "type": "string",
+            "description": "Only accounts of this payment method type.",
+            "enum": [
+              "cash",
+              "cashless",
+              "credit_card"
+            ]
+          },
+          "branch_id": {
+            "type": "integer",
+            "description": "Only accounts of this location.",
+            "minimum": 1
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "title",
+              "-title"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/accounts",
+        "queryParams": {
+          "payment_method": "$payment_method",
+          "branch_id": "$branch_id",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_account_transactions",
+      "description": "List the payments booked on one finance account: direction (income or expense), amount, cash flow category, description, the employee who booked it and the date. Returns the rows of one page with count (the total number of rows); 50 rows per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "integer",
+            "description": "Finance account id from ro_app_list_finance_accounts.",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "direction": {
+            "type": "string",
+            "description": "Only income or only expense.",
+            "enum": [
+              "income",
+              "expense"
+            ]
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Only this cash flow category.",
+            "minimum": 1
+          },
+          "created_by_id": {
+            "type": "integer",
+            "description": "Only transactions booked by this employee.",
+            "minimum": 1
+          },
+          "created_at": {
+            "type": "array",
+            "description": "Created: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "created_at",
+              "-created_at"
+            ]
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance/accounts/{account_id}/transactions",
+        "queryParams": {
+          "page": "$page",
+          "direction": "$direction",
+          "category_id": "$category_id",
+          "created_by_id": "$created_by_id",
+          "created_at": "$created_at",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_list_tasks",
+      "description": "List tasks: id, title, description, priority, status, due date, author, assignees and the object they are linked to. Returns the rows of one page with count (the total number of rows); 50 rows per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1. Each page holds up to 50 rows.",
+            "minimum": 1,
+            "default": 1
+          },
+          "statuses": {
+            "type": "array",
+            "description": "Only tasks in these status ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "priorities": {
+            "type": "string",
+            "description": "Only tasks of this priority.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "overdue": {
+            "type": "boolean",
+            "description": "true: only overdue tasks, false: only tasks that are not overdue."
+          },
+          "unassigned": {
+            "type": "boolean",
+            "description": "true: only unassigned tasks, false: only assigned ones."
+          },
+          "assignee_ids": {
+            "type": "array",
+            "description": "Only tasks assigned to these employee ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "author_ids": {
+            "type": "array",
+            "description": "Only tasks created by these employee ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "ids": {
+            "type": "array",
+            "description": "Only these task ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "created_at": {
+            "type": "array",
+            "description": "Created: one or two ISO 8601 date-times. One value is the start; two values are start and end, e.g. [\"2026-11-01T00:00:00Z\", \"2026-11-30T23:59:59Z\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 2
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort field; a leading minus sorts descending.",
+            "enum": [
+              "id",
+              "-id",
+              "modified_at",
+              "-modified_at",
+              "due_date",
+              "-due_date",
+              "priority",
+              "-priority"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "page": "$page",
+          "statuses": "$statuses",
+          "priorities": "$priorities",
+          "overdue": "$overdue",
+          "unassigned": "$unassigned",
+          "assignee_ids": "$assignee_ids",
+          "author_ids": "$author_ids",
+          "ids": "$ids",
+          "created_at": "$created_at",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_get_task",
+      "description": "Read one task: title, description, priority, status, due date, author, assignees, the linked object and its comments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "description": "Task id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/{task_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ro_app_create_task",
+      "description": "Create a task with a title and a due date, optionally with a description, priority, assignees and a link to an order, inquiry, invoice, client or another task. Returns the task with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Task title.",
+            "minLength": 1
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Due date as YYYY-MM-DD or an ISO 8601 date-time, e.g. 2026-11-25 or 2026-11-25T15:00:00Z."
+          },
+          "description": {
+            "type": "string",
+            "description": "Task description."
+          },
+          "priority": {
+            "type": "string",
+            "description": "Priority.",
+            "enum": [
+              "low",
+              "medium",
+              "high"
+            ]
+          },
+          "assignee_ids": {
+            "type": "array",
+            "description": "Employee ids to assign the task to.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "related_object": {
+            "type": "object",
+            "description": "Object the task belongs to, e.g. {\"type\": \"order\", \"id\": 12345}. type is task, inquiry, order, invoice or client.",
+            "properties": {
+              "type": {
+                "type": "string",
+                "description": "Type of the linked object.",
+                "enum": [
+                  "task",
+                  "inquiry",
+                  "order",
+                  "invoice",
+                  "client"
+                ]
+              },
+              "id": {
+                "type": "integer",
+                "description": "Id of the linked object."
+              }
+            },
+            "required": [
+              "type",
+              "id"
+            ]
+          }
+        },
+        "required": [
+          "title",
+          "due_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "due_date": "$due_date",
+          "description": "$description",
+          "priority": "$priority",
+          "assignee_ids": "$assignee_ids",
+          "related_object": "$related_object"
+        }
+      }
+    }
+  ]
+}

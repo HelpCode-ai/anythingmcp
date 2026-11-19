@@ -1,0 +1,1633 @@
+{
+  "slug": "reeleezee",
+  "name": "Reeleezee",
+  "description": "Reeleezee (Exact Reeleezee) online accounting for Dutch businesses: administrations, chart of accounts, column balance, balance sheet, profit and loss, sales and purchase invoices, offerings, customers, vendors, products, bank statements and transactions. Creates customers and draft sales invoices. Sign-in with your Reeleezee login.",
+  "aliases": [
+    "Exact Reeleezee",
+    "Reeleezee boekhouden"
+  ],
+  "region": "nl",
+  "category": "accounting",
+  "icon": "reeleezee",
+  "docsUrl": "https://portal.reeleezee.nl/api/v1/Help",
+  "requiredEnvVars": [
+    "REELEEZEE_USERNAME",
+    "REELEEZEE_PASSWORD"
+  ],
+  "optionalEnvVars": [
+    "REELEEZEE_ADMINISTRATION_ID"
+  ],
+  "envVarMeta": {
+    "REELEEZEE_USERNAME": {
+      "label": "Reeleezee user name",
+      "kind": "credential",
+      "help": "The user name you sign in to Reeleezee with. A separate user with only the rights the assistant needs is recommended.",
+      "link": "https://portal.reeleezee.nl/api/v1/Help",
+      "pattern": "^[^\\s:]+$",
+      "patternMessage": "Enter the Reeleezee user name without spaces or a colon."
+    },
+    "REELEEZEE_PASSWORD": {
+      "label": "Reeleezee password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that Reeleezee user."
+    },
+    "REELEEZEE_ADMINISTRATION_ID": {
+      "label": "Default administration id",
+      "kind": "setting",
+      "help": "Optional. The GUID of the administration the assistant works in. Leave empty at first, ask the assistant to list your administrations and paste the id here.",
+      "example": "7f9c2a34-5b1d-4e8a-9c0f-2d6a1b3e4f50",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "Enter the administration id as a GUID, e.g. 7f9c2a34-5b1d-4e8a-9c0f-2d6a1b3e4f50."
+    }
+  },
+  "instructionFacts": [
+    "The default administration of this workspace has the id {{REELEEZEE_ADMINISTRATION_ID}}: pass it as administration_id unless the user names another administration."
+  ],
+  "verifyHints": {
+    "401": "Reeleezee refused the sign-in. Check the user name and password: they are the ones of the Reeleezee web application.",
+    "403": "This Reeleezee user has no rights for that administration or function. Ask the administration owner to widen the rights of the user.",
+    "404": "Reeleezee found nothing there. Check the administration id and the record id: both are GUIDs and a record belongs to one administration.",
+    "rate_limited": "Reeleezee allows 60 calls per minute and one call at a time per login. Wait a minute and call the tools one after another."
+  },
+  "probe": {
+    "tool": "reeleezee_list_administrations",
+    "params": {
+      "top": 1,
+      "select": "id,Name"
+    }
+  },
+  "prerequisites": "A Reeleezee (Exact Reeleezee) account and a user name and password that can open the administration. No API key or app registration is needed. About 2 minutes.",
+  "connector": {
+    "name": "Reeleezee REST API",
+    "type": "REST",
+    "baseUrl": "https://portal.reeleezee.nl/api/v1",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{REELEEZEE_USERNAME}}",
+      "password": "{{REELEEZEE_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Accept-Language": "en",
+      "Content-Type": "application/json; charset=utf-8",
+      "Prefer": "return=representation",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "instructions": "## Reeleezee\nThis connector works with the **Reeleezee REST API** (Exact Reeleezee, Dutch online accounting) at `https://portal.reeleezee.nl/api/v1`: administrations, periods, the chart of accounts, column balance, balance sheet and profit and loss, journal lines, sales invoices, offerings, purchase invoices, customers, vendors, products, VAT rates, payment accounts, bank statements and bank transactions. It can create customers with their address and draft sales invoices.\n\n**Setup (about 2 minutes)**\n1. Use a Reeleezee login that can open the administration: the API takes the same user name and password as the Reeleezee web application (HTTP Basic). A separate user with only the rights the assistant needs is recommended.\n2. Enter the user name in `REELEEZEE_USERNAME` and the password in `REELEEZEE_PASSWORD`.\n3. Optional: after the first `reeleezee_list_administrations`, put the id of the administration you work in into `REELEEZEE_ADMINISTRATION_ID`, so the assistant does not have to look it up in every chat.\n\n**Where to start**: `reeleezee_list_administrations` gives the administrations of the login; `reeleezee_get_administration` shows one. Every other tool needs `administration_id`. `reeleezee_list_periods` gives the period ids for the financial reports.\n\n**Ledger and reports**: `reeleezee_list_ledger_accounts` and `reeleezee_get_ledger_account` (grootboekrekeningen), `reeleezee_get_column_balance` (kolommenbalans), `reeleezee_get_balance_sheet`, `reeleezee_get_profit_and_loss`, `reeleezee_get_ledger_balance` for one account, and `reeleezee_list_journal_entry_lines` for the booked lines. The report tools take `start_period` and `end_period` (period ids, not dates).\n\n**Sales**: `reeleezee_list_sales_invoices`, `reeleezee_get_sales_invoice`, `reeleezee_list_sales_invoice_lines`; offerings (quotes) with `reeleezee_list_offerings`, `reeleezee_get_offering` and `reeleezee_list_offering_lines`. Status is 1 tentative (draft), 2 open, 3 closed. `reeleezee_save_sales_invoice_draft` writes a draft only: booking, numbering and sending stay in Reeleezee.\n\n**Purchases**: `reeleezee_list_purchase_invoices`, `reeleezee_get_purchase_invoice`, `reeleezee_list_purchase_invoice_lines`.\n\n**Relations and products**: `reeleezee_list_customers`, `reeleezee_get_customer`, `reeleezee_list_vendors`, `reeleezee_get_vendor`, `reeleezee_list_products`, `reeleezee_list_tax_rates`. Create or change a customer with `reeleezee_save_customer` and its address with `reeleezee_save_customer_address`.\n\n**Banking**: `reeleezee_list_payment_accounts` (bank and cash accounts with their balance), `reeleezee_list_bank_statements` and `reeleezee_list_bank_transactions`. All read-only: the connector never starts a payment, a direct debit or a bank export.\n\n**Creating records**: Reeleezee creates with PUT on an id the client chooses. Generate a random GUID (UUID v4, e.g. `7f9c2a34-5b1d-4e8a-9c0f-2d6a1b3e4f50`) for every new customer, address, communication channel and invoice, and use each GUID once. Whether a PUT keeps the fields you leave out is not documented: after an update compare the answer with the record you read before. Nothing is deleted by this connector.\n\n**OData**: list tools answer `value` (the rows) and accept `filter`, `select`, `orderby`, `top` and `skip` (OData v4). Records are wide, so use `select`. Dates in a filter are written `2026-01-31T00:00:00Z` without quotes, text in single quotes, GUIDs without quotes; if a filter is refused, read a few rows first and filter on the fields and value forms you see. Page with `skip`: the `@odata.nextLink` of an answer can point to another host and cannot be followed by these tools.\n\n**Limits and pitfalls**: at most 60 calls per minute. One login cannot run two calls at the same time: call the tools one after another, never in parallel, or Reeleezee answers that the login is in use. Three failed writes within a minute block the login for 10 minutes, so do not retry a refused save unchanged. All ids are GUIDs. Amounts are decimals; Base amounts are in the administration currency. Dates come back as `2026-01-31T00:00:00`. Field names and many values are Dutch bookkeeping terms (debiteur is customer, crediteur is vendor, grootboek is ledger, offerte is offering).",
+  "tools": [
+    {
+      "name": "reeleezee_list_administrations",
+      "description": "List the administrations (sets of books) this login can open: id, Name, AdminType, Status, CreateDate, TestAdministration, Deleted and HasAdministrationAccess. The id is the administration_id of every other tool. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `Deleted eq false`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Name,Status,CreateDate`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Name asc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Administrations",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_administration",
+      "description": "Read one administration: name, type, status, language, licence type, jurisdiction and whether it is a test administration. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Administrations/{administration_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_periods",
+      "description": "List the accounting periods (book years and their periods) of an administration, each with its id; read the first answer for the field names before filtering. Period ids are the start_period and end_period of the balance tools (reeleezee_get_column_balance, reeleezee_get_balance_sheet, reeleezee_get_profit_and_loss, reeleezee_get_ledger_balance). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Periods",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_ledger_accounts",
+      "description": "List the ledger accounts (chart of accounts): id, AccountNumber, Description, AccountType, IsTotalAccount, IndentLevel, Parent, HasJournalEntry and the flags that say where the account may be used (sales and purchase invoice lines, bank, manual journals). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search in account number and description."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `IsTotalAccount eq false`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,AccountNumber,Description,AccountType,IsTotalAccount`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `AccountNumber asc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Ledgers",
+        "queryParams": {
+          "search": "$search",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_ledger_account",
+      "description": "Read one ledger account with every field: number, description and translations, type, parent and children, balance account, preferential tax rate, document categories and usage flags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "ledger_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Ledger account id (id of reeleezee_list_ledger_accounts)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "ledger_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Ledgers/{ledger_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_column_balance",
+      "description": "Column balance (kolommenbalans, a trial balance in columns) for a range of periods: per account the Account (number and description), OpeningDebit and OpeningCredit, NetDebit and NetCredit (movement in the range), TrialDebit and TrialCredit, ProfitSheetDebit and ProfitSheetCredit, FinalDebit, FinalCredit, FinalSaldo, the previous-year figures and Children for total accounts. Amounts are in the administration currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "start_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the first period (id of reeleezee_list_periods). Optional: without periods Reeleezee uses its default range."
+          },
+          "end_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the last period (id of reeleezee_list_periods)."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Financials/ColumnBalances",
+        "queryParams": {
+          "startPeriod": "$start_period",
+          "endPeriod": "$end_period"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_balance_sheet",
+      "description": "Balance sheet for a range of periods: the balance accounts as a tree with opening, movement and final debit and credit figures, FinalSaldo and the previous-year figures. Amounts are in the administration currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "start_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the first period (id of reeleezee_list_periods). Optional: without periods Reeleezee uses its default range."
+          },
+          "end_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the last period (id of reeleezee_list_periods)."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Financials/Balances",
+        "queryParams": {
+          "startPeriod": "$start_period",
+          "endPeriod": "$end_period"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_profit_and_loss",
+      "description": "Profit and loss for a range of periods: the result accounts as a tree with ProfitSheetDebit, ProfitSheetCredit, net movement, FinalSaldo and the previous-year figures. Amounts are in the administration currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "start_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the first period (id of reeleezee_list_periods). Optional: without periods Reeleezee uses its default range."
+          },
+          "end_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the last period (id of reeleezee_list_periods)."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Financials/ProfitAndLosses",
+        "queryParams": {
+          "startPeriod": "$start_period",
+          "endPeriod": "$end_period"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_ledger_balance",
+      "description": "Balance of one ledger account for a range of periods: opening, movement (NetDebit, NetCredit) and final debit and credit, FinalSaldo and the previous-year figures. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "ledger_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Ledger account id (id of reeleezee_list_ledger_accounts)."
+          },
+          "start_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the first period (id of reeleezee_list_periods). Optional: without periods Reeleezee uses its default range."
+          },
+          "end_period": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Id of the last period (id of reeleezee_list_periods)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "ledger_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Financials/LedgerBalances/{ledger_id}",
+        "queryParams": {
+          "startPeriod": "$start_period",
+          "endPeriod": "$end_period"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_journal_entry_lines",
+      "description": "List journal entry lines (the booked ledger mutations): id, Description, Account, DebitAmount, CreditAmount, VatAmount, TaxRate, JournalEntry, Department, Product and Project. Filter and page: an administration holds many lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `DebitAmount gt 1000`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Description,DebitAmount,CreditAmount,VatAmount`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `DebitAmount desc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/JournalEntryLines",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_sales_invoices",
+      "description": "List sales invoices: id, InvoiceNumber, Date, DueDate, Status (1 tentative or draft, 2 open, 3 closed), Entity (the customer), Reference, TotalNetAmount, TotalTaxAmount, TotalPayableAmount, TotalPaidAmount, BaseRemainingAmount, OverdueDays, IsCreditInvoice and IsArchived. Amounts are in the invoice currency; Base amounts in the administration currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search, e.g. an invoice number or customer name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `Date ge 2026-01-01T00:00:00Z and Status eq 2`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,InvoiceNumber,Date,DueDate,Status,TotalNetAmount,TotalTaxAmount,TotalPayableAmount,BaseRemainingAmount`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Date desc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/SalesInvoices",
+        "queryParams": {
+          "search": "$search",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_sales_invoice",
+      "description": "Read one sales invoice with every field: number, dates, status, customer, addresses, header and footer text, discount, VAT summary, payment terms and references, totals and remaining amount. Lines come from reeleezee_list_sales_invoice_lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Sales invoice id (id of reeleezee_list_sales_invoices)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/SalesInvoices/{invoice_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_sales_invoice_lines",
+      "description": "List the lines of one sales invoice: id, Sequence, Description, Quantity, Price, DiscountPercentage, NetAmount, TaxAmount, TotalAmount, TaxRate, Product, Account, Project and UnitOfMeasurement. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Sales invoice id (id of reeleezee_list_sales_invoices)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/SalesInvoices/{invoice_id}/Lines"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_offerings",
+      "description": "List offerings (quotes, offertes): id, InvoiceNumber, Date, DueDate, Status, Entity (the customer), Reference, TotalNetAmount, TotalTaxAmount, TotalPayableAmount and IsArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search, e.g. an offering number or customer name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `Date ge 2026-01-01T00:00:00Z`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,InvoiceNumber,Date,Status,TotalNetAmount,TotalPayableAmount`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Date desc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Offerings",
+        "queryParams": {
+          "search": "$search",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_offering",
+      "description": "Read one offering (quote) with every field: number, dates, status, customer, addresses, header and footer text, discount, VAT summary and totals. Lines come from reeleezee_list_offering_lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "offering_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Offering id (id of reeleezee_list_offerings)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "offering_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Offerings/{offering_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_offering_lines",
+      "description": "List the lines of one offering (quote): id, Sequence, Description, Quantity, Price, DiscountPercentage, NetAmount, TaxAmount, TotalAmount, TaxRate, Product and UnitOfMeasurement. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "offering_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Offering id (id of reeleezee_list_offerings)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "offering_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Offerings/{offering_id}/Lines"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_purchase_invoices",
+      "description": "List purchase invoices: id, Date, DueDate, Status (1 tentative, 2 open, 3 closed), Entity (the vendor), Reference, InvoiceReference, TotalNetAmount, TotalTaxAmount, TotalPayableAmount, TotalPaidAmount, BaseRemainingAmount, OverdueDays, IsDuplicate and IsArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `Date ge 2026-01-01T00:00:00Z and Status eq 2`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Date,DueDate,Status,Reference,TotalNetAmount,TotalTaxAmount,TotalPayableAmount,BaseRemainingAmount`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Date desc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/PurchaseInvoices",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_purchase_invoice",
+      "description": "Read one purchase invoice with every field: dates, status, vendor, references, VAT summary, payment terms, totals, paid and remaining amount and the uploaded scans. Lines come from reeleezee_list_purchase_invoice_lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Purchase invoice id (id of reeleezee_list_purchase_invoices)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/PurchaseInvoices/{invoice_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_purchase_invoice_lines",
+      "description": "List the lines of one purchase invoice: Description, Quantity, Price, NetAmount, TaxAmount, TotalAmount, TaxRate, Account (the cost ledger), Product, Project and Department. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Purchase invoice id (id of reeleezee_list_purchase_invoices)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/PurchaseInvoices/{invoice_id}/Lines"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_customers",
+      "description": "List customers: id, Name, SearchName, IdentifierNumber (customer number), EMail, FullAddress, City, PostalCode, ChamberOfCommerceNumber, DueDays, DiscountPercentage and IsArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search in name, search name, number, e-mail and address."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true: also return archived records (default false)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `contains(Name,'bakker')`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Name,SearchName,IdentifierNumber,EMail,City`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Name asc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Customers",
+        "queryParams": {
+          "search": "$search",
+          "includeArchived": "$include_archived",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_customer",
+      "description": "Read one customer with every field: names, customer number, addresses, communication channels (e-mail, phone), bank relations, chamber of commerce number, payment terms, discount, language and VAT settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer id (id of reeleezee_list_customers)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Customers/{customer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_vendors",
+      "description": "List vendors (suppliers): id, Name, SearchName, IdentifierNumber, EMail, FullAddress, City, ChamberOfCommerceNumber, PaymentDueDays and IsArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search in name, search name, number, e-mail and address."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true: also return archived records (default false)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `contains(Name,'groothandel')`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Name,SearchName,IdentifierNumber,EMail,City`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Name asc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Vendors",
+        "queryParams": {
+          "search": "$search",
+          "includeArchived": "$include_archived",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_get_vendor",
+      "description": "Read one vendor with every field: names, vendor number, addresses, communication channels, bank relations, chamber of commerce number, payment terms, default ledger account and VAT settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "vendor_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Vendor id (id of reeleezee_list_vendors)."
+          }
+        },
+        "required": [
+          "administration_id",
+          "vendor_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Vendors/{vendor_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_products",
+      "description": "List products and services: id, Code, Description, SearchName, Price (sales price), PurchasePrice, CostPrice, BarCode, ProductKind, IsStockEnabled, Stock and IsArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search in code, description and search name."
+          },
+          "include_archived": {
+            "type": "boolean",
+            "description": "true: also return archived products (default false)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `Price gt 100`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Code,Description,Price,Stock`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Description asc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/Products",
+        "queryParams": {
+          "search": "$search",
+          "includeArchived": "$include_archived",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_tax_rates",
+      "description": "List the VAT rates of an administration: id, Description, Percentage, IsExcempt, IsRelayed (reverse charge) and TaxKind. The id is the TaxRate of an invoice line in reeleezee_save_sales_invoice_draft. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `Percentage eq 21`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Description,Percentage`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Percentage desc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/TaxRates",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_payment_accounts",
+      "description": "List the payment accounts (bank, cash and credit card accounts): id, Name, Description, AccountNumber, IBAN, Bank, Type, IsDefault, Currency, CurrentBalance, LastBalanceDate and IsArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `IsArchived eq false`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Name,IBAN,CurrentBalance,LastBalanceDate`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Name asc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/PaymentAccounts",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_bank_statements",
+      "description": "List bank statements: id, Number, Series, Date, PaymentAccount, Debits, Credits, UserOpenBalance, UserFinalBalance, Complete (fully booked) and IsArchived. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `Complete eq false`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,Number,Date,Debits,Credits,Complete`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `Date desc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/BankStatements",
+        "queryParams": {
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_list_bank_transactions",
+      "description": "List bank transactions (payment transactions imported from the bank or entered by hand): id, BookDate, Amount, DebitAmount, CreditAmount, OpenAmount (not yet matched), Name and CounterAccount of the other party, Reference, PaymentAccount, Statement, IsComplete and IsImported. Read-only; this connector does not start payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free-text search in name, counter account and reference. If a call without search is refused, pass a search text."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData v4 $filter, e.g. `BookDate ge 2026-01-01T00:00:00Z and IsComplete eq false`. Operators eq, ne, gt, ge, lt, le, and, or; functions such as contains(Field,'text')."
+          },
+          "select": {
+            "type": "string",
+            "description": "OData $select: comma-separated fields to return, e.g. `id,BookDate,Amount,OpenAmount,Name,CounterAccount,Reference,IsComplete`. Use it: records have many fields."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby: a field name followed by asc or desc, e.g. `BookDate desc`."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50,
+            "description": "Rows per call (default 50, at most 1000)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: raise it by top until fewer than top rows come back."
+          }
+        },
+        "required": [
+          "administration_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/{administration_id}/PaymentTransactions",
+        "queryParams": {
+          "search": "$search",
+          "$filter": "$filter",
+          "$select": "$select",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "reeleezee_save_customer",
+      "description": "Create a customer, or update one, with PUT on its id. For a new customer generate a random GUID (UUID v4) yourself and pass it as customer_id; for an update pass the id of the existing customer. Returns the saved customer. Add a postal address with reeleezee_save_customer_address. Show the user what will be saved and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random GUID (UUID v4) for a new customer, or the id of the customer to update."
+          },
+          "name": {
+            "type": "string",
+            "description": "Customer name (company name, or full name of a person)."
+          },
+          "search_name": {
+            "type": "string",
+            "description": "Short name used in lists and searches. Default: use the name."
+          },
+          "additional_name": {
+            "type": "string",
+            "description": "Second name line, e.g. a department."
+          },
+          "chamber_of_commerce_number": {
+            "type": "string",
+            "description": "KvK number."
+          },
+          "due_days": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Payment term in days for invoices to this customer."
+          },
+          "discount_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Standard discount in percent."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Internal note on the customer."
+          },
+          "communication_channels": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "E-mail and phone entries, each with its own new GUID: `[{\"id\": \"0b5d7c1e-3f1a-4a7e-9c55-2f6f0d1c8a11\", \"CommunicationType\": 10, \"FormattedValue\": \"info@example.nl\"}]`. CommunicationType: 9 telephone, 10 e-mail, 11 fax, 12 website, 13 mobile phone."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other Customer fields by their API name, e.g. `{\"FirstName\": \"Jan\", \"LastName\": \"Jansen\", \"ChamberOfCommerceCity\": \"Utrecht\"}`. The named parameters of this tool win over the same field here."
+          }
+        },
+        "required": [
+          "administration_id",
+          "customer_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/{administration_id}/Customers/{customer_id}",
+        "bodyMapping": {
+          "id": "$customer_id",
+          "EntityKind": 1,
+          "Name": "$name",
+          "SearchName": "$search_name",
+          "AdditionalName": "$additional_name",
+          "ChamberOfCommerceNumber": "$chamber_of_commerce_number",
+          "DueDays": "$due_days",
+          "DiscountPercentage": "$discount_percentage",
+          "Comment": "$comment",
+          "CommunicationChannelList": "$communication_channels",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "reeleezee_save_customer_address",
+      "description": "Add an address to a customer, or update one, with PUT on its id. For a new address generate a random GUID (UUID v4) and pass it as address_id. Returns the saved address. Invoices to the customer use its billing address.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer id (id of reeleezee_list_customers)."
+          },
+          "address_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random GUID (UUID v4) for a new address, or the id of the address to update (AddressList of reeleezee_get_customer)."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ],
+            "default": 2,
+            "description": "Address type: 1 office, 2 billing (default), 3 shipping, 4 home."
+          },
+          "street": {
+            "type": "string",
+            "description": "Street name without the house number."
+          },
+          "number": {
+            "type": "string",
+            "description": "House number."
+          },
+          "number_extension": {
+            "type": "string",
+            "description": "House number addition, e.g. A or bis."
+          },
+          "postcode": {
+            "type": "string",
+            "description": "Postal code, e.g. 3511 AB."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other Address fields by their API name, e.g. `{\"PObox\": \"123\", \"BuildingName\": \"Toren A\"}`."
+          }
+        },
+        "required": [
+          "administration_id",
+          "customer_id",
+          "address_id",
+          "city"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/{administration_id}/Customers/{customer_id}/Addresses/{address_id}",
+        "bodyMapping": {
+          "id": "$address_id",
+          "Type": "$type",
+          "Street": "$street",
+          "Number": "$number",
+          "NumberExtension": "$number_extension",
+          "Postcode": "$postcode",
+          "City": "$city",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "reeleezee_save_sales_invoice_draft",
+      "description": "Create a draft (tentative) sales invoice for a customer with PUT on its id: generate a random GUID (UUID v4) yourself and pass it as invoice_id. Returns the saved invoice with its totals. The draft is not booked, numbered or sent: the user checks and books it in Reeleezee. Show the user the customer, lines and amounts and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "administration_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Administration id, a GUID (id of reeleezee_list_administrations)."
+          },
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "A new random GUID (UUID v4) for the new invoice, or the id of a draft to replace."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer id (id of reeleezee_list_customers)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Invoice date (YYYY-MM-DD)."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Payment due date (YYYY-MM-DD). Default: the payment term of the customer."
+          },
+          "header": {
+            "type": "string",
+            "description": "Text printed above the lines."
+          },
+          "footer": {
+            "type": "string",
+            "description": "Text printed below the lines."
+          },
+          "reference": {
+            "type": "string",
+            "description": "Reference, e.g. the customer's order number."
+          },
+          "is_vat_included": {
+            "type": "boolean",
+            "description": "true: line prices include VAT. Default false."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "Description": {
+                  "type": "string",
+                  "description": "Line text."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "Price": {
+                  "type": "number",
+                  "description": "Price per unit in the invoice currency."
+                },
+                "DiscountPercentage": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "TaxRate": {
+                  "type": "object",
+                  "description": "VAT rate as `{\"id\": \"<tax rate id>\"}` (id of reeleezee_list_tax_rates)."
+                },
+                "Product": {
+                  "type": "object",
+                  "description": "Product as `{\"id\": \"<product id>\"}` (id of reeleezee_list_products)."
+                },
+                "Account": {
+                  "type": "object",
+                  "description": "Revenue ledger as `{\"id\": \"<ledger id>\"}` (id of reeleezee_list_ledger_accounts)."
+                }
+              },
+              "required": [
+                "Description",
+                "Quantity",
+                "Price"
+              ]
+            },
+            "description": "Invoice lines, e.g. `[{\"Description\": \"Advies oktober\", \"Quantity\": 4, \"Price\": 95, \"TaxRate\": {\"id\": \"1e44993a-15f6-419f-87e5-3e31ac3d9383\"}}]`."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other SalesInvoice fields by their API name, e.g. `{\"Description\": \"Project Alfa\", \"DiscountPercentage\": 5}`."
+          }
+        },
+        "required": [
+          "administration_id",
+          "invoice_id",
+          "customer_id",
+          "date",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/{administration_id}/SalesInvoices/{invoice_id}",
+        "bodyMapping": {
+          "id": "$invoice_id",
+          "Status": 1,
+          "Type": 1,
+          "DocumentType": 10,
+          "Origin": 2,
+          "Entity": {
+            "id": "$customer_id"
+          },
+          "Date": "$date",
+          "DueDate": "$due_date",
+          "Header": "$header",
+          "Footer": "$footer",
+          "Reference": "$reference",
+          "IsVatIncluded": "$is_vat_included",
+          "DocumentLineList": "$lines",
+          "__merge": "$extra_fields"
+        }
+      }
+    }
+  ]
+}

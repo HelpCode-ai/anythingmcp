@@ -1,0 +1,1412 @@
+{
+  "slug": "hero-software",
+  "name": "HERO Software",
+  "description": "HERO Handwerkersoftware for trades and craft businesses: contacts, projects with status pipelines and logbook, offers, invoices and other documents, tasks, calendar events, field service jobs, time tracking and the article and service master. Creates contacts, projects, tasks and logbook notes. API key from HERO support.",
+  "aliases": [
+    "HERO",
+    "HERO Handwerkersoftware",
+    "HERO Handwerker Software"
+  ],
+  "region": "de",
+  "category": "field-service",
+  "icon": "hero-software",
+  "docsUrl": "https://hero-software.de/api-doku/graphql-guide",
+  "prerequisites": "A HERO Software account and an API key for it. HERO issues the key on request: ask HERO support (https://hero-software.de/support/kontakt).",
+  "requiredEnvVars": [
+    "HERO_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "HERO_API_TOKEN": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key HERO support issued for your account. Paste the key only, without the word Bearer.",
+      "link": "https://hero-software.de/api-doku/graphql-guide",
+      "pattern": "^(?!Bearer\\s)\\S{16,}$",
+      "patternMessage": "Paste only the API key, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "HERO refused the API key. Paste the key exactly as HERO support sent it, without Bearer in front.",
+    "403": "HERO refused the API key (invalid_token): it is wrong, was revoked or belongs to another account. Paste the key exactly as HERO support sent it, or ask support for a new one.",
+    "invalid_token": "HERO refused the API key (invalid_token): it is wrong, was revoked or belongs to another account. Paste the key exactly as HERO support sent it, or ask support for a new one.",
+    "auth_failed": "HERO refused the API key. Paste the key exactly as HERO support sent it, or ask support for a new one.",
+    "rate_limited": "HERO is limiting requests for this key. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "hero_software_get_account"
+  },
+  "connector": {
+    "name": "HERO Software GraphQL API",
+    "type": "GRAPHQL",
+    "baseUrl": "https://login.hero-software.de/api/external/v7/graphql",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HERO_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "schemaUrl": "https://hero-software.de/api-doku/graphql-guide",
+    "config": {
+      "graphqlBuiltinsOff": [
+        "mutation",
+        "subscription"
+      ]
+    }
+  },
+  "instructions": "## HERO Software\nThis connector works with **HERO Software** (HERO Handwerkersoftware, the German cloud software for trades and craft businesses) through its external GraphQL API at `https://login.hero-software.de/api/external/v7/graphql`: contacts, projects, documents such as offers and invoices, tasks, calendar events, field service jobs, time tracking and the article and service master. It can create contacts, projects and tasks and write logbook notes. It deletes nothing and records no payments.\n\n**Setup (a few minutes once you have the key)**\n1. Ask HERO support for an API key for your account (contact options at https://hero-software.de/support/kontakt). HERO issues the key on request; it is not your login password.\n2. Paste the key into `HERO_API_TOKEN`, without the word Bearer. The connector sends it as `Authorization: Bearer` on every call.\n3. The key acts with the rights of the HERO user it was issued for. Check with `hero_software_get_account` who that is.\n\n**Where to start**: `hero_software_get_account` shows the user and company behind the key. `hero_software_search` finds a customer, project or document by one term. `hero_software_list_projects` and `hero_software_list_contacts` list the newest records.\n\n**Contacts**: `hero_software_list_contacts` (search by name, company, email or number; category customer, supplier, partner, other or contact), `hero_software_get_contact` (addresses with their ids, contact persons, projects), `hero_software_create_contact` (set `find_existing` to let HERO return an existing match instead of a duplicate). Country ids for an address come from `hero_software_list_countries`.\n\n**Projects**: HERO calls a project a `project_match`. `hero_software_list_projects` filters by customer, status step, type, trade, assigned user or project number; `hero_software_get_project` adds notes, assignments, status history and documents; `hero_software_list_project_history` reads the logbook; `hero_software_add_logbook_entry` writes a note. `hero_software_create_project` needs the customer id and a name; pipelines and their steps come from `hero_software_list_project_types`, trades from `hero_software_list_trades`.\n\n**Documents**: `hero_software_list_documents` lists offers, order confirmations, invoices and other documents with number, date, value and status; `hero_software_list_document_types` gives the type ids and base types to filter by; `hero_software_get_document` adds a temporary download link for the PDF. `value` and `vat` are returned as HERO stores them, in the document currency. Creating, sending and deleting documents and recording payments are out of scope.\n\n**Tasks, calendar and field service**: `hero_software_list_tasks` and `hero_software_save_task` (create, change, mark done). `hero_software_list_calendar_events` for a time window, `hero_software_search_calendar_events` by text, `hero_software_list_calendar_event_categories` for the categories. `hero_software_list_field_service_jobs` lists the jobs (Einsätze) and `hero_software_list_time_entries` the tracked times. Calendar events are read-only here.\n\n**Master data**: `hero_software_list_products` (article master with purchase, list and sales prices), `hero_software_list_services` (services with net price and planned minutes), `hero_software_list_employees`.\n\n**Ids**: every tool takes the numeric `id`, not the visible number (`nr`, `project_nr`). Employees have two ids: `user_id` (task owners, project assignments, logbook authors) and the employee `id` (calendar events, jobs, time entries).\n\n**Paging**: lists take `first`, `last`, `offset` and `order_by`. Without `first` or `last` HERO returns the last 50 rows in sort order, which is the newest with the default order by id. Ask for the next page by raising `offset` by the page size, and keep pages small (50 to 100 rows): rows carry nested data.\n\n**Dates**: send date-time values as ISO 8601 with an offset (`2026-11-19T08:00:00+01:00`) and dates as `YYYY-MM-DD`.\n\n**Anything else**: `hero-software_graphql_query` runs any read query of the schema (`hero-software_graphql_schema` describes it), for data without a tool of its own such as absences, checklists, cost centres or receipts. `hero-software_graphql_mutation` is installed switched off: it can change and delete anything the user may, including documents, payments and the company account. Switch it on only for a workspace that needs it.\n\n**Errors and limits**: a wrong or missing key is answered with HTTP 403 and `invalid_token`. Field and permission errors come back as GraphQL errors with a message. HERO publishes no rate limit: avoid loops over hundreds of records and prefer one filtered list call.",
+  "tools": [
+    {
+      "name": "hero_software_get_account",
+      "description": "Check the API token and return who it acts as: the user (id, email, role, locale, employee name) and the company (id, name, address, phone, website, currency, VAT id, test or paid account). Read-only; a good first call.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Account { user { id email role locale last_login partner { id full_name role status } } company { id name legal_form street city zipcode default_phone website currency ust_id_number status_saas is_test is_paid } }"
+      }
+    },
+    {
+      "name": "hero_software_list_employees",
+      "description": "List the employees (HERO calls them partners) of the company: id, user_id, name, email, phone, mobile, job title, role (worker, sales, accounting, branch_manager, manager, lite_user) and status. Use `user_id` for task owners and project assignments, and `id` for calendar events, jobs and time entries. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true also returns deleted employees. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Employees($showDeleted: Boolean = false) { company { id partners(show_deleted: $showDeleted) { id user_id full_name first_name last_name email phone mobile title role status account_type } } }",
+        "queryParams": {
+          "showDeleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_trades",
+      "description": "List the trades (Gewerke, HERO field `measures`) set up for the company: id, name, short code and parent trade. The id is the `measure_id` of a project. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Trades { company { id measures { id name short parent_measure_id } } }"
+      }
+    },
+    {
+      "name": "hero_software_list_project_types",
+      "description": "List the project pipelines (project types) with their status steps: type id, name, default flag and per step id, status_code, name, sort order and whether it archives the project. Step ids filter and place projects (`step_ids`, `step_id`). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "is_active": {
+            "type": "boolean",
+            "description": "true only active types, false only inactive ones. Leave out for all."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these project type ids."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ProjectTypes($isActive: Boolean, $ids: [Int]) { project_types(is_active: $isActive, ids: $ids) { id name name_plural is_default is_active project_status_steps { id status_code name sort_order is_active is_archiving } } }",
+        "queryParams": {
+          "isActive": "$is_active",
+          "ids": "$ids"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_countries",
+      "description": "List the countries HERO knows: id, ISO code, name, VAT rates and currency. The id is the `country_id` of an address when a contact is created. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Countries { countries { id code name vat red_vat currency } }"
+      }
+    },
+    {
+      "name": "hero_software_list_contacts",
+      "description": "List or search contacts (customers, suppliers, partners, contact persons): id, number, category, names, company, email, phones and address. `search` matches first name, last name, company name, email and contact number. Returns the newest 50 by default; page with `offset`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to find in first name, last name, company name, email or contact number."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "supplier",
+              "partner",
+              "other",
+              "contact"
+            ],
+            "description": "Only contacts of this category: customer, supplier, partner, other or contact (a contact person)."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these contact ids."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true also returns deleted contacts. Default false."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Contacts($search: String, $category: CustomerCategoryEnum, $ids: [Int], $showDeleted: Boolean = false, $first: Int, $last: Int, $offset: Int, $orderBy: String) { contacts(search: $search, category: $category, ids: $ids, show_deleted: $showDeleted, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id nr category first_name last_name company_name full_name email phone_home phone_mobile is_deleted is_contact_person parent_customer_id created modified address { id street city zipcode country { code name } } } }",
+        "queryParams": {
+          "search": "$search",
+          "category": "$category",
+          "ids": "$ids",
+          "showDeleted": "$show_deleted",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_get_contact",
+      "description": "Read one contact in full: master data, notes, website, position, how the contact came in, the main address, all further addresses with their ids, the contact persons below it, its parent contact and its projects with status. An empty list means the id does not exist. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact id (`id` of hero_software_list_contacts), not the contact number."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Contact($id: Int!) { contacts(ids: [$id], show_deleted: true) { id nr category first_name last_name company_name full_name email phone_home phone_mobile is_deleted is_contact_person parent_customer_id created modified address { id street city zipcode country { code name } } title company_legal_form phone_fax url position source partner_notes birth_date is_invoice_recipient reachability_string parent_customer { id full_name } contacts { id full_name email phone_mobile position } customer_addresses { id title description is_deleted address { id street city zipcode country { code name } } } project_matches { id project_nr name project_title current_project_match_status { status_code name } } } }",
+        "queryParams": {
+          "id": "$contact_id"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_projects",
+      "description": "List or search projects (HERO field `project_matches`): id, project number, name, title, volume, pipeline type, trade, customer, contact person, site address and current status with its step. Filter by customer, status step, assigned user, type, trade, project number or overdue. Returns the newest 50 by default; page with `offset`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Free text search over projects."
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Only projects of this customer (contact id)."
+          },
+          "project_nr": {
+            "type": "string",
+            "description": "Project number, with or without its prefix, e.g. 123 or UNB-123. The prefix is ignored."
+          },
+          "step_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only projects in these status steps (step ids of hero_software_list_project_types)."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only projects with these status codes (`status_code` of a step)."
+          },
+          "type_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only projects of these project types."
+          },
+          "measure_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only projects of these trades (ids of hero_software_list_trades)."
+          },
+          "assigned_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only projects assigned to these users (`user_id` of hero_software_list_employees)."
+          },
+          "overdue": {
+            "type": "boolean",
+            "description": "true: only overdue projects (due date reached or marked, not completed)."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these project ids."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Projects($search: String, $customerId: Int, $projectNr: String, $stepIds: [Int], $statuses: [Int], $typeIds: [Int], $measureIds: [Int], $assignedUserIds: [Int], $overdue: Boolean, $ids: [Int], $first: Int, $last: Int, $offset: Int, $orderBy: String) { project_matches(search: $search, customer_id: $customerId, relative_id: $projectNr, step_ids: $stepIds, statuses: $statuses, type_ids: $typeIds, measure_ids: $measureIds, assigned_user_ids: $assignedUserIds, overdue: $overdue, ids: $ids, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id project_nr name project_title volume partner_source is_deleted created modified type { id name } measure { id short name } customer { id nr full_name company_name email } contact { id full_name email phone_mobile } address { id street city zipcode } current_project_match_status { id status_code name step_id maturity_date } } }",
+        "queryParams": {
+          "search": "$search",
+          "customerId": "$customer_id",
+          "projectNr": "$project_nr",
+          "stepIds": "$step_ids",
+          "statuses": "$statuses",
+          "typeIds": "$type_ids",
+          "measureIds": "$measure_ids",
+          "assignedUserIds": "$assigned_user_ids",
+          "overdue": "$overdue",
+          "ids": "$ids",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_get_project",
+      "description": "Read one project in full: the list fields plus internal notes, the responsible employee, assigned users, the status history and its latest documents (id, number, type, date, value, status). Answers null when the id does not exist. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Project id (`id` of hero_software_list_projects), not the project number."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Project($id: Int!) { project_match(project_match_id: $id) { id project_nr name project_title volume partner_source is_deleted created modified type { id name } measure { id short name } customer { id nr full_name company_name email } contact { id full_name email phone_mobile } address { id street city zipcode } current_project_match_status { id status_code name step_id maturity_date } partner_notes partner { id full_name } project_match_assignments { user_id reason user { id email } } project_match_statuses { id status_code name step_id created } customer_documents { id nr type date value vat status_code status_name document_type { id name base_type } } } }",
+        "queryParams": {
+          "id": "$project_id"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_project_history",
+      "description": "Read the logbook of a project: per entry id, time, title, text, author and visibility. System entries (status changes, sent documents) are included unless switched off. Returns the newest 50 by default. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Project id."
+          },
+          "search_term": {
+            "type": "string",
+            "description": "Only entries containing this text."
+          },
+          "user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only entries written by these users."
+          },
+          "show_system_entries": {
+            "type": "boolean",
+            "description": "false leaves out entries HERO wrote itself. Default true."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query ProjectHistory($projectId: Int!, $searchTerm: String, $userIds: [Int], $showSystem: Boolean = true, $first: Int, $last: Int, $offset: Int, $orderBy: String) { project_histories(project_match_id: $projectId, search_term: $searchTerm, user_ids: $userIds, show_system_histories: $showSystem, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id created type_code custom_title custom_text target target_id role_visibility is_editable user { id email partner { full_name } } } }",
+        "queryParams": {
+          "projectId": "$project_id",
+          "searchTerm": "$search_term",
+          "userIds": "$user_ids",
+          "showSystem": "$show_system_entries",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_documents",
+      "description": "List documents (offers, order confirmations, invoices, delivery notes and uploaded files; HERO field `customer_documents`): id, number, type, date, value, VAT, currency, status, project, customer and file name. Filter by project, document type, status or invoice style. Returns the newest 50 by default; page with `offset`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only documents of these projects."
+          },
+          "document_type_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these document types (ids of hero_software_list_document_types)."
+          },
+          "status_codes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only documents with these status codes (compare `status_code` and `status_name` of returned rows)."
+          },
+          "invoice_style": {
+            "type": "string",
+            "enum": [
+              "full",
+              "parted",
+              "cumulative",
+              "downpayment"
+            ],
+            "description": "Only invoices of this kind: full, parted (partial), cumulative or downpayment."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these document ids."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Documents($projectIds: [Int], $documentTypeIds: [Int], $statusCodes: [Int], $invoiceStyle: InvoiceStyle, $ids: [Int], $first: Int, $last: Int, $offset: Int, $orderBy: String) { customer_documents(project_match_ids: $projectIds, document_type_ids: $documentTypeIds, status_codes: $statusCodes, invoice_style: $invoiceStyle, ids: $ids, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id nr type date value vat currency status_code status_name project_match_id contact_id created modified document_type { id name base_type } customer { id full_name company_name } file_upload { id filename } } }",
+        "queryParams": {
+          "projectIds": "$project_ids",
+          "documentTypeIds": "$document_type_ids",
+          "statusCodes": "$status_codes",
+          "invoiceStyle": "$invoice_style",
+          "ids": "$ids",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_get_document",
+      "description": "Read one document with its file: the list fields plus the project, the employee who wrote it, the link to open it in HERO and the PDF file (name, type, size and a temporary public download link). The link expires after `link_expires_seconds`; share it only with people who may see the document. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_id": {
+            "type": "integer",
+            "description": "Document id (`id` of hero_software_list_documents), not the document number."
+          },
+          "link_expires_seconds": {
+            "type": "integer",
+            "minimum": 60,
+            "default": 3600,
+            "description": "Lifetime of the temporary download link in seconds. Default 3600 (one hour); HERO itself defaults to 86400."
+          }
+        },
+        "required": [
+          "document_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Document($id: Int!, $expires: Int = 3600) { customer_documents(ids: [$id]) { id nr type date value vat currency status_code status_name project_match_id contact_id created modified document_type { id name base_type } customer { id full_name company_name } file_upload { id filename } link_view is_gaeb partner { id full_name } project_match { id project_nr name } file_upload { id uuid filename type size temporary_url(expires: $expires) } } }",
+        "queryParams": {
+          "id": "$document_id",
+          "expires": "$link_expires_seconds"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_document_types",
+      "description": "List the document types of the company: id, name, base type (such as offer or invoice), whether it is active, relevant for bookkeeping and carries a total. The id filters hero_software_list_documents. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "base_types": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only types with these base types, as returned in `base_type`."
+          },
+          "show_deleted": {
+            "type": "boolean",
+            "description": "true also returns deleted types."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query DocumentTypes($baseTypes: [String], $showDeleted: Boolean) { document_types(base_types: $baseTypes, show_deleted: $showDeleted) { id name base_type is_active booking_relevant has_total_price context } }",
+        "queryParams": {
+          "baseTypes": "$base_types",
+          "showDeleted": "$show_deleted"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_tasks",
+      "description": "List tasks: id, title, comment, due date, done date, owner, author and the project it belongs to. Filter by project, owner, author, time window or open and done. Returns the newest 50 by default; page with `offset`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Only tasks of this project."
+          },
+          "is_done": {
+            "type": "boolean",
+            "description": "true only done tasks, false only open ones. Leave out for both."
+          },
+          "target_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only tasks owned by these users (`user_id` of hero_software_list_employees)."
+          },
+          "author_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only tasks written by these users."
+          },
+          "start": {
+            "type": "string",
+            "description": "Only tasks after this time. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          },
+          "end": {
+            "type": "string",
+            "description": "Only tasks before this time. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these task ids."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Tasks($projectId: Int, $isDone: Boolean, $targetUserIds: [Int], $authorUserIds: [Int], $start: DateTime, $end: DateTime, $ids: [Int], $first: Int, $last: Int, $offset: Int, $orderBy: String) { tasks(project_match_id: $projectId, is_done: $isDone, target_user_ids: $targetUserIds, author_user_ids: $authorUserIds, start: $start, end: $end, ids: $ids, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id title comment due_date done_date start end is_deleted created modified target_user_id target_user { id email } author_user_id author { id email } target_project_match_id target_project_match { id project_nr name } } }",
+        "queryParams": {
+          "projectId": "$project_id",
+          "isDone": "$is_done",
+          "targetUserIds": "$target_user_ids",
+          "authorUserIds": "$author_user_ids",
+          "start": "$start",
+          "end": "$end",
+          "ids": "$ids",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_calendar_events",
+      "description": "List calendar events (appointments) in a time window: id, title, description, start, end, all-day and done flags, category, project with site address, employees and resources. Filter by project, employee or resource. Only events the token user may see are returned; 50 rows unless `first` or `last` says otherwise. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Only events after this time. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          },
+          "end": {
+            "type": "string",
+            "description": "Only events before this time. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Only events of this project."
+          },
+          "partner_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only events of these employees (`id` of hero_software_list_employees)."
+          },
+          "resource_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only events using these resources (vehicles, machines)."
+          },
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these event ids."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query CalendarEvents($start: DateTime, $end: DateTime, $projectId: Int, $partnerIds: [Int], $resourceIds: [Int], $ids: [Int], $first: Int, $last: Int, $offset: Int, $orderBy: String) { calendar_events(start: $start, end: $end, project_match_id: $projectId, partner_ids: $partnerIds, resource_ids: $resourceIds, ids: $ids, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id title description start end all_day is_done is_recurring deleted readonly category { id name } project_match_id project_match { id project_nr name address { street city zipcode } } partners { id full_name } resources { id name } } }",
+        "queryParams": {
+          "start": "$start",
+          "end": "$end",
+          "projectId": "$project_id",
+          "partnerIds": "$partner_ids",
+          "resourceIds": "$resource_ids",
+          "ids": "$ids",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_search_calendar_events",
+      "description": "Search calendar events by event title, customer name or project name, optionally only from a start date on: id, title, description, start, end, category, project, employees and resources. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to find in the event title, customer name or project name."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Only events from this date on, YYYY-MM-DD."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: default), e.g. id, created or modified."
+          }
+        },
+        "required": [
+          "search"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query SearchCalendarEvents($search: String!, $startDate: String, $first: Int, $last: Int, $offset: Int, $orderBy: String) { search_calendar_events(search: $search, startDate: $startDate, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id title description start end all_day is_done is_recurring deleted readonly category { id name } project_match_id project_match { id project_nr name address { street city zipcode } } partners { id full_name } resources { id name } } }",
+        "queryParams": {
+          "search": "$search",
+          "startDate": "$start_date",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_calendar_event_categories",
+      "description": "List the calendar event categories of the company: id, name and colour. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query CalendarEventCategories { calendar_event_categories { id name color deleted } }"
+      }
+    },
+    {
+      "name": "hero_software_list_field_service_jobs",
+      "description": "List field service jobs (Einsätze): id, job number, title, description, type, status, start, end, project, customer, contact person, site address and assigned employees. Filter by project, time window, status, employee, contact or text. Returns 50 rows unless `first` or `last` says otherwise. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Only jobs of this project."
+          },
+          "start": {
+            "type": "string",
+            "description": "Only jobs after this time. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          },
+          "end": {
+            "type": "string",
+            "description": "Only jobs before this time. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          },
+          "status_codes": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only jobs with these status codes (compare `status_code` and `status_name` of returned rows)."
+          },
+          "partner_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only jobs assigned to these employees (`id` of hero_software_list_employees)."
+          },
+          "contact_id": {
+            "type": "integer",
+            "description": "Only jobs for this contact."
+          },
+          "search": {
+            "type": "string",
+            "description": "Free text search over jobs."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query FieldServiceJobs($projectId: Int, $start: DateTime, $end: DateTime, $statusCodes: [Int], $partnerIds: [Int], $contactId: Int, $search: String, $first: Int, $last: Int, $offset: Int, $orderBy: String) { field_service_jobs(project_match_id: $projectId, start: $start, end: $end, status: $statusCodes, partners: $partnerIds, contact_id: $contactId, search: $search, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id display_nr title description type status_code status_name start end created project_match_id customer { id full_name } contact { id full_name } address { street city zipcode } partners { id full_name } } }",
+        "queryParams": {
+          "projectId": "$project_id",
+          "start": "$start",
+          "end": "$end",
+          "statusCodes": "$status_codes",
+          "partnerIds": "$partner_ids",
+          "contactId": "$contact_id",
+          "search": "$search",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_time_entries",
+      "description": "List time tracking entries: id, start, end, duration in seconds, comment, status, employee, project, job and category (working time or not). Without `show_all_employees` only the entries of the token user are returned. Give `start` and `end` to keep the answer small. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Only entries booked on this project."
+          },
+          "start": {
+            "type": "string",
+            "description": "Only entries from this date on, YYYY-MM-DD."
+          },
+          "end": {
+            "type": "string",
+            "description": "Only entries up to this date, YYYY-MM-DD."
+          },
+          "show_all_employees": {
+            "type": "boolean",
+            "description": "true returns the entries of all employees the token user may see, false or left out only the own ones."
+          },
+          "partner_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "With show_all_employees: only these employees (`id` of hero_software_list_employees)."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "new",
+                "submitted",
+                "confirmed",
+                "deleted"
+              ]
+            },
+            "description": "Only entries in these states: new, submitted, confirmed or deleted."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query TimeEntries($projectId: Int, $start: Date, $end: Date, $showAll: Boolean, $partnerIds: [Int], $statuses: [Employees_TrackingTimeStatusEnum], $first: Int, $last: Int, $offset: Int, $orderBy: String) { tracking_times(project_match_id: $projectId, start: $start, end: $end, show_all_partners: $showAll, partner_ids: $partnerIds, statuses: $statuses, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id start end duration_in_seconds comment status_code partner_id partner { id full_name } project_match_id project_match { id project_nr name } field_service_job_id tracking_times_category { id name is_working_time } } }",
+        "queryParams": {
+          "projectId": "$project_id",
+          "start": "$start",
+          "end": "$end",
+          "showAll": "$show_all_employees",
+          "partnerIds": "$partner_ids",
+          "statuses": "$statuses",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_products",
+      "description": "List or search the article master (Artikelstamm, HERO field `supply_product_versions`): product_id, article number, name, description, EAN, manufacturer, unit, category, purchase price (`base_price`), list price, VAT percent and the sales prices. Returns the 50 most recently changed by default; page with `offset`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to find, e.g. part of the name or the article number."
+          },
+          "product_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these products (`product_id` values)."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: modified), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Products($search: String, $productIds: [String], $first: Int, $last: Int, $offset: Int, $orderBy: String) { supply_product_versions(search: $search, product_ids: $productIds, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { product_id nr internal_identifier base_price list_price vat_percent price_quantity quantity_min delivery_time is_deleted modified base_data { name description ean manufacturer manufacturer_nr unit_type category matchcode } sales_prices { label net_price_per_unit } } }",
+        "queryParams": {
+          "search": "$search",
+          "productIds": "$product_ids",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_list_services",
+      "description": "List or search the service master (Leistungen, HERO field `supply_services`): id, number, name, description, unit, net price per unit, VAT percent, planned minutes and whether the price is fixed. Returns 50 rows by default; page with `offset`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Text to find, e.g. part of the name or the number."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Only these service ids."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: id), e.g. id, created or modified."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Services($search: String, $serviceIds: [Int], $first: Int, $last: Int, $offset: Int, $orderBy: String) { supply_services(search: $search, service_ids: $serviceIds, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { id nr internal_identifier name description unit_type net_price_per_unit vat_percent time_minutes is_fixed_net_price is_deleted modified } }",
+        "queryParams": {
+          "search": "$search",
+          "serviceIds": "$service_ids",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_search",
+      "description": "Search across HERO with one term: contacts, projects, documents, field service jobs, employees and calendar events. Each hit carries `__typename` (Customer, ProjectMatch, CustomerDocument, FieldService_Job, Partner or CalendarEvent) and its id plus a few naming fields. Narrow it with `category`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Search term, e.g. a name, a project number or a document number."
+          },
+          "category": {
+            "type": "string",
+            "enum": [
+              "contacts",
+              "project_matches",
+              "documents",
+              "jobs",
+              "partners",
+              "calendar_events"
+            ],
+            "description": "Only search one kind: contacts, project_matches (projects), documents, jobs, partners (employees) or calendar_events."
+          },
+          "first": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the first N rows in `order_by` order (the oldest with the default order). Use it instead of `last`."
+          },
+          "last": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Return the last N rows in `order_by` order (the newest with the default order). HERO uses 50 when neither `first` nor `last` is given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Skip this many rows, for paging: raise it by the page size until fewer rows than asked for come back."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (HERO default: default), e.g. id, created or modified."
+          }
+        },
+        "required": [
+          "term"
+        ]
+      },
+      "endpointMapping": {
+        "method": "query",
+        "path": "query Search($term: String!, $category: SearchCategoryEnum, $first: Int, $last: Int, $offset: Int, $orderBy: String) { global_search(term: $term, category: $category, first: $first, last: $last, offset: $offset, orderBy: $orderBy) { __typename ... on Customer { id nr full_name company_name email } ... on ProjectMatch { id project_nr name project_title } ... on CustomerDocument { id nr type date value } ... on FieldService_Job { id display_nr title start end } ... on Partner { id full_name email } ... on CalendarEvent { id title start end } } }",
+        "queryParams": {
+          "term": "$term",
+          "category": "$category",
+          "first": "$first",
+          "last": "$last",
+          "offset": "$offset",
+          "orderBy": "$order_by"
+        }
+      }
+    },
+    {
+      "name": "hero_software_create_contact",
+      "description": "Create a contact (customer, supplier, partner or contact person) with an optional address. Returns the new id and contact number. With `find_existing` true HERO tries to find an existing contact from the data given and returns it instead of creating a second one; search with hero_software_list_contacts first to avoid duplicates. Show the user what will be created and wait for their yes; never repeat a create that succeeded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category": {
+            "type": "string",
+            "enum": [
+              "customer",
+              "supplier",
+              "partner",
+              "other",
+              "contact"
+            ],
+            "default": "customer",
+            "description": "Kind of contact: customer (default), supplier, partner, other or contact (a contact person)."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name. Give a last name or a company name."
+          },
+          "company_name": {
+            "type": "string",
+            "description": "Company name, for business contacts."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "phone_home": {
+            "type": "string",
+            "description": "Landline phone number."
+          },
+          "phone_mobile": {
+            "type": "string",
+            "description": "Mobile phone number."
+          },
+          "url": {
+            "type": "string",
+            "description": "Website."
+          },
+          "position": {
+            "type": "string",
+            "description": "Job position of a contact person."
+          },
+          "source": {
+            "type": "string",
+            "description": "How the contact came in, free text."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes on the contact."
+          },
+          "parent_contact_id": {
+            "type": "integer",
+            "description": "For a contact person: the id of the customer or company it belongs to."
+          },
+          "address": {
+            "type": "object",
+            "properties": {
+              "street": {
+                "type": "string",
+                "description": "Street and house number."
+              },
+              "zipcode": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country_id": {
+                "type": "integer",
+                "description": "Country id from hero_software_list_countries."
+              }
+            },
+            "description": "Main address, e.g. {\"street\": \"Hauptstr. 1\", \"zipcode\": \"79098\", \"city\": \"Freiburg\"}. Leave out when unknown."
+          },
+          "find_existing": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: HERO tries to find an existing contact by the data given and returns it instead of creating a new one. false (default) always creates."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateContact($findExisting: Boolean = false, $category: String = \"customer\", $firstName: String, $lastName: String, $companyName: String, $email: String, $phoneHome: String, $phoneMobile: String, $url: String, $position: String, $source: String, $notes: String, $parentContactId: Int, $address: AddressInput) { create_contact(findExisting: $findExisting, contact: { category: $category, first_name: $firstName, last_name: $lastName, company_name: $companyName, email: $email, phone_home: $phoneHome, phone_mobile: $phoneMobile, url: $url, position: $position, source: $source, partner_notes: $notes, parent_customer_id: $parentContactId, address: $address }) { id nr category full_name first_name last_name company_name email phone_home phone_mobile address { id street city zipcode } created } }",
+        "queryParams": {
+          "findExisting": "$find_existing",
+          "category": "$category",
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "companyName": "$company_name",
+          "email": "$email",
+          "phoneHome": "$phone_home",
+          "phoneMobile": "$phone_mobile",
+          "url": "$url",
+          "position": "$position",
+          "source": "$source",
+          "notes": "$notes",
+          "parentContactId": "$parent_contact_id",
+          "address": "$address"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "hero_software_create_project",
+      "description": "Create a project for an existing customer. Returns the new project id, project number, type and status. Look up the customer and its address id first (hero_software_get_contact), and the project type with hero_software_list_project_types. Show the user what will be created and wait for their yes; never repeat a create that succeeded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Contact id of the customer."
+          },
+          "name": {
+            "type": "string",
+            "description": "Project name, a short description of the job."
+          },
+          "project_title": {
+            "type": "string",
+            "description": "Project title. When unsure use the same text as `name`."
+          },
+          "address_id": {
+            "type": "integer",
+            "description": "Site address: an address id of the customer (`address.id` or a `customer_addresses` entry of hero_software_get_contact)."
+          },
+          "contact_id": {
+            "type": "integer",
+            "description": "Contact person for the project (a contact id). Often the same as customer_id."
+          },
+          "type_id": {
+            "type": "integer",
+            "description": "Project type (pipeline) id. Without it HERO uses the default type."
+          },
+          "step_id": {
+            "type": "integer",
+            "description": "Status step to start in (a step id of the chosen type). Without it the first step."
+          },
+          "measure_id": {
+            "type": "integer",
+            "description": "Trade id from hero_software_list_trades."
+          },
+          "volume": {
+            "type": "number",
+            "description": "Expected order volume in the company currency."
+          },
+          "source": {
+            "type": "string",
+            "description": "Where the request came from, free text (e.g. Website, Empfehlung)."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes on the project."
+          },
+          "assigned_user_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Users to assign (`user_id` of hero_software_list_employees)."
+          }
+        },
+        "required": [
+          "customer_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation CreateProject($customerId: Int!, $name: String!, $projectTitle: String, $addressId: Int, $contactId: Int, $typeId: Int, $stepId: Int, $measureId: Int, $volume: Float, $source: String, $notes: String, $assignedUserIds: [Int] = []) { create_project_match(project_match: { customer_id: $customerId, name: $name, project_title: $projectTitle, address_id: $addressId, contact_id: $contactId, type_id: $typeId, step_id: $stepId, measure_id: $measureId, volume: $volume, partner_source: $source, partner_notes: $notes }, manual_assigned_user_ids: $assignedUserIds) { id project_nr name project_title volume customer_id contact_id type { id name } current_project_match_status { status_code name step_id } created } }",
+        "queryParams": {
+          "customerId": "$customer_id",
+          "name": "$name",
+          "projectTitle": "$project_title",
+          "addressId": "$address_id",
+          "contactId": "$contact_id",
+          "typeId": "$type_id",
+          "stepId": "$step_id",
+          "measureId": "$measure_id",
+          "volume": "$volume",
+          "source": "$source",
+          "notes": "$notes",
+          "assignedUserIds": "$assigned_user_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "hero_software_add_logbook_entry",
+      "description": "Add a note to the logbook of a project or of a field service job. Returns the new entry id and time. The entry is visible to the team in HERO and is written as the token user. Show the user the text and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "description": "Project id, or the job id when target is field_service_job."
+          },
+          "text": {
+            "type": "string",
+            "description": "The note. Plain text."
+          },
+          "target": {
+            "type": "string",
+            "enum": [
+              "project_match",
+              "field_service_job"
+            ],
+            "default": "project_match",
+            "description": "What the note is attached to: project_match (a project, default) or field_service_job."
+          }
+        },
+        "required": [
+          "target_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation AddLogbookEntry($targetId: Int!, $text: String!, $target: HistoryTargetEnum = project_match) { add_logbook_entry(logbook_entry: { target: $target, target_id: $targetId, custom_text: $text }) { id created custom_title custom_text target target_id user_id } }",
+        "queryParams": {
+          "targetId": "$target_id",
+          "text": "$text",
+          "target": "$target"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    },
+    {
+      "name": "hero_software_save_task",
+      "description": "Create a task, or change one when `task_id` is given (HERO has one mutation for both, `update_task`). Returns the task with its id, title, due date, owner and project. To mark a task done pass its id and `done_date`. Show the user what will be saved and wait for their yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "integer",
+            "description": "Id of the task to change. Leave out to create a new task."
+          },
+          "title": {
+            "type": "string",
+            "description": "Task title. Needed for a new task."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Longer description of the task."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "When the task is due. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          },
+          "target_user_id": {
+            "type": "integer",
+            "description": "Owner of the task (`user_id` of hero_software_list_employees). Without it the token user."
+          },
+          "project_id": {
+            "type": "integer",
+            "description": "Project the task belongs to."
+          },
+          "done_date": {
+            "type": "string",
+            "description": "Set to mark the task done at that time. ISO 8601 date and time, e.g. 2026-11-19T08:00:00+01:00."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "mutation",
+        "path": "mutation SaveTask($id: Int, $title: String, $comment: String, $dueDate: DateTime, $targetUserId: Int, $projectId: Int, $doneDate: DateTime) { update_task(task: { id: $id, title: $title, comment: $comment, due_date: $dueDate, target_user_id: $targetUserId, target_project_match_id: $projectId, done_date: $doneDate }) { id title comment due_date done_date target_user_id target_project_match_id created modified } }",
+        "queryParams": {
+          "id": "$task_id",
+          "title": "$title",
+          "comment": "$comment",
+          "dueDate": "$due_date",
+          "targetUserId": "$target_user_id",
+          "projectId": "$project_id",
+          "doneDate": "$done_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false
+      }
+    }
+  ]
+}

@@ -1,0 +1,1882 @@
+{
+  "slug": "gosplan",
+  "name": "GosPlan",
+  "aliases": [
+    "ГосПлан",
+    "gosplan.info",
+    "zakupki.gov.ru",
+    "EIS zakupki",
+    "44-FZ",
+    "223-FZ",
+    "Госзакупки"
+  ],
+  "description": "Russian public procurement data from the GosPlan API, which republishes the EIS (zakupki.gov.ru) as JSON: search and read tenders, notices, protocols, contracts, procurement plans, complaints and customers under 44-FZ, 223-FZ and Decree 615, plus the KTRU catalogue. Read-only, API key.",
+  "instructions": "## GosPlan\nThis connector reads the **GosPlan API** (`https://v2.gosplan.info`), a commercial service that republishes the documents of the Russian Unified Information System for procurement (EIS, zakupki.gov.ru) as JSON: purchases, contracts, plans, complaints and customers under **44-FZ** (state and municipal procurement), **223-FZ** (state-owned companies) and **Government Decree 615** (capital repair), plus the KTRU catalogue. Read-only. Names and texts are in Russian.\n\n**Setup**\n1. Get an API key: start the Telegram bot named in the GosPlan documentation at https://gosplan.info/docs/getting-started/api-key/ with /start (the key arrives in the first message, with a 7-day trial), or request one by e-mail from mail@gosplan.info. After the trial a paid tariff is needed.\n2. Paste it as `GOSPLAN_API_KEY`. It is sent in the `apikey` header.\n\n**Where to start**\n- Open tenders: `gosplan_search_purchases_44` (or `gosplan_search_purchases_223`, `gosplan_search_purchases_615`) with `object_info` keywords in Russian, `stage` 1 and optionally `region`, `classifier` and a price range. Then `gosplan_get_purchase_44`, `gosplan_get_purchase_notification` for the full notice, and later `gosplan_get_purchase_protocols`, `gosplan_get_purchase_clarifications`, `gosplan_get_purchase_result` and `gosplan_get_purchase_complaints`. 223-FZ and Decree 615 purchases: `gosplan_get_purchase_223`, `gosplan_get_purchase_615`.\n- Who won what: `gosplan_search_contracts_44` with `supplier` or `customer`, then `gosplan_get_contract_44`, `gosplan_get_contract_document` and `gosplan_get_contract_procedures`. Other regimes: `gosplan_search_contracts_223`, `gosplan_get_contract_223`, `gosplan_search_contracts_615`, `gosplan_get_contract_615`. The signing stage: `gosplan_search_contract_procedures`, `gosplan_get_contract_procedure`.\n- Upcoming purchases: `gosplan_search_plan_positions`, `gosplan_search_tender_plans`, `gosplan_get_tender_plan`, and for 223-FZ `gosplan_search_purchase_plans_223`, `gosplan_get_purchase_plan_223`.\n- Disputes: `gosplan_search_complaints`, `gosplan_get_complaint`.\n- Reference: `gosplan_search_organizations_44`, `gosplan_get_organization_44`, `gosplan_search_organizations_223` turn an INN into a name; `gosplan_search_ktru` and `gosplan_get_ktru` find catalogue codes.\n\n**Filters**\n- Organisations are always given by **INN**; results also return INNs, not names.\n- `region` takes one region code per request (77 Moscow, 78 Saint Petersburg, 23 Krasnodar Krai, 91 Crimea).\n- `classifier` takes one OKPD2 or KTRU code per request; a group such as 26.20 covers everything below it. `purchase_type` likewise takes one code.\n- Dates are ISO 8601 with a time zone (`2026-03-01T00:00:00+03:00`) and cannot be earlier than 2024-01-01; a wrong or contradictory range answers 422. Without any date filter the purchase and contract searches cover the last month; widen with `published_forpast` (for example 3m). The service can refuse a publication window that is too wide (the 422 answer names the limit, 90 days on the test server): then query in slices with `published_after` and `published_before`.\n- A text filter (`object_info`, `subject`, `name`) orders by relevance and ignores `sort`.\n- Paging: `limit` up to 100 and `skip`. There is no total count: continue until a page comes back shorter than `limit`.\n\n**Reading the answers**: search rows are a compact index (snake_case fields, amounts as numbers in the stated currency, timestamps without an offset, which appear to be UTC). Detail tools return the EIS source documents converted to JSON, with the field names of the EIS XML schemas (camelCase, sometimes deeply nested); the same purchase can carry several versions of a document. `docs` lists the document types available for a record.\n\n**Limits**: requests are counted per key in rolling windows of 60 seconds and 1 hour according to the tariff; exceeding them answers 429 with a Retry-After header. A missing or wrong key answers 401. GosPlan also runs a keyless test server (`v2test.gosplan.info`, 10 requests a minute) which this connector does not use.",
+  "region": "intl",
+  "category": "government",
+  "icon": "gosplan",
+  "docsUrl": "https://gosplan.info/docs/",
+  "requiredEnvVars": [
+    "GOSPLAN_API_KEY"
+  ],
+  "envVarMeta": {
+    "GOSPLAN_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Issued by the GosPlan Telegram bot after /start (7-day trial) or on request by e-mail to mail@gosplan.info. See the API key page of the GosPlan documentation.",
+      "link": "https://gosplan.info/docs/getting-started/api-key/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the key exactly as GosPlan sent it, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "GosPlan did not accept the API key (or none was sent). Copy it again from the first message of the GosPlan Telegram bot; after the 7-day trial the key needs an active tariff.",
+      "field": "GOSPLAN_API_KEY"
+    },
+    "403": "GosPlan refused this call for the key. Check with GosPlan that the tariff of the key includes this section of the API (44-FZ, 223-FZ or Decree 615).",
+    "404": "GosPlan has no document with this number. Check the purchase, contract or plan number, and that it belongs to the regime of the tool (44-FZ, 223-FZ or Decree 615).",
+    "422": "GosPlan refused a filter; the detail text says which. Usual causes: a date without a time zone or before 2024-01-01, published_after later than published_before, a publication window that is too wide, or more than one region or classifier in one request.",
+    "rate_limited": "The request limit of the GosPlan tariff was reached (rolling 60-second and 1-hour windows). Wait for the Retry-After seconds and try again."
+  },
+  "probe": {
+    "tool": "gosplan_search_organizations_44",
+    "params": {
+      "inn": "7707083893"
+    }
+  },
+  "prerequisites": "A GosPlan API key: issued by the GosPlan Telegram bot with a 7-day trial, or by e-mail request; a paid tariff afterwards.",
+  "connector": {
+    "name": "GosPlan API",
+    "type": "REST",
+    "baseUrl": "https://v2.gosplan.info",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "apikey",
+      "apiKey": "{{GOSPLAN_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "gosplan_search_purchases_44",
+      "description": "Search public procurement notices under Federal Law 44-FZ (state and municipal purchases) from the Russian EIS (zakupki.gov.ru). Each row has purchase_number, object_info (what is bought), max_price and currency_code, customers (INNs), region, stage, purchase_type, published_at, updated_at, collecting_finished_at (bid deadline), okpd2 and ktru codes, plan and position numbers, and docs (the document types published for it). Returns a list (empty when nothing matches); page with limit and skip. Without date filters only the last month is searched (published_forpast 1m).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "classifier": {
+            "type": "string",
+            "description": "One OKPD2 or KTRU code or code group, e.g. 33.20, 32.99.15 or 26.20.11.110-00000165. A group code matches everything below it. One code per request."
+          },
+          "collecting_finished_after": {
+            "type": "string",
+            "description": "Bid submission deadline after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "collecting_finished_before": {
+            "type": "string",
+            "description": "Bid submission deadline before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "contract_guarantee_amount_ge": {
+            "type": "number",
+            "description": "Contract performance security at or above this amount."
+          },
+          "contract_guarantee_amount_le": {
+            "type": "number",
+            "description": "Contract performance security at or below this amount."
+          },
+          "contract_guarantee_part_ge": {
+            "type": "number",
+            "description": "Contract performance security as a percentage of the initial price, at or above this value."
+          },
+          "contract_guarantee_part_le": {
+            "type": "number",
+            "description": "Contract performance security as a percentage of the initial price, at or below this value."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Only documents in this currency. The only listed value is RUB.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "currency_code_not": {
+            "type": "string",
+            "description": "Exclude this currency: RUB returns only foreign-currency purchases or contracts.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "drug": {
+            "type": "integer",
+            "description": "1: only purchases of medicines. 0: only purchases that are not medicines.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "medical_product": {
+            "type": "boolean",
+            "description": "true: only purchases or contracts for medical products."
+          },
+          "ikz": {
+            "type": "string",
+            "description": "Purchase identification code (IKZ, 36 characters)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "max_price_ge": {
+            "type": "number",
+            "description": "Initial (maximum) contract price at or above this amount, in the purchase currency (roubles unless stated), e.g. 1000000."
+          },
+          "max_price_le": {
+            "type": "number",
+            "description": "Initial (maximum) contract price at or below this amount."
+          },
+          "object_info": {
+            "type": "string",
+            "description": "Words from the name of the purchased goods, works or services, or from the place of delivery (Russian). Partial names and keywords are allowed. When set, results are ordered by relevance and sort is ignored."
+          },
+          "owner": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation that owns the plan version."
+          },
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan (schedule) in the EIS."
+          },
+          "position_number": {
+            "type": "string",
+            "description": "Number of the plan position the purchase or contract belongs to."
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "published_forpast": {
+            "type": "string",
+            "description": "Relative publication period counted back from now: a number followed by d, m or y, e.g. 5d, 2m, 1y (at most 3y). Ignored when published_after or published_before is set, or when a purchase, plan or position number is given.",
+            "pattern": "^[0-9]+[ymd]$"
+          },
+          "purchase_type": {
+            "type": "string",
+            "description": "One purchase method code as used in the EIS documents, e.g. epNotificationEF2020 (electronic auction, 44-FZ) or purchaseNotice (223-FZ). The purchase_type field of a search result shows the code of each purchase."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "responsible": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation that placed the notice (may be an authorised body acting for the customer)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: collecting_finished_at_asc, collecting_finished_at_desc, max_price_asc, max_price_desc, published_at_asc, published_at_desc, updated_at_asc, updated_at_desc. Default published_at_desc.",
+            "enum": [
+              "collecting_finished_at_asc",
+              "collecting_finished_at_desc",
+              "max_price_asc",
+              "max_price_desc",
+              "published_at_asc",
+              "published_at_desc",
+              "updated_at_asc",
+              "updated_at_desc"
+            ]
+          },
+          "stage": {
+            "type": "integer",
+            "description": "Purchase stage: 1 bids are being collected, 2 the commission is working, 3 completed, 4 cancelled. Use 1 for tenders still open for bids.",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/purchases",
+        "queryParams": {
+          "classifier": "$classifier",
+          "collecting_finished_after": "$collecting_finished_after",
+          "collecting_finished_before": "$collecting_finished_before",
+          "contract_guarantee_amount_ge": "$contract_guarantee_amount_ge",
+          "contract_guarantee_amount_le": "$contract_guarantee_amount_le",
+          "contract_guarantee_part_ge": "$contract_guarantee_part_ge",
+          "contract_guarantee_part_le": "$contract_guarantee_part_le",
+          "currency_code": "$currency_code",
+          "currency_code_not": "$currency_code_not",
+          "customer": "$customer",
+          "drug": "$drug",
+          "medical_product": "$medical_product",
+          "ikz": "$ikz",
+          "limit": "$limit",
+          "max_price_ge": "$max_price_ge",
+          "max_price_le": "$max_price_le",
+          "object_info": "$object_info",
+          "owner": "$owner",
+          "plan_number": "$plan_number",
+          "position_number": "$position_number",
+          "purchase_number": "$purchase_number",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "published_forpast": "$published_forpast",
+          "purchase_type": "$purchase_type",
+          "region": "$region",
+          "responsible": "$responsible",
+          "skip": "$skip",
+          "sort": "$sort",
+          "stage": "$stage",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_44",
+      "description": "Get one 44-FZ purchase by its number: the index fields (object, initial price, customers, stage, deadlines, classifier codes) and the list of documents published for it (notice, changes, protocols, clarifications, results).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/purchases/{purchase_number}"
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_notification",
+      "description": "Get the current notice (извещение) of a 44-FZ purchase: customer and placing organisation with contacts, procedure and deadlines, lots and purchase objects with quantities and prices, delivery place and terms, bid and contract security, requirements and preferences, and the attached documentation with download links. The answer is the source document of the EIS converted to JSON, so field names follow the EIS XML schemas and some fields are absent when the source has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/purchases/{purchase_number}/notification"
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_protocols",
+      "description": "Get the protocols of a 44-FZ purchase: bid opening, review and final protocols with the commission, the participants' bids, admission decisions, price offers and the winner, as far as published. The answer is the source document of the EIS converted to JSON, so field names follow the EIS XML schemas and some fields are absent when the source has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/purchases/{purchase_number}/protocols"
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_clarifications",
+      "description": "Get the clarifications published for a 44-FZ purchase: questions on the notice and on the results with the customer's answers and attached documents. The answer is the source document of the EIS converted to JSON, so field names follow the EIS XML schemas and some fields are absent when the source has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/purchases/{purchase_number}/clarifications"
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_result",
+      "description": "Get the result of the supplier selection of a 44-FZ purchase: whether the procedure took place, the winner or the reason it failed, and the resulting contract data as far as published. The answer is the source document of the EIS converted to JSON, so field names follow the EIS XML schemas and some fields are absent when the source has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/purchases/{purchase_number}/result"
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_complaints",
+      "description": "Get the complaints filed with the antimonopoly service (FAS) against a 44-FZ purchase: registry number, applicant, state and the control decision, as far as published. The answer is the source document of the EIS converted to JSON, so field names follow the EIS XML schemas and some fields are absent when the source has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/purchases/{purchase_number}/complaints"
+      }
+    },
+    {
+      "name": "gosplan_search_contracts_44",
+      "description": "Search the 44-FZ contract register: concluded state and municipal contracts. Each row has reg_num, subject, price and currency_code, customer and suppliers (INNs), region, stage, purchase_number, exe_start and exe_end (execution period), okpd2 and ktru codes, published_at, updated_at and docs. Returns a list (empty when nothing matches); page with limit and skip. Filter by supplier INN to see what a company won, by customer INN to see what a body bought. Without date filters only the last month is searched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "classifier": {
+            "type": "string",
+            "description": "One OKPD2 or KTRU code or code group, e.g. 33.20, 32.99.15 or 26.20.11.110-00000165. A group code matches everything below it. One code per request."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Only documents in this currency. The only listed value is RUB.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "currency_code_not": {
+            "type": "string",
+            "description": "Exclude this currency: RUB returns only foreign-currency purchases or contracts.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "medical_product": {
+            "type": "boolean",
+            "description": "true: only purchases or contracts for medical products."
+          },
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan (schedule) in the EIS."
+          },
+          "position_number": {
+            "type": "string",
+            "description": "Number of the plan position the purchase or contract belongs to."
+          },
+          "price_ge": {
+            "type": "number",
+            "description": "Contract price at or above this amount, in the contract currency."
+          },
+          "price_le": {
+            "type": "number",
+            "description": "Contract price at or below this amount."
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "published_forpast": {
+            "type": "string",
+            "description": "Relative publication period counted back from now: a number followed by d, m or y, e.g. 5d, 2m, 1y (at most 3y). Ignored when published_after or published_before is set, or when a purchase, plan or position number is given.",
+            "pattern": "^[0-9]+[ymd]$"
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number of the contract in the EIS contract register."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: price_desc, price_asc, published_at_desc, published_at_asc, updated_at_desc, updated_at_asc. Default published_at_desc.",
+            "enum": [
+              "price_desc",
+              "price_asc",
+              "published_at_desc",
+              "published_at_asc",
+              "updated_at_desc",
+              "updated_at_asc"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "description": "Contract state: E in execution, EC execution completed, ET execution terminated, IN annulled.",
+            "enum": [
+              "E",
+              "ET",
+              "EC",
+              "IN"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "description": "Words from the subject of the contract (Russian); also matches OKPD2 or KTRU codes and the place of delivery where recorded. When set, results are ordered by relevance and sort is ignored."
+          },
+          "supplier": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the supplier (contractor)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/contracts",
+        "queryParams": {
+          "classifier": "$classifier",
+          "currency_code": "$currency_code",
+          "currency_code_not": "$currency_code_not",
+          "customer": "$customer",
+          "limit": "$limit",
+          "medical_product": "$medical_product",
+          "plan_number": "$plan_number",
+          "position_number": "$position_number",
+          "price_ge": "$price_ge",
+          "price_le": "$price_le",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "published_forpast": "$published_forpast",
+          "purchase_number": "$purchase_number",
+          "region": "$region",
+          "reg_num": "$reg_num",
+          "skip": "$skip",
+          "sort": "$sort",
+          "stage": "$stage",
+          "subject": "$subject",
+          "supplier": "$supplier",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_contract_44",
+      "description": "Get one 44-FZ contract by its registry number: the index fields (subject, price, customer, suppliers, state, execution period) and the list of documents published for it (contract, changes, execution and termination records).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number in the EIS: of the contract for contract tools, of the organisation for organisation tools."
+          }
+        },
+        "required": [
+          "reg_num"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/contracts/{reg_num}"
+      }
+    },
+    {
+      "name": "gosplan_get_contract_document",
+      "description": "Get the latest contract record of a 44-FZ contract: parties with requisites, subject and products with quantities and prices, financing, execution dates, security, and the attached files with download links. The answer is the source document of the EIS converted to JSON, so field names follow the EIS XML schemas and some fields are absent when the source has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number in the EIS: of the contract for contract tools, of the organisation for organisation tools."
+          }
+        },
+        "required": [
+          "reg_num"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/contracts/{reg_num}/contract"
+      }
+    },
+    {
+      "name": "gosplan_get_contract_procedures",
+      "description": "Get the execution records of a 44-FZ contract: acceptance documents, payments, penalties and termination, as far as published. The answer is the source document of the EIS converted to JSON, so field names follow the EIS XML schemas and some fields are absent when the source has none.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number in the EIS: of the contract for contract tools, of the organisation for organisation tools."
+          }
+        },
+        "required": [
+          "reg_num"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/contracts/{reg_num}/procedures"
+      }
+    },
+    {
+      "name": "gosplan_search_contract_procedures",
+      "description": "Search contract conclusion procedures under 44-FZ: the signing stage between the result of a purchase and the registered contract (draft contract, disagreement protocols, signatures). Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_project_number": {
+            "type": "string",
+            "description": "Number of the draft contract (contract conclusion procedure)."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Only documents in this currency. The only listed value is RUB.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "currency_code_not": {
+            "type": "string",
+            "description": "Exclude this currency: RUB returns only foreign-currency purchases or contracts.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "participant": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the supplier taking part in the contract conclusion procedure."
+          },
+          "price_ge": {
+            "type": "number",
+            "description": "Contract price at or above this amount, in the contract currency."
+          },
+          "price_le": {
+            "type": "number",
+            "description": "Contract price at or below this amount."
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: price_desc, price_asc, published_at_desc, published_at_asc, updated_at_desc, updated_at_asc. Default updated_at_desc.",
+            "enum": [
+              "price_desc",
+              "price_asc",
+              "published_at_desc",
+              "published_at_asc",
+              "updated_at_desc",
+              "updated_at_asc"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "description": "Words from the subject of the contract (Russian); also matches OKPD2 or KTRU codes and the place of delivery where recorded. When set, results are ordered by relevance and sort is ignored."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/procedures",
+        "queryParams": {
+          "contract_project_number": "$contract_project_number",
+          "currency_code": "$currency_code",
+          "currency_code_not": "$currency_code_not",
+          "customer": "$customer",
+          "limit": "$limit",
+          "participant": "$participant",
+          "price_ge": "$price_ge",
+          "price_le": "$price_le",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "purchase_number": "$purchase_number",
+          "region": "$region",
+          "skip": "$skip",
+          "sort": "$sort",
+          "subject": "$subject",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_contract_procedure",
+      "description": "Get one contract conclusion procedure under 44-FZ by the number of the draft contract: participant, price, the steps taken and the documents exchanged.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contract_project_number": {
+            "type": "string",
+            "description": "Number of the draft contract."
+          }
+        },
+        "required": [
+          "contract_project_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/procedures/{contract_project_number}"
+      }
+    },
+    {
+      "name": "gosplan_search_complaints",
+      "description": "Search the register of complaints filed with the antimonopoly service about 44-FZ purchases. Each row has reg_number, state, purchase_number, region, published_at, updated_at and docs. Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "published_forpast": {
+            "type": "string",
+            "description": "Relative publication period counted back from now: a number followed by d, m or y, e.g. 5d, 2m, 1y (at most 3y). Ignored when published_after or published_before is set, or when a purchase, plan or position number is given.",
+            "pattern": "^[0-9]+[ymd]$"
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "state": {
+            "type": "integer",
+            "description": "Complaint state: 0 under review, 1 upheld, 2 rejected, 3 partly upheld, 4 rejected but violations found by an unscheduled inspection.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "reg_number": {
+            "type": "string",
+            "description": "Registry number of the complaint."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: published_at_desc, published_at_asc, updated_at_desc, updated_at_asc. Default published_at_desc.",
+            "enum": [
+              "published_at_desc",
+              "published_at_asc",
+              "updated_at_desc",
+              "updated_at_asc"
+            ]
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/complaints",
+        "queryParams": {
+          "limit": "$limit",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "published_forpast": "$published_forpast",
+          "purchase_number": "$purchase_number",
+          "region": "$region",
+          "skip": "$skip",
+          "state": "$state",
+          "reg_number": "$reg_number",
+          "sort": "$sort",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_complaint",
+      "description": "Get one complaint by its registry number: applicant, the purchase and customer concerned, the text and grounds, state, and the result of the control with the decision, as far as published.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_number": {
+            "type": "string",
+            "description": "Registry number of the complaint."
+          }
+        },
+        "required": [
+          "reg_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/complaints/{reg_number}"
+      }
+    },
+    {
+      "name": "gosplan_search_organizations_44",
+      "description": "Look up customers in the 44-FZ register of organisations by INN, registration number or region. Each row has region and source with regNumber, fullName, INN, KPP, addresses, contact person, phone, e-mail and organisation type. Use it to turn an INN from a search result into a name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_num": {
+            "type": "string",
+            "description": "Registration number of the organisation in the EIS (11 digits), e.g. 18950000008."
+          },
+          "inn": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: inn_desc, inn_asc, region_desc, region_asc. Default region_desc.",
+            "enum": [
+              "inn_desc",
+              "inn_asc",
+              "region_desc",
+              "region_asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/organizations",
+        "queryParams": {
+          "reg_num": "$reg_num",
+          "inn": "$inn",
+          "region": "$region",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_organization_44",
+      "description": "Get one customer organisation from the 44-FZ register by its EIS registration number: full name, INN, KPP, OGRN, addresses, contacts, roles and budget level.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number in the EIS: of the contract for contract tools, of the organisation for organisation tools."
+          }
+        },
+        "required": [
+          "reg_num"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/organizations/{reg_num}"
+      }
+    },
+    {
+      "name": "gosplan_search_tender_plans",
+      "description": "Search procurement schedules (планы-графики) under 44-FZ: what a customer plans to buy in the coming years. Each row has the plan number, version, plan year and period, customer and publication dates. Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "owner": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation that owns the plan version."
+          },
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan (schedule) in the EIS."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: updated_at_desc, updated_at_asc. Default updated_at_desc.",
+            "enum": [
+              "updated_at_desc",
+              "updated_at_asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/tenderplans",
+        "queryParams": {
+          "customer": "$customer",
+          "limit": "$limit",
+          "owner": "$owner",
+          "plan_number": "$plan_number",
+          "region": "$region",
+          "skip": "$skip",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_tender_plan",
+      "description": "Get one 44-FZ procurement schedule by its registry number: customer, plan year, version and totals. The positions are read with gosplan_search_plan_positions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan in the EIS."
+          }
+        },
+        "required": [
+          "plan_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/tenderplans/{plan_number}"
+      }
+    },
+    {
+      "name": "gosplan_search_plan_positions",
+      "description": "Search the positions of 44-FZ procurement schedules across all customers: planned purchases with object, OKPD2 code, planned year of the notice, amounts per year and the IKZ. Use it to find upcoming tenders before the notice is published. Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "centralized_inn": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the authorised body running a centralised purchase."
+          },
+          "classifier": {
+            "type": "string",
+            "description": "One OKPD2 or KTRU code or code group, e.g. 33.20, 32.99.15 or 26.20.11.110-00000165. A group code matches everything below it. One code per request."
+          },
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "ikz": {
+            "type": "string",
+            "description": "Purchase identification code (IKZ, 36 characters)."
+          },
+          "joint_inn": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organiser of a joint tender or auction."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "object_info": {
+            "type": "string",
+            "description": "Words from the name of the purchased goods, works or services, or from the place of delivery (Russian). Partial names and keywords are allowed. When set, results are ordered by relevance and sort is ignored."
+          },
+          "owner": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation that owns the plan version."
+          },
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan (schedule) in the EIS."
+          },
+          "position_number": {
+            "type": "string",
+            "description": "Number of the plan position the purchase or contract belongs to."
+          },
+          "publish_year": {
+            "type": "integer",
+            "description": "Planned year of the notice publication, e.g. 2026."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: published_at_desc, published_at_asc. Default published_at_desc.",
+            "enum": [
+              "published_at_desc",
+              "published_at_asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz44/tenderplans/positions",
+        "queryParams": {
+          "centralized_inn": "$centralized_inn",
+          "classifier": "$classifier",
+          "customer": "$customer",
+          "ikz": "$ikz",
+          "joint_inn": "$joint_inn",
+          "limit": "$limit",
+          "object_info": "$object_info",
+          "owner": "$owner",
+          "plan_number": "$plan_number",
+          "position_number": "$position_number",
+          "publish_year": "$publish_year",
+          "skip": "$skip",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "gosplan_search_purchases_223",
+      "description": "Search procurement notices under Federal Law 223-FZ (purchases by state-owned companies, natural monopolies and similar bodies). Each row has purchase_number, object_info, max_price, currency_code, customer and placer (INNs), region, stage, purchase_type, published_at, updated_at, submission_close_at (bid deadline), okpd2 codes and docs. Returns a list (empty when nothing matches); page with limit and skip. Without date filters only the last month is searched.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "submission_close_after": {
+            "type": "string",
+            "description": "Bid submission deadline after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "submission_close_before": {
+            "type": "string",
+            "description": "Bid submission deadline before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Only documents in this currency. The only listed value is RUB.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "currency_code_not": {
+            "type": "string",
+            "description": "Exclude this currency: RUB returns only foreign-currency purchases or contracts.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "classifier": {
+            "type": "string",
+            "description": "One OKPD2 or KTRU code or code group, e.g. 33.20, 32.99.15 or 26.20.11.110-00000165. A group code matches everything below it. One code per request."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "max_price_ge": {
+            "type": "number",
+            "description": "Initial (maximum) contract price at or above this amount, in the purchase currency (roubles unless stated), e.g. 1000000."
+          },
+          "max_price_le": {
+            "type": "number",
+            "description": "Initial (maximum) contract price at or below this amount."
+          },
+          "object_info": {
+            "type": "string",
+            "description": "Words from the name of the purchased goods, works or services, or from the place of delivery (Russian). Partial names and keywords are allowed. When set, results are ordered by relevance and sort is ignored."
+          },
+          "placer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation that entered the plan or notice."
+          },
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan (schedule) in the EIS."
+          },
+          "position_number": {
+            "type": "string",
+            "description": "Number of the plan position the purchase or contract belongs to."
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "published_forpast": {
+            "type": "string",
+            "description": "Relative publication period counted back from now: a number followed by d, m or y, e.g. 5d, 2m, 1y (at most 3y). Ignored when published_after or published_before is set, or when a purchase, plan or position number is given.",
+            "pattern": "^[0-9]+[ymd]$"
+          },
+          "purchase_type": {
+            "type": "string",
+            "description": "One purchase method code as used in the EIS documents, e.g. epNotificationEF2020 (electronic auction, 44-FZ) or purchaseNotice (223-FZ). The purchase_type field of a search result shows the code of each purchase."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: submission_close_at_desc, submission_close_at_asc, max_price_asc, max_price_desc, published_at_asc, published_at_desc, updated_at_asc, updated_at_desc. Default published_at_desc.",
+            "enum": [
+              "submission_close_at_desc",
+              "submission_close_at_asc",
+              "max_price_asc",
+              "max_price_desc",
+              "published_at_asc",
+              "published_at_desc",
+              "updated_at_asc",
+              "updated_at_desc"
+            ]
+          },
+          "stage": {
+            "type": "integer",
+            "description": "Purchase stage: 1 bids are being collected, 2 the commission is working, 3 completed, 4 cancelled. Use 1 for tenders still open for bids.",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz223/purchases",
+        "queryParams": {
+          "submission_close_after": "$submission_close_after",
+          "submission_close_before": "$submission_close_before",
+          "currency_code": "$currency_code",
+          "currency_code_not": "$currency_code_not",
+          "customer": "$customer",
+          "classifier": "$classifier",
+          "limit": "$limit",
+          "max_price_ge": "$max_price_ge",
+          "max_price_le": "$max_price_le",
+          "object_info": "$object_info",
+          "placer": "$placer",
+          "plan_number": "$plan_number",
+          "position_number": "$position_number",
+          "purchase_number": "$purchase_number",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "published_forpast": "$published_forpast",
+          "purchase_type": "$purchase_type",
+          "region": "$region",
+          "skip": "$skip",
+          "sort": "$sort",
+          "stage": "$stage",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_223",
+      "description": "Get one 223-FZ purchase by its number: the index fields and the published documents (notice with lots, customers, delivery terms and documentation, changes, protocols).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz223/purchases/{purchase_number}"
+      }
+    },
+    {
+      "name": "gosplan_search_contracts_223",
+      "description": "Search the 223-FZ register of agreements (договоры). Each row has reg_num, subject, price, currency_code, customer and supplier INNs, region, purchase_number, published_at and updated_at. Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "currency_code": {
+            "type": "string",
+            "description": "Only documents in this currency. The only listed value is RUB.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "currency_code_not": {
+            "type": "string",
+            "description": "Exclude this currency: RUB returns only foreign-currency purchases or contracts.",
+            "enum": [
+              "RUB"
+            ]
+          },
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "classifier": {
+            "type": "string",
+            "description": "One OKPD2 or KTRU code or code group, e.g. 33.20, 32.99.15 or 26.20.11.110-00000165. A group code matches everything below it. One code per request."
+          },
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan (schedule) in the EIS."
+          },
+          "price_ge": {
+            "type": "number",
+            "description": "Contract price at or above this amount, in the contract currency."
+          },
+          "price_le": {
+            "type": "number",
+            "description": "Contract price at or below this amount."
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "published_forpast": {
+            "type": "string",
+            "description": "Relative publication period counted back from now: a number followed by d, m or y, e.g. 5d, 2m, 1y (at most 3y). Ignored when published_after or published_before is set, or when a purchase, plan or position number is given.",
+            "pattern": "^[0-9]+[ymd]$"
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number of the contract in the EIS contract register."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: price_desc, price_asc, published_at_desc, published_at_asc, updated_at_desc, updated_at_asc. Default published_at_desc.",
+            "enum": [
+              "price_desc",
+              "price_asc",
+              "published_at_desc",
+              "published_at_asc",
+              "updated_at_desc",
+              "updated_at_asc"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "description": "Words from the subject of the contract (Russian); also matches OKPD2 or KTRU codes and the place of delivery where recorded. When set, results are ordered by relevance and sort is ignored."
+          },
+          "supplier": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the supplier (contractor)."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz223/contracts",
+        "queryParams": {
+          "currency_code": "$currency_code",
+          "currency_code_not": "$currency_code_not",
+          "customer": "$customer",
+          "limit": "$limit",
+          "classifier": "$classifier",
+          "plan_number": "$plan_number",
+          "price_ge": "$price_ge",
+          "price_le": "$price_le",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "published_forpast": "$published_forpast",
+          "purchase_number": "$purchase_number",
+          "region": "$region",
+          "reg_num": "$reg_num",
+          "skip": "$skip",
+          "sort": "$sort",
+          "subject": "$subject",
+          "supplier": "$supplier",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_contract_223",
+      "description": "Get one 223-FZ agreement by its registry number: parties, subject, price, dates, the purchase it results from and the published documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number in the EIS: of the contract for contract tools, of the organisation for organisation tools."
+          }
+        },
+        "required": [
+          "reg_num"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz223/contracts/{reg_num}"
+      }
+    },
+    {
+      "name": "gosplan_search_organizations_223",
+      "description": "Look up customers in the 223-FZ register of organisations by INN, identification code or region: full and short name, INN, KPP, OGRN, addresses and contacts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "Identification code of the customer in the 223-FZ register."
+          },
+          "inn": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: inn_desc, inn_asc, region_desc, region_asc. Default region_desc.",
+            "enum": [
+              "inn_desc",
+              "inn_asc",
+              "region_desc",
+              "region_asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz223/organizations",
+        "queryParams": {
+          "code": "$code",
+          "inn": "$inn",
+          "region": "$region",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "gosplan_search_purchase_plans_223",
+      "description": "Search procurement plans (планы закупок) under 223-FZ by customer, placer, region or plan number: what a state-owned company plans to buy. Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "placer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation that entered the plan or notice."
+          },
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan (schedule) in the EIS."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: updated_at_desc, updated_at_asc. Default updated_at_desc.",
+            "enum": [
+              "updated_at_desc",
+              "updated_at_asc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz223/purchaseplans",
+        "queryParams": {
+          "customer": "$customer",
+          "limit": "$limit",
+          "placer": "$placer",
+          "plan_number": "$plan_number",
+          "region": "$region",
+          "skip": "$skip",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_plan_223",
+      "description": "Get one 223-FZ procurement plan by its registry number, with its positions (planned purchases, OKPD2 codes, amounts and planned dates).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "plan_number": {
+            "type": "string",
+            "description": "Registry number of the procurement plan in the EIS."
+          }
+        },
+        "required": [
+          "plan_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/fz223/purchaseplans/{plan_number}"
+      }
+    },
+    {
+      "name": "gosplan_search_purchases_615",
+      "description": "Search purchases under Government Decree 615 (capital repair of apartment buildings, run by regional capital repair funds). Each row has purchase_number, object_info, max_price, bid and contract security amounts, region, stage, published_at, collecting_finished_at and docs. Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "collecting_finished_after": {
+            "type": "string",
+            "description": "Bid submission deadline after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "collecting_finished_before": {
+            "type": "string",
+            "description": "Bid submission deadline before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "contract_guarantee_amount_ge": {
+            "type": "number",
+            "description": "Contract performance security at or above this amount."
+          },
+          "contract_guarantee_amount_le": {
+            "type": "number",
+            "description": "Contract performance security at or below this amount."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "max_price_ge": {
+            "type": "number",
+            "description": "Initial (maximum) contract price at or above this amount, in the purchase currency (roubles unless stated), e.g. 1000000."
+          },
+          "max_price_le": {
+            "type": "number",
+            "description": "Initial (maximum) contract price at or below this amount."
+          },
+          "object_info": {
+            "type": "string",
+            "description": "Words from the name of the purchased goods, works or services, or from the place of delivery (Russian). Partial names and keywords are allowed. When set, results are ordered by relevance and sort is ignored."
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "purchase_type": {
+            "type": "string",
+            "description": "One purchase method code as used in the EIS documents, e.g. epNotificationEF2020 (electronic auction, 44-FZ) or purchaseNotice (223-FZ). The purchase_type field of a search result shows the code of each purchase."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "responsible": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the organisation that placed the notice (may be an authorised body acting for the customer)."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: collecting_finished_at_asc, collecting_finished_at_desc, max_price_asc, max_price_desc, published_at_asc, published_at_desc, updated_at_asc, updated_at_desc. Default updated_at_desc.",
+            "enum": [
+              "collecting_finished_at_asc",
+              "collecting_finished_at_desc",
+              "max_price_asc",
+              "max_price_desc",
+              "published_at_asc",
+              "published_at_desc",
+              "updated_at_asc",
+              "updated_at_desc"
+            ]
+          },
+          "stage": {
+            "type": "integer",
+            "description": "Purchase stage: 1 bids are being collected, 2 the commission is working, 3 completed, 4 cancelled. Use 1 for tenders still open for bids.",
+            "enum": [
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pprf615/purchases",
+        "queryParams": {
+          "collecting_finished_after": "$collecting_finished_after",
+          "collecting_finished_before": "$collecting_finished_before",
+          "contract_guarantee_amount_ge": "$contract_guarantee_amount_ge",
+          "contract_guarantee_amount_le": "$contract_guarantee_amount_le",
+          "limit": "$limit",
+          "max_price_ge": "$max_price_ge",
+          "max_price_le": "$max_price_le",
+          "object_info": "$object_info",
+          "purchase_number": "$purchase_number",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "purchase_type": "$purchase_type",
+          "region": "$region",
+          "responsible": "$responsible",
+          "skip": "$skip",
+          "sort": "$sort",
+          "stage": "$stage",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_purchase_615",
+      "description": "Get one Decree 615 purchase by its number: the index fields and the published documents (notice, protocols).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS."
+          }
+        },
+        "required": [
+          "purchase_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pprf615/purchases/{purchase_number}"
+      }
+    },
+    {
+      "name": "gosplan_search_contracts_615",
+      "description": "Search the register of agreements concluded under Government Decree 615 (capital repair): subject, price, customer and contractor INNs, state and dates. Returns a list (empty when nothing matches); page with limit and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the customer (the buying body)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "price_ge": {
+            "type": "number",
+            "description": "Contract price at or above this amount, in the contract currency."
+          },
+          "price_le": {
+            "type": "number",
+            "description": "Contract price at or below this amount."
+          },
+          "published_after": {
+            "type": "string",
+            "description": "Published at or after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01. Must not be later than published_before."
+          },
+          "published_before": {
+            "type": "string",
+            "description": "Published at or before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "purchase_number": {
+            "type": "string",
+            "description": "Purchase (notice) number in the EIS, e.g. 0372200138426000133 for 44-FZ (19 digits) or 32616596785 for 223-FZ (11 digits)."
+          },
+          "region": {
+            "type": "integer",
+            "description": "Region code of the Russian Federation (the two-digit code used in INN and KLADR, e.g. 77 Moscow, 78 Saint Petersburg, 50 Moscow Oblast). One region per request."
+          },
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number of the contract in the EIS contract register."
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging (default 0).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: price_desc, price_asc, published_at_desc, published_at_asc, updated_at_desc, updated_at_asc.",
+            "enum": [
+              "price_desc",
+              "price_asc",
+              "published_at_desc",
+              "published_at_asc",
+              "updated_at_desc",
+              "updated_at_asc"
+            ]
+          },
+          "stage": {
+            "type": "string",
+            "description": "Contract state: 0 undefined, 1 in execution, 2 completed, 3 terminated, 4 annulled.",
+            "enum": [
+              "0",
+              "1",
+              "2",
+              "3",
+              "4"
+            ]
+          },
+          "subject": {
+            "type": "string",
+            "description": "Words from the subject of the contract (Russian); also matches OKPD2 or KTRU codes and the place of delivery where recorded. When set, results are ordered by relevance and sort is ignored."
+          },
+          "contractor": {
+            "type": "string",
+            "description": "INN (Russian taxpayer number, 10 digits for organisations, 12 for sole proprietors) of the contractor."
+          },
+          "updated_after": {
+            "type": "string",
+            "description": "Updated in the EIS after this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          },
+          "updated_before": {
+            "type": "string",
+            "description": "Updated in the EIS before this moment. ISO 8601 date-time with a time zone, e.g. 2026-03-01T00:00:00+03:00. Not before 2024-01-01."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pprf615/contracts",
+        "queryParams": {
+          "customer": "$customer",
+          "limit": "$limit",
+          "price_ge": "$price_ge",
+          "price_le": "$price_le",
+          "published_after": "$published_after",
+          "published_before": "$published_before",
+          "purchase_number": "$purchase_number",
+          "region": "$region",
+          "reg_num": "$reg_num",
+          "skip": "$skip",
+          "sort": "$sort",
+          "stage": "$stage",
+          "subject": "$subject",
+          "contractor": "$contractor",
+          "updated_after": "$updated_after",
+          "updated_before": "$updated_before"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_contract_615",
+      "description": "Get one Decree 615 agreement by its registry number: parties, subject, price, state and the published documents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "reg_num": {
+            "type": "string",
+            "description": "Registry number in the EIS: of the contract for contract tools, of the organisation for organisation tools."
+          }
+        },
+        "required": [
+          "reg_num"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pprf615/contracts/{reg_num}"
+      }
+    },
+    {
+      "name": "gosplan_search_ktru",
+      "description": "Search the KTRU catalogue of goods, works and services (the classifier customers must use to describe purchase objects): code, name, the OKPD2 class it belongs to, units of measure and status. Use the code as a classifier filter in the purchase and contract searches.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Words from the name of the KTRU position (Russian). When set, results are ordered by relevance."
+          },
+          "classifier": {
+            "type": "string",
+            "description": "One OKPD2 or KTRU code or code group, e.g. 33.20, 32.99.15 or 26.20.11.110-00000165. A group code matches everything below it. One code per request."
+          },
+          "classifier_okpd2": {
+            "type": "string",
+            "description": "OKPD2 code or code group, e.g. 10.86."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status of the KTRU position version: ACTIVE (default), INACTIVE or TERMINATED.",
+            "enum": [
+              "ACTIVE",
+              "INACTIVE",
+              "TERMINATED"
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, one of: code_asc, code_desc. Default code_asc.",
+            "enum": [
+              "code_asc",
+              "code_desc"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nsi/ktru",
+        "queryParams": {
+          "name": "$name",
+          "classifier": "$classifier",
+          "classifier_okpd2": "$classifier_okpd2",
+          "status": "$status",
+          "sort": "$sort"
+        }
+      }
+    },
+    {
+      "name": "gosplan_get_ktru",
+      "description": "Get one KTRU catalogue position by its code, e.g. 10.86.10.110-00000004: name, OKPD2 class, units of measure and the mandatory characteristics customers must use when describing the product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "code": {
+            "type": "string",
+            "description": "The code: the customer identification code for 223-FZ organisations, the KTRU code for the catalogue."
+          }
+        },
+        "required": [
+          "code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/nsi/ktru/{code}"
+      }
+    }
+  ]
+}

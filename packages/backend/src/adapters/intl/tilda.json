@@ -1,0 +1,269 @@
+{
+  "slug": "tilda",
+  "name": "Tilda",
+  "aliases": [
+    "Tilda Publishing",
+    "Tilda CC",
+    "Тильда"
+  ],
+  "description": "Tilda Publishing website builder, read-only API: projects, project settings, page lists and the published HTML of pages, as markup or prepared for export to your own server. Public key and secret key (Business plan).",
+  "instructions": "## Tilda\nThis connector reads the **Tilda Publishing API** at `https://api.tildacdn.info/v1`: the projects (websites) of a Tilda account, their settings, their pages and the published HTML of each page, as plain markup or prepared for export to your own server. The API is **read-only**: it cannot create or change pages, and it has no access to forms, leads, orders or the store.\n\n**Setup (about 3 minutes)**\n1. The API is part of the Tilda **Business** plan. On the Free and Personal plans the keys cannot be created.\n2. In Tilda open a project, then **Site Settings, Export, API Integration**, and generate the keys.\n3. Copy the **Public Key** into `TILDA_PUBLIC_KEY` and the **Secret Key** into `TILDA_SECRET_KEY`. `tilda_list_projects` shows which projects the keys reach.\n\nEvery call sends the two keys as the query parameters `publickey` and `secretkey`.\n\n**Where to start**: `tilda_list_projects` gives the project ids, `tilda_list_pages` the pages of a project.\n\n**Tools**: `tilda_get_project` (domain, export paths, home page), `tilda_get_page` (body HTML with script and style lists), `tilda_get_page_full` (complete HTML document), `tilda_get_page_export` and `tilda_get_page_full_export` (the same two, with links rewritten to local files and a list of the files to download).\n\n**Rate limit: 150 requests per hour** for the account. Tilda blocks accounts that poll the API, so read a page once and keep working with that copy; never fetch all pages of a large site in a loop. Listing projects and pages costs one request each.\n\n**Reading the answers**: every answer has `status`, which is `FOUND` on success, and `result`. Ids are numbers written as text. `published` is the Unix time of the last publication; `date` is the creation time as `YYYY-MM-DD HH:MM:SS`. The API is made for synchronising published pages: publish a page in Tilda before reading its HTML here.\n\n**Images and files**: `img`, `featureimg` and the `from` entries are addresses on the Tilda servers. The export tools also give the local file name (`to`) the HTML expects, built from the export paths of the project (`tilda_get_project`).\n\n**Errors**: Tilda answers a failed call with `status` `ERROR` and a `message`, usually with HTTP status 409. `Wrong public key` or a message about the secret key: check the two keys. Other messages name the missing or unknown parameter, such as a project or page id that does not exist in this account.",
+  "region": "intl",
+  "category": "cms",
+  "icon": "tilda",
+  "docsUrl": "https://help.tilda.cc/api",
+  "prerequisites": "A Tilda account on the Business plan (the API is not part of the Free and Personal plans) and the Public Key and Secret Key from Site Settings, Export, API Integration. About 3 minutes.",
+  "requiredEnvVars": [
+    "TILDA_PUBLIC_KEY",
+    "TILDA_SECRET_KEY"
+  ],
+  "envVarMeta": {
+    "TILDA_PUBLIC_KEY": {
+      "label": "Public Key",
+      "kind": "credential",
+      "help": "Tilda, Site Settings, Export, API Integration: copy the Public Key (20 characters).",
+      "link": "https://help.tilda.cc/api",
+      "pattern": "^[A-Za-z0-9]{10,64}$",
+      "patternMessage": "Paste the Public Key only: letters and digits, usually 20 characters."
+    },
+    "TILDA_SECRET_KEY": {
+      "label": "Secret Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the Public Key under Site Settings, Export, API Integration.",
+      "link": "https://help.tilda.cc/api",
+      "pattern": "^[A-Za-z0-9]{10,64}$",
+      "patternMessage": "Paste the Secret Key only: letters and digits, usually 20 characters."
+    }
+  },
+  "verifyHints": {
+    "401": "Tilda did not accept the keys. Copy the Public Key and the Secret Key again from Site Settings, Export, API Integration.",
+    "403": "Tilda refused the call. The API needs the Business plan and keys generated under Site Settings, Export, API Integration.",
+    "404": "Tilda found no project or page with that id in this account.",
+    "409": "Tilda refused the call, usually because the Public Key or the Secret Key is wrong, the account is not on the Business plan, or the project or page id does not belong to the account. The message says which.",
+    "rate_limited": "Tilda allows 150 API requests per hour and blocks accounts that poll. Wait before trying again and reuse pages you already read."
+  },
+  "probe": {
+    "tool": "tilda_list_projects",
+    "params": {}
+  },
+  "connector": {
+    "name": "Tilda API",
+    "type": "REST",
+    "baseUrl": "https://api.tildacdn.info/v1",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "publickey": "{{TILDA_PUBLIC_KEY}}",
+      "secretkey": "{{TILDA_SECRET_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "status",
+          "equals": "ERROR",
+          "messagePath": "message",
+          "messageMatches": "public key|secret key|publickey|secretkey",
+          "status": 401
+        },
+        {
+          "path": "status",
+          "equals": "ERROR",
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "tilda_list_projects",
+      "description": "List the Tilda projects (websites) of the account: id, title and descr (description). Start here: every other call needs a project id or a page id. Counts as one of the 150 requests per hour. Answer: `status` and `result`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getprojectslist/"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tilda_get_project",
+      "description": "Read the settings of one project: id, title, descr, customdomain, the export paths for images, scripts and styles (export_imgpath, export_jspath, export_csspath), indexpageid (the home page), page404id, favicon and the list of project images. With webconfig the answer also holds a sample web server configuration. Answer: `status` and `result`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id from tilda_list_projects, e.g. `1234567`.",
+            "pattern": "^[0-9]+$"
+          },
+          "webconfig": {
+            "type": "string",
+            "description": "Also return a sample configuration for this web server.",
+            "enum": [
+              "htaccess",
+              "nginx"
+            ]
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getprojectinfo/",
+        "queryParams": {
+          "projectid": "$project_id",
+          "webconfig": "$webconfig"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tilda_list_pages",
+      "description": "List the pages of a project: id, projectid, title, descr (description), img and featureimg (preview images), alias (the address of the page), date (creation time), sort, published (Unix time of the last publication) and filename. Answer: `status` and `result`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id from tilda_list_projects, e.g. `1234567`.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getpageslist/",
+        "queryParams": {
+          "projectid": "$project_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tilda_get_page",
+      "description": "Read one page with the HTML of its body: id, projectid, title, descr (description), img and featureimg (preview images), alias (the address of the page), date (creation time), sort, published (Unix time of the last publication) and filename, plus `html` (the body markup, without the surrounding document) and the lists `js` and `css` of the files the page loads from the Tilda servers. The HTML of a long page is large. Use it to read the text and structure of a page. Answer: `status` and `result`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id from tilda_list_pages, e.g. `12345678`.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getpage/",
+        "queryParams": {
+          "pageid": "$page_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tilda_get_page_full",
+      "description": "Read one page as a complete HTML document: id, projectid, title, descr (description), img and featureimg (preview images), alias (the address of the page), date (creation time), sort, published (Unix time of the last publication) and filename, plus `html` with the whole document from doctype to closing tag, linking scripts, styles and images on the Tilda servers. The answer is large. Answer: `status` and `result`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id from tilda_list_pages, e.g. `12345678`.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getpagefull/",
+        "queryParams": {
+          "pageid": "$page_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tilda_get_page_export",
+      "description": "Read one page prepared for hosting on your own server, body only: id, projectid, title, descr (description), img and featureimg (preview images), alias (the address of the page), date (creation time), sort, published (Unix time of the last publication) and filename, plus `html` (body markup with local links), and the lists `images`, `js` and `css`, each entry with `from` (the file on the Tilda servers) and `to` (the local file name the HTML refers to). Download every listed file again at each export: scripts and styles change without notice. Answer: `status` and `result`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id from tilda_list_pages, e.g. `12345678`.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getpageexport/",
+        "queryParams": {
+          "pageid": "$page_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "tilda_get_page_full_export",
+      "description": "Read one page prepared for hosting on your own server as a complete HTML document: id, projectid, title, descr (description), img and featureimg (preview images), alias (the address of the page), date (creation time), sort, published (Unix time of the last publication) and filename, plus `html` (the whole document with local links) and the list `images` with `from` (the file on the Tilda servers) and `to` (the local file name). The answer is large. Answer: `status` and `result`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_id": {
+            "type": "string",
+            "description": "Page id from tilda_list_pages, e.g. `12345678`.",
+            "pattern": "^[0-9]+$"
+          }
+        },
+        "required": [
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/getpagefullexport/",
+        "queryParams": {
+          "pageid": "$page_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

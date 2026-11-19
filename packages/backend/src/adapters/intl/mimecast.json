@@ -1,0 +1,1565 @@
+{
+  "slug": "mimecast",
+  "name": "Mimecast",
+  "aliases": [
+    "Mimecast Email Security",
+    "Mimecast API 2.0"
+  ],
+  "description": "Mimecast email security and archive from any AI agent: track messages through the gateway, search and read the email archive and its Smart Tags, see held messages and queues, URL, attachment and impersonation protection logs, DLP logs, audit events, rejections, blocked sender policies and threat events. Releasing or rejecting held mail and blocking senders are switched off.",
+  "instructions": "## Mimecast\nThis connector calls the **Mimecast API 2.0** (`https://api.services.mimecast.com`) of Mimecast, the email security, archiving and continuity service: the email archive (search, message lists, message content and Smart Tags), message tracking, the hold queue, URL, attachment and impersonation protection logs, data leak prevention logs, audit events, rejections, blocked sender policies and threat events.\n\n**Setup (about 10 minutes, Mimecast administrator)**\n1. Sign in to the Mimecast Administration Console with a role that has **Manage Application Roles**.\n2. Go to **Integrations, API and Platform Integrations** (the Integrations Hub), accept the API terms if asked, and on the **Mimecast API 2.0** tile click **Generate keys** (Configure New). Do not use a legacy API 1.0 application.\n3. Give the application a name, choose the products it may use, and select a **role**. The role decides what the connector can read; see the permissions below. Enter a technical contact and save.\n4. Copy the **Client ID** into `MIMECAST_CLIENT_ID` and the **Client Secret** into `MIMECAST_CLIENT_SECRET`. The secret is shown once; if it is lost, open the application in the Integrations Hub and reset the keys.\n5. `MIMECAST_API_URL`: keep **Global** unless your data must stay in one country (United Kingdom or United States instance).\n\n**Authentication**: OAuth 2.0 client credentials. The connector posts the client ID and secret to `/oauth/token`, receives a bearer token valid for about 30 minutes and renews it on its own. No access key, secret key or request signing as in API 1.0.\n\n**Permissions the role needs** (Account, Roles in the console; each tool answers 403 without its permission)\n- Account, Dashboard, Read: `mimecast_get_account`, `mimecast_list_held_messages`, `mimecast_get_email_queues`, `mimecast_decode_url`.\n- Archive, Search, Read: `mimecast_search_archive`, `mimecast_list_archive_messages`. Archive, Search Content View: `mimecast_get_archive_message`. Archive, Read: `mimecast_get_archive_message_part`, `mimecast_get_archive_file`.\n- Smart Tags (`mimecast_list_smart_tags`, `mimecast_search_smart_tag_messages`, `mimecast_add_messages_to_smart_tag`) need the Data Retention product on the application, a Super Administrator role and a Cloud Archive subscription with Smart Tags.\n- Gateway, Tracking, Read: `mimecast_search_messages`, `mimecast_get_message_info`.\n- Account, Monitoring, Held: `mimecast_get_held_summary` (Held Summary, Read); `mimecast_release_held_message` and `mimecast_reject_held_messages` (Edit). Monitoring, Held, Read: `mimecast_get_held_release_logs`. Monitoring, Rejections, Read: `mimecast_get_rejection_logs`.\n- Monitoring, URL Protection, Read: `mimecast_get_ttp_url_logs`. Monitoring, Attachment Protection, Read: `mimecast_get_ttp_attachment_logs`. Monitoring, Impersonation Protection, Read: `mimecast_get_ttp_impersonation_logs`. Monitoring, Data Leak Prevention, Read: `mimecast_get_dlp_logs`.\n- Account, Logs, Read: `mimecast_get_audit_events`, `mimecast_list_audit_categories`.\n- Gateway, Policies, Read: `mimecast_list_blocked_sender_policies`. Gateway, Managed Senders, Edit: `mimecast_permit_or_block_sender`.\n- Security Events and Data Retrieval, Threat and Security Statistics, Read: `mimecast_list_threat_events`.\n\n**Where to start**\n- \"What happened to this email?\": `mimecast_search_messages` with sender, recipient or subject (in `advanced`) and a period, then `mimecast_get_message_info` for the delivery, spam and authentication details.\n- \"Is anything stuck?\": `mimecast_get_held_summary`, `mimecast_list_held_messages` and `mimecast_get_email_queues`.\n- \"Did anyone click something bad?\": `mimecast_get_ttp_url_logs` with scan_result malicious; attachments and impersonation in the two sibling tools; an overview in `mimecast_list_threat_events`.\n- Old mail: `mimecast_list_archive_messages` for one mailbox and a period, or `mimecast_search_archive` across mailboxes; then `mimecast_get_archive_message` and `mimecast_get_archive_message_part` (type PLAIN) to read it.\n\n**Archive search query**: `mimecast_search_archive` takes Mimecast's XML query in one string. A query to start from: `<?xml version=\"1.0\"?><xmlquery trace=\"iql,muse\"><metadata query-type=\"emailarchive\" archive=\"true\" active=\"false\" page-size=\"25\" startrow=\"0\"><smartfolders/><return-fields><return-field>attachmentcount</return-field><return-field>status</return-field><return-field>subject</return-field><return-field>size</return-field><return-field>receiveddate</return-field><return-field>displayfrom</return-field><return-field>displayto</return-field><return-field>id</return-field><return-field>smash</return-field></return-fields></metadata><muse><text>invoice</text><date select=\"last_month\"/><sent/><docs select=\"optional\"/><route/></muse></xmlquery>`. Put the words to find into the `text` element. The `date` element takes `select` values such as `today`, `yesterday`, `this_week`, `last_week`, `last_month` and `last_year`. Page with the `page-size` and `startrow` attributes. Mimecast's guide \"Building Search Queries\" on the developer portal lists every element.\n\n**Dates and paging**: the API 1.0 style calls (paths starting with `/api/`) take dates as `2026-11-16T14:49:18+0000` and page with `page_size` and `page_token`; the next token is `meta.pagination.next` in the answer. The newer calls (Smart Tags, policies, threat events) take ISO 8601 with `Z` and return their own next-page token.\n\n**Switched off at install**: `mimecast_release_held_message`, `mimecast_reject_held_messages` and `mimecast_permit_or_block_sender` change what is delivered. An administrator can enable them per connector; even then, confirm each action with the user. `mimecast_add_messages_to_smart_tag` is on: it only labels archived messages.\n\n**Privacy**: the archive holds the content of everyone's mail. Read message bodies and attachments only when the question needs them, and quote no more than necessary.\n\n**Limits and errors**: Mimecast rate-limits each application and answers 429 with `X-RateLimit-Reset`; wait and retry. Many calls answer 200 with a `fail` list instead of an error status: the connector reports those as errors with Mimecast's code and message. 401 means the client ID or secret is wrong or the keys were reset. 403 means the application's role lacks the permission for that call, or the account does not have the product. Message tracking, the hold queue and the queues exist only on accounts that route mail through the Mimecast gateway.",
+  "region": "intl",
+  "category": "email",
+  "icon": "mimecast",
+  "docsUrl": "https://developer.services.mimecast.com/api-overview",
+  "prerequisites": "A Mimecast account and an administrator with the Manage Application Roles permission, to create an API 2.0 application in the Integrations Hub and give it a role. You need its Client ID and Client Secret. About 10 minutes.",
+  "requiredEnvVars": [
+    "MIMECAST_API_URL",
+    "MIMECAST_CLIENT_ID",
+    "MIMECAST_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "MIMECAST_API_URL": {
+      "label": "API gateway",
+      "kind": "address",
+      "help": "Global routes each call to the nearest Mimecast region and is right for most accounts. Pick the United Kingdom or United States instance only if your data must be processed there.",
+      "example": "https://api.services.mimecast.com",
+      "link": "https://developer.services.mimecast.com/api-overview",
+      "pattern": "^https://((uk|us)-)?api\\.services\\.mimecast\\.com$",
+      "patternMessage": "Pick one of the three Mimecast API 2.0 gateways, e.g. https://api.services.mimecast.com.",
+      "options": [
+        {
+          "value": "https://api.services.mimecast.com",
+          "label": "Global (nearest region, recommended)"
+        },
+        {
+          "value": "https://uk-api.services.mimecast.com",
+          "label": "United Kingdom only"
+        },
+        {
+          "value": "https://us-api.services.mimecast.com",
+          "label": "United States only"
+        }
+      ]
+    },
+    "MIMECAST_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Administration Console, Integrations, API and Platform Integrations, Mimecast API 2.0 tile: create an application and copy its Client ID.",
+      "link": "https://developer.services.mimecast.com/api-overview",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the Client ID of the API 2.0 application, without spaces."
+    },
+    "MIMECAST_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the API 2.0 application is saved. If it was lost, open the application in the Integrations Hub and reset the keys.",
+      "link": "https://developer.services.mimecast.com/api-overview",
+      "pattern": "^\\S{16,300}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Mimecast did not issue or accept a token: the Client ID or secret is wrong, or the keys were reset. Use the keys of an API 2.0 application (Integrations Hub), not API 1.0 access and secret keys.",
+    "403": "The role of this API 2.0 application lacks the permission for this call (for the setup check: Account, Dashboard, Read), or the account does not have the product. Edit the role under Account, Roles in the Administration Console.",
+    "404": "Mimecast found nothing at this path or with this id. Ids must be passed exactly as the list tools return them.",
+    "rate_limited": "Mimecast is rate-limiting this application. Wait until the time in the X-RateLimit-Reset header and try again.",
+    "auth_failed": "Mimecast refused the client credentials. Copy the Client ID and secret again from the API 2.0 application in the Integrations Hub."
+  },
+  "probe": {
+    "tool": "mimecast_get_account"
+  },
+  "connector": {
+    "name": "Mimecast API 2.0",
+    "type": "REST",
+    "baseUrl": "{{MIMECAST_API_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{MIMECAST_CLIENT_ID}}",
+      "clientSecret": "{{MIMECAST_CLIENT_SECRET}}",
+      "tokenUrl": "{{MIMECAST_API_URL}}/oauth/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "fail[0].errors[0].code",
+          "messagePath": [
+            "fail[0].errors[0].code",
+            "fail[0].errors[0].message"
+          ],
+          "messageMatches": "permission|forbidden|unauthori[sz]ed|not_authori[sz]ed|access_denied|err_xdk_access",
+          "status": 403
+        },
+        {
+          "path": "fail[0].errors[0].code",
+          "messagePath": [
+            "fail[0].errors[0].code",
+            "fail[0].errors[0].message"
+          ],
+          "messageMatches": "not_found|not found",
+          "status": 404
+        },
+        {
+          "path": "fail[0].errors[0].code",
+          "messagePath": [
+            "fail[0].errors[0].code",
+            "fail[0].errors[0].message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "mimecast_get_account",
+      "description": "Get the summary of the Mimecast account the API application belongs to: accountCode, accountName, region, type, the packages and whether gateway and archive are enabled, userCount, maxRetention, contactName and contactEmail. Use it to check the setup and to see which products the account has.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/account/get-account",
+        "bodyMapping": {
+          "data": []
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_search_archive",
+      "description": "Search the Mimecast archive with an XML query. Returns data[0].items (one object per message with the return fields the query asks for, such as id, subject, displayfrom, displayto, receiveddate, size, status, attachmentcount and smash) and queryDuration. Paging is inside the XML: the page-size and startrow attributes of the metadata element. See the instructions for a query to start from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "The search as one XML string. Start from this and change the text, date and paging: `<?xml version=\"1.0\"?><xmlquery trace=\"iql,muse\"><metadata query-type=\"emailarchive\" archive=\"true\" active=\"false\" page-size=\"25\" startrow=\"0\"><smartfolders/><return-fields><return-field>attachmentcount</return-field><return-field>status</return-field><return-field>subject</return-field><return-field>size</return-field><return-field>receiveddate</return-field><return-field>displayfrom</return-field><return-field>displayto</return-field><return-field>id</return-field><return-field>smash</return-field></return-fields></metadata><muse><text>invoice</text><date select=\"last_month\"/><sent/><docs select=\"optional\"/><route/></muse></xmlquery>`"
+          },
+          "admin": {
+            "type": "boolean",
+            "description": "true to search every mailbox of the account (needs the Archive, Search, Read permission); false or left out searches only the mailboxes of the user the application runs as."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/archive/search",
+        "bodyMapping": {
+          "data": [
+            {
+              "query": "$query",
+              "admin": "$admin"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_list_archive_messages",
+      "description": "List the archived messages of one mailbox, received (INBOX) or sent (SENT), in a period. Each message has id, subject, from, to, received, size, attachmentCount, status, expired and smash (a value that identifies the same message across mailboxes). Without dates Mimecast returns the last calendar month. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "mailbox": {
+            "type": "string",
+            "description": "Email address of the mailbox, e.g. anna@example.com. Leave out for the mailbox of the user the application runs as."
+          },
+          "view": {
+            "type": "string",
+            "enum": [
+              "INBOX",
+              "SENT"
+            ],
+            "description": "INBOX for received messages, SENT for sent ones.",
+            "default": "INBOX"
+          },
+          "start": {
+            "type": "string",
+            "description": "Earliest message to return. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "end": {
+            "type": "string",
+            "description": "Latest message to return. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "include_delegates": {
+            "type": "boolean",
+            "description": "true to include mailboxes this mailbox has delegate rights on. Default false."
+          },
+          "include_aliases": {
+            "type": "boolean",
+            "description": "false to leave out the alias addresses of the mailbox. Default true."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/archive/get-message-list",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "mailbox": "$mailbox",
+              "view": "$view",
+              "start": "$start",
+              "end": "$end",
+              "includeDelegates": "$include_delegates",
+              "includeAliases": "$include_aliases"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_archive_message",
+      "description": "Get the details of one archived message: subject, envelopeFrom, to, cc, replyTo, headerDate, received and processed times, headers, a preview of the body (messageBodyPreview), hasHtmlBody, hasTextBody, size, status and the attachments with id, filename, contentType, size and sha256.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Mimecast id of the message, from mimecast_search_archive or mimecast_list_archive_messages. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/archive/get-message-detail",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$id"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_archive_message_part",
+      "description": "Get the body of one archived message: as plain text, as HTML, or the whole message in RFC 822 format. Use PLAIN to read what a message says. The content of archived mail is confidential: fetch a body only when the question needs it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Mimecast id of the message, from mimecast_search_archive or mimecast_list_archive_messages. Pass it exactly as returned."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "PLAIN",
+              "HTML",
+              "RFC822",
+              "TRANSMISSION_MESSAGE_BODY"
+            ],
+            "description": "Which part to return: PLAIN (text), HTML, RFC822 (the complete message) or TRANSMISSION_MESSAGE_BODY.",
+            "default": "PLAIN"
+          },
+          "context": {
+            "type": "string",
+            "enum": [
+              "DELIVERED",
+              "RECEIVED"
+            ],
+            "description": "Which copy: DELIVERED (as it reached the mailbox) or RECEIVED (as Mimecast received it).",
+            "default": "DELIVERED"
+          },
+          "mailbox": {
+            "type": "string",
+            "description": "Email address of the mailbox the message belongs to. Leave out for the user the application runs as."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/archive/get-message-part",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$id",
+              "type": "$type",
+              "context": "$context",
+              "mailbox": "$mailbox"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_archive_file",
+      "description": "Get one attachment of an archived message by its id (the attachments list of mimecast_get_archive_message). Returns the file, or links to download it. Attachments can be large and confidential: fetch one only when the user asks for it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Id of the attachment, from attachments[].id of mimecast_get_archive_message."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/archive/get-file",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$id"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_list_smart_tags",
+      "description": "List the Smart Tags of the archive: folder-like labels that group archived messages for eDiscovery, compliance review and delegated access. Each tag has id, path, description and parentId. Pages with page_size and page_token (meta.nextPage of the previous answer).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Tags per page.",
+            "minimum": 1
+          },
+          "page_token": {
+            "type": "string",
+            "description": "meta.nextPage of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dataretention/v1/smart-tags",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "mimecast_search_smart_tag_messages",
+      "description": "List the archived messages that carry one Smart Tag, optionally limited to a period. Returns messages (each with its id) and meta.nextPage. Read a message with mimecast_get_archive_message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "smart_tag_id": {
+            "type": "string",
+            "description": "Smart Tag id from mimecast_list_smart_tags."
+          },
+          "start_date_time": {
+            "type": "string",
+            "description": "Only messages from this time on, ISO 8601, e.g. 2026-10-01T00:00:00Z."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "Only messages up to this time, ISO 8601, e.g. 2026-11-01T00:00:00Z."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Messages per page.",
+            "minimum": 1
+          },
+          "page_token": {
+            "type": "string",
+            "description": "meta.nextPage of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "smart_tag_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dataretention/v1/smart-tags/{smart_tag_id}/messages/search",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        },
+        "bodyMapping": {
+          "startDateTime": "$start_date_time",
+          "endDateTime": "$end_date_time"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_add_messages_to_smart_tag",
+      "description": "Put archived messages under a Smart Tag, as tagging them in the Administration Console does. People with access to the tag can then see those messages, so name the tag and the messages to the user first. Returns meta.batchSummary (succeeded, failed, total) and the failed ids with a reason.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "smart_tag_id": {
+            "type": "string",
+            "description": "Smart Tag id from mimecast_list_smart_tags."
+          },
+          "message_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the archived messages to tag, from mimecast_search_archive or mimecast_list_archive_messages.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "smart_tag_id",
+          "message_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/dataretention/v1/smart-tags/{smart_tag_id}/messages",
+        "bodyMapping": {
+          "messageIds": "$message_ids"
+        }
+      }
+    },
+    {
+      "name": "mimecast_search_messages",
+      "description": "Track messages through the gateway (Message Tracking): find what happened to an email by sender, recipient, subject, sender IP, message id or time. Returns trackedEmails with id, status (accepted, processing, delivery, held, bounced, deferred, rejected or archived), fromEnv, fromHdr, to, subject, received, sent, route, senderIP, spamScore and info. Search either with the advanced object (sender, recipient, subject) or with message_id, and narrow with a period.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "advanced": {
+            "type": "object",
+            "description": "Who and what to look for: an object with any of from (sender address or domain), to (recipient address or domain), subject (text of the subject), senderIP (source IP address) and url (a URL in the message). Give at least one of them, or use message_id instead.",
+            "properties": {
+              "from": {
+                "type": "string",
+                "description": "Sender address or domain, e.g. billing@example.com or example.com."
+              },
+              "to": {
+                "type": "string",
+                "description": "Recipient address or domain."
+              },
+              "subject": {
+                "type": "string",
+                "description": "Text of the subject."
+              },
+              "senderIP": {
+                "type": "string",
+                "description": "Source IP address of the message."
+              },
+              "url": {
+                "type": "string",
+                "description": "A URL that appears in the message content."
+              }
+            },
+            "minProperties": 1
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Internet message id (the Message-ID header), with its angle brackets."
+          },
+          "start": {
+            "type": "string",
+            "description": "Earliest message to track. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "end": {
+            "type": "string",
+            "description": "Latest message to track. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "route": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "inbound",
+                "outbound",
+                "internal",
+                "external"
+              ]
+            },
+            "description": "Only these directions."
+          },
+          "status": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "accepted",
+                "processing",
+                "bulk_processing",
+                "delivery",
+                "bulk_delivery",
+                "held",
+                "bounced",
+                "deferred",
+                "rejected",
+                "archived"
+              ]
+            },
+            "description": "Only these states."
+          },
+          "attachments": {
+            "type": "boolean",
+            "description": "true for messages with attachments only."
+          },
+          "search_reason": {
+            "type": "string",
+            "description": "Why the message is tracked, e.g. a ticket number. Mimecast records it in its audit log."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/message-finder/search",
+        "bodyMapping": {
+          "data": [
+            {
+              "advancedTrackAndTraceOptions": "$advanced",
+              "messageId": "$message_id",
+              "start": "$start",
+              "end": "$end",
+              "route": "$route",
+              "status": "$status",
+              "attachments": "$attachments",
+              "searchReason": "$search_reason"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_message_info",
+      "description": "Get everything the gateway recorded about one tracked message: status, recipientInfo with sender, recipients, subject, route and transmission details, spamInfo (spam score, verdict, SPF, DKIM and DMARC results, managed or permitted sender), the delivered copy, and retentionInfo with the purge date and Smart Tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Mimecast id of the message, from mimecast_search_messages (trackedEmails[].id). Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/message-finder/get-message-info",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$id"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_list_held_messages",
+      "description": "List the messages Mimecast is holding for review. Each has id, subject, from, fromHeader, to, dateReceived, route, reason, reasonCode, policyInfo (the policy or definition that held it), size and hasAttachments. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "admin": {
+            "type": "boolean",
+            "description": "true for the held messages of every recipient (needs an administrator role); false or left out for the user the application runs as."
+          },
+          "search_by": {
+            "type": "object",
+            "description": "Filter on one field: an object with fieldName (one of all, subject, sender, recipient, reasonCode, senderIP) and value (the text to look for), e.g. fieldName subject with a value. Leave out for no filter.",
+            "properties": {
+              "fieldName": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "subject",
+                  "sender",
+                  "recipient",
+                  "reasonCode",
+                  "senderIP"
+                ],
+                "description": "Field to filter on."
+              },
+              "value": {
+                "type": "string",
+                "description": "Text to look for in that field."
+              }
+            },
+            "required": [
+              "fieldName",
+              "value"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "description": "Earliest message to return. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "end": {
+            "type": "string",
+            "description": "Latest message to return. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/gateway/get-hold-message-list",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "admin": "$admin",
+              "searchBy": "$search_by",
+              "start": "$start",
+              "end": "$end"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_held_summary",
+      "description": "Count the messages currently held, per hold reason: each row has policyInfo (the policy or definition name) and numberOfItems. A quick view of the hold queue before listing it.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/gateway/get-hold-summary-list",
+        "bodyMapping": {
+          "data": []
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_release_held_message",
+      "description": "Release one held message so that it is delivered to its recipient. Installed switched off: a held message may be malicious, and a release cannot be undone. Show the user sender, subject and hold reason and wait for a clear yes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Mimecast id of the message, from mimecast_list_held_messages. Pass it exactly as returned."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/gateway/hold-release",
+        "bodyMapping": {
+          "data": [
+            {
+              "id": "$id"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "mimecast_reject_held_messages",
+      "description": "Reject held messages so that they are never delivered, optionally telling the sender. Installed switched off: a rejection cannot be undone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of the held messages to reject, from mimecast_list_held_messages.",
+            "minItems": 1
+          },
+          "reason_type": {
+            "type": "string",
+            "enum": [
+              "MESSAGE CONTAINS UNDESIRABLE CONTENT",
+              "MESSAGE CONTAINS CONFIDENTIAL INFORMATION",
+              "REVIEWER DISAPPROVES OF CONTENT",
+              "INAPPROPRIATE COMMUNICATION",
+              "MESSAGE GOES AGAINST EMAIL POLICIES"
+            ],
+            "description": "Reason recorded for the rejection."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text returned to the sender when notify is true."
+          },
+          "notify": {
+            "type": "boolean",
+            "description": "true to send the sender a rejection notice. Default false."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/gateway/hold-reject",
+        "bodyMapping": {
+          "data": [
+            {
+              "ids": "$ids",
+              "reasonType": "$reason_type",
+              "message": "$message",
+              "notify": "$notify"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "mimecast_get_email_queues",
+      "description": "Get the size of the inbound and outbound email queues over a period: inboundEmailQueue and outboundEmailQueue, each a list of date and count. A growing queue means mail is not being delivered.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/email/get-email-queues",
+        "bodyMapping": {
+          "data": [
+            {
+              "start": "$start",
+              "end": "$end"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_ttp_url_logs",
+      "description": "Get the URL Protect click logs: every protected link a user clicked, with userEmailAddress (who clicked), fromUserEmailAddress (the sender), url, category, scanResult (clean, malicious or suspicious), action, userAwarenessAction, route, date, subject and ttpDefinition. Without dates Mimecast returns today. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "scan_result": {
+            "type": "string",
+            "enum": [
+              "all",
+              "clean",
+              "malicious",
+              "suspicious"
+            ],
+            "description": "Only clicks with this scan result. Default all."
+          },
+          "route": {
+            "type": "string",
+            "enum": [
+              "all",
+              "inbound",
+              "outbound",
+              "internal"
+            ],
+            "description": "Only this mail direction. Default all."
+          },
+          "oldest_first": {
+            "type": "boolean",
+            "description": "true for oldest first. Default false (newest first)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/ttp/url/get-logs",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "from": "$from",
+              "to": "$to",
+              "scanResult": "$scan_result",
+              "route": "$route",
+              "oldestFirst": "$oldest_first"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_ttp_attachment_logs",
+      "description": "Get the Attachment Protect logs: every attachment sandboxed, with senderAddress, recipientAddress, subject, fileName, fileType, fileHash, result (safe, malicious, timeout, error or unsafe), actionTriggered, route, definition and date. Without dates Mimecast returns today. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "result": {
+            "type": "string",
+            "enum": [
+              "all",
+              "safe",
+              "malicious",
+              "timeout",
+              "error",
+              "unsafe"
+            ],
+            "description": "Only attachments with this result. Default all."
+          },
+          "route": {
+            "type": "string",
+            "enum": [
+              "all",
+              "inbound",
+              "outbound",
+              "internal"
+            ],
+            "description": "Only this mail direction. Default all."
+          },
+          "oldest_first": {
+            "type": "boolean",
+            "description": "true for oldest first. Default false (newest first)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/ttp/attachment/get-logs",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "from": "$from",
+              "to": "$to",
+              "result": "$result",
+              "route": "$route",
+              "oldestFirst": "$oldest_first"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_ttp_impersonation_logs",
+      "description": "Get the Impersonation Protect logs: messages flagged as impersonation attempts, with senderAddress, recipientAddress, subject, definition, hits, identifiers (which checks fired, such as newly_observed_domain or internal_user_name), action (hold, bounce or none), taggedMalicious, senderIpAddress and eventTime. Without dates Mimecast returns today. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to look for in search_field."
+          },
+          "search_field": {
+            "type": "string",
+            "enum": [
+              "all",
+              "senderAddress",
+              "recipientAddress",
+              "subject",
+              "definition"
+            ],
+            "description": "Field searched by query. Default all."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "hold",
+                "bounce",
+                "none"
+              ]
+            },
+            "description": "Only messages with these actions."
+          },
+          "tagged_malicious": {
+            "type": "boolean",
+            "description": "true for messages tagged malicious only, false for the others. Leave out for both."
+          },
+          "oldest_first": {
+            "type": "boolean",
+            "description": "true for oldest first. Default false (newest first)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/ttp/impersonation/get-logs",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "from": "$from",
+              "to": "$to",
+              "query": "$query",
+              "searchField": "$search_field",
+              "actions": "$actions",
+              "taggedMalicious": "$tagged_malicious",
+              "oldestFirst": "$oldest_first"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_dlp_logs",
+      "description": "Get the Data Leak Prevention logs: messages that triggered a content policy, with senderAddress, recipientAddress, subject, policy, action (for example hold, bounce, block or notification), route and eventTime. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to look for in search_field."
+          },
+          "search_field": {
+            "type": "string",
+            "enum": [
+              "all",
+              "senderAddress",
+              "recipientAddress",
+              "subject",
+              "policy"
+            ],
+            "description": "Field searched by query. Default all."
+          },
+          "actions": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only messages with these actions, e.g. hold, bounce, block, notification."
+          },
+          "routes": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "inbound",
+                "outbound",
+                "internal"
+              ]
+            },
+            "description": "Only these directions."
+          },
+          "oldest_first": {
+            "type": "boolean",
+            "description": "true for oldest first. Default false (newest first)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/dlp/get-logs",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "from": "$from",
+              "to": "$to",
+              "query": "$query",
+              "searchField": "$search_field",
+              "actions": "$actions",
+              "routes": "$routes",
+              "oldestFirst": "$oldest_first"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_decode_url",
+      "description": "Turn a link rewritten by Mimecast URL Protect (it starts with a protect or url host of mimecast.com) back into the original URL. Returns success and url. Nothing is opened: the link is only decoded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The rewritten link exactly as it appears in the email."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/ttp/url/decode-url",
+        "bodyMapping": {
+          "data": [
+            {
+              "url": "$url"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_audit_events",
+      "description": "Get the audit log of the Mimecast account: administrator and user actions such as logons, policy and account changes, archive searches and message releases. Each event has id, auditType, category, eventInfo and eventTime. Both dates are required and history goes back 60 days. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date_time": {
+            "type": "string",
+            "description": "Start of the period (at most 60 days back). Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "end_date_time": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "query": {
+            "type": "string",
+            "description": "Text to look for in the events, e.g. a user address."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these categories: the code values from mimecast_list_audit_categories."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "start_date_time",
+          "end_date_time"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/audit/get-audit-events",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "startDateTime": "$start_date_time",
+              "endDateTime": "$end_date_time",
+              "query": "$query",
+              "categories": "$categories"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_list_audit_categories",
+      "description": "List the audit event categories of Mimecast, each with code, id and name. The code is what the categories filter of mimecast_get_audit_events takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/audit/get-categories",
+        "bodyMapping": {
+          "data": []
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_rejection_logs",
+      "description": "Get the messages Mimecast rejected at the gateway before accepting them (spam, invalid recipient, blocked sender, failed checks), with fromAddress, toAddress, type, info, description, ipAddress, remoteName, spamScore and created. Without dates Mimecast returns today. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "admin": {
+            "type": "boolean",
+            "description": "true for the rejections of all users (needs an administrator role). Default false."
+          },
+          "mailbox": {
+            "type": "string",
+            "description": "Only rejections for this mailbox address."
+          },
+          "search_by": {
+            "type": "object",
+            "description": "Filter on one field: an object with fieldName (one of all, from, to, type, info, remoteIp) and value (the text to look for), e.g. fieldName from with a value. Leave out for no filter.",
+            "properties": {
+              "fieldName": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "from",
+                  "to",
+                  "type",
+                  "info",
+                  "remoteIp"
+                ],
+                "description": "Field to filter on."
+              },
+              "value": {
+                "type": "string",
+                "description": "Text to look for in that field."
+              }
+            },
+            "required": [
+              "fieldName",
+              "value"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/gateway/get-rejections",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "admin": "$admin",
+              "mailbox": "$mailbox",
+              "searchBy": "$search_by",
+              "start": "$start",
+              "end": "$end"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_get_held_release_logs",
+      "description": "Get the log of held messages that were released or rejected, and by whom: operator, fromEnv, fromHdr, to, subject, heldReason, policy, status (released or rejected), rejectReason, route and released (the time). Without dates Mimecast returns the last month. Pages with page_size and page_token (meta.pagination.next of the previous answer; missing on the last page).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search_by": {
+            "type": "object",
+            "description": "Filter on one field: an object with fieldName (one of all, operator, from, to, subject, info, heldReason) and value (the text to look for), e.g. fieldName operator with a value. Leave out for no filter.",
+            "properties": {
+              "fieldName": {
+                "type": "string",
+                "enum": [
+                  "all",
+                  "operator",
+                  "from",
+                  "to",
+                  "subject",
+                  "info",
+                  "heldReason"
+                ],
+                "description": "Field to filter on."
+              },
+              "value": {
+                "type": "string",
+                "description": "Text to look for in that field."
+              }
+            },
+            "required": [
+              "fieldName",
+              "value"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the period. Format 2026-11-16T14:49:18+0000 (ISO 8601 with a numeric offset, no colon in the offset)."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Results per page. Default 50, at most 500.",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Token of the next page: meta.pagination.next of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/gateway/get-held-release-logs",
+        "bodyMapping": {
+          "meta": {
+            "pagination": {
+              "pageSize": "$page_size",
+              "pageToken": "$page_token"
+            }
+          },
+          "data": [
+            {
+              "searchBy": "$search_by",
+              "start": "$start",
+              "end": "$end"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mimecast_list_blocked_sender_policies",
+      "description": "List the Blocked Senders policies of the account: id, description, option (block_sender or no_action), fromPart, the from and to targets (everyone, a domain, a group or one address), enabled, enforced, the validity dates, override and bidirectional. Pages with page_size and page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_size": {
+            "type": "integer",
+            "description": "Policies per page.",
+            "minimum": 1
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Page token of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/policy-management/cloud-gateway/v1/blocked-senders/policies",
+        "queryParams": {
+          "pageSize": "$page_size",
+          "pageToken": "$page_token"
+        }
+      }
+    },
+    {
+      "name": "mimecast_permit_or_block_sender",
+      "description": "Add a managed sender entry for one recipient: block rejects every email from that sender to that recipient, permit lets it bypass the spam checks. Installed switched off: it changes mail flow at once, and a permit lowers protection. Name sender, recipient and action to the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender": {
+            "type": "string",
+            "description": "Email address of the external sender."
+          },
+          "to": {
+            "type": "string",
+            "description": "Email address of the internal recipient the entry applies to."
+          },
+          "action": {
+            "type": "string",
+            "enum": [
+              "block",
+              "permit"
+            ],
+            "description": "block to reject the sender, permit to bypass spam checks."
+          }
+        },
+        "required": [
+          "sender",
+          "to",
+          "action"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/managedsender/permit-or-block-sender",
+        "bodyMapping": {
+          "data": [
+            {
+              "sender": "$sender",
+              "to": "$to",
+              "action": "$action"
+            }
+          ]
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "mimecast_list_threat_events",
+      "description": "List threat events of the last 90 days: messages rejected, blocked or held as malware, phishing, spam, suspicious or unwanted, with timestamp, analysis, source (email or URL), details, status, direction, subject, sender, recipientCount, origin (country) and url. Pages with page_size and page_token.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "timestamp_range_starts_at": {
+            "type": "string",
+            "description": "Start of the period, inclusive: ISO 8601 with a time zone, e.g. 2026-11-01T00:00:00Z. At most 90 days back."
+          },
+          "timestamp_range_ends_at": {
+            "type": "string",
+            "description": "End of the period, exclusive, in the same time zone as the start. Default now."
+          },
+          "analysis": {
+            "type": "string",
+            "description": "Only these threat types, separated by commas: malware, phishing, spam, suspicious, unwanted."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only these message states, separated by commas, e.g. rejected,held."
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Events per page.",
+            "minimum": 1
+          },
+          "page_token": {
+            "type": "string",
+            "description": "Pagination key of the previous answer. Leave out for the first page."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of events in total, 1 to 1000.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "timestamp_range_starts_at"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/threats/v1/events",
+        "queryParams": {
+          "timestampRangeStartsAt": "$timestamp_range_starts_at",
+          "timestampRangeEndsAt": "$timestamp_range_ends_at",
+          "analysis": "$analysis",
+          "status": "$status",
+          "pageSize": "$page_size",
+          "pageToken": "$page_token",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}

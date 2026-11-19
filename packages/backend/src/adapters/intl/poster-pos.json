@@ -1,0 +1,1394 @@
+{
+  "slug": "poster-pos",
+  "name": "Poster POS",
+  "aliases": [
+    "Poster",
+    "joinposter"
+  ],
+  "description": "Poster POS (joinposter.com), the cloud point of sale for cafes, restaurants and shops: menu products and categories, orders with their lines, sales reports by product, category, waiter, customer and location, payments per day, customers and loyalty groups, stock levels, supplies, write-offs, suppliers, employees and register shifts. Account token.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "poster-pos",
+  "docsUrl": "https://dev.joinposter.com/en/docs/v3/web/index",
+  "prerequisites": "A Poster POS account and its personal integration token from the management console (Access, Integrations). Any account owner can create one; no developer account or app review is needed. About 3 minutes.",
+  "requiredEnvVars": [
+    "POSTER_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "POSTER_ACCESS_TOKEN": {
+      "label": "Account token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Poster management console, Access, Integrations: the personal integration token. Paste it whole: the account number, a colon and the 32 characters after it.",
+      "link": "https://dev.joinposter.com/en/docs/v3/start/index",
+      "example": "687409:4164553abf6a031302898da7800b59fb",
+      "pattern": "^[0-9]{1,12}:[A-Za-z0-9]{16,64}$",
+      "patternMessage": "The token is the account number, a colon and the token itself, e.g. 687409:4164553abf6a031302898da7800b59fb, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Poster refused the token (error 10, 11 or 12: missing, wrong or expired). Copy the personal integration token again from Access, Integrations in the management console, with the account number and the colon in front.",
+    "403": "Poster refused the call: the token has no access to this method (error 20 or 54), or the account is archived because its subscription ended. Use the owner token, or reactivate the account.",
+    "404": "Poster found no record with this id (error 32). Take ids from the list tools.",
+    "rate_limited": "Poster is limiting the request rate (error 700). Wait a few seconds and call again; ask for narrower date ranges instead of many calls."
+  },
+  "probe": {
+    "tool": "poster_pos_get_settings"
+  },
+  "connector": {
+    "name": "Poster Web API",
+    "type": "REST",
+    "baseUrl": "https://joinposter.com/api",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "token": "{{POSTER_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error.code",
+          "in": [
+            10,
+            11,
+            12
+          ],
+          "messagePath": "error.message",
+          "status": 401
+        },
+        {
+          "path": "error.code",
+          "in": [
+            20,
+            54,
+            153
+          ],
+          "messagePath": "error.message",
+          "status": 403
+        },
+        {
+          "path": "error.code",
+          "in": [
+            32,
+            404
+          ],
+          "messagePath": "error.message",
+          "status": 404
+        },
+        {
+          "path": "error.code",
+          "equals": 700,
+          "messagePath": "error.message",
+          "status": 429
+        },
+        {
+          "path": "error",
+          "equals": 19,
+          "messagePath": "message",
+          "status": 403
+        },
+        {
+          "path": "error",
+          "messagePath": [
+            "error.message",
+            "message"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "instructions": "## Poster POS\nThis connector works with the **Poster Web API** (`https://joinposter.com/api`) of Poster POS, the cloud point of sale for cafes, restaurants and shops: menu, orders, sales reports, customers and loyalty groups, stock, suppliers, employees, locations and register shifts. Every call is `https://joinposter.com/api/` followed by the method name, with the account token in the `token` query parameter; the connector adds the token itself.\n\n**Setup (about 3 minutes)**\n1. Sign in to the Poster management console of your account as the owner.\n2. Open **Access**, then **Integrations**, and create or copy the **personal integration token**. It looks like `687409:4164553abf6a031302898da7800b59fb`: the account number, a colon and 32 characters.\n3. Paste the whole value, account number included, into `POSTER_ACCESS_TOKEN` and install the connector. The token has full access to the account, so keep it private.\n\nA token from an app of the Poster developer account (OAuth, `access_token` of the authorization) has the same format and works too, limited to what the app was granted.\n\n**Where to start**: `poster_pos_get_settings` (currency and time zone of the account), then `poster_pos_list_spots` for the locations, `poster_pos_list_registers` for the tablets and `poster_pos_list_employees` for waiter ids.\n\n**Menu**: `poster_pos_list_categories`, `poster_pos_list_products` (price per location under `spots`), `poster_pos_get_product` (recipe and modifiers) and `poster_pos_list_ingredients`.\n\n**Orders**: `poster_pos_list_transactions` lists receipts of a date range, optionally for one waiter, location or customer; `poster_pos_get_transaction` and `poster_pos_list_transaction_products` read one order with its lines. `poster_pos_list_orders` exports closed orders with products page by page.\n\n**Reports**: `poster_pos_get_sales_analytics` (revenue, profit, checks, guests and average check over time), `poster_pos_get_product_sales`, `poster_pos_get_category_sales`, `poster_pos_get_waiter_sales`, `poster_pos_get_client_sales`, `poster_pos_get_spot_sales`, `poster_pos_get_payments_report` (cash, card, points and certificates per day) and `poster_pos_list_cash_shifts`.\n\n**Customers**: `poster_pos_list_clients` (search by `phone`), `poster_pos_get_client`, `poster_pos_list_client_groups`, `poster_pos_create_client` and `poster_pos_update_client`. `poster_pos_remove_client` is installed switched off. The connector never changes loyalty points, e-wallets or purchase totals.\n\n**Stock**: `poster_pos_list_storages`, `poster_pos_list_stock_leftovers` (current stock and low stock thresholds), `poster_pos_get_stock_movement_report`, `poster_pos_list_supplies` with `poster_pos_list_supply_ingredients`, `poster_pos_list_wastes`, `poster_pos_list_stock_transfers`, `poster_pos_list_suppliers` and `poster_pos_create_supplier`.\n\n**Field notes**\n- Money: most amounts are integers in minor units (kopecks, cents): `60000` is 600.00 in the account currency. The counters of `poster_pos_get_sales_analytics` are in the main unit. Each tool says which applies.\n- Dates: the date filters of most tools are `YYYYMMDD` without separators (`20261130`); `poster_pos_list_orders` takes `YYYY-MM-DD`. Without dates Poster returns the last month. Order times in `poster_pos_list_transactions` are Unix timestamps in milliseconds; add `timezone` `client` for the account time zone.\n- Numbers arrive as strings in many answers (`\"product_id\": \"139\"`). Flags are `0` and `1`; `delete` `1` marks a removed record.\n- Most lists are not paged and return everything at once. Narrow them with dates, a location or a category before asking for products or customers of a large account.\n- Errors come inside a normal answer as `error` with a `code` and a `message`: 10 to 12 a missing, wrong or expired token, 20 or 54 no access, 32 an id that does not exist, 34 a missing required property, 38 a name that already exists, 700 the rate limit. Wait a few seconds after error 700.\n- Not included: opening, changing or closing orders on the register, payments, online orders, finance transactions, and anything that removes menu or stock records.",
+  "tools": [
+    {
+      "name": "poster_pos_get_settings",
+      "description": "Check the token and read the account settings: COMPANY_ID (account name), company_name, company_type (1 cafe, 2 store), timezones (the account time zone), lang, currency (name, symbol and ISO code), tip_amount and which modules are on (uses_tables, uses_cash_shifts, uses_taxes, uses_multiprice, uses_manufacturing, uses_fiscality). Call it first to learn the currency and time zone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings.getAllSettings"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_spots",
+      "description": "List the locations (venues) of the account: spot_id, spot_name, spot_adress and the storages attached to each (storage_id, storage_name). Spot ids filter the sales reports and prices. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/access.getSpots"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_registers",
+      "description": "List the POS registers (tablets): tablet_id, tablet_name and the spot_id each one belongs to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/access.getTablets"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_employees",
+      "description": "List the employees: user_id, name, role_id, role_name, user_type (0 waiter, 1 administrator, 2 marketer, 3 storekeeper, 4 floor administrator, 50 manager, 90 owner), access_mask and last_in (last login to the management console). user_id is the waiter id in transactions and reports. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/access.getEmployees"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_categories",
+      "description": "List the menu categories: category_id, category_name, parent_category, level, category_hidden, sort_order, fiscal, nodiscount, tax_id and category_tag. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fiscal": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 for fiscal categories only, 0 for non-fiscal only. Default: all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/menu.getCategories",
+        "queryParams": {
+          "fiscal": "$fiscal"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_products",
+      "description": "List the products and dishes of the menu: product_id, product_name, type (1 semi-finished, 2 dish, 3 product), menu_category_id, category_name, barcode, product_code (SKU), unit, cost, workshop, weight_flag, tax_id, modifications, and spots with the price, profit and visibility per location. cost, price and profit are in minor units (kopecks, cents): divide by 100. All rows come in one answer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "category_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only products of this category (category_id of poster_pos_list_categories)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "products",
+              "batchtickets"
+            ],
+            "description": "products for goods sold as bought, batchtickets for dishes with a recipe. Default: both."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/menu.getProducts",
+        "queryParams": {
+          "category_id": "$category_id",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_product",
+      "description": "Read one product or dish: the fields of poster_pos_list_products plus cooking_time, product_production_description, the ingredients of a dish (ingredient_id, name, quantity and unit per recipe line) and group_modifications (modifier sets with their options and prices). Amounts are in minor units. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product or dish id from poster_pos_list_products."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/menu.getProduct",
+        "queryParams": {
+          "product_id": "$product_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_ingredients",
+      "description": "List the ingredients: ingredient_id, ingredient_name, category_id, ingredient_left (total stock over all storages), limit_value (low stock threshold), ingredient_unit (kg, p for pieces, l), ingredient_weight and the loss percentages for cleaning and cooking. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/menu.getIngredients"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_transactions",
+      "description": "List the orders (receipts) of a date range: transaction_id, date_start and date_close (Unix time in milliseconds, date_close 0 while open; date_close_date is the same as Y-m-d H:i:s), status (1 open, 2 closed, 3 removed), pay_type (0 closed without payment, 1 cash, 2 card, 3 mixed), sum, payed_sum, payed_cash, payed_card, payed_bonus, payed_third_party, round_sum, discount (percent), guests_count, spot_id, table_id, table_name, user_id (waiter), client_id, transaction_comment and total_profit; with include_products the lines too. Amounts are in minor units (divide by 100). For more rows pass the last transaction_id as next_tr. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "0 all (default), 1 open, 2 closed, 3 removed."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "waiters",
+              "spots",
+              "clients"
+            ],
+            "description": "Filter by a waiter, a location or a customer; always together with id."
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of the waiter (user_id), location (spot_id) or customer (client_id) named by type."
+          },
+          "include_products": {
+            "type": "boolean",
+            "description": "true to add the product lines (product_id, modification_id, num, product_price, payed_sum, product_cost, product_profit)."
+          },
+          "include_history": {
+            "type": "boolean",
+            "description": "true to add the change history of each order."
+          },
+          "next_tr": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Continue after this transaction_id (the last one of the previous answer)."
+          },
+          "after_date_close": {
+            "type": "integer",
+            "description": "Only orders closed after this Unix timestamp. Poster does not document the unit; date_close in its answers is in milliseconds."
+          },
+          "before_date_close": {
+            "type": "integer",
+            "description": "Only orders closed before this Unix timestamp (same unit as after_date_close)."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "client"
+            ],
+            "description": "client to return dates in the account time zone."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getTransactions",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "status": "$status",
+          "type": "$type",
+          "id": "$id",
+          "include_products": "$include_products",
+          "include_history": "$include_history",
+          "next_tr": "$next_tr",
+          "after_date_close": "$after_date_close",
+          "before_date_close": "$before_date_close",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_transaction",
+      "description": "Read one order by its number: the fields of poster_pos_list_transactions plus tip_sum, tips_card and tips_cash, and with include_products its product lines. The answer is a list with one element. Amounts are in minor units. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order number (transaction_id)."
+          },
+          "include_products": {
+            "type": "boolean",
+            "description": "true to add the product lines."
+          },
+          "include_history": {
+            "type": "boolean",
+            "description": "true to add the change history (opened, products added, payments, closed)."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "client"
+            ],
+            "description": "client to return dates in the account time zone."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getTransaction",
+        "queryParams": {
+          "transaction_id": "$transaction_id",
+          "include_products": "$include_products",
+          "include_history": "$include_history",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_transaction_products",
+      "description": "List the products of one order with names: product_id, product_name, modification_id, modificator_name, num (quantity), product_sum, payed_sum, discount, bonus_sum, round_sum, cert_sum, product_cost, product_profit, tax_value, tax_type, category_id, workshop, barcode and product_code. Amounts are in minor units. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transaction_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order number (transaction_id)."
+          }
+        },
+        "required": [
+          "transaction_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getTransactionProducts",
+        "queryParams": {
+          "transaction_id": "$transaction_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_orders",
+      "description": "List closed orders with their products for a date range, a page at a time: count, page (per_page, page, count) and data rows with transaction_id, spot_id, table_id, client_id, sum, payed_sum, payed_cash, payed_card, payed_cert, payed_bonus, payed_third_party, pay_type, tip_sum, discount, date_close (Y-m-d H:i:s) and products (product_id, modification_id, num, product_sum, payed_sum, discount, workshop_id). Use it to export many orders with lines; raise page until count is reached. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYY-MM-DD, e.g. 2026-11-01."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYY-MM-DD, e.g. 2026-11-30."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Orders per page (default 100, at most 1000)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": [
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions.getTransactions",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "per_page": "$per_page",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_sales_analytics",
+      "description": "Sales report over time. Without type: data (one value per day, week or month for the chosen metric), data_hourly, data_weekday and counters with revenue, profit, transactions, visitors, average_receipt and average_time (minutes) for the whole period, in the main currency unit. With type waiters or clients the answer is one row per waiter or customer instead. Default period: the 30 days before date_to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD, e.g. 20261101. Default: 30 days before date_to."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "interpolate": {
+            "type": "string",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Step of the data series (default day)."
+          },
+          "select": {
+            "type": "string",
+            "enum": [
+              "revenue",
+              "profit",
+              "average_receipt",
+              "transactions",
+              "visitors",
+              "average_time"
+            ],
+            "description": "Metric of the data series (default revenue)."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "waiters",
+              "workshops",
+              "category",
+              "products",
+              "spots",
+              "clients"
+            ],
+            "description": "Break down or filter by waiter, station, category, product, location or customer. Default: the whole account."
+          },
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Id of one waiter, station, category, product, location or customer of the chosen type."
+          },
+          "business_day": {
+            "type": "boolean",
+            "description": "true to count by business day (the venue closing time) instead of calendar day."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getAnalytics",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "interpolate": "$interpolate",
+          "select": "$select",
+          "type": "$type",
+          "id": "$id",
+          "business_day": "$business_day"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_product_sales",
+      "description": "Sales per product for a date range: product_id, product_name, modification_id, modification_name, category_id, count (quantity sold), weight_flag, product_sum, payed_sum, product_profit and discount. Amounts are in minor units (divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "spot_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Location id from poster_pos_list_spots. Default: all locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getProductsSales",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "spot_id": "$spot_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_category_sales",
+      "description": "Sales per menu category for a date range: category_id, category_name, count, revenue and profit. Amounts are in minor units (divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "spot_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Location id from poster_pos_list_spots. Default: all locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getCategoriesSales",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "spot_id": "$spot_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_waiter_sales",
+      "description": "Sales per waiter for a date range: user_id, name, revenue, profit, clients (closed orders), middle_invoice (average check), middle_time (average service time) and worked_time. Amounts are in minor units (divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getWaitersSales",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_client_sales",
+      "description": "Sales per customer for a date range: client_id, firstname, lastname, sum, revenue, profit, clients (closed orders) and middle_invoice (average check). Amounts are in minor units (divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getClientsSales",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_spot_sales",
+      "description": "Sales totals of one location or of all locations for a date range: revenue, profit, clients (closed orders) and middle_invoice (average check). Amounts are in minor units (divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "spot_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Location id from poster_pos_list_spots. Default: all locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getSpotsSales",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "spot_id": "$spot_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_payments_report",
+      "description": "Payments by day for a date range (by month when the range is longer than 65 days): days rows with date, payed_cash_sum, payed_card_sum, payed_bonus_sum, payed_cert_in_sum, payed_cert_out_sum and payed_sum_sum, plus total with the same sums and payed_third_party_sum. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "spot_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Location id from poster_pos_list_spots. Default: all locations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dash.getPaymentsReport",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "spot_id": "$spot_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_cash_shifts",
+      "description": "List the register (cash) shifts of a date range: cash_shift_id, spot_id, spot_name, date_start, date_end, amount_start, amount_end, amount_sell_cash, amount_sell_card, amount_debit, amount_credit, amount_collection, user_id_start, user_id_end and comment. Amounts are in minor units (divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "spot_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Location id from poster_pos_list_spots. Default: all locations."
+          },
+          "timezone": {
+            "type": "string",
+            "enum": [
+              "client"
+            ],
+            "description": "client to return date_start and date_end in the account time zone."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/finance.getCashShifts",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "spot_id": "$spot_id",
+          "timezones": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_clients",
+      "description": "List customers: client_id, firstname, lastname, phone, email, birthday, card_number, client_sex, city, address, comment, discount_per, bonus (loyalty points, minor units), total_payed_sum (minor units), date_activale, client_groups_id and client_groups_name. Without num and offset Poster returns every customer in one answer, so page large bases with num and offset, or search by phone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "num": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "description": "Number of customers to return."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Customers to skip from the start."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Find the customer with this phone number in international format, e.g. +380501234567."
+          },
+          "group_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only customers of this group (poster_pos_list_client_groups)."
+          },
+          "birthday": {
+            "type": "string",
+            "description": "Only customers born on this day, as month and day MMDD, e.g. 1123 for 23 November."
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Field to sort by (default client_id)."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "asc",
+              "desc"
+            ],
+            "description": "Sort direction (default desc)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients.getClients",
+        "queryParams": {
+          "num": "$num",
+          "offset": "$offset",
+          "phone": "$phone",
+          "group_id": "$group_id",
+          "birthday": "$birthday",
+          "order_by": "$order_by",
+          "sort": "$sort"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_client",
+      "description": "Read one customer: the fields of poster_pos_list_clients plus the loyalty group settings (loyalty_type, client_groups_discount, birthday_bonus), ewallet, accumulation_products and prize_products of promotions. The answer is a list with one element. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer id (client_id)."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients.getClient",
+        "queryParams": {
+          "client_id": "$client_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_client_groups",
+      "description": "List the customer groups: client_groups_id, client_groups_name, client_groups_discount (percent), loyalty_type, birthday_bonus, count_groups_clients and use_ewallet. A group id is needed to create a customer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients.getGroups"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_create_client",
+      "description": "Create a customer in the loyalty base. Returns the new client_id as response. Poster refuses a phone number that another customer already has and answers error 34 when a required property is missing, so pass a name and a group. The points balance and purchase total cannot be set here. Search by phone with poster_pos_list_clients first to avoid duplicates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full name of the customer."
+          },
+          "client_groups_id_client": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer group id from poster_pos_list_client_groups."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in international format, e.g. +380501234567. Unique: two customers cannot share a number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "birthday": {
+            "type": "string",
+            "description": "Birthday as YYYY-MM-DD."
+          },
+          "client_sex": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 not specified, 1 male, 2 female."
+          },
+          "card_number": {
+            "type": "string",
+            "description": "Loyalty card number."
+          },
+          "discount_per": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Personal discount or points percentage; applies when higher than the group percentage."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the customer account."
+          }
+        },
+        "required": [
+          "client_name",
+          "client_groups_id_client"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients.createClient",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "client_name": "$client_name",
+          "client_groups_id_client": "$client_groups_id_client",
+          "phone": "$phone",
+          "email": "$email",
+          "birthday": "$birthday",
+          "client_sex": "$client_sex",
+          "card_number": "$card_number",
+          "discount_per": "$discount_per",
+          "city": "$city",
+          "country": "$country",
+          "address": "$address",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "poster_pos_update_client",
+      "description": "Change the properties of a customer: name, group, phone, email, birthday, card number, personal discount, address or comment. Only the fields you pass are sent. Returns the client_id as response. The points balance and purchase total cannot be changed here.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer id (client_id)."
+          },
+          "client_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Full name of the customer."
+          },
+          "client_groups_id_client": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer group id from poster_pos_list_client_groups."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in international format, e.g. +380501234567. Unique: two customers cannot share a number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "birthday": {
+            "type": "string",
+            "description": "Birthday as YYYY-MM-DD."
+          },
+          "client_sex": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 not specified, 1 male, 2 female."
+          },
+          "card_number": {
+            "type": "string",
+            "description": "Loyalty card number."
+          },
+          "discount_per": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Personal discount or points percentage; applies when higher than the group percentage."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the customer account."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients.updateClient",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "client_id": "$client_id",
+          "client_name": "$client_name",
+          "client_groups_id_client": "$client_groups_id_client",
+          "phone": "$phone",
+          "email": "$email",
+          "birthday": "$birthday",
+          "client_sex": "$client_sex",
+          "card_number": "$card_number",
+          "discount_per": "$discount_per",
+          "city": "$city",
+          "country": "$country",
+          "address": "$address",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "poster_pos_remove_client",
+      "description": "Remove a customer from the loyalty base. Their points and purchase history are no longer available on the register. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer id (client_id)."
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients.removeClient",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "client_id": "$client_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "poster_pos_list_storages",
+      "description": "List the storages (stock rooms): storage_id, storage_name, storage_adress and delete (1 when removed). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getStorages"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_stock_leftovers",
+      "description": "Current stock per ingredient or product: ingredient_id, ingredient_name, ingredient_unit, ingredient_left (total over all storages), storage_ingredient_left (in the chosen storage), limit_value (low stock threshold), storage_ingredient_sum and prime_cost (minor units, divide by 100), ingredients_type and hidden. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "storage_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this storage (poster_pos_list_storages). Default: all storages."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "description": "1 product, 2 manufactured dish, 3 semi-finished product, 4 ingredient, 5 product modifier. Default: all."
+          },
+          "category_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only ingredients of this ingredient category."
+          },
+          "zero_leftovers": {
+            "type": "boolean",
+            "description": "true to include rows with zero stock."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getStorageLeftovers",
+        "queryParams": {
+          "storage_id": "$storage_id",
+          "type": "$type",
+          "category_id": "$category_id",
+          "zero_leftovers": "$zero_leftovers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_get_stock_movement_report",
+      "description": "Stock movement report per ingredient for a date range: ingredient_id, ingredient_name, start (opening quantity), income, write_offs, end (closing quantity), cost_start and cost_end. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "storage_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this storage. Default: all storages."
+          },
+          "type": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5
+            ],
+            "description": "1 ingredient, 2 product, 3 product modification, 4 dish, 5 preparation. Default: all."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getReportMovement",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "storage_id": "$storage_id",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_suppliers",
+      "description": "List the suppliers: supplier_id, supplier_name, supplier_phone, supplier_adress, supplier_comment, supplier_code, supplier_tin and delete (1 when removed). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getSuppliers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_supplies",
+      "description": "List the supplies (goods received) of a date range: supply_id, date, storage_id, storage_name, supplier_id, supplier_name, account_id, supply_sum and supply_sum_netto (minor units, divide by 100), supply_comment and delete. Without dates use limit and offset. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of supplies to return. Ignored when dates are given."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Supplies to skip from the newest. Ignored when dates are given."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getSupplies",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_supply_ingredients",
+      "description": "List the lines of one supply: ingredient_id, ingredient_name, ingredient_unit, supply_ingredient_num (quantity), supply_ingredient_sum and supply_ingredient_sum_netto (minor units) and tax_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supply_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Supply id from poster_pos_list_supplies."
+          }
+        },
+        "required": [
+          "supply_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getSupplyIngredients",
+        "queryParams": {
+          "supply_id": "$supply_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_wastes",
+      "description": "List the manual write-offs (wastes) of a date range: waste_id, date, storage_id, user_id, reason_id, reason_name, total_sum and total_sum_netto (minor units, divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getWastes",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_list_stock_transfers",
+      "description": "List the transfers between storages of a date range: moving_id, date, the source and destination storage with their names, user_id, user_name, sum and sum_netto (minor units, divide by 100). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "description": "First day as YYYYMMDD without separators, e.g. 20261101. Default: one month ago."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Last day as YYYYMMDD, inclusive, e.g. 20261130. Default: today."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storage.getMoves",
+        "queryParams": {
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "poster_pos_create_supplier",
+      "description": "Create a supplier for stock supplies. Returns the new supplier_id as response. Check poster_pos_list_suppliers first to avoid a duplicate.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier_name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Supplier name."
+          },
+          "supplier_phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "supplier_adress": {
+            "type": "string",
+            "description": "Address (Poster spells the field supplier_adress)."
+          },
+          "supplier_code": {
+            "type": "string",
+            "description": "Company registration code (EDRPOU in Ukraine)."
+          },
+          "supplier_tin": {
+            "type": "string",
+            "description": "Tax identification number."
+          },
+          "supplier_comment": {
+            "type": "string",
+            "description": "Comment, e.g. what the supplier delivers."
+          }
+        },
+        "required": [
+          "supplier_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/storage.createSupplier",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "supplier_name": "$supplier_name",
+          "supplier_phone": "$supplier_phone",
+          "supplier_adress": "$supplier_adress",
+          "supplier_code": "$supplier_code",
+          "supplier_tin": "$supplier_tin",
+          "supplier_comment": "$supplier_comment"
+        }
+      }
+    }
+  ]
+}

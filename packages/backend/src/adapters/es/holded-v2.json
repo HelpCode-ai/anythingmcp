@@ -1,0 +1,1754 @@
+{
+  "slug": "holded-v2",
+  "name": "Holded (API v2)",
+  "description": "Holded API v2 for the Spanish business suite: contacts, sales invoices, estimates and credit notes, purchases, products and stock, payments, treasury accounts with bank and cash movements, the daily book and chart of accounts, projects and time records, account users and partner client accounts. API token with permissions (Bearer).",
+  "aliases": [
+    "Holded",
+    "Holded ERP",
+    "Holded v2",
+    "Holded facturación"
+  ],
+  "region": "es",
+  "category": "accounting",
+  "icon": "holded",
+  "docsUrl": "https://www.holded.com/es/desarrolladores",
+  "prerequisites": "A Holded account with API access and an administrator who can create an API token under Configuración, Desarrolladores, Credenciales, with the permissions the AI should have. About 3 minutes. API calls count against the monthly quota of the Holded plan.",
+  "requiredEnvVars": [
+    "HOLDED_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "HOLDED_API_TOKEN": {
+      "label": "API token (v2)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Holded, Configuración, Desarrolladores, Credenciales: add an API token, choose its permissions and copy it (shown once). A legacy v1 API key does not work with API v2.",
+      "link": "https://www.holded.com/es/desarrolladores/autenticacion",
+      "pattern": "^\\S{16,}$",
+      "patternMessage": "Paste the API token only, without spaces and without the word Bearer."
+    }
+  },
+  "verifyHints": {
+    "401": "Holded did not accept the API token. Create a new token under Configuración, Desarrolladores, Credenciales and paste it into HOLDED_API_TOKEN. A legacy v1 API key does not work with API v2.",
+    "403": "Holded answered Access denied: the token is wrong, or it lacks the permission this call needs (account:info.read for the setup check). Edit the token permissions under Configuración, Desarrolladores, Credenciales, or create a new token.",
+    "404": "Holded found nothing with that id in this account.",
+    "rate_limited": "Holded limits calls per minute and per month for the whole account. Wait for the Retry-After seconds; if X-RateLimit-Window says month, the monthly quota of the plan is used up."
+  },
+  "probe": {
+    "tool": "holded_v2_get_account",
+    "params": {}
+  },
+  "instructions": "## Holded (API v2)\nThis connector works with **Holded API v2** at `https://api.holded.com/api/v2`, the current API of the Spanish business suite: account and users, contacts, sales invoices, estimates and credit notes, purchases and expenses, products and stock, payments, treasury accounts with bank and cash movements, taxes, the daily book and chart of accounts, and projects with time records. It is separate from the older Holded connector, which uses API v1 with the legacy key in a `key` header; Holded announces the end of API v1 for 1 July 2027.\n\n**Setup (about 3 minutes)**\n1. Sign in to Holded as an administrator and open **Configuración, Desarrolladores, Credenciales** (Settings, Developers, Credentials; the Holded guide also calls it Ajustes, API).\n2. Add an API token (**Generar nueva clave**) and give it the permissions you want the AI to have. Read permissions are enough for every read tool; add the write permission of contacts, invoices, estimates, products or projects only for the create tools you will use.\n3. Copy the token (it is shown once) into `HOLDED_API_TOKEN`.\n\nThe token is sent as `Authorization: Bearer`. A legacy v1 API key does not work here, and a v2 token does not work on the v1 connector.\n\n**Where to start**: `holded_v2_get_account` confirms the token. `holded_v2_search_contacts` finds a customer or supplier by name; `holded_v2_list_invoices` with `status` pending or overdue shows what customers owe; `holded_v2_list_treasury_accounts` gives the cash position.\n\n**Account**: `holded_v2_get_account`, `holded_v2_list_account_users`, `holded_v2_get_api_usage` (monthly quota used), and for Holded partners `holded_v2_list_partner_accounts` (the client accounts the partner can work on).\n\n**Contacts**: `holded_v2_search_contacts` (name prefix), `holded_v2_list_contacts` (exact email, phone, tax id or custom id), `holded_v2_get_contact`, `holded_v2_create_contact`.\n\n**Sales**: `holded_v2_list_invoices`, `holded_v2_get_invoice`, `holded_v2_find_invoices_by_number`, `holded_v2_get_invoice_pdf`, `holded_v2_list_estimates`, `holded_v2_list_credit_notes`. `holded_v2_create_invoice` and `holded_v2_create_estimate` create drafts. `holded_v2_approve_invoice` turns a draft into a numbered legal invoice and is installed switched off: an approved invoice cannot be deleted, only corrected with a credit note.\n\n**Purchases and catalog**: `holded_v2_list_purchases`, `holded_v2_get_purchase`, `holded_v2_list_products`, `holded_v2_get_product`, `holded_v2_get_product_stock`, `holded_v2_create_product`.\n\n**Money and accounting**: `holded_v2_list_payments` (collections and payments already recorded), `holded_v2_list_treasury_accounts`, `holded_v2_list_bank_movements`, `holded_v2_list_cash_movements`, `holded_v2_list_taxes`, `holded_v2_list_ledger_entries` (daily book), `holded_v2_get_ledger_entry` and `holded_v2_list_accounting_accounts` (chart of accounts, and a trial balance when given a period). The connector records no payments, reconciles nothing and posts no ledger entries.\n\n**Projects**: `holded_v2_list_projects`, `holded_v2_get_project_summary`, `holded_v2_list_project_times`, `holded_v2_create_project_time`.\n\n**Paging**: list answers are `items`, `cursor` and `has_more`. While `has_more` is true, call again with `cursor` set to the value returned. The cursor is opaque and belongs to one list: never build one. `limit` goes up to 100 (200 on movements, partner accounts and the invoice number search); without it Holded returns 25 or 50 rows.\n\n**Formats**: amounts, prices, balances and stock are decimal strings (`\"1500.50\"`), in the currency of the document unless stated. Document date filters take RFC 3339 (`2026-01-01T00:00:00+00:00`); movement, ledger and time filters take `YYYY-MM-DD`. Ids are 24 hexadecimal characters. Durations of time records are seconds.\n\n**Permissions**: every endpoint needs one permission of the token, such as `sales:invoices.read` or `accounting:banks.read`. Holded answers 403 `Access denied` both for a token without the permission and for a wrong token, so check the token permissions first.\n\n**Limits**: two limits apply to the whole account, shared by all its tokens: a burst limit per minute (60 on Starter, Growth and Basic, 120 on Standard and Advanced, 600 on Premium) and a monthly quota by plan (Starter 500 calls, Growth and Basic 2,000, Standard 7,500, Advanced 30,000, Premium 100,000). A 429 carries `Retry-After` and `X-RateLimit-Window` (minute or month). Read `holded_v2_get_api_usage` before paging through large lists, and prefer filters over full exports.\n\n**Errors** are problem documents with `title`, `status` and `detail`: 400 or 422 name the invalid field, 404 means the id does not exist in this account.",
+  "connector": {
+    "name": "Holded API v2",
+    "type": "REST",
+    "baseUrl": "https://api.holded.com/api/v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{HOLDED_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/account"
+  },
+  "tools": [
+    {
+      "name": "holded_v2_get_account",
+      "description": "Read the Holded account the API token belongs to: its id, name, plan and basic company data. Needs the permission account:info.read. A cheap call to check that the token works. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_account_users",
+      "description": "List the users of the Holded account: id, email, name, role_id and status (active for members, pending for open invitations). Cursor paging with `cursor` and `has_more`. Needs system:users.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/users",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_partner_accounts",
+      "description": "For Holded partners (accountants, consultants): list the client accounts the partner account can work on, with id, name, email, plan and code. Empty or refused on a normal account. Cursor paging. Needs partner:client-accounts.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Rows per page, at most 200. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/partner/accounts",
+        "queryParams": {
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_api_usage",
+      "description": "Read the API usage of the current month: period (YYYY-MM), usage (calls made), limit (monthly quota of the plan), a breakdown per endpoint type and the next plan with a higher quota. Call it before a large export: small plans allow only a few hundred calls a month. Needs developers:usage.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/usage"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_search_contacts",
+      "description": "Find contacts by name, autocomplete style: a prefix such as Joh matches John Doe and John Smith, ignoring case and accents. Returns id, name, trade_name, code (tax id), vat_number, email, phone, mobile, type (client, supplier, debtor, creditor, lead), bill_address, tags and defaults. Cursor paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Start of the contact name (or of one of its words)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/search",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_contacts",
+      "description": "List contacts (customers, suppliers, leads, debtors, creditors) or look one up by an exact value: email, phone, mobile, tax id (code) or your own reference (custom_id). Returns id, name, code, vat_number, email, phones, type, bill_address, tags and the accounting records. Cursor paging, 25 per page. For a search by name use holded_v2_search_contacts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Exact email address."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Exact phone number, as stored."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Exact mobile number, as stored."
+          },
+          "code": {
+            "type": "string",
+            "description": "Exact tax identification number (NIF or CIF)."
+          },
+          "custom_id": {
+            "type": "string",
+            "description": "Your external reference id of the contact."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "email": "$email",
+          "phone": "$phone",
+          "mobile": "$mobile",
+          "code": "$code",
+          "custom_id": "$custom_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_contact",
+      "description": "Read one contact in full: names, tax id and EU VAT number, email and phones, type, IBAN, SWIFT and SEPA mandate, billing and shipping addresses, tags, notes, custom fields and its defaults (payment method, due days, discount, currency, taxes). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the contact (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_create_contact",
+      "description": "Create a contact (customer, supplier, lead, debtor or creditor) and return its id. Search first with holded_v2_search_contacts or holded_v2_list_contacts (by tax id or email) to avoid a duplicate. Needs contacts:contacts.write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Legal name of the company or full name of the person."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "client",
+              "supplier",
+              "lead",
+              "debtor",
+              "creditor"
+            ],
+            "description": "Role of the contact: client, supplier, lead, debtor or creditor."
+          },
+          "is_person": {
+            "type": "boolean",
+            "description": "true for a natural person, false for a company."
+          },
+          "code": {
+            "type": "string",
+            "description": "Tax identification number (NIF or CIF)."
+          },
+          "vat_number": {
+            "type": "string",
+            "description": "EU VAT number for intra-community operations, e.g. ESB12345678."
+          },
+          "trade_name": {
+            "type": "string",
+            "description": "Commercial name, when it differs from the legal name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address. Several addresses separated by commas: the first is the main one."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "bill_address": {
+            "type": "object",
+            "description": "Billing address: `address` (street and number), `city`, `postal_code`, `province`, `country` and `country_code` (ISO 3166-1 alpha-2, e.g. ES)."
+          },
+          "iban": {
+            "type": "string",
+            "description": "IBAN of the contact."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags of the contact."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "name": "$name",
+          "type": "$type",
+          "is_person": "$is_person",
+          "code": "$code",
+          "vat_number": "$vat_number",
+          "trade_name": "$trade_name",
+          "email": "$email",
+          "phone": "$phone",
+          "mobile": "$mobile",
+          "bill_address": "$bill_address",
+          "iban": "$iban",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "holded_v2_list_invoices",
+      "description": "List sales invoices: id, document_number, contact_id and contact_name, date, due_date, subtotal, tax, total, currency, status (pending, partial, completed, cancelled, failed), payments_total, payments_pending and the lines. Filter by contact, payment status, dates and due dates, and sort by date, due date or total. Amounts are decimal strings in the document currency. Cursor paging, 25 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Only invoices of this contact (contact id)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "partial",
+              "cancelled",
+              "failed",
+              "overdue",
+              "outstanding"
+            ],
+            "description": "Payment status: pending, partial, completed (paid), overdue, outstanding (pending or partial), cancelled or failed."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "description": "draft for drafts, approved for issued documents. Leave out for both."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Issued on or after this moment, RFC 3339, e.g. 2026-01-01T00:00:00+00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Issued on or before this moment, RFC 3339, e.g. 2026-12-31T23:59:59+00:00."
+          },
+          "due_date_start": {
+            "type": "string",
+            "description": "Due on or after this date (YYYY-MM-DD or RFC 3339)."
+          },
+          "due_date_end": {
+            "type": "string",
+            "description": "Due on or before this date (YYYY-MM-DD or RFC 3339). With status pending and today as the date it lists what is overdue."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "date",
+              "-date",
+              "dueDate",
+              "-dueDate",
+              "total",
+              "-total"
+            ],
+            "description": "Sort field; a leading minus sorts descending (-date is newest first, -total is largest first)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "status": "$status",
+          "approval_status": "$approval_status",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "due_date_start": "$due_date_start",
+          "due_date_end": "$due_date_end",
+          "sort": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_invoice",
+      "description": "Read one sales invoice in full: number, contact, dates, every line with units, price, discount and taxes, totals, currency and exchange rate, status, payments received and pending, tags and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the invoice (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_find_invoices_by_number",
+      "description": "Find sales invoices by document number. The search is fuzzy with autocomplete: a prefix such as F260 returns every invoice whose number starts with it, and small typing errors are tolerated. Returns the same rows as holded_v2_list_invoices. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "document_number": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Invoice number or the start of it, e.g. F260012 or F260."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Rows per page, at most 200. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "document_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/find-by-number",
+        "queryParams": {
+          "document_number": "$document_number",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_create_invoice",
+      "description": "Create a sales invoice as a draft for an existing contact and return its id. The draft has no legal effect until it is approved in Holded (or with holded_v2_approve_invoice, which is installed switched off). Prices are net unit prices; taxes are tax keys from holded_v2_list_taxes. Needs sales:invoices.write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Id of an existing contact (holded_v2_search_contacts or holded_v2_create_contact)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Issue date, YYYY-MM-DD. Leave out for today."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "description": {
+            "type": "string",
+            "description": "Free-text description of the document."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes, visible to your team only."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency code, e.g. EUR. Leave out for the account currency."
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639-1 language of the printed document, e.g. es."
+          },
+          "default_taxes": {
+            "type": "boolean",
+            "description": "true: a line without taxes of its own that is not linked to a catalog product or service gets the account default tax."
+          },
+          "discount": {
+            "type": "number",
+            "description": "Global discount in percent."
+          },
+          "number_line_id": {
+            "type": "string",
+            "description": "Id of the numbering series that assigns the next number. Leave out for the default series."
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "Id of the payment method printed on the document."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags to classify the document."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Document lines. Each line is an object with `name`, `units` and `price` (net unit price), and optionally `description`, `discount` (percent), `taxes` (list of tax keys from holded_v2_list_taxes), `product_id`, `service_id`, `sku`, `account` and `project_id`, `retention` (percent) and `tags`.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "contact_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices",
+        "bodyMapping": {
+          "contact_id": "$contact_id",
+          "date": "$date",
+          "due_date": "$due_date",
+          "description": "$description",
+          "notes": "$notes",
+          "currency": "$currency",
+          "language": "$language",
+          "default_taxes": "$default_taxes",
+          "discount": "$discount",
+          "number_line_id": "$number_line_id",
+          "payment_method_id": "$payment_method_id",
+          "tags": "$tags",
+          "items": "$items"
+        }
+      }
+    },
+    {
+      "name": "holded_v2_approve_invoice",
+      "enabled": false,
+      "description": "Approve a draft sales invoice: Holded assigns the definitive number and the invoice becomes a legal document (in Spain it is also reported under Verifactu when that is active). This cannot be undone, only corrected with a credit note. Installed switched off; confirm the invoice with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the draft invoice (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/invoices/{invoice_id}/approve"
+      }
+    },
+    {
+      "name": "holded_v2_get_invoice_pdf",
+      "description": "Download a sales invoice as a PDF file. The answer is the file itself (application/pdf), handed over as an attachment, not JSON. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the invoice (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/invoices/{invoice_id}/pdf",
+        "headers": {
+          "Accept": "application/pdf, application/json"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_estimates",
+      "description": "List estimates (presupuestos, quotes): id, document_number, contact, date, due_date, subtotal, tax, total, currency, status and lines. Filter by contact, status, billing status, approval status and dates. Cursor paging, 25 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Only estimates of this contact (contact id)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "partial",
+              "cancelled",
+              "failed",
+              "overdue"
+            ],
+            "description": "Status: pending, partial, completed, overdue, cancelled or failed."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "description": "draft for drafts, approved for issued documents. Leave out for both."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Issued on or after this moment, RFC 3339, e.g. 2026-01-01T00:00:00+00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Issued on or before this moment, RFC 3339, e.g. 2026-12-31T23:59:59+00:00."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "date",
+              "-date",
+              "dueDate",
+              "-dueDate",
+              "total",
+              "-total"
+            ],
+            "description": "Sort field; a leading minus sorts descending (-date is newest first, -total is largest first)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          },
+          "billing_status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "paid",
+              "partial"
+            ],
+            "description": "Whether the estimate has been invoiced: pending, partial or paid (the Facturado column). Independent of status."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/estimates",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "status": "$status",
+          "approval_status": "$approval_status",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "sort": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor",
+          "billing_status": "$billing_status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_create_estimate",
+      "description": "Create an estimate (presupuesto, quote) as a draft for an existing contact and return its id. Prices are net unit prices unless tax_included is true; taxes are tax keys from holded_v2_list_taxes. Needs sales:estimates.write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Id of an existing contact (holded_v2_search_contacts or holded_v2_create_contact)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Issue date, YYYY-MM-DD. Leave out for today."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Due date, YYYY-MM-DD."
+          },
+          "description": {
+            "type": "string",
+            "description": "Free-text description of the document."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes, visible to your team only."
+          },
+          "currency": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{3}$",
+            "description": "ISO 4217 currency code, e.g. EUR. Leave out for the account currency."
+          },
+          "language": {
+            "type": "string",
+            "description": "ISO 639-1 language of the printed document, e.g. es."
+          },
+          "default_taxes": {
+            "type": "boolean",
+            "description": "true: a line without taxes of its own that is not linked to a catalog product or service gets the account default tax."
+          },
+          "discount": {
+            "type": "number",
+            "description": "Global discount in percent."
+          },
+          "number_line_id": {
+            "type": "string",
+            "description": "Id of the numbering series that assigns the next number. Leave out for the default series."
+          },
+          "payment_method_id": {
+            "type": "string",
+            "description": "Id of the payment method printed on the document."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags to classify the document."
+          },
+          "tax_included": {
+            "type": "boolean",
+            "description": "true when the line prices already include taxes."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Document lines. Each line is an object with `name`, `units` and `price` (net unit price), and optionally `description`, `discount` (percent), `taxes` (list of tax keys from holded_v2_list_taxes), `product_id`, `service_id`, `sku`, `account` and `project_id`.",
+            "items": {
+              "type": "object"
+            }
+          }
+        },
+        "required": [
+          "contact_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/estimates",
+        "bodyMapping": {
+          "contact_id": "$contact_id",
+          "date": "$date",
+          "due_date": "$due_date",
+          "description": "$description",
+          "notes": "$notes",
+          "currency": "$currency",
+          "language": "$language",
+          "default_taxes": "$default_taxes",
+          "discount": "$discount",
+          "number_line_id": "$number_line_id",
+          "payment_method_id": "$payment_method_id",
+          "tags": "$tags",
+          "items": "$items",
+          "tax_included": "$tax_included"
+        }
+      }
+    },
+    {
+      "name": "holded_v2_list_credit_notes",
+      "description": "List credit notes (facturas rectificativas, abonos): id, document_number, contact, date, totals, currency, status, payments_total and payments_pending. Filter by contact, status, approval status and dates. Cursor paging, 25 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Only credit notes of this contact (contact id)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "partial",
+              "cancelled",
+              "failed",
+              "overdue"
+            ],
+            "description": "Status: pending, partial, completed, overdue, cancelled or failed."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "description": "draft for drafts, approved for issued documents. Leave out for both."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Issued on or after this moment, RFC 3339, e.g. 2026-01-01T00:00:00+00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Issued on or before this moment, RFC 3339, e.g. 2026-12-31T23:59:59+00:00."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "date",
+              "-date",
+              "dueDate",
+              "-dueDate",
+              "total",
+              "-total"
+            ],
+            "description": "Sort field; a leading minus sorts descending (-date is newest first, -total is largest first)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credit-notes",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "status": "$status",
+          "approval_status": "$approval_status",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "sort": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_purchases",
+      "description": "List purchase invoices and expenses (compras y gastos): id, document_number, supplier contact, date, due_date, deduction_date, subtotal, tax, total, currency, status, payments_total and payments_pending. Filter by supplier, payment status, dates and due dates. Cursor paging, 25 per page. Needs accounting:purchases.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Only purchases of this contact (contact id)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "pending",
+              "completed",
+              "partial",
+              "cancelled",
+              "failed",
+              "overdue",
+              "outstanding"
+            ],
+            "description": "Payment status: pending, partial, completed (paid), overdue, outstanding (pending or partial), cancelled or failed."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "draft",
+              "approved"
+            ],
+            "description": "draft for drafts, approved for issued documents. Leave out for both."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "Issued on or after this moment, RFC 3339, e.g. 2026-01-01T00:00:00+00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Issued on or before this moment, RFC 3339, e.g. 2026-12-31T23:59:59+00:00."
+          },
+          "due_date_start": {
+            "type": "string",
+            "description": "Due on or after this date (YYYY-MM-DD or RFC 3339)."
+          },
+          "due_date_end": {
+            "type": "string",
+            "description": "Due on or before this date (YYYY-MM-DD or RFC 3339). With status pending and today as the date it lists what is overdue."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "date",
+              "-date",
+              "dueDate",
+              "-dueDate",
+              "total",
+              "-total"
+            ],
+            "description": "Sort field; a leading minus sorts descending (-date is newest first, -total is largest first)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchases",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "status": "$status",
+          "approval_status": "$approval_status",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "due_date_start": "$due_date_start",
+          "due_date_end": "$due_date_end",
+          "sort": "$sort",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_purchase",
+      "description": "Read one purchase invoice or expense in full: supplier, dates, every line with its expense account and taxes, totals, status and payments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the purchase (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "purchase_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchases/{purchase_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_products",
+      "description": "List products of the catalog: id, kind (simple, variants, lots, serialnumbers, pack), name, sku, barcode, price, cost, purchase_price, taxes, has_stock, stock, tags and whether it is for sale or purchase. Search by name across the catalog. Prices and stock are decimal strings. Cursor paging, 25 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Search by product name."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "name": "$name",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_product",
+      "description": "Read one product in full: kind, name, description, sku, barcode, sale price, cost and purchase price, taxes, stock, weight, tags, category and its variants, lots or pack items. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the product (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_product_stock",
+      "description": "Read the stock of one product: total, available (total minus reserved), reserved for pending sales orders, in transit, and the physical stock in each warehouse. Quantities are decimal strings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the product (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}/stock"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_create_product",
+      "description": "Create a product in the catalog and return its id. Prices are decimal strings such as 99.95. Needs inventory:products.write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Product name."
+          },
+          "kind": {
+            "type": "string",
+            "enum": [
+              "simple",
+              "variants",
+              "lots",
+              "serialnumbers",
+              "pack"
+            ],
+            "default": "simple",
+            "description": "simple (default) for a standard product; variants, lots, serialnumbers or pack for the other kinds."
+          },
+          "description": {
+            "type": "string",
+            "description": "Product description."
+          },
+          "sku": {
+            "type": "string",
+            "description": "Stock keeping unit code."
+          },
+          "barcode": {
+            "type": "string",
+            "description": "Barcode value (EAN)."
+          },
+          "price": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+)?$",
+            "description": "Net unit sale price as a decimal string, e.g. 99.95."
+          },
+          "cost": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+)?$",
+            "description": "Unit cost as a decimal string, e.g. 49.99."
+          },
+          "purchase_price": {
+            "type": "string",
+            "pattern": "^[0-9]+(\\.[0-9]+)?$",
+            "description": "Unit purchase price as a decimal string."
+          },
+          "taxes": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tax keys or names applied to the product (holded_v2_list_taxes), e.g. IVA 21%."
+          },
+          "has_stock": {
+            "type": "boolean",
+            "default": false,
+            "description": "true to track stock for this product."
+          },
+          "stock": {
+            "type": "number",
+            "description": "Initial stock quantity, when has_stock is true."
+          },
+          "for_sale": {
+            "type": "boolean",
+            "default": true,
+            "description": "Whether the product can be sold."
+          },
+          "for_purchase": {
+            "type": "boolean",
+            "default": false,
+            "description": "Whether the product can be purchased."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags of the product."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "name": "$name",
+          "kind": "$kind",
+          "description": "$description",
+          "sku": "$sku",
+          "barcode": "$barcode",
+          "price": "$price",
+          "cost": "$cost",
+          "purchase_price": "$purchase_price",
+          "taxes": "$taxes",
+          "has_stock": "$has_stock",
+          "stock": "$stock",
+          "for_sale": "$for_sale",
+          "for_purchase": "$for_purchase",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "holded_v2_list_payments",
+      "description": "List money received (collections) and paid (payments) that is already recorded, newest first: id, date, amount, contact, bank_account_id, status, reconciliation_status and the document each one settles. Filter by direction, dates, bank account or document. For what is still unpaid list invoices or purchases with a status instead. Read-only: this connector records no payments.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "collection",
+              "payment"
+            ],
+            "description": "collection for money received, payment for money paid."
+          },
+          "start_date": {
+            "type": "string",
+            "description": "From this moment, RFC 3339, e.g. 2026-01-01T00:00:00+00:00."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Until this moment, RFC 3339, e.g. 2026-01-31T23:59:59+00:00."
+          },
+          "banking_account_id": {
+            "type": "string",
+            "description": "Only payments on this treasury account (holded_v2_list_treasury_accounts)."
+          },
+          "document_id": {
+            "type": "string",
+            "description": "Only payments linked to this document id."
+          },
+          "document_type": {
+            "type": "string",
+            "description": "Document type of document_id, e.g. invoice, purchase, creditnote or salesreceipt."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/payments",
+        "queryParams": {
+          "type": "$type",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "banking_account_id": "$banking_account_id",
+          "document_id": "$document_id",
+          "document_type": "$document_type",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_treasury_accounts",
+      "description": "List treasury accounts (bank accounts, cards, payment gateways and cash registers): id, name, type, currency, balance, iban, bic, archived, synced_at (last bank sync) and transactions_pending_to_reconcile. The balance is a decimal string in the account currency. Needs accounting:banks.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "bank",
+              "card",
+              "gateway",
+              "cash"
+            ],
+            "description": "bank, card, gateway (Stripe, PayPal) or cash."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true for archived accounts only, false for active ones only. Leave out for both."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/treasury/accounts",
+        "queryParams": {
+          "type": "$type",
+          "archived": "$archived",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_bank_movements",
+      "description": "List the bank movements of one treasury account: id, description, note, amount (negative for money out), currency, balance after the movement, booking_date, value_date, status (pending, reconciled, partial, forced_reconciled), reconciled_amount and origin. Filter by value date and reconciliation status. Cursor paging, 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the treasury account (holded_v2_list_treasury_accounts) (24 hexadecimal characters)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Value date from, inclusive, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Value date to, inclusive, YYYY-MM-DD."
+          },
+          "status": {
+            "type": "string",
+            "pattern": "^(pending|reconciled|partial|forced_reconciled)(,(pending|reconciled|partial|forced_reconciled))*$",
+            "description": "Reconciliation statuses, comma-separated: pending, reconciled, partial, forced_reconciled."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Rows per page, at most 200. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/treasury/accounts/{account_id}/bank-movements",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "status": "$status",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_cash_movements",
+      "description": "List the cash movements of one treasury account as they are booked in accounting: id, date, description, amount, currency, sign (in or out), accountingAccountNumber, entryNumber and entryType (invoice, purchase, payment, collect, expense and others). Filter by accounting date. Cursor paging, 50 per page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "account_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the treasury account (holded_v2_list_treasury_accounts) (24 hexadecimal characters)."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Accounting date from, inclusive, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Accounting date to, inclusive, YYYY-MM-DD."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Rows per page, at most 200. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "account_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/treasury/accounts/{account_id}/cash-movements",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_taxes",
+      "description": "List the taxes configured in the account (IVA, IRPF retentions, recargo de equivalencia): id, name, amount (percent), key, group, type, scope and whether each is active. Use the `key` values in the `taxes` of document lines and products. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/taxes"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_ledger_entries",
+      "description": "List the lines of the daily book (libro diario) between two dates: id, entry_number, line, date, type, description, doc_description, account (chart of accounts number), debit, credit, tags and checked. Both dates are required. Filter by one account number for its ledger. Cursor paging, 25 per page. Needs accounting:daily-ledger.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last date, YYYY-MM-DD."
+          },
+          "account": {
+            "type": "integer",
+            "description": "Only lines on this chart of accounts number, e.g. 70500001."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ledger-entries",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "account": "$account",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_ledger_entry",
+      "description": "Read one accounting entry with all its debit and credit lines: date, type, entry_number, the document that produced it and notes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ledger_entry_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the ledger entry (id of holded_v2_list_ledger_entries) (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "ledger_entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ledger-entries/{ledger_entry_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_accounting_accounts",
+      "description": "List the chart of accounts (plan contable): id, number, name, description, group, debit, credit, balance and archived. With start_date and end_date the debit, credit and balance cover that period, which gives a trial balance (balance de sumas y saldos). Search by name or number with text. Needs accounting:chart-of-accounts.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Activity from this date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Activity until this date, YYYY-MM-DD."
+          },
+          "text": {
+            "type": "string",
+            "description": "Part of the account name or number, e.g. subscriptions or 705."
+          },
+          "include_empty": {
+            "type": "boolean",
+            "description": "true to include accounts without transactions."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true to include archived accounts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounting-accounts",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "text": "$text",
+          "include_empty": "$include_empty",
+          "archived": "$archived"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_projects",
+      "description": "List projects: id, name, description, key, contact, start_date, due_date, status, tags, number_of_tasks, completed_tasks, billable and archived. Find one by name with text. An API token only sees public projects. Cursor paging. Needs projects:projects.read. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Words of the project name; all must appear, ignoring case and accents."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "in_progress",
+              "completed",
+              "cancelled",
+              "waiting",
+              "budgeted"
+            ],
+            "description": "Project status. active or in_progress return the running projects."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "text": "$text",
+          "status": "$status",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_get_project_summary",
+      "description": "Read the aggregated time and cost summary of one project (hours logged and their cost). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the project (24 hexadecimal characters)."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}/summary"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_list_project_times",
+      "description": "List time records across all projects (partes de horas): id, project_id, project_name, date, duration in seconds, user_id, user_name, description, task_id, category, cost_per_hour, total_cost and approved. Without start_date only the 18 months before end_date (or today) are returned. Cursor paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Records from this date, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Records until this date, inclusive, YYYY-MM-DD."
+          },
+          "employee_id": {
+            "type": "string",
+            "description": "Only records of the user linked to this employee (an employee id, not a user id)."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per page, at most 100. Leave out for Holded's default (25 or 50, depending on the list)."
+          },
+          "cursor": {
+            "type": "string",
+            "description": "Opaque `cursor` value of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project-times",
+        "queryParams": {
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "employee_id": "$employee_id",
+          "limit": "$limit",
+          "cursor": "$cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "holded_v2_create_project_time",
+      "description": "Log time on a project and return the id of the new record. The duration is in seconds (3600 is one hour). The cost is not sent: Holded takes it from the project cost settings of the user. Needs projects:projects.write.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9]{6,40}$",
+            "description": "Holded id of the project (24 hexadecimal characters)."
+          },
+          "duration": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Duration in seconds, e.g. 5400 for 1 h 30 min."
+          },
+          "user_id": {
+            "type": "string",
+            "description": "Id of the user whose time is logged (holded_v2_list_account_users). Required with an API token."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of the work, YYYY-MM-DD. Leave out for today."
+          },
+          "description": {
+            "type": "string",
+            "description": "What was done."
+          },
+          "task_id": {
+            "type": "string",
+            "description": "Id of the project task the time belongs to."
+          },
+          "category": {
+            "type": "string",
+            "description": "Category of the record."
+          }
+        },
+        "required": [
+          "project_id",
+          "duration",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects/{project_id}/times",
+        "bodyMapping": {
+          "duration": "$duration",
+          "user_id": "$user_id",
+          "date": "$date",
+          "description": "$description",
+          "task_id": "$task_id",
+          "category": "$category"
+        }
+      }
+    }
+  ]
+}

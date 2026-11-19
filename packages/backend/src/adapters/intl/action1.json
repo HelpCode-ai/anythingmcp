@@ -1,0 +1,1729 @@
+{
+  "slug": "action1",
+  "name": "Action1",
+  "aliases": [
+    "Action1 RMM",
+    "Action1 Patch Management"
+  ],
+  "description": "Action1 patch management and RMM from any AI agent: organizations, managed endpoints with hardware and status, missing Windows and third-party updates, vulnerabilities (CVEs) and the endpoints they affect, installed software, endpoint groups, reports with drill-down, automations and their results, the Software Repository and the audit trail. Read-only apart from renaming an endpoint.",
+  "instructions": "## Action1\nThis connector calls the **Action1 API 3.0** of Action1, the cloud patch management and remote monitoring platform: organizations, managed endpoints with hardware and status, missing Windows and third-party updates, vulnerabilities (CVEs) with affected endpoints, installed software, endpoint groups, reports, automations and their results, the Software Repository and the audit trail.\n\n**Setup (about 5 minutes, Action1 administrator)**\n1. Sign in to the Action1 console and note its address: `app.action1.com` (North America), `app.na-2.action1.com` (North America 2), `app.eu.action1.com` (Europe), `app.uk.action1.com` (United Kingdom) or `app.au.action1.com` (Australia). Pick the same region in `ACTION1_API_URL`: credentials only work in the region where the account lives.\n2. Open **Configuration, Users & API Credentials** and click **New API Credentials**. Give them a name, select a role and click **Proceed**. For this connector a role with view permissions is enough, plus Manage Endpoint Attributes if the agent may rename endpoints. Credentials can be limited to one organization.\n3. Copy the **Client ID** into `ACTION1_CLIENT_ID` and the **Client Secret** into `ACTION1_CLIENT_SECRET`. The secret is shown once. These are not your console login and password: Action1 refuses those on the API.\n\n**Authentication**: OAuth 2.0 client credentials. The connector posts the client ID and secret to `/oauth2/token` on the regional host, receives a bearer token valid for one hour and renews it on its own.\n\n**Where to start**\n- `action1_list_organizations` first: nearly every call needs an organization id. Several list tools also accept `all` instead of an id. `action1_get_current_user` shows which roles the credentials hold.\n- Find a computer: `action1_search`, or `action1_list_endpoints` with `filter` and the status filters; then `action1_get_endpoint`. `action1_update_endpoint` changes only the display name and comment in Action1.\n- Patching: `action1_list_missing_updates` for the organization, `action1_list_package_updates` and `action1_list_update_endpoints` to see which computers miss a version, `action1_list_endpoint_missing_updates` for one computer.\n- Vulnerabilities: `action1_list_vulnerabilities` (filter by `score` or `remediation_status`), `action1_get_vulnerability`, `action1_list_vulnerability_endpoints`, `action1_list_vulnerability_remediations`, and `action1_get_cve_description` for the CVE itself.\n- Software: `action1_list_installed_software` across the organization, `action1_list_endpoint_installed_software` for one computer, `action1_list_software_repository` for what Action1 can deploy.\n- Groups: `action1_list_endpoint_groups`, `action1_get_endpoint_group`, `action1_list_group_endpoints`.\n- Reports: `action1_list_reports` (with `subtree` Yes for the whole tree) or `action1_list_report_category`, then `action1_get_report_data` and `action1_drilldown_report_row`. `action1_requery_report` is switched off: it makes every endpoint collect the data again.\n- Automations (read-only here): `action1_list_automation_schedules`, `action1_get_automation_schedule`, `action1_list_automation_instances`, `action1_get_automation_instance`, `action1_list_automation_endpoint_results`.\n- Who did what: `action1_list_audit_events`.\n\n**Paging**: lists answer `items`, `total_items`, `limit`, `next_page` and `prev_page`. Send `limit` (default 50 here) and `from` (the number of the first record); `next_page` is empty on the last page. `filter` matches a text in any field; `sortby` takes a field name, with a hyphen in front for descending.\n\n**Reading the data**: dates are written `YYYY-MM-DD_HH-MM-SS` in UTC, e.g. `2026-08-29_12-22-11`. Yes/No filters take exactly `Yes` or `No`. `update_status`, `vulnerability_status` and `online_status` are SUCCESS, WARNING or ERROR. A hyphen in front of a filter value excludes it (`-Critical`, `-Declined`).\n\n**Not included**: this connector does not deploy updates or software, run scripts, reboot or uninstall, start remote sessions, approve or decline updates, or change users, roles and settings. Do that in the Action1 console.\n\n**Limits and errors**: Action1 throttles API clients; 429 says how many seconds to wait. 400 on the first call means the client ID or secret was refused (Action1 answers 400, not 401, at the token endpoint), or the wrong region was picked. 401 means the token was not accepted. 403 means the role of the API credentials lacks the permission named in the message (for example `view_reports` or `view_vulnerabilities`). 404 means the id does not exist in that organization.",
+  "region": "intl",
+  "category": "itsm",
+  "icon": "action1",
+  "docsUrl": "https://app.action1.com/apidocs/",
+  "prerequisites": "An Action1 account (free for the first 200 endpoints) and an administrator who can create API credentials in the console (Configuration, Users & API Credentials). You need the Client ID, the Client Secret and the region of your console. About 5 minutes.",
+  "requiredEnvVars": [
+    "ACTION1_API_URL",
+    "ACTION1_CLIENT_ID",
+    "ACTION1_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "ACTION1_API_URL": {
+      "label": "Region",
+      "kind": "address",
+      "help": "The region of your Action1 account: look at the address of the console you sign in to (app.action1.com, app.na-2, app.eu, app.uk or app.au). Credentials only work in their own region.",
+      "example": "https://app.eu.action1.com/api/3.0",
+      "link": "https://app.action1.com/apidocs/",
+      "pattern": "^https://app(\\.(na-2|eu|uk|au))?\\.action1\\.com/api/3\\.0$",
+      "patternMessage": "Pick one of the five Action1 regions, e.g. https://app.eu.action1.com/api/3.0 for Europe.",
+      "options": [
+        {
+          "value": "https://app.action1.com/api/3.0",
+          "label": "North America (app.action1.com)"
+        },
+        {
+          "value": "https://app.na-2.action1.com/api/3.0",
+          "label": "North America 2 (app.na-2.action1.com)"
+        },
+        {
+          "value": "https://app.eu.action1.com/api/3.0",
+          "label": "Europe (app.eu.action1.com)"
+        },
+        {
+          "value": "https://app.uk.action1.com/api/3.0",
+          "label": "United Kingdom (app.uk.action1.com)"
+        },
+        {
+          "value": "https://app.au.action1.com/api/3.0",
+          "label": "Australia (app.au.action1.com)"
+        }
+      ]
+    },
+    "ACTION1_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "Action1 console, Configuration, Users & API Credentials: create new API credentials and copy the Client ID. It is not your console login.",
+      "link": "https://www.action1.com/api-documentation/api-credentials",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the Client ID of the API credentials, without spaces."
+    },
+    "ACTION1_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown once when the API credentials are created. If it was lost, create new API credentials.",
+      "link": "https://www.action1.com/api-documentation/api-credentials",
+      "pattern": "^\\S{16,300}$",
+      "patternMessage": "Paste the client secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Action1 did not issue a token: the Client ID or secret is wrong, or the account lives in another region. Use API credentials from Configuration, Users & API Credentials (not your console login and password) and pick the region of your console address.",
+    "401": "Action1 did not accept the token. Check that the API credentials still exist and that the region matches the console you sign in to.",
+    "403": "The role assigned to these API credentials lacks a permission for this call (for example view_endpoints, view_reports or view_vulnerabilities). Edit the credentials in the Action1 console and assign a role that has it.",
+    "404": "Action1 found nothing with that id in this organization. Take organization ids from action1_list_organizations and other ids from the list tools.",
+    "rate_limited": "Action1 is throttling these API credentials. Wait the number of seconds named in the answer and try again.",
+    "auth_failed": "Action1 refused the API credentials. Copy the Client ID and secret again from Configuration, Users & API Credentials, and check the region."
+  },
+  "probe": {
+    "tool": "action1_list_organizations"
+  },
+  "connector": {
+    "name": "Action1 API 3.0",
+    "type": "REST",
+    "baseUrl": "{{ACTION1_API_URL}}",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{ACTION1_CLIENT_ID}}",
+      "clientSecret": "{{ACTION1_CLIENT_SECRET}}",
+      "tokenUrl": "{{ACTION1_API_URL}}/oauth2/token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "action1_list_organizations",
+      "description": "List the organizations of the Action1 enterprise (separate sites or companies managed from one account): id, name and description. Start here: nearly every other tool needs an organization id. Most accounts have one organization; managed service providers have one per company they look after.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/organizations"
+      }
+    },
+    {
+      "name": "action1_get_current_user",
+      "description": "Get the account the API credentials act as: id, email, first_name, timezone, enabled, system_role and the roles it holds. Use it to see which role is behind a call refused with 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me"
+      }
+    },
+    {
+      "name": "action1_search",
+      "description": "Search one organization for endpoints, Software Repository packages and reports whose fields contain a phrase. Returns up to 10 matching objects with id, type, name and self (the path of the object).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "query": {
+            "type": "string",
+            "description": "Phrase to look for, e.g. a computer name, a user name or a product such as Chrome."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of results, 1 to 10. Default 10.",
+            "minimum": 1,
+            "maximum": 10
+          }
+        },
+        "required": [
+          "org_id",
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search/{org_id}",
+        "queryParams": {
+          "query": "$query",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "action1_list_endpoints",
+      "description": "List the managed endpoints (computers and servers with the Action1 agent). Each endpoint has id, name, device_name, status, last_seen, address, MAC, OS, platform, user, manufacturer, serial, CPU, RAM, disk, reboot_required, update_status, vulnerability_status, online_status, comment and organization_id. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Connected",
+              "Disconnected",
+              "Pending Uninstall"
+            ],
+            "description": "Only endpoints with this agent connection state."
+          },
+          "update_status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "WARNING",
+              "ERROR"
+            ],
+            "description": "Only endpoints with this update health: SUCCESS (up to date), WARNING or ERROR."
+          },
+          "vulnerability_status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "WARNING",
+              "ERROR"
+            ],
+            "description": "Only endpoints with this vulnerability health: SUCCESS, WARNING or ERROR."
+          },
+          "online_status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "WARNING",
+              "ERROR"
+            ],
+            "description": "Only endpoints with this last-seen health: SUCCESS, WARNING or ERROR."
+          },
+          "reboot_required": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes for endpoints waiting for a reboot, No for the others."
+          },
+          "os": {
+            "type": "string",
+            "description": "Only endpoints with this operating system, e.g. Windows 11."
+          },
+          "fields": {
+            "type": "string",
+            "enum": [
+              "*",
+              "missing_updates",
+              "vulnerabilities"
+            ],
+            "description": "Extra data per endpoint, slower: missing_updates (counts by severity), vulnerabilities (counts by severity) or * for everything."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/endpoints/managed/{org_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "status": "$status",
+          "update_status": "$update_status",
+          "vulnerability_status": "$vulnerability_status",
+          "online_status": "$online_status",
+          "reboot_required": "$reboot_required",
+          "os": "$os",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "action1_get_endpoint",
+      "description": "Get one endpoint with everything Action1 knows about it: names, agent version and install date, last_seen and last_boot_time, OS, hardware (CPU, RAM, disk, video, network adapters), serial, logged-in user, Active Directory unit and groups, reboot_required, the update, vulnerability and online status, missing update and vulnerability counts, comment and custom attributes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Endpoint id from action1_list_endpoints."
+          }
+        },
+        "required": [
+          "org_id",
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/endpoints/managed/{org_id}/{endpoint_id}"
+      }
+    },
+    {
+      "name": "action1_update_endpoint",
+      "description": "Change the display name or the comment of one endpoint in Action1. This only relabels the endpoint in the console; the computer itself is not renamed and nothing runs on it. Returns the updated endpoint.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Endpoint id from action1_list_endpoints."
+          },
+          "name": {
+            "type": "string",
+            "description": "New display name of the endpoint in Action1."
+          },
+          "comment": {
+            "type": "string",
+            "description": "New comment, e.g. the owner or the asset tag."
+          }
+        },
+        "required": [
+          "org_id",
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/endpoints/managed/{org_id}/{endpoint_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "action1_list_endpoint_missing_updates",
+      "description": "List the software updates one endpoint is missing: per package the name, vendor, versions (version, release_date, security_severity, approval_status), update_type, reboot_needed and kb_number for Windows updates. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Endpoint id from action1_list_endpoints."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "security_severity": {
+            "type": "string",
+            "enum": [
+              "Critical",
+              "-Critical",
+              "Important",
+              "Moderate",
+              "Low",
+              "Unspecified",
+              "Other"
+            ],
+            "description": "Only updates of this security severity. A hyphen in front excludes: -Critical is everything that is not critical."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "New",
+              "Approved",
+              "Declined",
+              "-Declined"
+            ],
+            "description": "Only updates with this approval status; -Declined is everything not declined."
+          }
+        },
+        "required": [
+          "org_id",
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/endpoints/managed/{org_id}/{endpoint_id}/missing-updates",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "security_severity": "$security_severity",
+          "approval_status": "$approval_status"
+        }
+      }
+    },
+    {
+      "name": "action1_list_endpoint_groups",
+      "description": "List the endpoint groups of an organization: id, name, description, the include and exclude filters that decide membership, uptime_alerts and contents (the path of the member list). Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/endpoints/groups/{org_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "action1_get_endpoint_group",
+      "description": "Get one endpoint group: name, description, include_filter and exclude_filter with their logic (the rules that decide which endpoints belong to it) and the uptime alert settings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id from action1_list_endpoint_groups."
+          }
+        },
+        "required": [
+          "org_id",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/endpoints/groups/{org_id}/{group_id}"
+      }
+    },
+    {
+      "name": "action1_list_group_endpoints",
+      "description": "List the endpoints that belong to one group, with the same fields and filters as action1_list_endpoints. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "group_id": {
+            "type": "string",
+            "description": "Group id from action1_list_endpoint_groups."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Connected",
+              "Disconnected",
+              "Pending Uninstall"
+            ],
+            "description": "Only endpoints with this agent connection state."
+          },
+          "update_status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "WARNING",
+              "ERROR"
+            ],
+            "description": "Only endpoints with this update health: SUCCESS (up to date), WARNING or ERROR."
+          },
+          "vulnerability_status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "WARNING",
+              "ERROR"
+            ],
+            "description": "Only endpoints with this vulnerability health: SUCCESS, WARNING or ERROR."
+          },
+          "online_status": {
+            "type": "string",
+            "enum": [
+              "SUCCESS",
+              "WARNING",
+              "ERROR"
+            ],
+            "description": "Only endpoints with this last-seen health: SUCCESS, WARNING or ERROR."
+          },
+          "reboot_required": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes for endpoints waiting for a reboot, No for the others."
+          },
+          "os": {
+            "type": "string",
+            "description": "Only endpoints with this operating system, e.g. Windows 11."
+          },
+          "fields": {
+            "type": "string",
+            "enum": [
+              "*",
+              "missing_updates",
+              "vulnerabilities"
+            ],
+            "description": "Extra data per endpoint, slower: missing_updates (counts by severity), vulnerabilities (counts by severity) or * for everything."
+          }
+        },
+        "required": [
+          "org_id",
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/endpoints/groups/{org_id}/{group_id}/contents",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "filter": "$filter",
+          "status": "$status",
+          "update_status": "$update_status",
+          "vulnerability_status": "$vulnerability_status",
+          "online_status": "$online_status",
+          "reboot_required": "$reboot_required",
+          "os": "$os",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "action1_list_missing_updates",
+      "description": "List the updates missing across an organization, one row per package (Windows updates and third-party applications): id, name, vendor, description, versions (each with its id, version, release_date, security_severity, the CVEs it fixes and approval_status), update_type, reboot_needed and, for Windows updates, kb_number. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "security_severity": {
+            "type": "string",
+            "enum": [
+              "Critical",
+              "-Critical",
+              "Important",
+              "Moderate",
+              "Low",
+              "Unspecified",
+              "Other"
+            ],
+            "description": "Only updates of this security severity. A hyphen in front excludes: -Critical is everything that is not critical."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "New",
+              "Approved",
+              "Declined",
+              "-Declined"
+            ],
+            "description": "Only updates with this approval status; -Declined is everything not declined."
+          },
+          "only_latest": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes (default) leaves out superseded updates; No includes them."
+          },
+          "builtin": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes for packages from the Action1 catalog only, No for custom packages only."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Write * to get all available fields of each update."
+          },
+          "update_sla_start_day": {
+            "type": "string",
+            "description": "Smallest remediation deadline of the update SLA, in days, e.g. 0."
+          },
+          "update_sla_end_day": {
+            "type": "string",
+            "description": "Largest remediation deadline of the update SLA, in days, e.g. 7."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/updates/{org_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "security_severity": "$security_severity",
+          "approval_status": "$approval_status",
+          "only_latest": "$only_latest",
+          "builtin": "$builtin",
+          "fields": "$fields",
+          "update_sla_start_day": "$update_sla_start_day",
+          "update_sla_end_day": "$update_sla_end_day"
+        }
+      }
+    },
+    {
+      "name": "action1_list_package_updates",
+      "description": "List the missing versions of one package (one application or Windows update family) in an organization, with version ids, release dates, security severity and approval status. Take the package id from action1_list_missing_updates. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "package_id": {
+            "type": "string",
+            "description": "Package id from action1_list_missing_updates."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "security_severity": {
+            "type": "string",
+            "enum": [
+              "Critical",
+              "-Critical",
+              "Important",
+              "Moderate",
+              "Low",
+              "Unspecified",
+              "Other"
+            ],
+            "description": "Only updates of this security severity. A hyphen in front excludes: -Critical is everything that is not critical."
+          },
+          "approval_status": {
+            "type": "string",
+            "enum": [
+              "New",
+              "Approved",
+              "Declined",
+              "-Declined"
+            ],
+            "description": "Only updates with this approval status; -Declined is everything not declined."
+          },
+          "only_latest": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes (default) leaves out superseded versions; No includes them."
+          }
+        },
+        "required": [
+          "org_id",
+          "package_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/updates/{org_id}/{package_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "security_severity": "$security_severity",
+          "approval_status": "$approval_status",
+          "only_latest": "$only_latest"
+        }
+      }
+    },
+    {
+      "name": "action1_list_update_endpoints",
+      "description": "List the endpoints that are missing one specific version of a package: endpoint id, name and the version installed now. Take the package and version ids from action1_list_missing_updates. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "package_id": {
+            "type": "string",
+            "description": "Package id from action1_list_missing_updates."
+          },
+          "version_id": {
+            "type": "string",
+            "description": "Version id from the versions list of the package."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          }
+        },
+        "required": [
+          "org_id",
+          "package_id",
+          "version_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/updates/{org_id}/{package_id}/versions/{version_id}/endpoints",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "action1_list_vulnerabilities",
+      "description": "List the vulnerabilities (CVEs) found in software installed on the endpoints of an organization. Each row has cve_id, cvss_score, published_date, vector_string, cisa_kev (in the CISA known exploited list), remediation_status, remediation_deadline, endpoints_count and software (the affected products with their vulnerable versions and available updates). Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "score": {
+            "type": "string",
+            "enum": [
+              "Critical",
+              "High",
+              "Medium",
+              "Low"
+            ],
+            "description": "Only CVEs of this severity."
+          },
+          "remediation_status": {
+            "type": "string",
+            "enum": [
+              "Overdue",
+              "Due_soon",
+              "Overdue_due_soon",
+              "Due_later",
+              "Control_applied",
+              "All_except_control_applied"
+            ],
+            "description": "Only CVEs with this remediation state against your SLA."
+          },
+          "cve_ids": {
+            "type": "string",
+            "description": "Only these CVEs: ids separated by commas, e.g. CVE-2024-38063,CVE-2023-4863."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Only vulnerabilities of this endpoint (id from action1_list_endpoints)."
+          },
+          "published_date_start": {
+            "type": "string",
+            "description": "Only CVEs published on or after this day, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "published_date_end": {
+            "type": "string",
+            "description": "Only CVEs published on or before this day, YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vulnerabilities/{org_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "score": "$score",
+          "remediation_status": "$remediation_status",
+          "CVEIDs": "$cve_ids",
+          "endpoint_id": "$endpoint_id",
+          "published_date_start": "$published_date_start",
+          "published_date_end": "$published_date_end"
+        }
+      }
+    },
+    {
+      "name": "action1_get_vulnerability",
+      "description": "Get the details of one CVE in the context of an organization: published_date, base_severity, cvss_score, description, vector_string, attack vector and complexity, privileges required, impact scores and the CISA known-exploited flag. For the computers it affects call action1_list_vulnerability_endpoints.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "cve_id": {
+            "type": "string",
+            "description": "CVE id, e.g. CVE-2024-38063.",
+            "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$"
+          }
+        },
+        "required": [
+          "org_id",
+          "cve_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vulnerabilities/{org_id}/{cve_id}"
+      }
+    },
+    {
+      "name": "action1_list_vulnerability_endpoints",
+      "description": "List the endpoints of an organization affected by one CVE: endpoint_id, endpoint_name, OS, user and software (the vulnerable products with the versions found and the updates that fix them). Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "cve_id": {
+            "type": "string",
+            "description": "CVE id, e.g. CVE-2024-38063.",
+            "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "product_names": {
+            "type": "string",
+            "description": "Only endpoints where the CVE comes from these products: product names separated by commas."
+          }
+        },
+        "required": [
+          "org_id",
+          "cve_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vulnerabilities/{org_id}/{cve_id}/endpoints",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "product_names": "$product_names"
+        }
+      }
+    },
+    {
+      "name": "action1_list_vulnerability_remediations",
+      "description": "List the compensating controls recorded for one CVE in an organization: remediation_id, product_name, comment, creation_date and remediated_by. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "cve_id": {
+            "type": "string",
+            "description": "CVE id, e.g. CVE-2024-38063.",
+            "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          }
+        },
+        "required": [
+          "org_id",
+          "cve_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vulnerabilities/{org_id}/{cve_id}/remediations",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "action1_get_cve_description",
+      "description": "Get the general description of a CVE, independent of any organization: published_date, base_severity, cvss_score, description, vector_string, attack vector and complexity, privileges required, impact scores, the CISA known-exploited flag and known ransomware use.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cve_id": {
+            "type": "string",
+            "description": "CVE id, e.g. CVE-2024-38063.",
+            "pattern": "^CVE-[0-9]{4}-[0-9]{4,}$"
+          }
+        },
+        "required": [
+          "cve_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CVE-descriptions/{cve_id}"
+      }
+    },
+    {
+      "name": "action1_list_installed_software",
+      "description": "List the software installed across an organization, one row per application and version with the number of endpoints that have it (the Installed Software inventory). Each row has id and fields: Name, Vendor, Version, Platform, Install Type, Update Status and Endpoints (how many computers have it). For one computer call action1_list_endpoint_installed_software. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "live_only": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes to count only endpoints that answered recently; No (default) includes the last known data of offline endpoints."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/installed-software/{org_id}/data",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "live_only": "$live_only"
+        }
+      }
+    },
+    {
+      "name": "action1_list_endpoint_installed_software",
+      "description": "List the software installed on one endpoint: one row per application with its fields, among them the name and version, Install Location, Installed For and Install Date. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Endpoint id from action1_list_endpoints."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          }
+        },
+        "required": [
+          "org_id",
+          "endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/installed-software/{org_id}/data/{endpoint_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "action1_list_reports",
+      "description": "List the reports of Action1 as a tree of categories (for example Patch Management, Software Inventory, Hardware Inventory, Security). Reports are the same for every organization. Each entry has id, type (ReportCategory or Report), name, description and children. The id of a report is what action1_get_report_data takes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subtree": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes to return the whole tree with every report at once, No for the top-level categories only."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/all",
+        "queryParams": {
+          "subtree": "$subtree"
+        }
+      }
+    },
+    {
+      "name": "action1_list_report_category",
+      "description": "Open one report category and list the categories and reports inside it, or get the definition of one report: name, description, data sources, the simple, summary and drill-down columns and their aliases.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "report_or_category_id": {
+            "type": "string",
+            "description": "Id of a category or report from action1_list_reports."
+          }
+        },
+        "required": [
+          "report_or_category_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reports/all/{report_or_category_id}"
+      }
+    },
+    {
+      "name": "action1_get_report_data",
+      "description": "Read the rows of one report for an organization. Each row has id and fields (the report's columns with their values). Summary reports group rows: pass a row id to action1_drilldown_report_row for the endpoints behind it. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "Report id from action1_list_reports or action1_list_report_category."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Only the data of this endpoint. Leave out for all endpoints."
+          },
+          "live_only": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes to use only endpoints that answered recently; No (default) includes the last known data of offline endpoints."
+          },
+          "details": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "description": "yes expands the detail rows inline; only for summary reports."
+          }
+        },
+        "required": [
+          "org_id",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reportdata/{org_id}/{report_id}/data",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "endpoint_id": "$endpoint_id",
+          "live_only": "$live_only",
+          "details": "$details"
+        }
+      }
+    },
+    {
+      "name": "action1_drilldown_report_row",
+      "description": "Expand one row of a summary report into its detail rows, for example the endpoints that have the application of that row. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "Report id, as passed to action1_get_report_data."
+          },
+          "report_row_id": {
+            "type": "string",
+            "description": "Row id from action1_get_report_data."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "live_only": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes to use only endpoints that answered recently."
+          }
+        },
+        "required": [
+          "org_id",
+          "report_id",
+          "report_row_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/reportdata/{org_id}/{report_id}/data/{report_row_id}/drilldown",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "live_only": "$live_only"
+        }
+      }
+    },
+    {
+      "name": "action1_requery_report",
+      "description": "Ask the endpoints to collect the data of one report again. Installed switched off: the request goes to every endpoint of the organization (or to one endpoint) and costs CPU there, so Action1 asks not to call it often. The answer only says the request was queued; read the report again a few minutes later.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations."
+          },
+          "report_id": {
+            "type": "string",
+            "description": "Report id from action1_list_reports."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Refresh only this endpoint. Leave out for all endpoints of the organization."
+          }
+        },
+        "required": [
+          "org_id",
+          "report_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reportdata/{org_id}/{report_id}/requery",
+        "queryParams": {
+          "endpoint_id": "$endpoint_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "action1_list_automation_schedules",
+      "description": "List the scheduled automations of an organization (recurring patch deployments, software installs, scripts, reboots): id, name, actions, the endpoints or groups they target, schedule settings with time zone, last_run and next_run. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/automations/schedules/{org_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter"
+        }
+      }
+    },
+    {
+      "name": "action1_get_automation_schedule",
+      "description": "Get one scheduled automation: name, its actions with their parameters (which updates or packages, reboot options, script), the targeted endpoints and groups, the schedule settings, last_run, last_instance and next_run.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "automation_id": {
+            "type": "string",
+            "description": "Automation id from action1_list_automation_schedules."
+          }
+        },
+        "required": [
+          "org_id",
+          "automation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/automations/schedules/{org_id}/{automation_id}"
+      }
+    },
+    {
+      "name": "action1_list_automation_instances",
+      "description": "List the automation runs of an organization, running and finished: id, name, status (Pending, Running, Stopped, Success, Warning or Error), percent_completed, start_time, end_time, actions and the targeted endpoints. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "Pending",
+              "Running",
+              "Stopped",
+              "Success",
+              "Warning",
+              "Error"
+            ],
+            "description": "Only runs in this state."
+          },
+          "completed": {
+            "type": "string",
+            "enum": [
+              "yes",
+              "no"
+            ],
+            "description": "yes for finished runs, no for runs still in progress."
+          },
+          "endpoint_id": {
+            "type": "string",
+            "description": "Only runs that included this endpoint."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/automations/instances/{org_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "status": "$status",
+          "completed": "$completed",
+          "endpoint_id": "$endpoint_id"
+        }
+      }
+    },
+    {
+      "name": "action1_get_automation_instance",
+      "description": "Get one automation run: name, status, percent_completed, start_time, end_time, the actions it ran, the endpoints it targeted and the path of its per-endpoint results.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id from action1_list_automation_instances."
+          }
+        },
+        "required": [
+          "org_id",
+          "instance_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/automations/instances/{org_id}/{instance_id}"
+      }
+    },
+    {
+      "name": "action1_list_automation_endpoint_results",
+      "description": "List the result of one automation run per endpoint: endpoint_name, action_name, status, percent_completed, time and details (the error text when an update or install failed). Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations. Use a real organization id from action1_list_organizations here: the value `all` is not accepted by this endpoint (it answers 500)."
+          },
+          "instance_id": {
+            "type": "string",
+            "description": "Instance id from action1_list_automation_instances."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "last_status": {
+            "type": "string",
+            "description": "Only endpoints whose last status is this one, e.g. Error or Success."
+          }
+        },
+        "required": [
+          "org_id",
+          "instance_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/automations/instances/{org_id}/{instance_id}/endpoint-results",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "last_status": "$last_status"
+        }
+      }
+    },
+    {
+      "name": "action1_list_software_repository",
+      "description": "List the packages of the Software Repository (the applications Action1 can install and update): id, name, vendor, description, builtin, platform and versions. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "org_id": {
+            "type": "string",
+            "description": "Organization id from action1_list_organizations, or all for every organization the API credentials can see."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from": {
+            "type": "integer",
+            "description": "Number of the first record to return, for paging: take it from next_page of the previous answer. Default 0.",
+            "minimum": 0
+          },
+          "sortby": {
+            "type": "string",
+            "description": "Field to sort by, ascending; put a hyphen in front for descending, e.g. -name."
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "Windows",
+              "Mac",
+              "Linux"
+            ],
+            "description": "Only packages for this operating system."
+          },
+          "builtin": {
+            "type": "string",
+            "enum": [
+              "Yes",
+              "No"
+            ],
+            "description": "Yes for packages maintained by Action1 only, No for your own custom packages only."
+          },
+          "match_name": {
+            "type": "string",
+            "description": "Only packages that match this installed software name, e.g. Google Chrome."
+          },
+          "fields": {
+            "type": "string",
+            "description": "Write * to get all fields, including every version of each package."
+          }
+        },
+        "required": [
+          "org_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/software-repository/{org_id}",
+        "queryParams": {
+          "limit": "$limit",
+          "from": "$from",
+          "sortby": "$sortby",
+          "filter": "$filter",
+          "platform": "$platform",
+          "builtin": "$builtin",
+          "match_name": "$match_name",
+          "fields": "$fields"
+        }
+      }
+    },
+    {
+      "name": "action1_list_audit_events",
+      "description": "List the audit trail of the Action1 account: who did what and when (logins, remote sessions, configuration changes, report views, API calls). Each record has id, event, description, details, object_name, user_name, timestamp, org_name and status_message. Answers items, total_items, limit, next_page and prev_page; page with limit and from.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event": {
+            "type": "string",
+            "description": "Only these events: names separated by commas, e.g. Login,Remote Connect,Create User."
+          },
+          "timefrom": {
+            "type": "string",
+            "description": "Start of the period as YYYY-MM-DD_HH-MM-SS, e.g. 2026-11-01_00-00-00.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$"
+          },
+          "timeto": {
+            "type": "string",
+            "description": "End of the period as YYYY-MM-DD_HH-MM-SS, e.g. 2026-11-19_23-59-59.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}_[0-9]{2}-[0-9]{2}-[0-9]{2}$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Case-insensitive text: only items with a field containing it are returned."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Items per page. Default 50.",
+            "minimum": 1,
+            "default": 50
+          },
+          "from_id": {
+            "type": "string",
+            "description": "Sequential id of the first record to return, for paging."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/audit/events",
+        "queryParams": {
+          "event": "$event",
+          "timefrom": "$timefrom",
+          "timeto": "$timeto",
+          "filter": "$filter",
+          "limit": "$limit",
+          "from_id": "$from_id"
+        }
+      }
+    }
+  ]
+}

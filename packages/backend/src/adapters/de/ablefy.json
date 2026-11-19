@@ -1,0 +1,621 @@
+{
+  "slug": "ablefy",
+  "name": "ablefy",
+  "aliases": [
+    "elopage",
+    "ablefy API",
+    "myablefy"
+  ],
+  "description": "ablefy (formerly elopage) seller API: products, pricing plans, orders, payments, invoices and credit notes, event e-tickets, affiliates (publishers), funnels and webhook endpoints, plus free orders that grant product access. API key and secret.",
+  "instructions": "## ablefy\nThis connector works with the **ablefy API** (ablefy is the former elopage) at `https://api.elopage.com`: the products, pricing plans, orders, payments, invoices, event tickets, affiliates (publishers), funnels and webhook endpoints of one seller account. ablefy is a platform for selling digital products, online courses and event tickets.\n\n**Setup (about 3 minutes)**\n1. Sign in to your ablefy seller account and open the entry **ablefy API** in the settings of the account (it sits with the integrations).\n2. Generate the API access. ablefy shows an **API key** and an **API secret**: copy both right away.\n3. Paste them into `ABLEFY_API_KEY` and `ABLEFY_API_SECRET`.\n\nEvery call sends the pair as the query parameters `key` and `secret`. The pair gives full access to the seller account, so treat it like a password. The API is the same on `api.elopage.com` and `api.myablefy.com`.\n\n**Where to start**: `ablefy_get_account` checks the credentials. `ablefy_list_products` returns the product ids everything else refers to.\n\n**Products and prices**: `ablefy_list_products`, `ablefy_get_product`, `ablefy_list_pricing_plans`, `ablefy_get_pricing_plan`.\n\n**Sales**: the API has no list of orders. List sales of a period with `ablefy_list_invoices` (filter by date, invoice state, payment state or product), then read details with `ablefy_get_order`, `ablefy_get_payment`, `ablefy_get_transfer` and `ablefy_get_payer`. Ids of orders and payments also arrive in ablefy webhooks.\n\n**Access without payment**: `ablefy_create_free_order` gives a customer access to a product through a free order. It and `ablefy_cancel_order`, which stops an order, are installed switched off. The connector has no refund tool: refunds are made in the ablefy cabinet.\n\n**Events**: `ablefy_list_event_tickets` returns the e-tickets of an event with their state and attendee.\n\n**Affiliates**: `ablefy_list_publishers`, `ablefy_list_affiliate_redirections`, `ablefy_enroll_publisher`; `ablefy_unenroll_publisher` is installed switched off.\n\n**Funnels and webhooks**: `ablefy_list_funnels`, `ablefy_get_funnel`, `ablefy_list_webhook_endpoints`, `ablefy_get_webhook_endpoint`.\n\n**Reading the answers**: ablefy publishes the request parameters of its API but not the fields of the answers, so read what comes back instead of assuming field names. Payment states used by the filters: payment_waiting, paying, paid, payment_paused, payment_canceled, payment_refunded, payment_not_completed, payment_chargebacked, payment_pending. Invoice states: unpaid, paid, canceled and issued (credit notes).\n\n**Paging**: `ablefy_list_invoices` returns one page per call (`page` from 1; an empty page means the end). `ablefy_list_event_tickets` pages by time: pass the highest `updated_at` as `last_updated_date`.\n\n**Errors**: 401 with `401 Unauthorized` means key or secret are wrong or were regenerated. 404 means no object with that id in this account. ablefy documents no rate limit; keep to a few calls per second.\n\n**Personal data**: orders, invoices and tickets contain names, addresses and emails of buyers. Use them only for what the seller asked for.",
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "ablefy",
+  "docsUrl": "https://api.elopage.com/api/swagger_doc",
+  "prerequisites": "An ablefy (formerly elopage) seller account with access to the API settings, where the API key and secret are generated. About 3 minutes.",
+  "requiredEnvVars": [
+    "ABLEFY_API_KEY",
+    "ABLEFY_API_SECRET"
+  ],
+  "envVarMeta": {
+    "ABLEFY_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Generated in the API settings of your ablefy seller account (entry ablefy API). Shown together with the API secret.",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the API key without spaces."
+    },
+    "ABLEFY_API_SECRET": {
+      "label": "API secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the API key when the API access is generated. Generate a new pair if it was lost.",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the API secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "ablefy did not accept the API key and secret. Copy both again from the API settings of the seller account, or generate a new pair there.",
+    "403": "ablefy refused the call: this seller account may not use that part of the API.",
+    "404": "ablefy found no object with that id in this seller account.",
+    "rate_limited": "ablefy is throttling the calls. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "ablefy_get_account",
+    "params": {}
+  },
+  "connector": {
+    "name": "ablefy API",
+    "type": "REST",
+    "baseUrl": "https://api.elopage.com",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{ABLEFY_API_KEY}}",
+      "secret": "{{ABLEFY_API_SECRET}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "ablefy_get_account",
+      "description": "Check the API key and secret and read the seller account they belong to. ablefy answers 401 when the pair is wrong. Call it first when anything else fails with 401. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_list_products",
+      "description": "List the products of the seller account. A product has one of the forms download, course, event or service. The product id is what orders, invoices and event tickets refer to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/products"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_product",
+      "description": "Read one product by id with the information ablefy keeps on it, such as the product name, its pricing plans and its authors. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Numeric product id from ablefy_list_products.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_list_pricing_plans",
+      "description": "List the pricing plans of the seller account. A pricing plan holds the prices of a product with their payment intervals; products refer to plans by id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/pricing_plans"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_pricing_plan",
+      "description": "Read one pricing plan by id: its prices, the payment intervals and the splitting type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pricing_plan_id": {
+            "type": "integer",
+            "description": "Numeric pricing plan id from ablefy_list_pricing_plans or from a product.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "pricing_plan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/pricing_plans/{pricing_plan_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_order",
+      "description": "Read the payment information of one order by its numeric id. Order ids arrive in ablefy webhooks and are shown in the seller account; the API has no order list, so use ablefy_list_invoices to find the sales of a period. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Numeric order id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_payment",
+      "description": "Read the information ablefy holds on one payment by id. This is the call to confirm that a purchase was really paid before you deliver content, a product or a service yourself. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "payment_id": {
+            "type": "string",
+            "description": "Payment id as sent in ablefy webhooks or shown on the payment in the seller cabinet."
+          }
+        },
+        "required": [
+          "payment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/payments/{payment_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_transfer",
+      "description": "Read the basic information of one transfer by its numeric id, as ablefy returns it. Transfer ids appear in payment information. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transfer_id": {
+            "type": "integer",
+            "description": "Numeric transfer id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "transfer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/transfers/{transfer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_payer",
+      "description": "Read the basic information of the payer (the buyer) of a transfer, looked up by the external id of that transfer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "transfer_ext_id": {
+            "type": "string",
+            "description": "External id of the transfer, as shown on the transfer or sent by the payment provider."
+          }
+        },
+        "required": [
+          "transfer_ext_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/payers/{transfer_ext_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_list_invoices",
+      "description": "List the invoices and credit notes of the seller account, one page at a time, filtered by date, invoice state, payment state of the order or product. This is the way to list sales of a period. Credit notes are reported with the state issued. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Only invoices from this time on, ISO 8601, e.g. `2026-10-01` or `2026-10-01T00:00:00+02:00`."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Only invoices up to this time, ISO 8601."
+          },
+          "predefined_date_range": {
+            "type": "string",
+            "description": "A fixed period instead of date_from and date_to (it overrides them).",
+            "enum": [
+              "last_month",
+              "current_year",
+              "last_year"
+            ]
+          },
+          "invoice_state": {
+            "type": "string",
+            "description": "Only invoices in this state. issued is the state of credit notes.",
+            "enum": [
+              "unpaid",
+              "paid",
+              "canceled",
+              "issued"
+            ]
+          },
+          "payment_state": {
+            "type": "string",
+            "description": "Only invoices whose order is in this payment state.",
+            "enum": [
+              "payment_waiting",
+              "paying",
+              "paid",
+              "payment_paused",
+              "payment_canceled",
+              "payment_refunded",
+              "payment_not_completed",
+              "payment_chargebacked",
+              "payment_pending"
+            ]
+          },
+          "product_id": {
+            "type": "integer",
+            "description": "Only invoices for this product.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/invoices",
+        "queryParams": {
+          "page": "$page",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "predefined_date_range": "$predefined_date_range",
+          "invoice_state": "$invoice_state",
+          "payment_state": "$payment_state",
+          "product_id": "$product_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_create_free_order",
+      "description": "Create a free order for a customer, which gives that person access to a product without a payment (for example a course place sold outside ablefy, or a bonus). No money moves, but the product is given away: confirm product and recipient before calling. Writes to ablefy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Numeric id of the product to give access to.",
+            "minimum": 1
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address of the customer.",
+            "format": "email"
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name of the customer."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name of the customer."
+          },
+          "ticket_date_id": {
+            "type": "integer",
+            "description": "For an event product: id of the ticket date the customer is booked on.",
+            "minimum": 1
+          },
+          "pricing_plan_id": {
+            "type": "integer",
+            "description": "Pricing plan the order is filed under (sent as `prid`).",
+            "minimum": 1
+          },
+          "publisher_id": {
+            "type": "integer",
+            "description": "Publisher (affiliate) the order is attributed to (sent as `pid`).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "product_id",
+          "email",
+          "first_name",
+          "last_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders",
+        "bodyMapping": {
+          "product_id": "$product_id",
+          "email": "$email",
+          "first_name": "$first_name",
+          "last_name": "$last_name",
+          "ticket_date_id": "$ticket_date_id",
+          "prid": "$pricing_plan_id",
+          "pid": "$publisher_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ablefy_cancel_order",
+      "description": "Cancel an order by its token. A cancellation cannot be undone through the API, and it is not a refund: the connector has no refund tool. Installed switched off. Writes to ablefy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_token": {
+            "type": "string",
+            "description": "Token of the order (the long token of the order, not its numeric id)."
+          }
+        },
+        "required": [
+          "order_token"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/orders/{order_token}/cancel"
+      },
+      "enabled": false
+    },
+    {
+      "name": "ablefy_list_event_tickets",
+      "description": "List the e-tickets sold for an event product, oldest change first: per ticket id, order_id, event, ticket_type, reference, code, barcode, state (VALID, REDEEMED, EXPIRED, REFUNDED, INVALID, UNKNOWN), ticket_is_valid, personalisation_status, payer_data and ticket_attendee (name, email, phone, address, company). To page, send the highest `updated_at` of a page as last_updated_date for the next one until a page comes back with fewer than `count` records. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "event_id": {
+            "type": "integer",
+            "description": "Numeric id of the event product.",
+            "minimum": 1
+          },
+          "count": {
+            "type": "integer",
+            "description": "Tickets per page, at most 5000. A larger value is refused.",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 1000
+          },
+          "last_updated_date": {
+            "type": "string",
+            "description": "Only tickets changed at or after this time: the highest `updated_at` of the previous page, ISO 8601."
+          }
+        },
+        "required": [
+          "event_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/events/{event_id}/e_tickets",
+        "queryParams": {
+          "count": "$count",
+          "last_updated_date": "$last_updated_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_list_publishers",
+      "description": "List the publishers (affiliates) of the seller account. The publisher id is what ablefy_enroll_publisher takes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/publishers"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_list_affiliate_redirections",
+      "description": "List the affiliate redirections of the seller account, as ablefy returns them. Use it together with ablefy_list_publishers to review the affiliate setup. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/affiliate_redirections"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_enroll_publisher",
+      "description": "Enroll a publisher (affiliate) in one of your affiliate programs, so that their sales of the products in that program earn commission. Writes to ablefy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "integer",
+            "description": "Numeric publisher id from ablefy_list_publishers.",
+            "minimum": 1
+          },
+          "affiliate_program_id": {
+            "type": "integer",
+            "description": "Numeric id of the affiliate program.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "publisher_id",
+          "affiliate_program_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/publishers/{publisher_id}/enroll",
+        "bodyMapping": {
+          "affiliate_program_id": "$affiliate_program_id"
+        }
+      }
+    },
+    {
+      "name": "ablefy_unenroll_publisher",
+      "description": "Remove a publisher (affiliate) from one of your affiliate programs; their future sales of those products earn no commission. Installed switched off. Writes to ablefy.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "publisher_id": {
+            "type": "integer",
+            "description": "Numeric publisher id from ablefy_list_publishers.",
+            "minimum": 1
+          },
+          "affiliate_program_id": {
+            "type": "integer",
+            "description": "Numeric id of the affiliate program.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "publisher_id",
+          "affiliate_program_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/publishers/{publisher_id}/unenroll",
+        "bodyMapping": {
+          "affiliate_program_id": "$affiliate_program_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "ablefy_list_funnels",
+      "description": "List the funnels of the seller account. A funnel is a named chain of funnel nodes, each a content page or a link. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/funnels"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_funnel",
+      "description": "Read one funnel by id: its name and settings, as ablefy returns them. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "funnel_id": {
+            "type": "integer",
+            "description": "Numeric funnel id from ablefy_list_funnels.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "funnel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/funnels/{funnel_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_list_webhook_endpoints",
+      "description": "List the webhook endpoints of the seller account: per endpoint a name, the URL ablefy calls, whether it receives all events or selected ones, and the request format (form or JSON). Shows which other systems are informed about sales. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/webhook_endpoints"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "ablefy_get_webhook_endpoint",
+      "description": "Read one webhook endpoint by id: its name, URL, event selection and request format. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhook_endpoint_id": {
+            "type": "integer",
+            "description": "Numeric webhook endpoint id from ablefy_list_webhook_endpoints.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "webhook_endpoint_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/api/webhook_endpoints/{webhook_endpoint_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

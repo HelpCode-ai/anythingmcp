@@ -1,0 +1,355 @@
+{
+  "slug": "threataware",
+  "name": "ThreatAware",
+  "description": "ThreatAware cyber asset management from any AI agent: the merged device and user inventory across your security and IT tools, open alerts, the health of each security control (Vitals, today or on a past day), the raw records of one connected tool, and the portal users, roles and teams. Read-only. Cloud ID and API key.",
+  "instructions": "## ThreatAware\nThis connector reads the **ThreatAware public API v1** of one ThreatAware portal (`https://<cloud id>.threataware.com/public-api/v1`). ThreatAware is a cyber asset management platform: it pulls devices and users from the security and IT tools a company already runs (EDR, MDM, patching, identity, vulnerability scanners) and shows which devices lack a control or have one that is not working. The API is **read-only**: version 1 accepts GET requests only, so nothing can be changed, resolved or deleted from here.\n\n**Setup (about 3 minutes)**\n1. Sign in to your portal and note the first part of its address: for `https://acme-corp.threataware.com` the Cloud ID is `acme-corp`. Put it into `THREATAWARE_CLOUD_ID`.\n2. Open **Settings, API Access** (address `/settings/api`) and click **Generate Key**. Name the key, pick an expiry (1 day, 1 week, 1 month or Never; the default is 1 day, so choose on purpose) and save.\n3. Copy the key at once (it is shown only once) into `THREATAWARE_API_KEY`. It is sent in the `X-ThreatAware-ApiKey` header.\n\nThe key sees what its creator sees. ThreatAware recommends creating it under a dedicated service user with a narrow role instead of a personal account.\n\n**Where to start**\n- `threataware_list_vitals` shows every connected tool with its internal name (`key`) and, where Vitals is on, how many devices have the agent deployed, working and correctly configured. Read the three pairs as a funnel: deployed out of expected, functioning out of deployed, configured out of functioning.\n- `threataware_list_alerts` with filter `allunresolved` lists what is open now; `state` Red is urgent, Amber is a warning.\n- `threataware_list_devices` is the merged device inventory. `SecurityTools` on a device shows the alert counts per tool, `ConnectedSystems` where the device is known.\n- `threataware_list_users` is the merged list of people, with MFA and admin flags in `metadata` and the last successful and failed sign-in.\n- `threataware_list_inventory` returns one tool's raw records when you need a field the merged lists do not have. It needs the tool's internal name, which is the `key` from `threataware_list_vitals` and not always the name shown in the portal (Microsoft Intune is `devices_msgraph`, SCCM is `mecmsystem`).\n- Portal administration: `threataware_list_portal_users`, `threataware_list_roles` and `threataware_list_teams` describe who can sign in to ThreatAware and with which rights.\n\n**Paging**: every list takes `offset` and `limit` and answers `total`. ThreatAware returns the whole data set when no limit is sent, so this connector always sends one (100 by default). On devices and users the offset stops at 10,000 records (status 400 beyond that); narrow with `filter` instead.\n\n**Reading the data**\n- Times are ISO 8601 without a time zone, e.g. `2026-10-10T08:49:28.0000000`. `0001-01-01T00:00:00` means \"never\" (not acknowledged, not resolved, not snoozed).\n- There are no server-side searches by host name, user or severity: fetch pages and filter the result yourself.\n- Device and user data is personal data (names, emails, IP addresses, sign-in locations). Share only what the question needs.\n\n**Limits and errors**: 50 requests per minute for the whole portal, whichever key is used; status 429 means wait a minute. Status 400 with \"Unexpected error occurred.\" means the key is wrong, disabled or expired (ThreatAware answers 400, not 401, for a bad key). 401 means no key was sent. 403 means the key's user lacks the permission for that area. A portal address that does not resolve means the Cloud ID is wrong.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "threataware",
+  "docsUrl": "https://docs.threataware.com/api-reference/overview",
+  "prerequisites": "A ThreatAware portal and a user who may open Settings, API Access to generate an API key. Any ThreatAware account can generate keys; no partner agreement is needed. About 3 minutes.",
+  "requiredEnvVars": [
+    "THREATAWARE_CLOUD_ID",
+    "THREATAWARE_API_KEY"
+  ],
+  "envVarMeta": {
+    "THREATAWARE_CLOUD_ID": {
+      "label": "Cloud ID",
+      "kind": "address",
+      "help": "The first part of your portal address: acme-corp for https://acme-corp.threataware.com. It is also shown under Settings, API Access.",
+      "example": "acme-corp",
+      "link": "https://docs.threataware.com/api-reference/overview",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9-]{0,62}$",
+      "patternMessage": "Write only the Cloud ID, e.g. acme-corp, without https:// and without .threataware.com."
+    },
+    "THREATAWARE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Settings, API Access, Generate Key. Pick the expiry on purpose (the default is 1 day) and copy the key at once: it is shown only once.",
+      "link": "https://docs.threataware.com/settings/api-access",
+      "pattern": "^[0-9A-Fa-f-]{32,100}$",
+      "patternMessage": "Paste the API key as shown: two groups of letters a-f and digits joined by hyphens, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "ThreatAware answers 400 \"Unexpected error occurred.\" for a key it does not accept: the key is mistyped, disabled or expired (new keys expire after 1 day unless another expiry was chosen). Generate a new key under Settings, API Access.",
+    "401": "ThreatAware received no API key. Paste the key from Settings, API Access into THREATAWARE_API_KEY.",
+    "403": "The user who created this key lacks the permission for that area of ThreatAware. Give that user a role with access to it, or generate the key under another user.",
+    "404": "Nothing answers at this address. Check THREATAWARE_CLOUD_ID: the first part of your portal address, without .threataware.com.",
+    "rate_limited": "ThreatAware allows 50 API requests per minute for the whole portal. Wait a minute and try again.",
+    "unreachable": "No portal answers at this address. Check THREATAWARE_CLOUD_ID: acme-corp for https://acme-corp.threataware.com."
+  },
+  "probe": {
+    "tool": "threataware_list_devices",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "ThreatAware public API v1",
+    "type": "REST",
+    "baseUrl": "https://{{THREATAWARE_CLOUD_ID}}.threataware.com/public-api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-ThreatAware-ApiKey",
+      "apiKey": "{{THREATAWARE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "threataware_list_devices",
+      "description": "List the devices ThreatAware has merged from all connected tools. Each device has id, hostName, os, osVersion, lastOnline, firstSeen, location, tags, hardware metadata (serial_number, manufacturer, model, disk, memory), lastUser, public and private IP, macAddress, SecurityTools (one entry per security tool with redAlerts and amberAlerts) and ConnectedSystems. The answer also carries total; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "all"
+            ],
+            "description": "Which devices to return: active, inactive or all. Default all."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip. Default 0. On devices and users an offset above 10,000 is refused with status 400.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of devices to return. Default 100. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/devices",
+        "queryParams": {
+          "filter": "$filter",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "threataware_list_users",
+      "description": "List the people ThreatAware has collected from the connected directories and identity providers. Each user has id, name, email, jobTitle, department, tags, metadata (for example Is Admin and MFA Registered, as text), lastActivity, lastSuccessLogin and lastFailedLogin with time, IP, country and city, and recentDevices. The answer also carries total; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "active",
+              "inactive",
+              "all"
+            ],
+            "description": "Which users to return: active, inactive or all. Default all."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip. Default 0. On devices and users an offset above 10,000 is refused with status 400.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of users to return. Default 100. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "filter": "$filter",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "threataware_list_alerts",
+      "description": "List the alerts (issues) ThreatAware raised across the environment. Each alert has state (Red, Amber or Green), product (tool and category), status (Incident, Warning or Info), item (the device or user name), issue, details, itemEntityType, ownerName, timestamp, resolved, acknowledged, resolvedBy, resolvedTime, itemId and inactiveUntil (snoozed until). The answer also carries total; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "enum": [
+              "allunresolved",
+              "all"
+            ],
+            "description": "allunresolved for open alerts only, all for resolved and unresolved. Default all."
+          },
+          "system_name": {
+            "type": "string",
+            "description": "Only alerts of one connected tool, by its internal name from threataware_list_vitals (field key), e.g. crowdstrike, msdefenderatp or automox. Leave out for all tools."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip. Default 0. On devices and users an offset above 10,000 is refused with status 400.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of alerts to return. Default 100. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/alerts",
+        "queryParams": {
+          "filter": "$filter",
+          "systemName": "$system_name",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "threataware_list_inventory",
+      "description": "Read the raw records ThreatAware holds for one connected tool, in that tool's own field names (for example Automox patch counts, or CrowdStrike agentVersion, hostname, lastSeen and deviceStatus). Use it for fields the merged device list does not carry. The answer carries offset, limit, total and data; page with offset and limit.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "system_name": {
+            "type": "string",
+            "description": "Internal name of the connected tool, from threataware_list_vitals (field key). Examples: Automox, crowdstrike, jamf, msdefenderatp, devices_msgraph (Microsoft Intune), qualysassetscan, mecmsystem (SCCM)."
+          },
+          "type": {
+            "type": "string",
+            "description": "Kind of record to return when the tool offers several, e.g. Users or workstations. Leave out for the default."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip. Default 0. On devices and users an offset above 10,000 is refused with status 400.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return. Default 50. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        },
+        "required": [
+          "system_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/inventory",
+        "queryParams": {
+          "systemName": "$system_name",
+          "type": "$type",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "threataware_list_vitals",
+      "description": "Get the health of every connected security tool (Vitals), today or on a past day. Each entry has key (the internal tool name used by the other tools), name and vitalsEnabled. With Vitals enabled it has three pairs of counts: agentDeployedPossibleCompliant and agentDeployedCompliant, agentFunctioningPossibleCompliant and agentFunctioningCompliant, configurationPossibleCompliant and configurationCompliant. Without Vitals it has activeAgents.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag": {
+            "type": "string",
+            "description": "Only devices carrying this tag. Leave out for all devices."
+          },
+          "archive_date": {
+            "type": "string",
+            "description": "A past day as yyyyMMdd, e.g. 20260819. Leave out for today. A day without an archive answers total 0.",
+            "pattern": "^[0-9]{8}$"
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of tools to skip. Default 0.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of tools to return. Default 200. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vitals",
+        "queryParams": {
+          "tag": "$tag",
+          "archiveDate": "$archive_date",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "threataware_list_portal_users",
+      "description": "List the accounts that can sign in to the ThreatAware portal itself (not the people found in the directories: for those call threataware_list_users). Each account has username (the email address), name, surname, roleid, mfastatus (enabled or disabled), enabled, ssostatus when single sign-on is set up, and currentteams.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Number of accounts to skip. Default 0.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of accounts to return. Default 200. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/usermanagement/users",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "threataware_list_roles",
+      "description": "List the roles of the ThreatAware portal. Each role has id (for example superAdmin, analyst or viewer), name, description, default (true for a built-in role), permissions (one access level per area such as integrations, reports, vitals, apiKeys or users) and the users holding it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Number of roles to skip. Default 0.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of roles to return. Default 100. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/usermanagement/roles",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    },
+    {
+      "name": "threataware_list_teams",
+      "description": "List the teams of the ThreatAware portal with their members. Each team has id, name and members (username, name and surname). Teams scope which devices, saved views and dashboards a group of portal users sees.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "description": "Number of teams to skip. Default 0.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of teams to return. Default 100. ThreatAware itself returns everything when the limit is 0 or missing, so keep a limit and page with offset.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/usermanagement/teams",
+        "queryParams": {
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      }
+    }
+  ]
+}

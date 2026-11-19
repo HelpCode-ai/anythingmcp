@@ -1,0 +1,1459 @@
+{
+  "slug": "yougile",
+  "name": "YouGile",
+  "description": "YouGile project management: projects, kanban boards, columns, tasks with deadlines, checklists and assignees, task chat messages, employees, departments, custom and sprint stickers and webhook subscriptions. API key.",
+  "instructions": "## YouGile\nThis connector works with the **YouGile REST API v2** at `https://yougile.com/api-v2`: projects, boards, columns, tasks with their chat, employees, departments, custom and sprint stickers, and webhook subscriptions. YouGile is a project management tool with kanban boards and a chat on every task.\n\n**Setup (about 5 minutes)**\nYouGile has no page that shows an API key: a key is created with one API call that takes your YouGile login and password. Run it once from a terminal; the connector itself never sees your password.\n1. Find your company id: in the YouGile web app press Ctrl+Alt+Q (Ctrl+Option+Q on a Mac), or run `curl -X POST https://yougile.com/api-v2/auth/companies -H \"Content-Type: application/json\" -d '{\"login\":\"<your email>\",\"password\":\"<your password>\"}'` and take `content[].id` of your company.\n2. Create the key: `curl -X POST https://yougile.com/api-v2/auth/keys -H \"Content-Type: application/json\" -d '{\"login\":\"<your email>\",\"password\":\"<your password>\",\"companyId\":\"<company id>\"}'`. The answer is `{\"key\":\"...\"}`.\n3. Paste the key into `YOUGILE_API_KEY`.\n\nA key does not expire. An account can hold at most 30 keys; list them with `POST /auth/keys/get` (same login body) and remove one with `DELETE /auth/keys/<key>`. The key acts as the employee who created it and sees only what that employee sees, so create it with an account that can open the projects you want to work on.\n\n**Where to start**: `yougile_get_current_user` checks the key. Then walk down: `yougile_list_projects`, `yougile_list_boards` with the project id, `yougile_list_columns` with the board id, `yougile_list_tasks` with the column id.\n\n**Structure**: `yougile_get_project`, `yougile_get_board`, `yougile_get_column`; create with `yougile_create_project`, `yougile_create_board`, `yougile_create_column`; change with `yougile_update_project`, `yougile_update_board`, `yougile_update_column`. A task belongs to a column, a column to a board, a board to a project.\n\n**Tasks**: `yougile_list_tasks` (filter by column, assignee, title or sticker state), `yougile_get_task`, `yougile_create_task`, `yougile_update_task`, and `yougile_move_task` to change the column. `yougile_delete_task` is installed switched off; set `archived` with `yougile_update_task` for finished work.\n\n**Chat**: every task has a chat whose id is the task id. Read it with `yougile_list_task_messages` and write with `yougile_send_task_message`. `yougile_list_group_chats` lists the company chats, which use the same two tools.\n\n**People**: `yougile_list_users`, `yougile_get_user`, `yougile_list_departments`, `yougile_get_department`.\n\n**Stickers**: custom fields of a task are stickers. `yougile_list_string_stickers` and `yougile_get_string_sticker` return stickers with a fixed set of states (priority, type); `yougile_list_sprint_stickers` and `yougile_get_sprint_sticker` return sprints. Create them with `yougile_create_string_sticker` and `yougile_create_sprint_sticker`, switch them on for a board with `yougile_update_board`, then set them on a task as sticker id to state id.\n\n**Webhooks**: `yougile_list_webhooks` shows the subscriptions and their failure counters.\n\n**Lists and paging**: list tools answer `paging` (count, limit, offset, next) and `content`. Default page size 50, at most 1000; while `paging.next` is true, call again with `offset` raised by `limit`. Deleted objects are left out unless `include_deleted` is true.\n\n**Times**: task and message times are milliseconds since 1970 (`timestamp`, `deadline.deadline`, message `id`); sprint `begin` and `end` are seconds. Ids are UUIDs; sticker state ids are short hex strings.\n\n**Rate limit**: 50 requests per minute for the whole company, shared by all its keys. Page with a large `limit` instead of many small calls.\n\n**Errors**: a failed call has a status of 4xx or 5xx and an `error` or `message` field. 401 means the key is wrong or was deleted; 403 or 404 on an object that exists means the key owner has no access to it.",
+  "region": "intl",
+  "category": "project-management",
+  "icon": "yougile",
+  "docsUrl": "https://yougile.com/api-v2",
+  "prerequisites": "A YouGile account that can open the projects you want to work on. The API key is created with one API call that takes your login, password and company id (see the setup steps). About 5 minutes.",
+  "requiredEnvVars": [
+    "YOUGILE_API_KEY"
+  ],
+  "envVarMeta": {
+    "YOUGILE_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Created with POST https://yougile.com/api-v2/auth/keys (login, password, companyId). The key does not expire and acts as the employee who created it.",
+      "link": "https://yougile.com/api-v2",
+      "pattern": "^[A-Za-z0-9_+/=.-]{20,200}$",
+      "patternMessage": "Paste the key only, without the word Bearer and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "YouGile did not accept the API key. Create a new one with POST /auth/keys (login, password, companyId) and paste the value of key, without the word Bearer.",
+    "403": "The employee who created the key has no access to this object. Ask a project admin to add them, or create the key with another account.",
+    "404": "YouGile found no object with that id, or the key owner cannot see it. Deleted objects need include_deleted.",
+    "rate_limited": "YouGile allows 50 requests per minute for the whole company. Wait a minute and use a larger limit per page."
+  },
+  "probe": {
+    "tool": "yougile_get_current_user",
+    "params": {}
+  },
+  "connector": {
+    "name": "YouGile REST API v2",
+    "type": "REST",
+    "baseUrl": "https://yougile.com/api-v2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{YOUGILE_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "yougile_get_current_user",
+      "description": "Read the employee the API key belongs to: id, email, realName, isAdmin, status (online or offline) and lastActivity. Use it to check the key and to get your own user id for task filters. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_list_users",
+      "description": "List the employees of the company: id, email, realName, isAdmin, messengerOnly, status and lastActivity. Filter by email or by project. The ids are what tasks use in `assigned` and projects in `users`. Answer: `paging` (count, limit, offset, next) and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Only the employee with this email address."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Only employees of this project. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "email": "$email",
+          "projectId": "$project_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_user",
+      "description": "Read one employee by id: email, realName, isAdmin, messengerOnly, status, lastActivity and customStatus. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Employee id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_list_departments",
+      "description": "List the departments of the company: id, title, parentId (the department above, absent at the top level) and users (employee id mapped to manager or member). Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Only departments with this name."
+          },
+          "parent_id": {
+            "type": "string",
+            "description": "Only departments directly below this department. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "title": "$title",
+          "parentId": "$parent_id",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_department",
+      "description": "Read one department by id: title, parentId and users (employee id mapped to manager or member). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "department_id": {
+            "type": "string",
+            "description": "Department id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "department_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/departments/{department_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_list_projects",
+      "description": "List the projects the key owner can see: id, title, timestamp (creation time, milliseconds) and users (employee id mapped to the role: admin, worker, observer or a custom role id). Start here: boards need a project id. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Only projects with this name."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "title": "$title",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_project",
+      "description": "Read one project by id: title, timestamp, users with their roles and departments with their role mapping. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_create_project",
+      "description": "Create a project and return its id. Give the employees who work on it with their roles; an employee who is not listed cannot see the project. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Project name."
+          },
+          "users": {
+            "type": "object",
+            "description": "Employees and their role: an object of employee id to `admin`, `worker`, `observer` or the id of a custom project role, e.g. `{\"4902b994-b806-4af4-acec-018ea5ea6468\": \"admin\"}`. Include your own user id to keep access."
+          },
+          "departments": {
+            "type": "object",
+            "description": "Departments on the project: department id to an object with the roles for its managers and members, e.g. `{\"<departmentId>\": {\"manager\": \"admin\", \"member\": \"worker\"}}`."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects",
+        "bodyMapping": {
+          "title": "$title",
+          "users": "$users",
+          "departments": "$departments"
+        }
+      }
+    },
+    {
+      "name": "yougile_update_project",
+      "description": "Rename a project or change who works on it. Only the fields you pass change; in `users` and `departments` a value of `-` removes that employee or department. Returns the project id. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Project id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "title": {
+            "type": "string",
+            "description": "New project name."
+          },
+          "users": {
+            "type": "object",
+            "description": "Employee id to role (`admin`, `worker`, `observer`, a custom role id) or `-` to remove the employee from the project."
+          },
+          "departments": {
+            "type": "object",
+            "description": "Department id to an object with `manager` and `member` roles, or `-` to detach the department."
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "users": "$users",
+          "departments": "$departments"
+        }
+      }
+    },
+    {
+      "name": "yougile_list_boards",
+      "description": "List boards: id, title, projectId and stickers (which task stickers the board shows: deadline, assignee, timeTracking, timer, stopwatch, repeat and custom sticker ids). Filter by project. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "string",
+            "description": "Only boards of this project. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "title": {
+            "type": "string",
+            "description": "Only boards with this name."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "projectId": "$project_id",
+          "title": "$title",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_board",
+      "description": "Read one board by id: title, projectId and the stickers switched on for its tasks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/boards/{board_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_create_board",
+      "description": "Create a board in a project and return its id. A new board has no columns: add them with yougile_create_column. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Board name."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project the board belongs to. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "stickers": {
+            "type": "object",
+            "description": "Stickers shown on the tasks of the board: booleans `deadline`, `assignee`, `timeTracking`, `timer`, `stopwatch`, `repeat`, and `custom`, an object of custom sticker id to true, e.g. `{\"deadline\": true, \"assignee\": true, \"custom\": {\"<stickerId>\": true}}`."
+          }
+        },
+        "required": [
+          "title",
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/boards",
+        "bodyMapping": {
+          "title": "$title",
+          "projectId": "$project_id",
+          "stickers": "$stickers"
+        }
+      }
+    },
+    {
+      "name": "yougile_update_board",
+      "description": "Rename a board, move it to another project or change which stickers its tasks show. Only the fields you pass change. Returns the board id. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Board id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "title": {
+            "type": "string",
+            "description": "New board name."
+          },
+          "project_id": {
+            "type": "string",
+            "description": "Project to move the board to. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "stickers": {
+            "type": "object",
+            "description": "Stickers shown on the tasks: booleans `deadline`, `assignee`, `timeTracking`, `timer`, `stopwatch`, `repeat`, and `custom` (custom sticker id to true)."
+          }
+        },
+        "required": [
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/boards/{board_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "projectId": "$project_id",
+          "stickers": "$stickers"
+        }
+      }
+    },
+    {
+      "name": "yougile_list_columns",
+      "description": "List the columns of a board: id, title, color (1 to 16) and boardId. Tasks live in columns, so this is the step between a board and its tasks. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Only columns of this board. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "title": {
+            "type": "string",
+            "description": "Only columns with this name."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/columns",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "boardId": "$board_id",
+          "title": "$title",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_column",
+      "description": "Read one column by id: title, color and the board it belongs to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "column_id": {
+            "type": "string",
+            "description": "Column id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "column_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/columns/{column_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_create_column",
+      "description": "Create a column on a board and return its id. New columns are added after the existing ones. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Column name, e.g. To do."
+          },
+          "board_id": {
+            "type": "string",
+            "description": "Board the column belongs to. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "color": {
+            "type": "integer",
+            "description": "Column colour as a number from 1 to 16: 1 grey, 2 light red, 3 orange, 4 yellow, 5 green, 6 turquoise, 7 light blue, 8 violet, 9 dark grey, 10 red, 11 dark orange, 12 bright yellow, 13 bright green, 14 teal, 15 blue, 16 magenta.",
+            "minimum": 1,
+            "maximum": 16
+          }
+        },
+        "required": [
+          "title",
+          "board_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/columns",
+        "bodyMapping": {
+          "title": "$title",
+          "boardId": "$board_id",
+          "color": "$color"
+        }
+      }
+    },
+    {
+      "name": "yougile_update_column",
+      "description": "Rename a column, change its colour or move it to another board. Only the fields you pass change. Returns the column id. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "column_id": {
+            "type": "string",
+            "description": "Column id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "title": {
+            "type": "string",
+            "description": "New column name."
+          },
+          "color": {
+            "type": "integer",
+            "description": "Column colour as a number from 1 to 16: 1 grey, 2 light red, 3 orange, 4 yellow, 5 green, 6 turquoise, 7 light blue, 8 violet, 9 dark grey, 10 red, 11 dark orange, 12 bright yellow, 13 bright green, 14 teal, 15 blue, 16 magenta.",
+            "minimum": 1,
+            "maximum": 16
+          },
+          "board_id": {
+            "type": "string",
+            "description": "Board to move the column to. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "column_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/columns/{column_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "color": "$color",
+          "boardId": "$board_id"
+        }
+      }
+    },
+    {
+      "name": "yougile_list_tasks",
+      "description": "List tasks: id, title, columnId, description, completed, archived, assigned (employee ids), deadline (milliseconds), timeTracking, checklists, stickers, subtasks, timestamp (creation, milliseconds), idTaskProject and idTaskCommon (the short task numbers shown in YouGile). Filter by column, assignee, title or sticker state; without a filter every task the key owner can see is returned. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "column_id": {
+            "type": "string",
+            "description": "Only tasks in this column. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "assigned_to": {
+            "type": "string",
+            "description": "Only tasks assigned to these employees: one user id or several separated by commas."
+          },
+          "title": {
+            "type": "string",
+            "description": "Only tasks whose title contains this text."
+          },
+          "sticker_id": {
+            "type": "string",
+            "description": "Only tasks that carry this custom sticker. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "sticker_state_id": {
+            "type": "string",
+            "description": "Only tasks whose sticker is in this state (use together with sticker_id), e.g. one sprint."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/task-list",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "columnId": "$column_id",
+          "assignedTo": "$assigned_to",
+          "title": "$title",
+          "stickerId": "$sticker_id",
+          "stickerStateId": "$sticker_state_id",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_task",
+      "description": "Read one task by id with all its fields: title, description (HTML), columnId, completed and completedTimestamp, archived, assigned, createdBy, deadline, timeTracking, checklists, stickers, subtasks, color, idTaskProject and idTaskCommon. The task id is also the id of its chat for yougile_list_task_messages. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks/{task_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_create_task",
+      "description": "Create a task in a column and return its id. Without a column the task is created outside any board and only reachable by id, so always pass column_id for a visible task. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Task title."
+          },
+          "column_id": {
+            "type": "string",
+            "description": "Column the task is placed in. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "description": {
+            "type": "string",
+            "description": "Task description. HTML is allowed, e.g. `<p>Call the supplier</p>`."
+          },
+          "assigned": {
+            "type": "array",
+            "description": "Ids of the employees the task is assigned to. The list replaces the current assignees.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deadline": {
+            "type": "object",
+            "description": "Deadline sticker: `deadline` (due time, milliseconds since 1970), optional `startDate` (milliseconds) and `withTime` (true to show the time, false for the date only), e.g. `{\"deadline\": 1795000000000, \"withTime\": false}`. On an update, `{\"deleted\": true}` removes the deadline."
+          },
+          "time_tracking": {
+            "type": "object",
+            "description": "Time tracking sticker in hours: `plan` (planned) and `work` (spent), e.g. `{\"plan\": 5, \"work\": 3}`. On an update, `{\"deleted\": true}` removes it."
+          },
+          "checklists": {
+            "type": "array",
+            "description": "Checklists of the task. The list you send replaces all checklists, so read the task first and send the full list back with your change.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Checklist name."
+                },
+                "items": {
+                  "type": "array",
+                  "description": "Entries of the checklist.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "description": "Entry text."
+                      },
+                      "isCompleted": {
+                        "type": "boolean",
+                        "description": "true when the entry is ticked."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stickers": {
+            "type": "object",
+            "description": "Custom stickers on the task: sticker id to the id of one of its states (state stickers, sprint stickers) or `-` to remove the sticker, e.g. `{\"fbc30a9b-42d0-4cf7-80c0-31fb048346f9\": \"0baced9640b2\"}`. Get ids from yougile_list_string_stickers and yougile_list_sprint_stickers."
+          },
+          "subtasks": {
+            "type": "array",
+            "description": "Ids of the tasks that are subtasks of this one. The list replaces the current subtasks.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "color": {
+            "type": "string",
+            "description": "Colour of the task card.",
+            "enum": [
+              "task-primary",
+              "task-gray",
+              "task-red",
+              "task-pink",
+              "task-yellow",
+              "task-green",
+              "task-turquoise",
+              "task-blue",
+              "task-violet"
+            ]
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "true to create the task as already done. Default false."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true to create the task in the archive. Default false."
+          }
+        },
+        "required": [
+          "title"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/tasks",
+        "bodyMapping": {
+          "title": "$title",
+          "columnId": "$column_id",
+          "description": "$description",
+          "assigned": "$assigned",
+          "deadline": "$deadline",
+          "timeTracking": "$time_tracking",
+          "checklists": "$checklists",
+          "stickers": "$stickers",
+          "subtasks": "$subtasks",
+          "color": "$color",
+          "completed": "$completed",
+          "archived": "$archived"
+        }
+      }
+    },
+    {
+      "name": "yougile_update_task",
+      "description": "Change a task: title, description, assignees, deadline, time tracking, checklists, stickers, subtasks, colour, done or archived. Only the fields you pass change, but list fields (assigned, checklists, subtasks) are replaced whole. To move a task use yougile_move_task. Returns the task id. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "title": {
+            "type": "string",
+            "description": "New title."
+          },
+          "description": {
+            "type": "string",
+            "description": "New description. HTML is allowed."
+          },
+          "assigned": {
+            "type": "array",
+            "description": "Ids of the employees the task is assigned to. The list replaces the current assignees.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "deadline": {
+            "type": "object",
+            "description": "Deadline sticker: `deadline` (due time, milliseconds since 1970), optional `startDate` (milliseconds) and `withTime` (true to show the time, false for the date only), e.g. `{\"deadline\": 1795000000000, \"withTime\": false}`. On an update, `{\"deleted\": true}` removes the deadline."
+          },
+          "time_tracking": {
+            "type": "object",
+            "description": "Time tracking sticker in hours: `plan` (planned) and `work` (spent), e.g. `{\"plan\": 5, \"work\": 3}`. On an update, `{\"deleted\": true}` removes it."
+          },
+          "checklists": {
+            "type": "array",
+            "description": "Checklists of the task. The list you send replaces all checklists, so read the task first and send the full list back with your change.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "title": {
+                  "type": "string",
+                  "description": "Checklist name."
+                },
+                "items": {
+                  "type": "array",
+                  "description": "Entries of the checklist.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "title": {
+                        "type": "string",
+                        "description": "Entry text."
+                      },
+                      "isCompleted": {
+                        "type": "boolean",
+                        "description": "true when the entry is ticked."
+                      }
+                    }
+                  }
+                }
+              }
+            }
+          },
+          "stickers": {
+            "type": "object",
+            "description": "Custom stickers on the task: sticker id to the id of one of its states (state stickers, sprint stickers) or `-` to remove the sticker, e.g. `{\"fbc30a9b-42d0-4cf7-80c0-31fb048346f9\": \"0baced9640b2\"}`. Get ids from yougile_list_string_stickers and yougile_list_sprint_stickers."
+          },
+          "subtasks": {
+            "type": "array",
+            "description": "Ids of the tasks that are subtasks of this one. The list replaces the current subtasks.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "color": {
+            "type": "string",
+            "description": "Colour of the task card.",
+            "enum": [
+              "task-primary",
+              "task-gray",
+              "task-red",
+              "task-pink",
+              "task-yellow",
+              "task-green",
+              "task-turquoise",
+              "task-blue",
+              "task-violet"
+            ]
+          },
+          "completed": {
+            "type": "boolean",
+            "description": "true marks the task as done, false reopens it."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true moves the task to the archive, false brings it back."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{task_id}",
+        "bodyMapping": {
+          "title": "$title",
+          "description": "$description",
+          "assigned": "$assigned",
+          "deadline": "$deadline",
+          "timeTracking": "$time_tracking",
+          "checklists": "$checklists",
+          "stickers": "$stickers",
+          "subtasks": "$subtasks",
+          "color": "$color",
+          "completed": "$completed",
+          "archived": "$archived"
+        }
+      }
+    },
+    {
+      "name": "yougile_move_task",
+      "description": "Move a task to another column, on the same board or on another one. This is how a task changes its stage (To do, In progress, Done). Returns the task id. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "column_id": {
+            "type": "string",
+            "description": "Column to move the task to. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "task_id",
+          "column_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{task_id}",
+        "bodyMapping": {
+          "columnId": "$column_id"
+        }
+      }
+    },
+    {
+      "name": "yougile_delete_task",
+      "description": "Mark a task as deleted. It disappears from its board for everyone; it can still be read with include_deleted. Installed switched off: archive a finished task with yougile_update_task instead. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "task_id": {
+            "type": "string",
+            "description": "Task id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "task_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/tasks/{task_id}",
+        "bodyMapping": {
+          "deleted": true
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "yougile_list_task_messages",
+      "description": "Read the chat of a task or of a group chat: per message id (also its creation time in milliseconds), fromUserId, text, textHtml, label, editTimestamp and reactions. The chat id of a task is the task id. Filter by author, text or time. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the task id for a task chat, or a group chat id from yougile_list_group_chats."
+          },
+          "from_user_id": {
+            "type": "string",
+            "description": "Only messages written by this employee. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "text": {
+            "type": "string",
+            "description": "Only messages that contain this text."
+          },
+          "since": {
+            "type": "integer",
+            "description": "Only messages created after this time, in milliseconds since 1970.",
+            "minimum": 0
+          },
+          "include_system": {
+            "type": "boolean",
+            "description": "true: also return system messages (task moved, assignee changed). Default false."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        },
+        "required": [
+          "chat_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/chats/{chat_id}/messages",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "fromUserId": "$from_user_id",
+          "text": "$text",
+          "since": "$since",
+          "includeSystem": "$include_system",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_send_task_message",
+      "description": "Write a message into the chat of a task (or a group chat) as the key owner. Everyone subscribed to the chat is notified. Returns the message id. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chat_id": {
+            "type": "string",
+            "description": "Chat id: the task id for a task chat, or a group chat id."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message as plain text."
+          },
+          "text_html": {
+            "type": "string",
+            "description": "The same message as HTML, e.g. the text wrapped in `<p>` and `</p>`. The API expects both versions."
+          },
+          "label": {
+            "type": "string",
+            "description": "Quick link label of the message. The API documents it as required: if a call without it is refused, send a short word such as Note."
+          }
+        },
+        "required": [
+          "chat_id",
+          "text",
+          "text_html"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chats/{chat_id}/messages",
+        "bodyMapping": {
+          "text": "$text",
+          "textHtml": "$text_html",
+          "label": "$label"
+        }
+      }
+    },
+    {
+      "name": "yougile_list_group_chats",
+      "description": "List the group chats of the company: id, title, users (employee id mapped to notification setting) and userRoleMap. The id is the chat id for yougile_list_task_messages and yougile_send_task_message. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Only chats with this name."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/group-chats",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "title": "$title",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_list_string_stickers",
+      "description": "List the custom stickers with a set of states (priority, type, status and the like): id, name, icon and states with id, name and colour. A task stores them as sticker id to state id. Filter by board. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Only stickers switched on for this board. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only stickers with this name."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/string-stickers",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "boardId": "$board_id",
+          "name": "$name",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_string_sticker",
+      "description": "Read one state sticker by id: name, icon and its states (id, name, color). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sticker_id": {
+            "type": "string",
+            "description": "Sticker id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "sticker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/string-stickers/{sticker_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_create_string_sticker",
+      "description": "Create a custom sticker with a set of states, e.g. Priority with High and Low, and return its id. Switch it on for a board with yougile_update_board before tasks can carry it. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Sticker name, e.g. Priority."
+          },
+          "icon": {
+            "type": "string",
+            "description": "Icon of the sticker.",
+            "enum": [
+              "star",
+              "heart",
+              "check",
+              "cloud",
+              "filter",
+              "alarm",
+              "bolt",
+              "bookmark",
+              "box",
+              "bulb",
+              "prio",
+              "code",
+              "ruble",
+              "dollar",
+              "euro",
+              "eye",
+              "flag",
+              "flame",
+              "history",
+              "info",
+              "key",
+              "anchor",
+              "message",
+              "movie",
+              "mnote",
+              "pencil",
+              "picture",
+              "pin",
+              "clockwise",
+              "clockwiseDot",
+              "rectangle",
+              "shield",
+              "stack",
+              "string",
+              "timeStop",
+              "design",
+              "user",
+              "plus",
+              "gear",
+              "sort",
+              "calendar"
+            ]
+          },
+          "states": {
+            "type": "array",
+            "description": "States of the sticker.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "State name, e.g. High."
+                },
+                "color": {
+                  "type": "string",
+                  "description": "State colour as a hex code, e.g. `#FF0000`."
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/string-stickers",
+        "bodyMapping": {
+          "name": "$name",
+          "icon": "$icon",
+          "states": "$states"
+        }
+      }
+    },
+    {
+      "name": "yougile_list_sprint_stickers",
+      "description": "List the sprint stickers: id, name and states, where each state is one sprint with id, name, begin and end (seconds since 1970; a state without dates is the backlog). Use the state id with yougile_list_tasks to get the tasks of a sprint. Answer: `paging` and `content`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "board_id": {
+            "type": "string",
+            "description": "Only sprint stickers switched on for this board. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          },
+          "name": {
+            "type": "string",
+            "description": "Only stickers with this name."
+          },
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Index of the first row of the page, starting at 0. Add `limit` for the next page while `paging.next` is true.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sprint-stickers",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "boardId": "$board_id",
+          "name": "$name",
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_get_sprint_sticker",
+      "description": "Read one sprint sticker by id: name and its sprints (id, name, begin and end in seconds since 1970). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sticker_id": {
+            "type": "string",
+            "description": "Sprint sticker id. UUID as returned by the API, e.g. `4f6f0391-0f94-4d30-9b0e-99430a36d4fb`."
+          }
+        },
+        "required": [
+          "sticker_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sprint-stickers/{sticker_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yougile_create_sprint_sticker",
+      "description": "Create a sprint sticker with its sprints and return its id. Switch it on for a board with yougile_update_board before tasks can be put into a sprint. Writes to YouGile.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Sticker name, e.g. Sprints."
+          },
+          "states": {
+            "type": "array",
+            "description": "Sprints of the sticker.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "name": {
+                  "type": "string",
+                  "description": "Sprint name, e.g. Sprint 1 or Backlog."
+                },
+                "begin": {
+                  "type": "integer",
+                  "description": "Start of the sprint, seconds since 1970."
+                },
+                "end": {
+                  "type": "integer",
+                  "description": "End of the sprint, seconds since 1970."
+                }
+              },
+              "required": [
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sprint-stickers",
+        "bodyMapping": {
+          "name": "$name",
+          "states": "$states"
+        }
+      }
+    },
+    {
+      "name": "yougile_list_webhooks",
+      "description": "List the webhook subscriptions of the company: id, url, event (such as task-created, or a pattern like `task-*`), disabled, lastSuccess and failuresSinceLastSuccess. Use it to see which integrations listen to YouGile events and whether their calls fail. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_deleted": {
+            "type": "boolean",
+            "description": "true: also return objects marked as deleted. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks",
+        "queryParams": {
+          "includeDeleted": "$include_deleted"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,1310 @@
+{
+  "slug": "moodle",
+  "name": "Moodle",
+  "aliases": [
+    "Moodle LMS",
+    "MoodleCloud",
+    "Moodle Workplace"
+  ],
+  "description": "Moodle learning platform over its Web Services REST protocol: courses and course content, participants, users, grades, activity completion, assignments and submissions, quizzes, calendar and deadlines, forums and messages. Site URL and web service token.",
+  "instructions": "## Moodle\nThis connector calls the **Moodle Web Services REST protocol** of your own Moodle site (`<site>/webservice/rest/server.php`, JSON answers): courses and their content, participants, users, grades, activity completion, assignments and submissions, quizzes, the calendar, forums and private messages. It works with Moodle 4 and 5, self-hosted or MoodleCloud; the site must be reachable over HTTPS from the AnythingMCP server (on AnythingMCP Cloud: from the internet).\n\n**Setup by a Moodle administrator (about 10 minutes)**\n1. **Site administration, General, Advanced features**: tick **Enable web services** and save.\n2. **Site administration, Server, Web services, Manage protocols**: enable the **REST protocol**.\n3. **Web services, External services**: add a service (enabled), then **Add functions** and add the functions named in the list below. The built-in **Moodle mobile web service** already contains all of them except `core_user_get_users`, and can be used instead when **Mobile app, Mobile settings, Enable web services for mobile devices** is on.\n4. Choose the user the connector acts as, ideally a dedicated account. Its role needs the capability **Use REST protocol** (`webservice/rest:use`) and the rights for what you want to read: a teacher or manager role for participants, grades of others and submissions.\n5. **Web services, Manage tokens, Create token**: pick that user and the service, save and copy the token into `MOODLE_TOKEN`.\n6. Put the address of the site into `MOODLE_URL`, without a slash at the end, e.g. `https://moodle.myschool.org`.\n\nA user without administrator rights can use their own token of the mobile service, shown under **Preferences, Security keys** when the site allows it. The connector then sees exactly what that user sees.\n\n**Where to start**: `moodle_get_site_info` checks the token and returns `userid`. Then `moodle_list_my_courses` (or `moodle_list_user_courses`) for the course ids everything else needs.\n\n**Courses**: `moodle_list_my_courses`, `moodle_list_user_courses`, `moodle_search_courses`, `moodle_get_courses_by_field`, `moodle_list_courses` (all courses, manager token), `moodle_list_categories` and `moodle_get_course_contents` for sections, activities and files.\n\n**People**: `moodle_list_enrolled_users` (participants of a course), `moodle_get_users_by_field` (exact lookup by id, username, email, idnumber), `moodle_search_users` (custom service only).\n\n**Progress**: `moodle_get_grade_items` (grade report of a course), `moodle_get_course_grades_overview` (final grades across courses), `moodle_get_completion_status` (activity completion).\n\n**Activities**: `moodle_list_assignments`, `moodle_list_assignment_submissions`, `moodle_list_quizzes`. **Calendar**: `moodle_list_calendar_events`, `moodle_list_upcoming_deadlines`. **Forums**: `moodle_list_forums`, `moodle_list_forum_discussions`, `moodle_get_discussion_posts`. **Messages**: `moodle_list_conversations` and `moodle_send_message`, the only tool that writes.\n\n**Functions behind the tools** (add these to a custom service): core_webservice_get_site_info, core_course_get_enrolled_courses_by_timeline_classification, core_enrol_get_users_courses, core_course_get_courses, core_course_get_courses_by_field, core_course_search_courses, core_course_get_contents, core_course_get_categories, core_enrol_get_enrolled_users, core_user_get_users_by_field, core_user_get_users, gradereport_user_get_grade_items, gradereport_overview_get_course_grades, core_completion_get_activities_completion_status, mod_assign_get_assignments, mod_assign_get_submissions, mod_quiz_get_quizzes_by_courses, core_calendar_get_calendar_events, core_calendar_get_action_events_by_timesort, mod_forum_get_forums_by_courses, mod_forum_get_forum_discussions, mod_forum_get_discussion_posts, core_message_get_conversations, core_message_send_instant_messages.\n\n**Errors come with HTTP 200**: Moodle answers a failed call with status 200 and a body holding `exception`, `errorcode` and `message`. The connector turns that into a failed call. Common codes: `invalidtoken` (token wrong, expired or deleted), `accessexception` (the function is not in the service of the token, or web services are off), `nopermissions` (the user lacks a capability, named in the message), `invalidparameter` (a value has the wrong type) and `invalidrecord` (no such id). Many tools also return `warnings` next to the data when single items were skipped: read them.\n\n**Ids**: Moodle has three ids per activity. `cmid` (course module id) is the one in page addresses and in `moodle_get_course_contents`; `instance` (or `id` in the assignment, quiz and forum lists) is what the activity tools take. User, course and group ids are plain numbers.\n\n**Values**: times are Unix seconds (0 means not set). Flags are numbers: 1 for yes, 0 for no; Moodle refuses the words true and false. Texts such as `summary`, `intro` and `message` are HTML.\n\n**Permissions**: every call runs as the user of the token. A student token reads its own courses, grades and deadlines; lists of participants, grades of others and submissions need a teacher or manager. There is no documented rate limit; the site's own capacity is the limit, so prefer one call with several course ids over one call per course.",
+  "region": "intl",
+  "category": "education",
+  "icon": "moodle",
+  "docsUrl": "https://docs.moodle.org/en/Using_web_services",
+  "prerequisites": "A Moodle site (4.0 or newer) reachable over HTTPS, with web services and the REST protocol enabled by an administrator, and a web service token for the user the connector acts as. About 10 minutes for an administrator.",
+  "requiredEnvVars": [
+    "MOODLE_URL",
+    "MOODLE_TOKEN"
+  ],
+  "envVarMeta": {
+    "MOODLE_URL": {
+      "label": "Moodle site address",
+      "kind": "address",
+      "help": "The address you open Moodle at, with https:// and without a slash at the end, e.g. https://moodle.myschool.org. Include the folder when Moodle lives in one (https://myschool.org/moodle).",
+      "example": "https://moodle.myschool.org",
+      "pattern": "^https?://[^\\s/?#]+(/[^\\s?#]*[^\\s/?#])?$",
+      "patternMessage": "Enter the full address starting with https://, without a slash at the end and without /webservice or /login."
+    },
+    "MOODLE_TOKEN": {
+      "label": "Web service token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Site administration, Server, Web services, Manage tokens: create a token for the user and service. Users can find their own under Preferences, Security keys.",
+      "link": "https://docs.moodle.org/en/Using_web_services",
+      "pattern": "^[A-Za-z0-9]{20,128}$",
+      "patternMessage": "Paste the token only: letters and digits, usually 32 characters."
+    }
+  },
+  "verifyHints": {
+    "401": {
+      "hint": "Moodle did not accept the token: it is wrong, expired or was deleted. Create a new one under Site administration, Server, Web services, Manage tokens.",
+      "field": "MOODLE_TOKEN"
+    },
+    "403": "Moodle refused the call. Either the function is not part of the service the token was created for (add it under External services, or use the Moodle mobile web service), web services or the REST protocol are switched off, or the user lacks the capability named in the message.",
+    "404": {
+      "hint": "Nothing answers at this address plus /webservice/rest/server.php, or the id does not exist. Check the site address: no slash at the end, and include the folder if Moodle lives in one.",
+      "field": "MOODLE_URL"
+    },
+    "unreachable": {
+      "hint": "The Moodle site could not be reached from the server. It must be reachable over the internet with a valid HTTPS certificate.",
+      "field": "MOODLE_URL"
+    },
+    "rate_limited": "The Moodle site or a proxy in front of it is throttling requests. Wait a moment and ask for several course ids in one call."
+  },
+  "probe": {
+    "tool": "moodle_get_site_info",
+    "params": {}
+  },
+  "connector": {
+    "name": "Moodle Web Services",
+    "type": "REST",
+    "baseUrl": "{{MOODLE_URL}}",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "wstoken": "{{MOODLE_TOKEN}}",
+      "moodlewsrestformat": "json"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "errorcode",
+          "in": [
+            "invalidtoken",
+            "invalidlogin"
+          ],
+          "messagePath": "message",
+          "status": 401
+        },
+        {
+          "path": "errorcode",
+          "in": [
+            "accessexception",
+            "nopermissions",
+            "enablewsdescription",
+            "servicenotavailable",
+            "requireloginerror",
+            "sitemaintenance"
+          ],
+          "messagePath": [
+            "message",
+            "debuginfo"
+          ],
+          "status": 403
+        },
+        {
+          "path": "errorcode",
+          "in": [
+            "invalidrecord",
+            "invalidrecordunknown"
+          ],
+          "messagePath": [
+            "message",
+            "debuginfo"
+          ],
+          "status": 404
+        },
+        {
+          "path": "exception",
+          "messagePath": [
+            "message",
+            "debuginfo"
+          ],
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "moodle_get_site_info",
+      "description": "Read the site and the user the token belongs to: sitename, siteurl, release (Moodle version), userid, username, fullname, lang and whether the user is a site administrator. Call it first: `userid` is needed by the tools that ask for a user id. The long list of functions is left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_webservice_get_site_info"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "exclude": [
+            "functions",
+            "advancedfeatures",
+            "userprivateaccesskey"
+          ]
+        }
+      }
+    },
+    {
+      "name": "moodle_list_my_courses",
+      "description": "List the courses of the token user as on the Moodle dashboard: id, fullname, shortname, summary, startdate, enddate (Unix seconds), progress in percent, coursecategory and viewurl. Answer: `courses` and `nextoffset` for the next page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "classification": {
+            "type": "string",
+            "description": "Which courses: all, inprogress, future, past, favourites or hidden.",
+            "enum": [
+              "all",
+              "inprogress",
+              "future",
+              "past",
+              "favourites",
+              "hidden"
+            ],
+            "default": "all"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Courses per page. 0 returns all.",
+            "minimum": 0,
+            "default": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of courses to skip. Pass `nextoffset` of the previous page.",
+            "minimum": 0,
+            "default": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order, e.g. `fullname` or `ul.timeaccess desc` (last accessed first)."
+          },
+          "search": {
+            "type": "string",
+            "description": "Only courses whose name contains this text."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_course_get_enrolled_courses_by_timeline_classification",
+          "classification": "$classification",
+          "limit": "$limit",
+          "offset": "$offset",
+          "sort": "$sort",
+          "searchvalue": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_user_courses",
+      "description": "List the courses a user is enrolled in: id, shortname, fullname, category, startdate, enddate, lastaccess (Unix seconds), progress in percent, completed and visible. For another user than the token user the token needs the right to see that profile. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Numeric user id (the `userid` of moodle_get_site_info for the token user).",
+            "minimum": 1
+          },
+          "return_user_count": {
+            "type": "integer",
+            "description": "Also count the enrolled users of each course (`enrolledusercount`); slower on large sites. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_enrol_get_users_courses",
+          "userid": "$user_id",
+          "returnusercount": "$return_user_count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_courses",
+      "description": "Read courses by id with their settings: id, shortname, fullname, categoryid, summary, format, startdate, enddate, visible, numsections, enablecompletion and timecreated. Without ids every course of the site is returned, which needs the right to see courses without being enrolled (a manager or administrator token). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_ids": {
+            "type": "array",
+            "description": "Numeric ids of the courses to read. Leave out for all courses of the site.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_course_get_courses",
+          "options": {
+            "ids": "$course_ids"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_get_courses_by_field",
+      "description": "Find courses by one field and read what the token user may see of them: id, fullname, shortname, categoryid, categoryname, summary, startdate, enddate, visible, contacts (teachers) and enrollmentmethods. Works for courses the user is not enrolled in. Answer: `courses` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Field to match: id, ids (several ids separated by commas), shortname, idnumber, category (category id) or sectionid.",
+            "enum": [
+              "id",
+              "ids",
+              "shortname",
+              "idnumber",
+              "category",
+              "sectionid"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "description": "Value of that field, e.g. `59` for id or `59,72` for ids."
+          }
+        },
+        "required": [
+          "field",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_course_get_courses_by_field",
+          "field": "$field",
+          "value": "$value"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_search_courses",
+      "description": "Search the course catalogue by text: per course id, fullname, shortname, categoryid, categoryname, summary, contacts (teachers) and enrollmentmethods. Answer: `total`, `courses` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Text to search for in course names and summaries."
+          },
+          "search_by": {
+            "type": "string",
+            "description": "What `query` is: search (text, default), modulelist (courses using an activity type, e.g. quiz), blocklist (a block id) or tagid (a tag id).",
+            "enum": [
+              "search",
+              "modulelist",
+              "blocklist",
+              "tagid"
+            ],
+            "default": "search"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Courses per page.",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 20
+          },
+          "limit_to_enrolled": {
+            "type": "integer",
+            "description": "Only courses the token user is enrolled in. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_course_search_courses",
+          "criterianame": "$search_by",
+          "criteriavalue": "$query",
+          "page": "$page",
+          "perpage": "$per_page",
+          "limittoenrolled": "$limit_to_enrolled"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_get_course_contents",
+      "description": "Read the content of a course: its sections (id, name, summary, section number, visible) and in each the activities and resources as `modules` (id, name, modname such as assign, quiz, forum or resource, instance, url, visible, completion, dates and, unless excluded, `contents` with file names and file URLs). The module `id` is the course module id (cmid); `instance` is the id the activity tools use. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_id": {
+            "type": "integer",
+            "description": "Numeric course id (from moodle_list_my_courses, moodle_list_user_courses or moodle_search_courses).",
+            "minimum": 1
+          },
+          "exclude_modules": {
+            "type": "integer",
+            "description": "Return only the sections, without their activities. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          },
+          "exclude_contents": {
+            "type": "integer",
+            "description": "Leave out the file lists of the activities; much smaller answer. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          },
+          "filter_name": {
+            "type": "string",
+            "description": "Optional filter: sectionnumber (one section by its number), sectionid, cmid (one activity by course module id), modname (one activity type, e.g. quiz) or modid (instance id, together with modname).",
+            "enum": [
+              "sectionnumber",
+              "sectionid",
+              "cmid",
+              "modname",
+              "modid"
+            ]
+          },
+          "filter_value": {
+            "type": "string",
+            "description": "Value for `filter_name`, e.g. `1` or `quiz`."
+          }
+        },
+        "required": [
+          "course_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_course_get_contents",
+          "courseid": "$course_id",
+          "options": [
+            {
+              "name": "excludemodules",
+              "value": "$exclude_modules"
+            },
+            {
+              "name": "excludecontents",
+              "value": "$exclude_contents"
+            },
+            {
+              "name": "$filter_name",
+              "value": "$filter_value"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_categories",
+      "description": "List course categories: id, name, description, parent (0 at the top level), coursecount, depth and path. Without a filter every category the user can see is returned. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter_key": {
+            "type": "string",
+            "description": "Optional filter field: id, ids (several ids separated by commas), name, parent (id of the category above, 0 for the top level), idnumber or visible.",
+            "enum": [
+              "id",
+              "ids",
+              "name",
+              "parent",
+              "idnumber",
+              "visible"
+            ]
+          },
+          "filter_value": {
+            "type": "string",
+            "description": "Value for `filter_key`, e.g. `0` for parent."
+          },
+          "add_subcategories": {
+            "type": "integer",
+            "description": "Also return the categories below the matching ones. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_course_get_categories",
+          "criteria": [
+            {
+              "key": "$filter_key",
+              "value": "$filter_value"
+            }
+          ],
+          "addsubcategories": "$add_subcategories"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_enrolled_users",
+      "description": "List the participants of a course: id, username, fullname, email, idnumber, department, lastaccess and lastcourseaccess (Unix seconds), roles (student, teacher and so on) and groups. The token user needs the right to see the participants of that course. Read-only, 100 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_id": {
+            "type": "integer",
+            "description": "Numeric course id (from moodle_list_my_courses, moodle_list_user_courses or moodle_search_courses).",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Participants per page.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of participants to skip.",
+            "minimum": 0,
+            "default": 0
+          },
+          "only_active": {
+            "type": "integer",
+            "description": "Only users whose enrolment is active (not suspended or expired). 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          },
+          "group_id": {
+            "type": "integer",
+            "description": "Only members of this group. 0 means all groups.",
+            "minimum": 0,
+            "default": 0
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "id",
+              "firstname",
+              "lastname",
+              "siteorder"
+            ],
+            "default": "lastname"
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "ASC or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "ASC"
+          },
+          "user_fields": {
+            "type": "string",
+            "description": "Fields to return per user, separated by commas. Others include firstname, lastname, city, country, institution, firstaccess, profileimageurl, customfields and enrolledcourses.",
+            "default": "id,username,fullname,email,idnumber,department,lastaccess,lastcourseaccess,roles,groups"
+          }
+        },
+        "required": [
+          "course_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_enrol_get_enrolled_users",
+          "courseid": "$course_id",
+          "options": [
+            {
+              "name": "limitnumber",
+              "value": "$limit"
+            },
+            {
+              "name": "limitfrom",
+              "value": "$offset"
+            },
+            {
+              "name": "onlyactive",
+              "value": "$only_active"
+            },
+            {
+              "name": "groupid",
+              "value": "$group_id"
+            },
+            {
+              "name": "sortby",
+              "value": "$sort_by"
+            },
+            {
+              "name": "sortdirection",
+              "value": "$sort_direction"
+            },
+            {
+              "name": "userfields",
+              "value": "$user_fields"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_get_users_by_field",
+      "description": "Look up users by id, username, email or idnumber (exact values): id, username, firstname, lastname, fullname, email, department, idnumber, firstaccess, lastaccess, suspended, city, country and custom profile fields. Users the token may not see are left out without an error. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "field": {
+            "type": "string",
+            "description": "Field to match.",
+            "enum": [
+              "id",
+              "idnumber",
+              "username",
+              "email"
+            ]
+          },
+          "values": {
+            "type": "array",
+            "description": "Values of that field, one per user, e.g. `[\"anna@school.org\", \"ben@school.org\"]`.",
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "field",
+          "values"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_user_get_users_by_field",
+          "field": "$field",
+          "values[]": "$values"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_search_users",
+      "description": "Search the users of the site by one field: id, username, firstname, lastname, fullname, email, idnumber, department, lastaccess and suspended. Needs a token of a custom service that includes this function and a user allowed to view user details; the Moodle mobile service does not include it. Answer: `users` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "key": {
+            "type": "string",
+            "description": "Field to search.",
+            "enum": [
+              "id",
+              "lastname",
+              "firstname",
+              "idnumber",
+              "username",
+              "email",
+              "auth"
+            ]
+          },
+          "value": {
+            "type": "string",
+            "description": "Value to match, without regard to case. In firstname, lastname and email `%` works as a wildcard, e.g. `%mueller%`."
+          }
+        },
+        "required": [
+          "key",
+          "value"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_user_get_users",
+          "criteria": [
+            {
+              "key": "$key",
+              "value": "$value"
+            }
+          ]
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_get_grade_items",
+      "description": "Read the grade report of a course: per user `gradeitems` with itemname, itemtype (mod, category, course), itemmodule, graderaw, gradeformatted, grademin, grademax, percentageformatted, feedback and gradedategraded. A student token reads its own grades; grades of other users or of all users (user_id left out) need a teacher or manager token. Answer: `usergrades` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_id": {
+            "type": "integer",
+            "description": "Numeric course id (from moodle_list_my_courses, moodle_list_user_courses or moodle_search_courses).",
+            "minimum": 1
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Numeric user id. Leave out for every user of the course.",
+            "minimum": 1
+          },
+          "group_id": {
+            "type": "integer",
+            "description": "Only users of this group. Leave out for all groups.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "course_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "gradereport_user_get_grade_items",
+          "courseid": "$course_id",
+          "userid": "$user_id",
+          "groupid": "$group_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_get_course_grades_overview",
+      "description": "Read the final grade of a user in every course they are enrolled in: courseid, grade (as displayed) and rawgrade. Use moodle_list_user_courses for the course names. Answer: `grades` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Numeric user id. Leave out for the token user.",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "gradereport_overview_get_course_grades",
+          "userid": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_get_completion_status",
+      "description": "Read which activities of a course a user has completed: per activity cmid, modname, instance, state (0 not completed, 1 completed, 2 completed and passed, 3 completed and failed), timecompleted, tracking (0 none, 1 manual, 2 automatic) and details of the conditions. Answer: `statuses` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_id": {
+            "type": "integer",
+            "description": "Numeric course id (from moodle_list_my_courses, moodle_list_user_courses or moodle_search_courses).",
+            "minimum": 1
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Numeric user id (the `userid` of moodle_get_site_info for the token user).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "course_id",
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_completion_get_activities_completion_status",
+          "courseid": "$course_id",
+          "userid": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_assignments",
+      "description": "List the assignments of courses: per course `assignments` with id, cmid, name, intro, duedate, allowsubmissionsfromdate, cutoffdate, gradingduedate (Unix seconds, 0 when not set), grade (maximum points), nosubmissions and maxattempts. Without course ids the courses of the token user are used. Answer: `courses` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_ids": {
+            "type": "array",
+            "description": "Numeric course ids.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "include_not_enrolled_courses": {
+            "type": "integer",
+            "description": "Also return courses the user can see but is not enrolled in. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "mod_assign_get_assignments",
+          "courseids[]": "$course_ids",
+          "includenotenrolledcourses": "$include_not_enrolled_courses"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_assignment_submissions",
+      "description": "List the submissions of assignments: per assignment `submissions` with id, userid, attemptnumber, status (new, draft, submitted, reopened), timecreated, timemodified, gradingstatus and `plugins` with the submitted text and files. Needs the right to grade or view submissions (a teacher token); otherwise a warning comes back instead of data. Answer: `assignments` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "assignment_ids": {
+            "type": "array",
+            "description": "Assignment ids (the `id` of moodle_list_assignments, not the cmid).",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "status": {
+            "type": "string",
+            "description": "Only submissions with this status.",
+            "enum": [
+              "new",
+              "draft",
+              "submitted",
+              "reopened"
+            ]
+          },
+          "since": {
+            "type": "integer",
+            "description": "Only submissions modified after this time. Unix time in seconds, e.g. 1795000000.",
+            "minimum": 0
+          },
+          "before": {
+            "type": "integer",
+            "description": "Only submissions modified before this time. Unix time in seconds, e.g. 1795000000.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "assignment_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "mod_assign_get_submissions",
+          "assignmentids[]": "$assignment_ids",
+          "status": "$status",
+          "since": "$since",
+          "before": "$before"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_quizzes",
+      "description": "List the quizzes of courses: id, coursemodule, course, name, intro, timeopen, timeclose (Unix seconds, 0 when not set), timelimit in seconds, attempts allowed (0 unlimited), grademethod, sumgrades and grade. Without course ids the courses of the token user are used. Answer: `quizzes` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_ids": {
+            "type": "array",
+            "description": "Numeric course ids.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "mod_quiz_get_quizzes_by_courses",
+          "courseids[]": "$course_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_calendar_events",
+      "description": "List calendar events: id, name, description, courseid, groupid, userid, modulename, instance, eventtype (user, course, group, site, due, open, close and others), timestart (Unix seconds), timeduration in seconds and visible. Filter by courses, groups or event ids and by a time window. Answer: `events` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_ids": {
+            "type": "array",
+            "description": "Numeric course ids.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "group_ids": {
+            "type": "array",
+            "description": "Numeric group ids.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "event_ids": {
+            "type": "array",
+            "description": "Numeric event ids, to read specific events.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          },
+          "time_start": {
+            "type": "integer",
+            "description": "Only events that start after this time. Unix time in seconds, e.g. 1795000000.",
+            "minimum": 0
+          },
+          "time_end": {
+            "type": "integer",
+            "description": "Only events that start before this time. Unix time in seconds, e.g. 1795000000.",
+            "minimum": 0
+          },
+          "user_events": {
+            "type": "integer",
+            "description": "Include the personal events of the token user. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          },
+          "site_events": {
+            "type": "integer",
+            "description": "Include site-wide events. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          },
+          "ignore_hidden": {
+            "type": "integer",
+            "description": "Leave out hidden events. 1 = yes, 0 = no.",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_calendar_get_calendar_events",
+          "events": {
+            "eventids": "$event_ids",
+            "courseids": "$course_ids",
+            "groupids": "$group_ids"
+          },
+          "options": {
+            "userevents": "$user_events",
+            "siteevents": "$site_events",
+            "timestart": "$time_start",
+            "timeend": "$time_end",
+            "ignorehidden": "$ignore_hidden"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_upcoming_deadlines",
+      "description": "List what the token user has to do next, as on the Moodle timeline: events with an action such as an assignment to submit or a quiz to attempt, sorted by time. Per event id, name, activityname, modulename, instance, timestart, timesort (Unix seconds), overdue, course (id, fullname), url and action (name, url, actionable). Answer: `events`, `firstid` and `lastid`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "time_from": {
+            "type": "integer",
+            "description": "Only events due at or after this time. Unix time in seconds, e.g. 1795000000. Use the current time for upcoming work.",
+            "minimum": 0
+          },
+          "time_to": {
+            "type": "integer",
+            "description": "Only events due at or before this time. Unix time in seconds, e.g. 1795000000.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of events, at most 50.",
+            "minimum": 1,
+            "maximum": 50,
+            "default": 20
+          },
+          "after_event_id": {
+            "type": "integer",
+            "description": "For the next page: `lastid` of the previous answer.",
+            "minimum": 1
+          },
+          "search": {
+            "type": "string",
+            "description": "Only events whose name or course contains this text."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_calendar_get_action_events_by_timesort",
+          "timesortfrom": "$time_from",
+          "timesortto": "$time_to",
+          "limitnum": "$limit",
+          "aftereventid": "$after_event_id",
+          "searchvalue": "$search"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_forums",
+      "description": "List the forums of courses: id, course, name, intro, type (news, general, qanda, single and others), cmid, numdiscussions, cancreatediscussions and timemodified. Without course ids the courses of the token user are used. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "course_ids": {
+            "type": "array",
+            "description": "Numeric course ids.",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "mod_forum_get_forums_by_courses",
+          "courseids[]": "$course_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_forum_discussions",
+      "description": "List the discussions of a forum: per discussion `discussion` (the discussion id for moodle_get_discussion_posts), name, subject, message of the first post (HTML), userfullname, created, timemodified (Unix seconds), numreplies, numunread, pinned and locked. Answer: `discussions` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "forum_id": {
+            "type": "integer",
+            "description": "Forum id (the `id` of moodle_list_forums).",
+            "minimum": 1
+          },
+          "sort_order": {
+            "type": "integer",
+            "description": "1 last post newest first (default), 2 last post oldest first, 3 created newest first, 4 created oldest first, 5 most replies first, 6 fewest replies first.",
+            "enum": [
+              1,
+              2,
+              3,
+              4,
+              5,
+              6
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0.",
+            "minimum": 0,
+            "default": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Discussions per page.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "group_id": {
+            "type": "integer",
+            "description": "Only discussions of this group.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "forum_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "mod_forum_get_forum_discussions",
+          "forumid": "$forum_id",
+          "sortorder": "$sort_order",
+          "page": "$page",
+          "perpage": "$per_page",
+          "groupid": "$group_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_get_discussion_posts",
+      "description": "Read all posts of a forum discussion: id, subject, message (HTML), author (id, fullname), parentid (the post it answers), timecreated, timemodified and attachments. Answer: `posts`, `forumid`, `courseid` and `warnings`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "discussion_id": {
+            "type": "integer",
+            "description": "Discussion id (the `discussion` field of moodle_list_forum_discussions).",
+            "minimum": 1
+          },
+          "sort_by": {
+            "type": "string",
+            "description": "Sort field.",
+            "enum": [
+              "id",
+              "created",
+              "modified"
+            ],
+            "default": "created"
+          },
+          "sort_direction": {
+            "type": "string",
+            "description": "ASC (oldest first) or DESC.",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "default": "ASC"
+          }
+        },
+        "required": [
+          "discussion_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "mod_forum_get_discussion_posts",
+          "discussionid": "$discussion_id",
+          "sortby": "$sort_by",
+          "sortdirection": "$sort_direction"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_list_conversations",
+      "description": "List the private conversations of the token user: id, name, type (1 between two users, 2 group, 3 notes to self), membercount, unreadcount, members (id, fullname) and the latest message with text and timecreated. Answer: `conversations`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Numeric id of the token user (the `userid` of moodle_get_site_info). Other users need an administrator token.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Conversations per page.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of conversations to skip.",
+            "minimum": 0,
+            "default": 0
+          },
+          "type": {
+            "type": "integer",
+            "description": "Only this type: 1 between two users, 2 group, 3 notes to self.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_message_get_conversations",
+          "userid": "$user_id",
+          "limitnum": "$limit",
+          "limitfrom": "$offset",
+          "type": "$type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moodle_send_message",
+      "description": "Send a private Moodle message from the token user to another user. The recipient is notified as their Moodle preferences say (web, email, app). The answer is a list with one entry: `msgid` (-1 when it failed) and `errormessage`. Check them: a refused message still answers HTTP 200. Sends a message.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_user_id": {
+            "type": "integer",
+            "description": "Numeric id of the recipient.",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text."
+          },
+          "text_format": {
+            "type": "integer",
+            "description": "How `text` is written: 0 Moodle auto-format (default), 1 HTML, 2 plain text, 4 Markdown.",
+            "enum": [
+              0,
+              1,
+              2,
+              4
+            ]
+          }
+        },
+        "required": [
+          "to_user_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/webservice/rest/server.php",
+        "queryParams": {
+          "wsfunction": "core_message_send_instant_messages"
+        },
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "messages": [
+            {
+              "touserid": "$to_user_id",
+              "text": "$text",
+              "textformat": "$text_format"
+            }
+          ]
+        }
+      }
+    }
+  ]
+}
