@@ -1,0 +1,347 @@
+{
+  "slug": "google-pagespeed",
+  "name": "Google PageSpeed Insights",
+  "aliases": [
+    "PageSpeed Insights",
+    "PSI",
+    "Chrome UX Report",
+    "CrUX",
+    "Core Web Vitals",
+    "Lighthouse"
+  ],
+  "description": "Page speed and Core Web Vitals from Google: run a PageSpeed Insights (Lighthouse) test on any public page for performance, accessibility, best practices and SEO scores with findings, and query the Chrome UX Report for real-user LCP, INP and CLS of a site or page, current and as weekly history. One free Google API key.",
+  "instructions": "## Google PageSpeed Insights and Chrome UX Report\nThis connector calls two free Google APIs with one API key: the **PageSpeed Insights API v5** (`https://www.googleapis.com/pagespeedonline/v5/runPagespeed`), which runs a Lighthouse test on a page, and the **Chrome UX Report (CrUX) API** (`https://chromeuxreport.googleapis.com/v1`), which returns how real Chrome users experienced a site or page. Read-only.\n\n**Setup (about 5 minutes)**\n1. Open https://console.cloud.google.com and pick or create a project.\n2. **APIs & Services, Library**: enable **PageSpeed Insights API** and **Chrome UX Report API** (both are needed; the setup check calls CrUX).\n3. **APIs & Services, Credentials, Create credentials, API key**. Under API restrictions allow exactly those two APIs. Do not add an HTTP referrer restriction: the calls come from a server.\n4. Paste the key as `GOOGLE_PAGESPEED_API_KEY`. It is sent as the `key` query parameter. Both APIs are free of charge.\n\n**Lab data or field data**\n- **Lab** (Lighthouse, `google_pagespeed_get_scores` and `google_pagespeed_run_audit`): one synthetic load of the page on emulated hardware, right now. Good for diagnosing and for pages without traffic. Results vary by a few points between runs.\n- **Field** (CrUX, `google_pagespeed_query_crux_record` and `google_pagespeed_query_crux_history`): 75th percentile over 28 days of real Chrome users. This is what Google uses for Core Web Vitals in Search. It changes slowly and only exists for pages and sites with enough traffic.\n\n**Where to start**: `google_pagespeed_get_scores` with the page address and `strategy` MOBILE gives scores, the key metrics and the field summary in one small answer. For the list of problems and savings run `google_pagespeed_run_audit` with one `category`. For a site-wide or historical view use the CrUX tools with `origin`.\n\n**PageSpeed parameters**\n- `url` must be public and include the scheme. `strategy` is MOBILE (default) or DESKTOP.\n- `category` is a list of PERFORMANCE, ACCESSIBILITY, BEST_PRACTICES, SEO; without it only PERFORMANCE runs.\n- Category `score` is 0 to 1: 0.9 and above is good, 0.5 to 0.89 needs improvement, below 0.5 is poor. A null score means the audit did not apply or failed; check `lighthouseResult.runtimeError` and `runWarnings`.\n- A run takes 10 to 60 seconds; heavy pages can fail with a 500 answer. Retry once before reporting a failure.\n\n**CrUX request rules** (most failed calls break one of these)\n- Give **exactly one** of `origin` or `url`. Both together, or neither, is refused with 400.\n- `origin` is scheme plus host with no path: `https://www.example.com`. `url` is one full page address. `https://example.com` and `https://www.example.com` are different origins: use the one the site actually serves.\n- `form_factor` is PHONE, DESKTOP or TABLET in capitals (PageSpeed says MOBILE, CrUX says PHONE). Leave it out for all devices together.\n- `metrics` is a list of lower-case names with underscores, such as `largest_contentful_paint`. Leave it out for all metrics. `first_input_delay` no longer exists; its successor is `interaction_to_next_paint`.\n- **404 NOT_FOUND** means Chrome has too little data for that key, not that the request is wrong: try without `form_factor`, then with `origin` instead of `url`.\n\n**Reading CrUX values**: `percentiles.p75` is the value 75 percent of page loads stay under. Thresholds (good / poor): LCP 2500 / 4000 ms, INP 200 / 500 ms, CLS 0.1 / 0.25, FCP 1800 / 3000 ms, TTFB 800 / 1800 ms. A page passes Core Web Vitals when LCP, INP and CLS are all good at p75. Histogram densities are shares between 0 and 1. The daily record covers a rolling 28 days ending about two days ago; history points are weekly windows of 28 days each.\n\n**Quotas**: PageSpeed Insights allows about 25,000 runs a day and 240 a minute per project; CrUX allows 150 queries a minute. Exceeding them answers 429.",
+  "region": "intl",
+  "category": "analytics",
+  "icon": "google-pagespeed",
+  "docsUrl": "https://developers.google.com/speed/docs/insights/v5/get-started",
+  "requiredEnvVars": [
+    "GOOGLE_PAGESPEED_API_KEY"
+  ],
+  "envVarMeta": {
+    "GOOGLE_PAGESPEED_API_KEY": {
+      "label": "Google API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Google Cloud console, APIs & Services, Credentials, Create credentials, API key. Enable PageSpeed Insights API and Chrome UX Report API in the same project and restrict the key to those two. Both APIs are free.",
+      "link": "https://console.cloud.google.com/apis/credentials",
+      "pattern": "^[A-Za-z0-9._-]{30,}$",
+      "patternMessage": "Paste the API key exactly as the console shows it (it usually starts with AIza), without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": {
+      "hint": "Google refused the request. If the message says the API key is not valid, copy it again from Google Cloud, APIs & Services, Credentials. Otherwise the request itself is wrong: for CrUX give exactly one of origin or url.",
+      "field": "GOOGLE_PAGESPEED_API_KEY"
+    },
+    "403": "Google refused the key for this API: enable Chrome UX Report API and PageSpeed Insights API in the key's project (APIs & Services, Library), allow both under the key's API restrictions, and remove any HTTP referrer or IP restriction that does not match this server.",
+    "404": "The Chrome UX Report has too little real-user data for this origin, page or device class. Try without form_factor, or query the origin instead of the page.",
+    "rate_limited": "A Google quota was reached: about 240 PageSpeed runs a minute and 25,000 a day, or 150 CrUX queries a minute per project. Wait a minute and retry."
+  },
+  "probe": {
+    "tool": "google_pagespeed_query_crux_record",
+    "params": {
+      "origin": "https://www.google.com",
+      "form_factor": "PHONE",
+      "metrics": [
+        "largest_contentful_paint"
+      ]
+    }
+  },
+  "prerequisites": "A Google Cloud project with the PageSpeed Insights API and the Chrome UX Report API enabled, and an API key for it. Both APIs are free; about 5 minutes.",
+  "connector": {
+    "name": "PageSpeed Insights and CrUX",
+    "type": "REST",
+    "baseUrl": "https://www.googleapis.com/pagespeedonline/v5",
+    "authType": "QUERY_AUTH",
+    "authConfig": {
+      "key": "{{GOOGLE_PAGESPEED_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "google_pagespeed_get_scores",
+      "description": "Run PageSpeed Insights on a page and return the summary: the Lighthouse category scores (0 to 1; multiply by 100 for the usual 0 to 100 score), the lab metrics First Contentful Paint, Largest Contentful Paint, Total Blocking Time, Cumulative Layout Shift, Speed Index, Time to Interactive and server response time (displayValue, numericValue in ms or unitless for CLS), and the real-user field data of the page (loadingExperience) and of its origin (originLoadingExperience) with overall_category FAST, AVERAGE or SLOW. A run takes 10 to 60 seconds. Start here; use google_pagespeed_run_audit for the individual findings.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The page to test, a full public address with scheme, e.g. https://www.example.com/pricing. Pages behind a login or on a private network cannot be tested."
+          },
+          "strategy": {
+            "type": "string",
+            "description": "Device to emulate: MOBILE (default here: a mid-range phone on a throttled 4G connection) or DESKTOP. Scores differ a lot between the two: always say which one you report.",
+            "enum": [
+              "MOBILE",
+              "DESKTOP"
+            ],
+            "default": "MOBILE"
+          },
+          "category": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PERFORMANCE",
+                "ACCESSIBILITY",
+                "BEST_PRACTICES",
+                "SEO"
+              ]
+            },
+            "description": "Lighthouse categories to run: PERFORMANCE, ACCESSIBILITY, BEST_PRACTICES, SEO. Default PERFORMANCE only. Each extra category makes the run slower and the answer larger."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the audit titles and descriptions, e.g. en, de, it, fr (default en)."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/runPagespeed",
+        "queryParams": {
+          "url": "$url",
+          "strategy": "$strategy",
+          "category": "$category",
+          "locale": "$locale"
+        },
+        "timeoutMs": 120000
+      },
+      "responseMapping": {
+        "transform": {
+          "include": [
+            "id",
+            "analysisUTCTimestamp",
+            "loadingExperience",
+            "originLoadingExperience",
+            "lighthouseResult.requestedUrl",
+            "lighthouseResult.finalUrl",
+            "lighthouseResult.lighthouseVersion",
+            "lighthouseResult.fetchTime",
+            "lighthouseResult.configSettings.formFactor",
+            "lighthouseResult.runWarnings",
+            "lighthouseResult.runtimeError",
+            "lighthouseResult.categories.performance.title",
+            "lighthouseResult.categories.performance.score",
+            "lighthouseResult.categories.accessibility.title",
+            "lighthouseResult.categories.accessibility.score",
+            "lighthouseResult.categories.best-practices.title",
+            "lighthouseResult.categories.best-practices.score",
+            "lighthouseResult.categories.seo.title",
+            "lighthouseResult.categories.seo.score",
+            "lighthouseResult.audits.first-contentful-paint.title",
+            "lighthouseResult.audits.first-contentful-paint.score",
+            "lighthouseResult.audits.first-contentful-paint.displayValue",
+            "lighthouseResult.audits.first-contentful-paint.numericValue",
+            "lighthouseResult.audits.first-contentful-paint.numericUnit",
+            "lighthouseResult.audits.largest-contentful-paint.title",
+            "lighthouseResult.audits.largest-contentful-paint.score",
+            "lighthouseResult.audits.largest-contentful-paint.displayValue",
+            "lighthouseResult.audits.largest-contentful-paint.numericValue",
+            "lighthouseResult.audits.largest-contentful-paint.numericUnit",
+            "lighthouseResult.audits.total-blocking-time.title",
+            "lighthouseResult.audits.total-blocking-time.score",
+            "lighthouseResult.audits.total-blocking-time.displayValue",
+            "lighthouseResult.audits.total-blocking-time.numericValue",
+            "lighthouseResult.audits.total-blocking-time.numericUnit",
+            "lighthouseResult.audits.cumulative-layout-shift.title",
+            "lighthouseResult.audits.cumulative-layout-shift.score",
+            "lighthouseResult.audits.cumulative-layout-shift.displayValue",
+            "lighthouseResult.audits.cumulative-layout-shift.numericValue",
+            "lighthouseResult.audits.cumulative-layout-shift.numericUnit",
+            "lighthouseResult.audits.speed-index.title",
+            "lighthouseResult.audits.speed-index.score",
+            "lighthouseResult.audits.speed-index.displayValue",
+            "lighthouseResult.audits.speed-index.numericValue",
+            "lighthouseResult.audits.speed-index.numericUnit",
+            "lighthouseResult.audits.interactive.title",
+            "lighthouseResult.audits.interactive.score",
+            "lighthouseResult.audits.interactive.displayValue",
+            "lighthouseResult.audits.interactive.numericValue",
+            "lighthouseResult.audits.interactive.numericUnit",
+            "lighthouseResult.audits.server-response-time.title",
+            "lighthouseResult.audits.server-response-time.score",
+            "lighthouseResult.audits.server-response-time.displayValue",
+            "lighthouseResult.audits.server-response-time.numericValue",
+            "lighthouseResult.audits.server-response-time.numericUnit"
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_pagespeed_run_audit",
+      "description": "Run PageSpeed Insights on a page and return the full Lighthouse report: every audit under lighthouseResult.audits (id, title, description, score, displayValue and details with the affected resources and estimated savings), the categories with their audit references and weights, and the field data blocks. Screenshots are left out. The answer is large (often several hundred KB): request one category at a time. A run takes 10 to 60 seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "url": {
+            "type": "string",
+            "description": "The page to test, a full public address with scheme, e.g. https://www.example.com/pricing. Pages behind a login or on a private network cannot be tested."
+          },
+          "strategy": {
+            "type": "string",
+            "description": "Device to emulate: MOBILE (default here: a mid-range phone on a throttled 4G connection) or DESKTOP. Scores differ a lot between the two: always say which one you report.",
+            "enum": [
+              "MOBILE",
+              "DESKTOP"
+            ],
+            "default": "MOBILE"
+          },
+          "category": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "PERFORMANCE",
+                "ACCESSIBILITY",
+                "BEST_PRACTICES",
+                "SEO"
+              ]
+            },
+            "description": "Lighthouse categories to run: PERFORMANCE, ACCESSIBILITY, BEST_PRACTICES, SEO. Default PERFORMANCE only. Each extra category makes the run slower and the answer larger."
+          },
+          "locale": {
+            "type": "string",
+            "description": "Language of the audit titles and descriptions, e.g. en, de, it, fr (default en)."
+          }
+        },
+        "required": [
+          "url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/runPagespeed",
+        "queryParams": {
+          "url": "$url",
+          "strategy": "$strategy",
+          "category": "$category",
+          "locale": "$locale"
+        },
+        "timeoutMs": 120000
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "lighthouseResult.audits.full-page-screenshot",
+            "lighthouseResult.audits.final-screenshot",
+            "lighthouseResult.audits.screenshot-thumbnails",
+            "lighthouseResult.fullPageScreenshot",
+            "lighthouseResult.i18n",
+            "lighthouseResult.stackPacks",
+            "lighthouseResult.entities",
+            "lighthouseResult.timing",
+            "lighthouseResult.categoryGroups"
+          ]
+        }
+      }
+    },
+    {
+      "name": "google_pagespeed_query_crux_record",
+      "description": "Query the Chrome UX Report (CrUX) for the real-user experience of a site or a page over the last 28 days. Returns record.key (what was matched), record.metrics with, per metric, a histogram of three bins (good, needs improvement, poor, each with start, end and density as a share of page loads) and percentiles.p75 (milliseconds; a decimal string for cumulative_layout_shift), and record.collectionPeriod (firstDate, lastDate). Answers 404 when Chrome has too little data for that origin, page or device class: that is a normal result, not an error in the request.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "A whole site: scheme and host only, no path, e.g. https://www.example.com. Aggregates every page of that origin. Give either origin or url, never both. http and https, and www and non-www, are different origins."
+          },
+          "url": {
+            "type": "string",
+            "description": "One page: its full address, e.g. https://www.example.com/pricing. Give either url or origin, never both. Only pages with enough Chrome traffic have data; on a 404 answer fall back to origin."
+          },
+          "form_factor": {
+            "type": "string",
+            "description": "Device class: PHONE, DESKTOP or TABLET, in capitals. Leave out to aggregate all devices.",
+            "enum": [
+              "PHONE",
+              "DESKTOP",
+              "TABLET"
+            ]
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Metrics to return, lower-case with underscores; an unknown name is refused with 400. Leave out for all. Core Web Vitals: largest_contentful_paint, interaction_to_next_paint, cumulative_layout_shift. Others: first_contentful_paint, experimental_time_to_first_byte, round_trip_time, navigation_types, form_factors and the largest_contentful_paint_* breakdown."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://chromeuxreport.googleapis.com/v1/records:queryRecord",
+        "bodyMapping": {
+          "origin": "$origin",
+          "url": "$url",
+          "formFactor": "$form_factor",
+          "metrics": "$metrics"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "google_pagespeed_query_crux_history",
+      "description": "Query the Chrome UX Report history for a site or a page: the weekly time series of the last 25 collection periods (about 6 months; up to 40). Returns record.metrics with histogramTimeseries (per bin a densities list) and percentilesTimeseries.p75s, and record.collectionPeriods (firstDate and lastDate of each 28-day window, oldest first, aligned with the lists). Missing weeks are null. Use it to see whether Core Web Vitals improved or regressed and when. Answers 404 when there is too little data.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "origin": {
+            "type": "string",
+            "description": "A whole site: scheme and host only, no path, e.g. https://www.example.com. Aggregates every page of that origin. Give either origin or url, never both. http and https, and www and non-www, are different origins."
+          },
+          "url": {
+            "type": "string",
+            "description": "One page: its full address, e.g. https://www.example.com/pricing. Give either url or origin, never both. Only pages with enough Chrome traffic have data; on a 404 answer fall back to origin."
+          },
+          "form_factor": {
+            "type": "string",
+            "description": "Device class: PHONE, DESKTOP or TABLET, in capitals. Leave out to aggregate all devices.",
+            "enum": [
+              "PHONE",
+              "DESKTOP",
+              "TABLET"
+            ]
+          },
+          "metrics": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Metrics to return, lower-case with underscores; an unknown name is refused with 400. Leave out for all. Core Web Vitals: largest_contentful_paint, interaction_to_next_paint, cumulative_layout_shift. Others: first_contentful_paint, experimental_time_to_first_byte, round_trip_time, navigation_types, form_factors and the largest_contentful_paint_* breakdown."
+          },
+          "collection_period_count": {
+            "type": "integer",
+            "description": "Number of weekly collection periods to return, 1 to 40 (default 25).",
+            "minimum": 1,
+            "maximum": 40
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "https://chromeuxreport.googleapis.com/v1/records:queryHistoryRecord",
+        "bodyMapping": {
+          "origin": "$origin",
+          "url": "$url",
+          "formFactor": "$form_factor",
+          "metrics": "$metrics",
+          "collectionPeriodCount": "$collection_period_count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

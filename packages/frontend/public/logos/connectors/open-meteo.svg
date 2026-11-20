@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Open-Meteo connector">
+  <rect width="128" height="128" rx="24" fill="#FF8800"/>
+  <circle cx="64" cy="64" r="22" fill="#fff"/><path d="M64 18v14M64 96v14M18 64h14M96 64h14M31.5 31.5l9.9 9.9M86.6 86.6l9.9 9.9M96.5 31.5l-9.9 9.9M41.4 86.6l-9.9 9.9" stroke="#fff" stroke-width="9" stroke-linecap="round" fill="none"/>
+</svg>

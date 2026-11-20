@@ -1,0 +1,1551 @@
+{
+  "slug": "pitchbook",
+  "name": "PitchBook",
+  "description": "PitchBook Data API for private-market research: search companies, deals, investors, funds and people, then read profiles, financials, deal terms and valuations, investor portfolios and preferences, fund performance and commitments. Read-only; needs an API contract and credits from PitchBook.",
+  "instructions": "## PitchBook\nThis connector reads the **PitchBook Data API** at `https://api.pitchbook.com`: private-market data on companies, deals, investors, funds and people, plus the account tools that show limits, call prices and credit use. 35 tools, all read-only.\n\n**Setup**\n1. The Data API is a separate PitchBook offering with its own contract. A login to the PitchBook platform is not enough, and there is no page where you create a key yourself: ask your PitchBook account manager or Customer Success Manager for API access.\n2. Start with the **sandbox key** they give you. It works on the same address and reads a fixed set of test entities, which `pitchbook_list_sandbox_entities` lists.\n3. The contract says which endpoints you may call. After you buy API credits, PitchBook issues the production key.\n4. Paste the key into `PITCHBOOK_API_KEY` without the `PB-Token` prefix. The connector sends it as `Authorization: PB-Token` followed by the key.\n\n**Credits and limits**\n- Every data call has a price in API credits, set per endpoint by your contract. `pitchbook_list_call_costs` returns that price list (`initialCost` and `refreshCost` per endpoint) for a pricing model. In PitchBook's published example most detail endpoints cost 1 credit and the searches 0; your contract can differ, so read your own list.\n- Searches use the contract's Search allowance: usage is counted once per unique normalised query per monthly period, and the identical query repeated in that period is not counted again.\n- `pitchbook_get_limits` shows the limits per minute, hour, day and month with what is left. `pitchbook_get_credit_history` shows credits used and remaining per contract (up to 90 days back) and the pricing model.\n- The account tools (`pitchbook_get_limits`, `pitchbook_list_call_costs`, `pitchbook_get_credit_history`, `pitchbook_list_sandbox_entities`, `pitchbook_get_lookup_codes`) are not in PitchBook's priced endpoint list.\n- **402** means the credit balance is too low for the call (the message names the balance and the call cost). **403** means the endpoint is not part of your contract. **429** means a rate limit is used up: wait for the next period. **503** means that data is temporarily unavailable.\n- Spend with care: search first, then read only the detail tools the question needs. Tell the user before a long series of detail calls (for example one call per portfolio company).\n\n**Where to start**: find the id, then read the details.\n- Any name, website or ticker: `pitchbook_search_entities` returns the `pbId` and says whether it is a company, investor, fund or person.\n- Companies: `pitchbook_search_companies`, then `pitchbook_get_company_bio`, `pitchbook_get_company_financials` (private companies only), `pitchbook_list_company_deals`, `pitchbook_list_company_investors` and `pitchbook_get_company_latest_financing`.\n- Deals: `pitchbook_search_deals` or the deal ids from a company, then `pitchbook_get_deal_bio`, `pitchbook_get_deal_details`, `pitchbook_get_deal_investors` and `pitchbook_get_deal_valuation`.\n- Investors: `pitchbook_search_investors`, then `pitchbook_get_investor_bio`, `pitchbook_list_investor_investments` (all, current and former), `pitchbook_list_investor_active_investments`, `pitchbook_get_investor_preferences`, `pitchbook_list_investor_funds` and `pitchbook_list_investor_board_seats`.\n- Funds: `pitchbook_search_funds`, then `pitchbook_get_fund_bio`, `pitchbook_list_fund_investments`, `pitchbook_get_fund_preferences`, `pitchbook_get_fund_performance`, `pitchbook_get_fund_team` and `pitchbook_list_fund_commitments`.\n- People: `pitchbook_search_people`, then `pitchbook_get_person_bio`, `pitchbook_get_person_roles` (education, positions, board seats, deal and fund roles) and `pitchbook_get_person_contact`.\n\n**Ids**: every entity has a PitchBook id (`pbId`). Companies, investors, limited partners and service providers look like `51136-75`; deal ids end in T (`52721-65T`), fund ids in F (`13774-15F`) and person ids in P (`217377-01P`). One firm can be both a company and an investor under the same id. Use the id with the tools of its own type: a deal id does not work in a company tool.\n\n**Search filters**\n- Many filters take a code, not a name. `pitchbook_get_lookup_codes` returns the codes of a table such as INDUSTRY, VERTICAL, COUNTRY, US_STATE, DEAL_TYPE, DEAL_STATUS, INVESTOR_TYPE, FUND_STRATEGY, FUND_STATUS, PERSON_POSITION or CURRENCY_CODE. Each filter description names its table.\n- Dates and numbers take an operator in front: `>2024-01-01` (after), `<2024-12-31` (before), `2024-01-01^2024-12-31` (between). The same works for amounts: `>50`, `<10`, `10^50`.\n- Amount filters (deal size, total raised, revenue, fund size, AUM, dry powder) are in **millions**, in the currency of `filter_currency`.\n- Name filters (`company_names`, `investor_names`, `fund_names`, `person_names`, `firm_names`) take several values separated by commas and return exact matches only. For a partial name use `pitchbook_search_entities`.\n- Search answers hold only ids and names. `stats` gives `total`, `perPage`, `page` and `lastPage`; page with `page` and `per_page`. A 400 that says the results per page must be between 1 and a number names the highest `per_page` of your account.\n\n**Money in answers**: a money value is an object with `amount` and `currency` (converted), `nativeAmount` and `nativeCurrency` (as reported) and `estimated`. Amounts are whole currency units, not millions. Pass `currency` on a detail tool to get `amount` in another currency (code from CURRENCY_CODE); without it PitchBook's default applies (USD in its examples).\n\n**Other notes**\n- Fields PitchBook has no data for come back as null, and a 404 means there is no profile of that type for the id.\n- The detail lists (deals, investors, investments, commitments) are not paged and can be long.\n- A sandbox key reads only the entities that `pitchbook_list_sandbox_entities` lists; search rows carry a `sandbox` flag.\n- `pitchbook_get_person_contact` returns personal data (phone, email): use it only as your PitchBook contract allows.\n- Not included: bulk requests, file downloads, entity news, patents, credit analysis, limited partner and service provider endpoints.",
+  "aliases": [
+    "PitchBook Data",
+    "PitchBook API",
+    "PitchBook Data API"
+  ],
+  "region": "intl",
+  "category": "finance",
+  "icon": "pitchbook",
+  "docsUrl": "https://documenter.getpostman.com/view/5190535/TzCV1iRc",
+  "requiredEnvVars": [
+    "PITCHBOOK_API_KEY"
+  ],
+  "envVarMeta": {
+    "PITCHBOOK_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The API key PitchBook issued for your Data API contract, or the sandbox key for testing. There is no self-service page: ask your PitchBook account manager or Customer Success Manager. Paste the key only, without the PB-Token prefix.",
+      "link": "https://documenter.getpostman.com/view/5190535/TzCV1iRc",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the API key only, without the PB-Token prefix and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "PitchBook did not accept the API key. Paste the key exactly as PitchBook sent it, without the PB-Token prefix, and check that it was not replaced by a newer one.",
+    "402": "The key works, but the credit balance of the account is too low for this call. Ask your PitchBook Customer Success Manager to add API credits.",
+    "403": "The key works, but this endpoint is not part of your PitchBook API contract. Your PitchBook representative can tell you what is licensed.",
+    "404": "PitchBook found no profile for that id. Check the pbId and that it belongs to this kind of entity; with a sandbox key only the sandbox entities can be read.",
+    "rate_limited": "A PitchBook rate limit of the account is used up (per minute, hour, day or month). Wait until the period renews and try again."
+  },
+  "probe": {
+    "tool": "pitchbook_get_limits",
+    "params": {}
+  },
+  "prerequisites": "A PitchBook Data API contract with API credits. The API is sold separately from the PitchBook platform and keys are not self-service: your PitchBook account manager or Customer Success Manager issues a sandbox key for testing and, after the contract, the production key.",
+  "connector": {
+    "name": "PitchBook Data API",
+    "type": "REST",
+    "baseUrl": "https://api.pitchbook.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "PB-Token {{PITCHBOOK_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "pitchbook_search_entities",
+      "description": "Search all of PitchBook by one text: an entity id, a name (formal, also-known-as or legal name; exact and partial matches), a website, a ticker or an exchange and ticker. Returns companies, investors, limited partners, service providers, funds and people in one list: pbId, name, website, pitchBookProfileLink, primaryFirmType and otherFirmTypes (each with its pbId and type such as COMPANY or INVESTOR), stockTicker; funds come with fundId and fundName, people with primaryCompanyId and primaryCompanyName; each row has a sandbox flag. Paged: stats holds total, perPage, page and lastPage. Search usage is counted once per unique normalised query per contract and monthly period: repeating the identical query in the same period does not use more of the Search allowance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search text: an entity id, a name, a website (exact match only), a ticker (exact match, all exchanges) or exchange and ticker (exact match)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. stats.lastPage in the answer is the last one."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page. PitchBook's example returns 5 when it is left out; the highest value allowed depends on the account, and a 400 names it."
+          }
+        },
+        "required": [
+          "query"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/search",
+        "queryParams": {
+          "query": "$query",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_search_companies",
+      "description": "Find companies by filters: names, keywords, industry or vertical, ownership, backing and business status, location, founding date, deals (type, date, size), total raised, revenue, headcount and investors. Returns per company companyId (the pbId for the company tools), companyName, website and the sandbox flag. Amount filters are in millions. Paged: stats holds total, perPage, page and lastPage. Search usage is counted once per unique normalised query per contract and monthly period: repeating the identical query in the same period does not use more of the Search allowance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_names": {
+            "type": "string",
+            "description": "Company names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "keywords": {
+            "type": "string",
+            "description": "Keywords attached to the company or found in its business description. Several keywords are combined with OR."
+          },
+          "industry": {
+            "type": "string",
+            "description": "Industry: a code from lookup table INDUSTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "verticals": {
+            "type": "string",
+            "description": "Vertical: a code from lookup table VERTICAL (read it with pitchbook_get_lookup_codes). Combined with industry by OR."
+          },
+          "ownership_status": {
+            "type": "string",
+            "description": "Ownership status: a code from lookup table OWNERSHIP_STATUS (read it with pitchbook_get_lookup_codes)."
+          },
+          "backing_status": {
+            "type": "string",
+            "description": "Backing status, e.g. venture capital or private equity backed: a code from lookup table BACKING_STATUS (read it with pitchbook_get_lookup_codes)."
+          },
+          "business_status": {
+            "type": "string",
+            "description": "Business status, e.g. generating revenue: a code from lookup table BUSINESS_STATUS (read it with pitchbook_get_lookup_codes)."
+          },
+          "city": {
+            "type": "string",
+            "description": "City of the company."
+          },
+          "state_province": {
+            "type": "string",
+            "description": "US state or Canadian province of the company: a code from lookup table US_STATE or CANADIAN_PROVINCE (read it with pitchbook_get_lookup_codes)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country of the company: a code from lookup table COUNTRY (read it with pitchbook_get_lookup_codes); PitchBook's examples use USA and MEX."
+          },
+          "date_founded": {
+            "type": "string",
+            "description": "Founding date, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          },
+          "deal_type": {
+            "type": "string",
+            "description": "Companies that had a deal of this type: a code from lookup table DEAL_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "deal_date": {
+            "type": "string",
+            "description": "Companies that had a deal in this time frame, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          },
+          "deal_size": {
+            "type": "string",
+            "description": "Companies that had a deal of this size in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "total_raised": {
+            "type": "string",
+            "description": "Total money raised to date in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "revenue": {
+            "type": "string",
+            "description": "Company revenue in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "employee_count": {
+            "type": "string",
+            "description": "Current number of employees, with an operator: `>500` (more than), `<50` (less than) or `50^500` (between)."
+          },
+          "investor_names": {
+            "type": "string",
+            "description": "Companies backed by these investors: investor names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "filter_currency": {
+            "type": "string",
+            "description": "Currency the amount filters of this search are entered in: a code from lookup table CURRENCY_CODE such as USD or EUR. Without it PitchBook uses the currency of the account's preferences."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. stats.lastPage in the answer is the last one."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page. PitchBook's examples return 25 when it is left out; the highest value allowed depends on the account, and a 400 names it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/search",
+        "queryParams": {
+          "companyNames": "$company_names",
+          "keywords": "$keywords",
+          "industry": "$industry",
+          "verticals": "$verticals",
+          "ownershipStatus": "$ownership_status",
+          "backingStatus": "$backing_status",
+          "businessStatus": "$business_status",
+          "city": "$city",
+          "stateProvince": "$state_province",
+          "country": "$country",
+          "dateFounded": "$date_founded",
+          "dealType": "$deal_type",
+          "dealDate": "$deal_date",
+          "dealSize": "$deal_size",
+          "totalRaised": "$total_raised",
+          "revenue": "$revenue",
+          "employeeCount": "$employee_count",
+          "investorNames": "$investor_names",
+          "currency": "$filter_currency",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_company_bio",
+      "description": "Read the profile of one company: companyName (formalName, alsoKnownAs, legalName, formerlyKnownAs), parent company, hqLocation, description, financingStatus, businessStatus and ownershipStatus (code and description), universe, website, employees and employeeHistory, exchange and ticker, yearFounded, financingStatusNote, totalMoneyRaised, sicCodes and pitchBookProfileLink. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the company, e.g. 51136-75. companyId from pitchbook_search_companies or pbId from pitchbook_search_entities."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{pb_id}/bio",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_company_financials",
+      "description": "Read the financial figures of a private company for every available fiscal period: per item period, endDate, enterpriseValue, revenue, netIncome, ebitda, totalAssets and totalDebt. Annual figures unless period_type says otherwise; private companies only. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the company, e.g. 482061-07. companyId from pitchbook_search_companies."
+          },
+          "period_type": {
+            "type": "string",
+            "description": "Period type (annual by default): a code from lookup table FINANCIALS_PERIOD_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "since_date": {
+            "type": "string",
+            "description": "Only fiscal periods in this time frame, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{pb_id}/financials",
+        "queryParams": {
+          "periodType": "$period_type",
+          "sinceDate": "$since_date"
+        },
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_company_deals",
+      "description": "List every deal of one company: dealId (the pbId for the deal tools), dealNumber, dealDate and up to three deal types (dealType1, dealType2, dealType3, each with code and description). Not paged. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the company, e.g. 51136-75. companyId from pitchbook_search_companies."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{pb_id}/deals"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_company_investors",
+      "description": "List the current and former investors of one company: countAllInvestors and per investor investorId, investorName, investorTypes (type code and description, primary flag), investorSince, investorExit and investorStatus. Not paged. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the company, e.g. 51136-75. companyId from pitchbook_search_companies."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{pb_id}/investors"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_company_latest_financing",
+      "description": "Read the most recent financing of one company: lastFinancingDealId, lastFinancingDate, lastFinancingStatus, lastFinancingSize and lastFinancingSizeStatus (for example Actual), lastFinancingValuation, the deal types and deal class, and lastKnownValuation with its date and deal type. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the company, e.g. 51136-75. companyId from pitchbook_search_companies."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies/{pb_id}/most-recent-financing",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_search_deals",
+      "description": "Find deals (financing rounds, buyouts, M&A, IPOs, debt) by filters on the deal and on the company involved: deal type, status, date, size, valuation, investors, company names, industry, keywords and location. Returns per deal dealId (the pbId for the deal tools), companyId, companyName and the sandbox flag. Amount filters are in millions. Paged: stats holds total, perPage, page and lastPage. Search usage is counted once per unique normalised query per contract and monthly period: repeating the identical query in the same period does not use more of the Search allowance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_names": {
+            "type": "string",
+            "description": "Deals of these companies: company names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "investor_names": {
+            "type": "string",
+            "description": "Deals these investors took part in: investor names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "deal_type": {
+            "type": "string",
+            "description": "Deal type: a code from lookup table DEAL_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "deal_status": {
+            "type": "string",
+            "description": "Deal status (completed, upcoming, failed and more): a code from lookup table DEAL_STATUS (read it with pitchbook_get_lookup_codes)."
+          },
+          "deal_date": {
+            "type": "string",
+            "description": "Deal date, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          },
+          "deal_size": {
+            "type": "string",
+            "description": "Deal size in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "pre_money_valuation": {
+            "type": "string",
+            "description": "Company valuation before the financing in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "post_valuation": {
+            "type": "string",
+            "description": "Company valuation at or after the investment in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "only_most_recent_transaction": {
+            "type": "string",
+            "description": "True: only the most recent deal of each company.",
+            "enum": [
+              "True",
+              "False"
+            ]
+          },
+          "keywords": {
+            "type": "string",
+            "description": "Keywords attached to the company involved or found in its business description."
+          },
+          "industry": {
+            "type": "string",
+            "description": "Industry of the company involved: a code from lookup table INDUSTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "verticals": {
+            "type": "string",
+            "description": "Vertical of the company involved: a code from lookup table VERTICAL (read it with pitchbook_get_lookup_codes). Combined with industry by OR."
+          },
+          "backing_status": {
+            "type": "string",
+            "description": "Backing status of the company involved: a code from lookup table BACKING_STATUS (read it with pitchbook_get_lookup_codes)."
+          },
+          "ownership_status": {
+            "type": "string",
+            "description": "Ownership status of the company involved: a code from lookup table OWNERSHIP_STATUS (read it with pitchbook_get_lookup_codes)."
+          },
+          "city": {
+            "type": "string",
+            "description": "City of the company involved."
+          },
+          "state_province": {
+            "type": "string",
+            "description": "US state or Canadian province of the company involved: a code from lookup table US_STATE or CANADIAN_PROVINCE (read it with pitchbook_get_lookup_codes)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country of the company involved: a code from lookup table COUNTRY (read it with pitchbook_get_lookup_codes); PitchBook's examples use USA and MEX."
+          },
+          "filter_currency": {
+            "type": "string",
+            "description": "Currency the amount filters of this search are entered in: a code from lookup table CURRENCY_CODE such as USD or EUR. Without it PitchBook uses the currency of the account's preferences."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. stats.lastPage in the answer is the last one."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page. PitchBook's examples return 25 when it is left out; the highest value allowed depends on the account, and a 400 names it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/search",
+        "queryParams": {
+          "companyNames": "$company_names",
+          "investorNames": "$investor_names",
+          "dealType": "$deal_type",
+          "dealStatus": "$deal_status",
+          "dealDate": "$deal_date",
+          "dealSize": "$deal_size",
+          "preMoneyValuation": "$pre_money_valuation",
+          "postValuation": "$post_valuation",
+          "onlyMostRecentTransaction": "$only_most_recent_transaction",
+          "keywords": "$keywords",
+          "industry": "$industry",
+          "verticals": "$verticals",
+          "backingStatus": "$backing_status",
+          "ownershipStatus": "$ownership_status",
+          "city": "$city",
+          "stateProvince": "$state_province",
+          "country": "$country",
+          "currency": "$filter_currency",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_deal_bio",
+      "description": "Read the key facts of one deal: dealNumber, companyId and companyName, dealAnnouncedDate, dealDate, dealSize and dealSizeStatus, dealStatus, dealType1 to dealType3 and dealClass (code and description), and flags that say whether valuation, cap table, tranche and lender data exist. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the deal, e.g. 52721-65T. dealId from pitchbook_search_deals or pitchbook_list_company_deals."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/{pb_id}/bio",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_deal_details",
+      "description": "Read the extended description of one deal: dealSynopsis, dealSize with dealSizeBreakdown (new money in total, USD and EUR, institutional, first and second lien), percentAcquired, raisedToDate, vcRound and vcRoundUpDownFlat, totalInvestedCapital and totalInvestedEquity, investorOwnership, debt types and amounts, debtRaisedInRound, contingentPayout, deal types, class and status. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the deal, e.g. 52721-65T. dealId from pitchbook_search_deals or pitchbook_list_company_deals."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/{pb_id}/detailed",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_deal_investors",
+      "description": "List who took part in one deal: investors (investorId, investorName, investmentStatus, leadSoleInvestor, lead partner, investorFunds, investmentAmount, formOfPayment), sellers (sellerId, sellerName, sellerFunds) and exiters (exiterId, exiterName). Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the deal, e.g. 52721-65T. dealId from pitchbook_search_deals or pitchbook_list_company_deals."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/{pb_id}/investors/exiters",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_deal_valuation",
+      "description": "Read the company valuation around one deal: preValuation (before the deal), postValuation (after it) and postValuationStatus, with dealNumber, companyId and companyName. Values are null when PitchBook has no valuation for the deal (see valuationAvailable in pitchbook_get_deal_bio). Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the deal, e.g. 52721-65T. dealId from pitchbook_search_deals or pitchbook_list_company_deals."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/{pb_id}/valuation",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_search_investors",
+      "description": "Find investors (venture capital, private equity, corporate and other investor types) by filters: names, investor type, assets under management, dry powder, location, investment preferences, and the deals and companies they invested in. Returns per investor investorId (the pbId for the investor tools), investorName, website and the sandbox flag. Amount filters are in millions. Paged: stats holds total, perPage, page and lastPage. Search usage is counted once per unique normalised query per contract and monthly period: repeating the identical query in the same period does not use more of the Search allowance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "investor_names": {
+            "type": "string",
+            "description": "Investor names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "investor_type": {
+            "type": "string",
+            "description": "Investor type: a code from lookup table INVESTOR_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "aum": {
+            "type": "string",
+            "description": "Assets under management in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "dry_powder": {
+            "type": "string",
+            "description": "Dry powder (capital not yet invested) in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "city": {
+            "type": "string",
+            "description": "City of the investor."
+          },
+          "state_province": {
+            "type": "string",
+            "description": "US state or Canadian province of the investor: a code from lookup table US_STATE or CANADIAN_PROVINCE (read it with pitchbook_get_lookup_codes)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country of the investor: a code from lookup table COUNTRY (read it with pitchbook_get_lookup_codes); PitchBook's examples use USA and MEX."
+          },
+          "industry_preferences": {
+            "type": "string",
+            "description": "Preferred industry: a code from lookup table INDUSTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "verticals_preferences": {
+            "type": "string",
+            "description": "Preferred vertical: a code from lookup table VERTICAL (read it with pitchbook_get_lookup_codes)."
+          },
+          "geographical_preferences": {
+            "type": "string",
+            "description": "Preferred geography: a code from lookup table US_STATE, US_AREA, CANADIAN_PROVINCE, UK_TERRITORY, COUNTRY or REGION (read them with pitchbook_get_lookup_codes)."
+          },
+          "preferred_deal_types": {
+            "type": "string",
+            "description": "Preferred deal type: a code from lookup table DEAL_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "preferred_investment_amount": {
+            "type": "string",
+            "description": "Preferred investment amount in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "company_names": {
+            "type": "string",
+            "description": "Investors of these companies: company names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "deal_type": {
+            "type": "string",
+            "description": "Type of deals the investor has done: a code from lookup table DEAL_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "deal_date": {
+            "type": "string",
+            "description": "Investors with a deal in this time frame, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          },
+          "deal_size": {
+            "type": "string",
+            "description": "Investors with a deal of this size in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "deal_industry": {
+            "type": "string",
+            "description": "Industry of the companies invested in: a code from lookup table INDUSTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "deal_country": {
+            "type": "string",
+            "description": "Country of the companies invested in: a code from lookup table COUNTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "filter_currency": {
+            "type": "string",
+            "description": "Currency the amount filters of this search are entered in: a code from lookup table CURRENCY_CODE such as USD or EUR. Without it PitchBook uses the currency of the account's preferences."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. stats.lastPage in the answer is the last one."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page. PitchBook's examples return 25 when it is left out; the highest value allowed depends on the account, and a 400 names it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/investors/search",
+        "queryParams": {
+          "investorNames": "$investor_names",
+          "investorType": "$investor_type",
+          "aum": "$aum",
+          "dryPowder": "$dry_powder",
+          "city": "$city",
+          "stateProvince": "$state_province",
+          "country": "$country",
+          "industryPreferences": "$industry_preferences",
+          "verticalsPreferences": "$verticals_preferences",
+          "geographicalPreferences": "$geographical_preferences",
+          "preferredDealTypes": "$preferred_deal_types",
+          "preferredInvestmentAmount": "$preferred_investment_amount",
+          "companyNames": "$company_names",
+          "dealType": "$deal_type",
+          "dealDate": "$deal_date",
+          "dealSize": "$deal_size",
+          "dealIndustry": "$deal_industry",
+          "dealCountry": "$deal_country",
+          "currency": "$filter_currency",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_investor_bio",
+      "description": "Read the profile of one investor: investorName (formalName, alsoKnownAs, legalName, formerlyKnownAs), hqLocation, description (brief and full), investorStatus, investorType list with the primary flag, assetsUnderManagement, dryPowder, yearFounded, website, countInvestmentProfessionals and tradeAssociations. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the investor, e.g. 58781-35. investorId from pitchbook_search_investors or pbId from pitchbook_search_entities."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/investors/{pb_id}/bio",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_investor_investments",
+      "description": "List all completed investments of one investor, current and former: companyId, companyName, investorStatus (such as Active Investor or Former Investor), investmentDate, investmentDealId, exitDate and exitDealId. Not paged, so the list can be long for large investors. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the investor, e.g. 58781-35. investorId from pitchbook_search_investors."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/investors/{pb_id}/investments"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_investor_active_investments",
+      "description": "List the active investments (current portfolio) of one investor: companyId, companyName, investorSince, investmentDealId and investmentDate. Not paged. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the investor, e.g. 58781-35. investorId from pitchbook_search_investors."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/investors/{pb_id}/active-investments"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_investor_preferences",
+      "description": "Read what one investor looks for: preferredInvestmentAmount, preferredDealSize, preferredCompanyValuation, preferredEbitda, preferredEbit and preferredRevenue (each with min and max), preferredInvestmentHorizon, geographicalPreferences, preferredIndustry, preferredVerticals, preferredDealTypes, otherInvestmentPreferences and assetPreferences. Ranges PitchBook does not know are null. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the investor, e.g. 58781-35. investorId from pitchbook_search_investors."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/investors/{pb_id}/investment-preferences",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_investor_funds",
+      "description": "List the open and closed funds one investor manages: stats (totalFundsOpen, totalFundsClosed), minFundSize, medianFundSize and maxFundSize, and fundInfo with fundId (the pbId for the fund tools), fundName, fundType and fundStrategy per fund. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the investor, e.g. 58781-35. investorId from pitchbook_search_investors."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/investors/{pb_id}/funds",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_investor_board_seats",
+      "description": "List the board seats held for one investor, split into current and former: personId, personName, boardCompanyId, boardCompanyName, onBoard, boardStartDate, boardEndDate and role. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the investor, e.g. 58781-35. investorId from pitchbook_search_investors."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/investors/{pb_id}/board-seats"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_search_funds",
+      "description": "Find funds by filters: names, managing investor, strategy, status, size, dry powder, vintage, dates, location of the investor, domicile, limited partners, returns (IRR, TVPI, DPI) and investment preferences. Returns per fund fundId (the pbId for the fund tools), fundName, its investors (investorId, investorName) and the sandbox flag. Amount filters are in millions. Paged: stats holds total, perPage, page and lastPage. Search usage is counted once per unique normalised query per contract and monthly period: repeating the identical query in the same period does not use more of the Search allowance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fund_names": {
+            "type": "string",
+            "description": "Fund names or pbIds, comma-separated. Only exact matches are returned."
+          },
+          "investor_names": {
+            "type": "string",
+            "description": "Funds of these investors: investor names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "fund_strategy": {
+            "type": "string",
+            "description": "Fund strategy: a code from lookup table FUND_STRATEGY (read it with pitchbook_get_lookup_codes)."
+          },
+          "fund_status": {
+            "type": "string",
+            "description": "Fund status: a code from lookup table FUND_STATUS (read it with pitchbook_get_lookup_codes)."
+          },
+          "fund_size": {
+            "type": "string",
+            "description": "Fund size in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "dry_powder": {
+            "type": "string",
+            "description": "Dry powder of the fund in millions, with an operator: `>50` (more than 50 million), `<10` (less than) or `10^50` (between). The currency is the one of filter_currency."
+          },
+          "vintage": {
+            "type": "string",
+            "description": "Vintage year, with an operator: `>2018` (after), `<2022` (before) or `2018^2022` (between)."
+          },
+          "fund_date": {
+            "type": "string",
+            "description": "Fund date, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          },
+          "city": {
+            "type": "string",
+            "description": "City of the fund's investor."
+          },
+          "state_province": {
+            "type": "string",
+            "description": "US state or Canadian province of the fund's investor: a code from lookup table US_STATE or CANADIAN_PROVINCE (read it with pitchbook_get_lookup_codes)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country of the fund's investor: a code from lookup table COUNTRY (read it with pitchbook_get_lookup_codes); PitchBook's examples use USA and MEX."
+          },
+          "fund_domicile_country": {
+            "type": "string",
+            "description": "Country where the fund is incorporated: a code from lookup table COUNTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "limited_partner_names": {
+            "type": "string",
+            "description": "Funds these limited partners committed to: limited partner names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "irr": {
+            "type": "string",
+            "description": "IRR in percent, with an operator: `>15` (more than), `<5` (less than) or `10^20` (between)."
+          },
+          "tvpi": {
+            "type": "string",
+            "description": "TVPI multiple, with an operator: `>2` (more than), `<1` (less than) or `1.5^3` (between)."
+          },
+          "dpi": {
+            "type": "string",
+            "description": "DPI multiple, with an operator: `>1.5` (more than), `<1` (less than) or `1^2` (between)."
+          },
+          "industry_preferences": {
+            "type": "string",
+            "description": "Preferred industry of the fund: a code from lookup table INDUSTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "preferred_deal_types": {
+            "type": "string",
+            "description": "Preferred deal type of the fund: a code from lookup table DEAL_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "filter_currency": {
+            "type": "string",
+            "description": "Currency the amount filters of this search are entered in: a code from lookup table CURRENCY_CODE such as USD or EUR. Without it PitchBook uses the currency of the account's preferences."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. stats.lastPage in the answer is the last one."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page. PitchBook's examples return 25 when it is left out; the highest value allowed depends on the account, and a 400 names it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/search",
+        "queryParams": {
+          "fundNames": "$fund_names",
+          "investorNames": "$investor_names",
+          "fundStrategy": "$fund_strategy",
+          "fundStatus": "$fund_status",
+          "fundSize": "$fund_size",
+          "dryPowder": "$dry_powder",
+          "vintage": "$vintage",
+          "fundDate": "$fund_date",
+          "city": "$city",
+          "stateProvince": "$state_province",
+          "country": "$country",
+          "fundDomicileCountry": "$fund_domicile_country",
+          "limitedPartnerNames": "$limited_partner_names",
+          "irr": "$irr",
+          "tvpi": "$tvpi",
+          "dpi": "$dpi",
+          "industryPreferences": "$industry_preferences",
+          "preferredDealTypes": "$preferred_deal_types",
+          "currency": "$filter_currency",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_fund_bio",
+      "description": "Read the profile of one fund: name, fundInvestors (investorId, investorName, fundNo, firstFund), vintage, fundStatus, fundType, fundStrategy, fundStructure, fundLifespan, fundSize, fundTargetSize (min and max), fundTerms, location, fundTeam (personId, personFullName), openDate, closeDate and returnsInfoAvailable. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the fund, e.g. 13774-15F. fundId from pitchbook_search_funds or pitchbook_list_investor_funds."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/{pb_id}/bio",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_fund_investments",
+      "description": "List the active and former investments of one fund: fundName and per investment targetCompanyId, targetCompanyName, investmentStatus, targetCompanyInvestmentDate, investmentDealId, targetCompanyExitDate and exitDealId. Not paged. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the fund, e.g. 13774-15F. fundId from pitchbook_search_funds or pitchbook_list_investor_funds."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/{pb_id}/investments"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_fund_preferences",
+      "description": "Read what one fund looks for: preferredInvestmentAmount, preferredDealSize, preferredCompanyValuation, preferredEbitda, preferredEbit and preferredRevenue (each with min and max), preferredInvestmentHorizon, geographicalPreferences, secondariesPreferences, preferredIndustry, preferredVerticals, preferredDealTypes, otherInvestmentPreferences and assetPreferences. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the fund, e.g. 13774-15F. fundId from pitchbook_search_funds or pitchbook_list_investor_funds."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/{pb_id}/investment-preferences",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_fund_performance",
+      "description": "Read the most recent performance of one fund: asOfQuarter and asOfYear, irr (percent), dpi, rvpi and tvpi (multiples), nav, quartile and numberOfFundsInBenchmark. With include_history also historicalPerformance, the same figures for earlier quarters. Figures PitchBook does not have are null. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the fund, e.g. 13774-15F. fundId from pitchbook_search_funds or pitchbook_list_investor_funds."
+          },
+          "include_history": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: add the historical performance snapshots of earlier periods."
+          },
+          "since_date": {
+            "type": "string",
+            "description": "Only historical snapshots in this time frame; use it only together with include_history, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/{pb_id}/performance",
+        "queryParams": {
+          "historicalPerformance": "$include_history",
+          "sinceDate": "$since_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_fund_team",
+      "description": "List the team of one fund: investorIds, countActiveTeam, and the active and former members with id (the pbId for the people tools), name, title, positionStart, positionFinish and infoAvailable. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the fund, e.g. 13774-15F. fundId from pitchbook_search_funds or pitchbook_list_investor_funds."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/{pb_id}/team"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_fund_commitments",
+      "description": "List the limited partner commitments to one fund: limitedPartnerId, limitedPartnerName, commitmentDate, commitmentSize, commitmentStatus and commitmentType (code and description). commitmentSize is null when the amount is not known. Money values are objects with amount and currency (converted) plus nativeAmount, nativeCurrency and an estimated flag, in whole currency units. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the fund, e.g. 13774-15F. fundId from pitchbook_search_funds or pitchbook_list_investor_funds."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Convert the money values of the answer to this currency: a code from lookup table CURRENCY_CODE, e.g. USD, EUR or JPY. Left out, PitchBook's default applies (USD in its examples)."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/funds/{pb_id}/commitments",
+        "headers": {
+          "X-Currency": "$currency"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_search_people",
+      "description": "Find people (executives, board members, investment professionals) by filters: names, firm, firm type, position level, title and department, current or former position, email or email domain, university, biography text, and the industry and location of their firm. Returns per person personId (the pbId for the people tools), personName, firmId and the sandbox flag. Paged: stats holds total, perPage, page and lastPage. Search usage is counted once per unique normalised query per contract and monthly period: repeating the identical query in the same period does not use more of the Search allowance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "person_names": {
+            "type": "string",
+            "description": "Person names or pbIds, comma-separated. Only exact matches are returned."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "firm_names": {
+            "type": "string",
+            "description": "People of these firms: firm names, pbIds, websites or tickers, comma-separated. Only exact matches are returned."
+          },
+          "firm_type": {
+            "type": "string",
+            "description": "Type of firm the person is associated with: a code from lookup table PERSON_FIRM_TYPE (read it with pitchbook_get_lookup_codes)."
+          },
+          "position_level": {
+            "type": "string",
+            "description": "Position level: a code from lookup table PERSON_POSITION (read it with pitchbook_get_lookup_codes). PitchBook's example uses CEO."
+          },
+          "position_title": {
+            "type": "string",
+            "description": "Keywords in the position title, e.g. Chief Financial Officer."
+          },
+          "department": {
+            "type": "string",
+            "description": "Department the person works in: a code from lookup table PERSON_POSITION_DEPARTMENT (read it with pitchbook_get_lookup_codes)."
+          },
+          "status": {
+            "type": "string",
+            "description": "Position status: active (current position) or former.",
+            "enum": [
+              "active",
+              "former"
+            ]
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address of the person."
+          },
+          "domain": {
+            "type": "string",
+            "description": "Email domain, e.g. example.com."
+          },
+          "university": {
+            "type": "string",
+            "description": "Institution the person graduated from."
+          },
+          "biography": {
+            "type": "string",
+            "description": "Words or phrases in the biography text."
+          },
+          "industry": {
+            "type": "string",
+            "description": "Industry of the companies the person is associated with: a code from lookup table INDUSTRY (read it with pitchbook_get_lookup_codes)."
+          },
+          "verticals": {
+            "type": "string",
+            "description": "Vertical of the companies the person is associated with: a code from lookup table VERTICAL (read it with pitchbook_get_lookup_codes). Combined with industry by OR."
+          },
+          "city": {
+            "type": "string",
+            "description": "City of the person's firm."
+          },
+          "state_province": {
+            "type": "string",
+            "description": "US state or Canadian province of the person's firm: a code from lookup table US_STATE or CANADIAN_PROVINCE (read it with pitchbook_get_lookup_codes)."
+          },
+          "country": {
+            "type": "string",
+            "description": "Country of the person's firm: a code from lookup table COUNTRY (read it with pitchbook_get_lookup_codes); PitchBook's examples use USA and MEX."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1. stats.lastPage in the answer is the last one."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Results per page. PitchBook's examples return 25 when it is left out; the highest value allowed depends on the account, and a 400 names it."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/search",
+        "queryParams": {
+          "personNames": "$person_names",
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "firmNames": "$firm_names",
+          "firmType": "$firm_type",
+          "positionLevel": "$position_level",
+          "positionTitle": "$position_title",
+          "department": "$department",
+          "status": "$status",
+          "email": "$email",
+          "domain": "$domain",
+          "university": "$university",
+          "biography": "$biography",
+          "industry": "$industry",
+          "verticals": "$verticals",
+          "city": "$city",
+          "stateProvince": "$state_province",
+          "country": "$country",
+          "page": "$page",
+          "perPage": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_person_bio",
+      "description": "Read the profile of one person: personName (full, first, last, middle, prefix, suffix), yearOfBirth, biography, linkedInProfileUrl, gender, the primary entity (primaryEntityId, primaryEntityName, primaryEntityType, primaryEntityWebsite), primaryPosition and primaryOffice (address, phone, email, region). Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the person, e.g. 217377-01P. personId from pitchbook_search_people or an id from pitchbook_get_fund_team."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{pb_id}/bio"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_person_roles",
+      "description": "Read the education and career of one person: education (institution, degree, yearOfGraduation), companyRoles (companyId, companyName, position, positionStatus, positionStart, positionFinish), boardSeats, currentAdvisoryRoles, dealRoles (dealId, dealDate, company and the party represented) and fundRoles (fundId, fundName, investor). Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the person, e.g. 217377-01P. personId from pitchbook_search_people."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{pb_id}/education-work"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_person_contact",
+      "description": "Read the business contact details of one person: fullName, phone, fax and email. Fields PitchBook does not have are null. Personal data: use it only for the purpose your PitchBook contract allows. Billed in PitchBook API credits per call; the price of this endpoint is in pitchbook_list_call_costs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pb_id": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9-]{3,30}$",
+            "description": "PitchBook id (pbId) of the person, e.g. 217377-01P. personId from pitchbook_search_people."
+          }
+        },
+        "required": [
+          "pb_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/people/{pb_id}/contact"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_limits",
+      "description": "Read the limits of the account and what is left of them now: limits is a list with limitType (for example Credits) and, where set, perMinute, perHour, perDay and perMonth, each with limit and remainingLimit; plus lastUpdatedDate and overageChargesAvailable. Check it before a long series of calls. Account information, not part of PitchBook's priced endpoint list.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/limits"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_call_costs",
+      "description": "Read the price list of the account: one row per endpoint with group (General, Companies, Deals, Investors, People, Funds and more), endpoint (its name in the PitchBook docs, e.g. Company Bio), initialCost and refreshCost in API credits. Use it to estimate what a series of calls will cost. Account information, not part of PitchBook's priced endpoint list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pricing_model": {
+            "type": "string",
+            "description": "Pricing model to price for: the one of your contract (pricingModel in pitchbook_get_credit_history).",
+            "enum": [
+              "SUBSCRIPTION",
+              "PAY_PER_CALL",
+              "INTEGRATION"
+            ]
+          }
+        },
+        "required": [
+          "pricing_model"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/calls/costs",
+        "queryParams": {
+          "pricingModel": "$pricing_model"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_credit_history",
+      "description": "Read the credit use per contract for a time frame of up to the last 90 days: contractNumber, activeContract, pricingModel, creditsUsed, creditsChanged, creditsExpired, creditsRemaining and overageUsed. creditsRemaining is what is left on the contract. Account information, not part of PitchBook's priced endpoint list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "trailing_days": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 90,
+            "description": "Look at the last N days (up to 90). Use this or since_date."
+          },
+          "since_date": {
+            "type": "string",
+            "description": "Time frame within the last 90 days, with an operator: `>2024-01-01` (after), `<2024-12-31` (before) or `2024-01-01^2024-12-31` (between two dates). Dates are YYYY-MM-DD."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/credits/history",
+        "queryParams": {
+          "trailingRange": "$trailing_days",
+          "sinceDate": "$since_date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_list_sandbox_entities",
+      "description": "List the test entities a sandbox API key can read: entityTypeCounts and, per type, the ids and names (companies with companyId and companyName, investors, dealIds, people, funds, limitedPartners, serviceProviders, creditNews). Use these ids to try the other tools with a sandbox key. Account information, not part of PitchBook's priced endpoint list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entity_type": {
+            "type": "string",
+            "description": "Only this type of entity. Left out, every type is returned.",
+            "enum": [
+              "COMPANIES",
+              "INVESTORS",
+              "LIMITED_PARTNERS",
+              "SERVICE_PROVIDERS",
+              "PEOPLE",
+              "DEALS",
+              "FUNDS",
+              "CREDIT_NEWS"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sandbox-entities",
+        "queryParams": {
+          "entityType": "$entity_type"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "pitchbook_get_lookup_codes",
+      "description": "Read the codes of one or more PitchBook lookup tables: per table tableName, tableDescription and codes (code, description). The search filters take these codes, e.g. INDUSTRY code 101010 is Aerospace and Defense. Some tables (INDUSTRY, VERTICAL, COUNTRY) are long, so ask only for the tables you need. Account information, not part of PitchBook's priced endpoint list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "table_names": {
+            "type": "string",
+            "description": "Table names, comma-separated. Tables used by this connector: INDUSTRY, VERTICAL, EMERGING_SPACES, COUNTRY, REGION, US_STATE, US_AREA, CANADIAN_PROVINCE, UK_TERRITORY, AUSTRALIAN_TERRITORY, CURRENCY_CODE, OWNERSHIP_STATUS, BACKING_STATUS, BUSINESS_STATUS, UNIVERSE, FINANCIALS_PERIOD_TYPE, DEAL_TYPE, DEAL_STATUS, EXIT_TYPE, INVESTOR_TYPE, OTHER_INVESTMENT_PREFERENCES, FUND_STRATEGY, FUND_STATUS, PERSON_FIRM_TYPE, PERSON_POSITION, PERSON_POSITION_DEPARTMENT, LIMITED_PARTNER_TYPE, SERVICE_PROVIDER_TYPE."
+          }
+        },
+        "required": [
+          "table_names"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/lookup-tables",
+        "queryParams": {
+          "tableNames": "$table_names"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

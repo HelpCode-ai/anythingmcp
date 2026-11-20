@@ -1,0 +1,949 @@
+{
+  "slug": "open-meteo",
+  "name": "Open-Meteo",
+  "aliases": [
+    "Open Meteo",
+    "OpenMeteo",
+    "Open-Meteo Weather API",
+    "weather forecast API"
+  ],
+  "description": "Free weather data without an API key (non-commercial use): forecasts up to 16 days, historical weather since 1940, air quality and pollen, marine and wave forecasts, river discharge, climate projections, ensemble and seasonal forecasts, elevation and place search by name.",
+  "instructions": "## Open-Meteo\nThis connector reads the free **Open-Meteo** weather APIs: forecasts, historical weather back to 1940, archived forecasts, air quality and pollen, marine and wave forecasts, river discharge, climate projections, ensemble and seasonal forecasts, terrain elevation and place search. No account and no API key; everything is read-only.\n\n**Setup**: nothing to configure. Try `open_meteo_search_locations` with the name Freiburg, then `open_meteo_get_forecast` with the coordinates it returns.\n\n**Licence and limits**: the keyless service is for **non-commercial use** and is limited per IP address to about 600 calls a minute, 5,000 an hour and 10,000 a day (a call with many variables, days or locations counts as more than one). The data is licensed CC BY 4.0: credit Open-Meteo when you publish it. Commercial use needs a paid plan, which has its own host (`customer-api.open-meteo.com` and matching hosts per API) and an `apikey` parameter; this connector does not use it.\n\n**Where to start**\n- A place name: `open_meteo_search_locations` (or `open_meteo_get_location` for a known id) gives latitude, longitude and the IANA time zone. All weather tools take coordinates, never names.\n- Weather now and the next days: `open_meteo_get_forecast` with `current`, `hourly` and/or `daily`.\n- The past: `open_meteo_get_historical_weather` (reanalysis, 1940 to about 5 days ago) or, for the last days, `open_meteo_get_forecast` with `past_days`. What the models predicted back then: `open_meteo_get_historical_forecast`.\n- Air and sea: `open_meteo_get_air_quality`, `open_meteo_get_marine_forecast`. Rivers: `open_meteo_get_flood_forecast`. Heights: `open_meteo_get_elevation`.\n- Uncertainty and long range: `open_meteo_get_ensemble_forecast`, `open_meteo_get_seasonal_forecast`, `open_meteo_get_climate_projection`.\n\n**How requests work**\n- Nothing is returned by default: name the variables you want in `current`, `hourly` or `daily`, comma-separated, in snake_case (`temperature_2m`, `precipitation_sum`). An unknown name is refused with HTTP 400 and a `reason` text.\n- Set `timezone` (an IANA name or `auto`) whenever you ask for daily values or want local times; the default is GMT. Times are ISO 8601 without offset, in the requested zone.\n- The time range is either `forecast_days` plus `past_days`, or `start_date` and `end_date` (both YYYY-MM-DD, inclusive).\n- Default units: degrees Celsius, km/h, mm, hPa, percent, W/m2; the `_units` objects in the answer always name the unit of each variable.\n- The answer's latitude and longitude are the centre of the model grid cell that was used, so they differ slightly from what you sent.\n\n**Reading the answer**: each block is columnar. `hourly.time[i]` belongs to `hourly.temperature_2m[i]`, and the same for `daily`. `weather_code` is a WMO code: 0 clear sky, 1 to 3 mainly clear to overcast, 45 and 48 fog, 51 to 57 drizzle, 61 to 67 rain, 71 to 77 snow, 80 to 82 rain showers, 85 and 86 snow showers, 95 thunderstorm, 96 and 99 thunderstorm with hail. Daily sums and maxima follow the requested time zone.\n\n**Pitfalls**: hourly data for long periods is large (one year of one variable is 8,760 values), so ask for daily variables or short ranges. Ensemble and seasonal answers repeat every variable once per member. Marine values near the coast and river discharge on small rivers are coarse model values, not measurements.",
+  "region": "intl",
+  "category": "data",
+  "icon": "open-meteo",
+  "docsUrl": "https://open-meteo.com/en/docs",
+  "requiredEnvVars": [],
+  "verifyHints": {
+    "400": "Open-Meteo refused the request: read the reason text. Usual causes are an unknown variable name, coordinates out of range or a date outside the available period.",
+    "rate_limited": "The free Open-Meteo service limits each IP address to about 600 calls a minute, 5,000 an hour and 10,000 a day. Wait a minute and ask for fewer variables or days per call."
+  },
+  "probe": {
+    "tool": "open_meteo_get_forecast",
+    "params": {
+      "latitude": 52.52,
+      "longitude": 13.41,
+      "current": "temperature_2m"
+    }
+  },
+  "connector": {
+    "name": "Open-Meteo",
+    "type": "REST",
+    "baseUrl": "https://api.open-meteo.com",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "open_meteo_search_locations",
+      "description": "Find a place by name or postal code and get its coordinates (Open-Meteo geocoding, GeoNames data). Returns results with id, name, latitude, longitude, elevation in metres, feature_code, country_code, country, admin1 to admin4 (region names), timezone, population and postcodes. Use the latitude, longitude and timezone in the weather tools. An unknown name returns no results key.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Place name or postal code. At least 2 characters; 3 or more enable fuzzy matching. Example: Freiburg."
+          },
+          "count": {
+            "type": "integer",
+            "description": "Number of results, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the returned names, lower-case ISO 639-1 code such as en, de, fr, it (default en)."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Restrict to one country, ISO 3166-1 alpha-2 code such as DE or US."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://geocoding-api.open-meteo.com/v1/search",
+        "queryParams": {
+          "name": "$name",
+          "count": "$count",
+          "language": "$language",
+          "countryCode": "$country_code"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_location",
+      "description": "Get one place by its geocoding id (the id from open_meteo_search_locations): name, latitude, longitude, elevation, country, admin1 to admin4, timezone, population and postcodes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Location id from the search results, e.g. 2925177 for Freiburg im Breisgau."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language of the returned names, lower-case ISO 639-1 code (default en)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://geocoding-api.open-meteo.com/v1/get",
+        "queryParams": {
+          "id": "$id",
+          "language": "$language"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_forecast",
+      "description": "Weather forecast for a point: current conditions, hourly values and daily aggregates for up to 16 days, from the best available national weather models (about 1 to 11 km). The answer echoes the grid cell used (latitude, longitude, elevation), the time zone, and for each requested block (current, hourly, daily) a units object and parallel arrays keyed by variable name under a shared time array. Ask for at least one of current, hourly or daily. weather_code is a WMO code (0 clear, 1-3 partly cloudy, 45-48 fog, 51-67 drizzle and rain, 71-77 snow, 80-82 showers, 95-99 thunderstorm).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "current": {
+            "type": "string",
+            "description": "Comma-separated variables for the current conditions (15-minute resolution where available). Common: temperature_2m, relative_humidity_2m, apparent_temperature, is_day, precipitation, rain, showers, snowfall, weather_code, cloud_cover, pressure_msl, surface_pressure, wind_speed_10m, wind_direction_10m, wind_gusts_10m."
+          },
+          "hourly": {
+            "type": "string",
+            "description": "Comma-separated hourly variables. Common: temperature_2m, relative_humidity_2m, dew_point_2m, apparent_temperature, precipitation_probability, precipitation, rain, showers, snowfall, snow_depth, weather_code, pressure_msl, surface_pressure, cloud_cover, visibility, wind_speed_10m, wind_direction_10m, wind_gusts_10m, uv_index, is_day, sunshine_duration, shortwave_radiation, soil_temperature_0cm, soil_moisture_0_to_1cm, et0_fao_evapotranspiration."
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables (set timezone too). Common: weather_code, temperature_2m_max, temperature_2m_min, apparent_temperature_max, apparent_temperature_min, sunrise, sunset, daylight_duration, sunshine_duration, uv_index_max, precipitation_sum, rain_sum, snowfall_sum, precipitation_hours, precipitation_probability_max, wind_speed_10m_max, wind_gusts_10m_max, wind_direction_10m_dominant, shortwave_radiation_sum, et0_fao_evapotranspiration."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for all timestamps and for the daily aggregation, an IANA name such as Europe/Berlin, or auto to use the location's own zone. Default GMT. Set it whenever daily values are requested, otherwise days are cut at midnight GMT."
+          },
+          "forecast_days": {
+            "type": "integer",
+            "description": "Days of forecast, 0 to 16 (default 7).",
+            "minimum": 0,
+            "maximum": 16
+          },
+          "past_days": {
+            "type": "integer",
+            "description": "Also return this many past days, 0 to 92 (default 0).",
+            "minimum": 0
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD. Use together with end_date instead of forecast_days and past_days."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, inclusive."
+          },
+          "forecast_hours": {
+            "type": "integer",
+            "description": "Limit the hourly block to this many hours from now, instead of whole days.",
+            "minimum": 1
+          },
+          "temperature_unit": {
+            "type": "string",
+            "description": "Temperature unit: celsius (default) or fahrenheit.",
+            "enum": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "wind_speed_unit": {
+            "type": "string",
+            "description": "Wind speed unit: kmh (default), ms, mph or kn.",
+            "enum": [
+              "kmh",
+              "ms",
+              "mph",
+              "kn"
+            ]
+          },
+          "precipitation_unit": {
+            "type": "string",
+            "description": "Precipitation unit: mm (default) or inch.",
+            "enum": [
+              "mm",
+              "inch"
+            ]
+          },
+          "models": {
+            "type": "string",
+            "description": "Comma-separated weather models instead of the automatic choice, e.g. best_match (default), ecmwf_ifs025, gfs_seamless, icon_seamless, meteofrance_seamless, ukmo_seamless, jma_seamless, gem_seamless, metno_seamless, knmi_seamless, dmi_seamless. With several models each variable comes back once per model, suffixed with the model name."
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/forecast",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "current": "$current",
+          "hourly": "$hourly",
+          "daily": "$daily",
+          "timezone": "$timezone",
+          "forecast_days": "$forecast_days",
+          "past_days": "$past_days",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "forecast_hours": "$forecast_hours",
+          "temperature_unit": "$temperature_unit",
+          "wind_speed_unit": "$wind_speed_unit",
+          "precipitation_unit": "$precipitation_unit",
+          "models": "$models"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_historical_weather",
+      "description": "Historical weather for a point from reanalysis data (ERA5 and related), from 1940 up to about 5 days ago: hourly values and daily aggregates between two dates. The answer echoes the grid cell used (latitude, longitude, elevation), the time zone, and for each requested block (current, hourly, daily) a units object and parallel arrays keyed by variable name under a shared time array. For recent days that are not in the archive yet use open_meteo_get_forecast with past_days. Long ranges with many hourly variables are large: prefer daily variables for periods over a few months.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, from 1940-01-01."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, inclusive."
+          },
+          "hourly": {
+            "type": "string",
+            "description": "Comma-separated hourly variables. Common: temperature_2m, relative_humidity_2m, dew_point_2m, apparent_temperature, precipitation, rain, snowfall, snow_depth, weather_code, pressure_msl, surface_pressure, cloud_cover, wind_speed_10m, wind_direction_10m, wind_gusts_10m, shortwave_radiation, soil_temperature_0_to_7cm, soil_moisture_0_to_7cm, et0_fao_evapotranspiration."
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables (set timezone too). Common: weather_code, temperature_2m_max, temperature_2m_min, temperature_2m_mean, apparent_temperature_max, apparent_temperature_min, sunrise, sunset, daylight_duration, sunshine_duration, precipitation_sum, rain_sum, snowfall_sum, precipitation_hours, wind_speed_10m_max, wind_gusts_10m_max, wind_direction_10m_dominant, shortwave_radiation_sum, et0_fao_evapotranspiration."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for all timestamps and for the daily aggregation, an IANA name such as Europe/Berlin, or auto to use the location's own zone. Default GMT. Set it whenever daily values are requested, otherwise days are cut at midnight GMT."
+          },
+          "temperature_unit": {
+            "type": "string",
+            "description": "Temperature unit: celsius (default) or fahrenheit.",
+            "enum": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "wind_speed_unit": {
+            "type": "string",
+            "description": "Wind speed unit: kmh (default), ms, mph or kn.",
+            "enum": [
+              "kmh",
+              "ms",
+              "mph",
+              "kn"
+            ]
+          },
+          "precipitation_unit": {
+            "type": "string",
+            "description": "Precipitation unit: mm (default) or inch.",
+            "enum": [
+              "mm",
+              "inch"
+            ]
+          },
+          "models": {
+            "type": "string",
+            "description": "Reanalysis model: best_match (default), era5_seamless, era5, era5_land, ecmwf_ifs or cerra (Europe only)."
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://archive-api.open-meteo.com/v1/archive",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "hourly": "$hourly",
+          "daily": "$daily",
+          "timezone": "$timezone",
+          "temperature_unit": "$temperature_unit",
+          "wind_speed_unit": "$wind_speed_unit",
+          "precipitation_unit": "$precipitation_unit",
+          "models": "$models"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_historical_forecast",
+      "description": "Archived weather model forecasts for a point (from 2022 for most models, some from 2016): what the high-resolution forecast models said for past dates, stitched from successive runs. Same variables and shape as the forecast. The answer echoes the grid cell used (latitude, longitude, elevation), the time zone, and for each requested block (current, hourly, daily) a units object and parallel arrays keyed by variable name under a shared time array. Use it to compare past forecasts with measurements or to train models on forecast data; for climate statistics use open_meteo_get_historical_weather.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, inclusive."
+          },
+          "hourly": {
+            "type": "string",
+            "description": "Comma-separated hourly variables, as in the forecast. Common: temperature_2m, relative_humidity_2m, dew_point_2m, apparent_temperature, precipitation_probability, precipitation, rain, showers, snowfall, snow_depth, weather_code, pressure_msl, surface_pressure, cloud_cover, visibility, wind_speed_10m, wind_direction_10m, wind_gusts_10m, uv_index, is_day, sunshine_duration, shortwave_radiation, soil_temperature_0cm, soil_moisture_0_to_1cm, et0_fao_evapotranspiration."
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables (set timezone too). Common: weather_code, temperature_2m_max, temperature_2m_min, apparent_temperature_max, apparent_temperature_min, sunrise, sunset, daylight_duration, sunshine_duration, uv_index_max, precipitation_sum, rain_sum, snowfall_sum, precipitation_hours, precipitation_probability_max, wind_speed_10m_max, wind_gusts_10m_max, wind_direction_10m_dominant, shortwave_radiation_sum, et0_fao_evapotranspiration."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for all timestamps and for the daily aggregation, an IANA name such as Europe/Berlin, or auto to use the location's own zone. Default GMT. Set it whenever daily values are requested, otherwise days are cut at midnight GMT."
+          },
+          "temperature_unit": {
+            "type": "string",
+            "description": "Temperature unit: celsius (default) or fahrenheit.",
+            "enum": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "wind_speed_unit": {
+            "type": "string",
+            "description": "Wind speed unit: kmh (default), ms, mph or kn.",
+            "enum": [
+              "kmh",
+              "ms",
+              "mph",
+              "kn"
+            ]
+          },
+          "precipitation_unit": {
+            "type": "string",
+            "description": "Precipitation unit: mm (default) or inch.",
+            "enum": [
+              "mm",
+              "inch"
+            ]
+          },
+          "models": {
+            "type": "string",
+            "description": "Comma-separated forecast models, e.g. best_match (default), icon_seamless, gfs_seamless, ecmwf_ifs025, meteofrance_seamless."
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://historical-forecast-api.open-meteo.com/v1/forecast",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "hourly": "$hourly",
+          "daily": "$daily",
+          "timezone": "$timezone",
+          "temperature_unit": "$temperature_unit",
+          "wind_speed_unit": "$wind_speed_unit",
+          "precipitation_unit": "$precipitation_unit",
+          "models": "$models"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_air_quality",
+      "description": "Air quality and pollen forecast for a point (CAMS European 11 km and global 40 km models): current and hourly pollutant concentrations in micrograms per cubic metre, the European and US air quality indices, UV index and, in Europe during the season, pollen in grains per cubic metre. The answer echoes the grid cell used (latitude, longitude, elevation), the time zone, and for each requested block (current, hourly, daily) a units object and parallel arrays keyed by variable name under a shared time array. european_aqi: 0-20 good, 20-40 fair, 40-60 moderate, 60-80 poor, 80-100 very poor, above 100 extremely poor. us_aqi: 0-50 good, 51-100 moderate, 101-150 unhealthy for sensitive groups, 151-200 unhealthy, above 200 very unhealthy or hazardous.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "current": {
+            "type": "string",
+            "description": "Comma-separated variables for the current hour. Available: pm10, pm2_5, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, aerosol_optical_depth, dust, uv_index, uv_index_clear_sky, ammonia, alder_pollen, birch_pollen, grass_pollen, mugwort_pollen, olive_pollen, ragweed_pollen, european_aqi, us_aqi."
+          },
+          "hourly": {
+            "type": "string",
+            "description": "Comma-separated hourly variables. Available: pm10, pm2_5, carbon_monoxide, nitrogen_dioxide, sulphur_dioxide, ozone, aerosol_optical_depth, dust, uv_index, uv_index_clear_sky, ammonia, alder_pollen, birch_pollen, grass_pollen, mugwort_pollen, olive_pollen, ragweed_pollen, european_aqi, us_aqi. Pollen is only available in Europe."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for all timestamps and for the daily aggregation, an IANA name such as Europe/Berlin, or auto to use the location's own zone. Default GMT. Set it whenever daily values are requested, otherwise days are cut at midnight GMT."
+          },
+          "forecast_days": {
+            "type": "integer",
+            "description": "Days of forecast, 0 to 7 (default 5).",
+            "minimum": 0,
+            "maximum": 7
+          },
+          "past_days": {
+            "type": "integer",
+            "description": "Also return this many past days, 0 to 92 (default 0).",
+            "minimum": 0
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD. Use together with end_date instead of forecast_days and past_days."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, inclusive."
+          },
+          "domains": {
+            "type": "string",
+            "description": "Model domain: auto (default, European model inside Europe, global elsewhere), cams_europe or cams_global.",
+            "enum": [
+              "auto",
+              "cams_europe",
+              "cams_global"
+            ]
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://air-quality-api.open-meteo.com/v1/air-quality",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "current": "$current",
+          "hourly": "$hourly",
+          "timezone": "$timezone",
+          "forecast_days": "$forecast_days",
+          "past_days": "$past_days",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "domains": "$domains"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_marine_forecast",
+      "description": "Marine forecast for a point at sea or on the coast: current, hourly and daily wave height (metres), direction (degrees) and period (seconds) for total, wind and swell waves, ocean currents, sea surface temperature and sea level height including tides. The answer echoes the grid cell used (latitude, longitude, elevation), the time zone, and for each requested block (current, hourly, daily) a units object and parallel arrays keyed by variable name under a shared time array. Accuracy near the coast is limited: not a substitute for a nautical almanac, do not use for coastal navigation. A point far inland returns null values.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "current": {
+            "type": "string",
+            "description": "Comma-separated variables for the current conditions. Available: wave_height, wave_direction, wave_period, wind_wave_height, wind_wave_direction, wind_wave_period, wind_wave_peak_period, swell_wave_height, swell_wave_direction, swell_wave_period, swell_wave_peak_period, ocean_current_velocity, ocean_current_direction, sea_surface_temperature, sea_level_height_msl."
+          },
+          "hourly": {
+            "type": "string",
+            "description": "Comma-separated hourly variables. Available: wave_height, wave_direction, wave_period, wind_wave_height, wind_wave_direction, wind_wave_period, wind_wave_peak_period, swell_wave_height, swell_wave_direction, swell_wave_period, swell_wave_peak_period, ocean_current_velocity, ocean_current_direction, sea_surface_temperature, sea_level_height_msl."
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables (set timezone too). Available: wave_height_max, wave_direction_dominant, wave_period_max, wind_wave_height_max, wind_wave_direction_dominant, wind_wave_period_max, swell_wave_height_max, swell_wave_direction_dominant, swell_wave_period_max."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for all timestamps and for the daily aggregation, an IANA name such as Europe/Berlin, or auto to use the location's own zone. Default GMT. Set it whenever daily values are requested, otherwise days are cut at midnight GMT."
+          },
+          "forecast_days": {
+            "type": "integer",
+            "description": "Days of forecast (default 7; the wave models reach about 8 to 16 days).",
+            "minimum": 0,
+            "maximum": 16
+          },
+          "past_days": {
+            "type": "integer",
+            "description": "Also return this many past days, 0 to 92 (default 0).",
+            "minimum": 0
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD. Use together with end_date instead of forecast_days and past_days."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, inclusive."
+          },
+          "length_unit": {
+            "type": "string",
+            "description": "metric (default, metres) or imperial (feet).",
+            "enum": [
+              "metric",
+              "imperial"
+            ]
+          },
+          "cell_selection": {
+            "type": "string",
+            "description": "Grid cell preference: sea (default, nearest sea cell), land or nearest.",
+            "enum": [
+              "sea",
+              "land",
+              "nearest"
+            ]
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://marine-api.open-meteo.com/v1/marine",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "current": "$current",
+          "hourly": "$hourly",
+          "daily": "$daily",
+          "timezone": "$timezone",
+          "forecast_days": "$forecast_days",
+          "past_days": "$past_days",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "length_unit": "$length_unit",
+          "cell_selection": "$cell_selection"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_elevation",
+      "description": "Terrain elevation above sea level in metres for one or several coordinates, from the Copernicus 90 m digital elevation model. Returns elevation as a list in the order of the coordinates. Up to 100 coordinates per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "string",
+            "description": "Latitude in decimal degrees, or several separated by commas, e.g. 52.52,47.99. Same count as longitude."
+          },
+          "longitude": {
+            "type": "string",
+            "description": "Longitude in decimal degrees, or several separated by commas, e.g. 13.41,7.85."
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/elevation",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_flood_forecast",
+      "description": "River discharge for the largest river within about 5 km of a point (GloFAS, Copernicus Emergency Management Service): daily simulated discharge in cubic metres per second, as forecast for up to 210 days and as reanalysis back to 1984. Returns daily arrays keyed by variable under a shared time array. The 5 km grid may pick a neighbouring river: move the point slightly when the values look too small for the river you mean.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables. Available: river_discharge, river_discharge_mean, river_discharge_median, river_discharge_max, river_discharge_min, river_discharge_p25, river_discharge_p75. The statistics (mean, median, max, min, p25, p75) are taken over the forecast ensemble members."
+          },
+          "forecast_days": {
+            "type": "integer",
+            "description": "Days of forecast (default 92, up to about 210).",
+            "minimum": 0
+          },
+          "past_days": {
+            "type": "integer",
+            "description": "Also return this many past days (default 0).",
+            "minimum": 0
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, from 1984-01-01. Use together with end_date for history."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, inclusive."
+          },
+          "ensemble": {
+            "type": "boolean",
+            "description": "true: also return river_discharge for each of the ensemble members."
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://flood-api.open-meteo.com/v1/flood",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "daily": "$daily",
+          "forecast_days": "$forecast_days",
+          "past_days": "$past_days",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "ensemble": "$ensemble"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_climate_projection",
+      "description": "Climate change projection for a point: daily values from 1950 to 2050 from high-resolution CMIP6 climate models, downscaled to 10 km. Returns daily arrays keyed by variable (suffixed with the model name when several models are requested). These are model climates, not forecasts: compare multi-year averages across models, never single days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "start_date": {
+            "type": "string",
+            "description": "First day, YYYY-MM-DD, from 1950-01-01."
+          },
+          "end_date": {
+            "type": "string",
+            "description": "Last day, YYYY-MM-DD, up to 2050-12-31."
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables. Available: temperature_2m_mean, temperature_2m_max, temperature_2m_min, wind_speed_10m_mean, wind_speed_10m_max, cloud_cover_mean, shortwave_radiation_sum, relative_humidity_2m_mean, relative_humidity_2m_max, relative_humidity_2m_min, dew_point_2m_mean, dew_point_2m_min, dew_point_2m_max, precipitation_sum, rain_sum, snowfall_sum, pressure_msl_mean, soil_moisture_0_to_10cm_mean, et0_fao_evapotranspiration_sum."
+          },
+          "models": {
+            "type": "string",
+            "description": "Comma-separated climate models. Available: CMCC_CM2_VHR4, FGOALS_f3_H, HiRAM_SIT_HR, MRI_AGCM3_2_S, EC_Earth3P_HR, MPI_ESM1_2_XR, NICAM16_8S. Ask for several to see the spread."
+          },
+          "temperature_unit": {
+            "type": "string",
+            "description": "Temperature unit: celsius (default) or fahrenheit.",
+            "enum": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "wind_speed_unit": {
+            "type": "string",
+            "description": "Wind speed unit: kmh (default), ms, mph or kn.",
+            "enum": [
+              "kmh",
+              "ms",
+              "mph",
+              "kn"
+            ]
+          },
+          "precipitation_unit": {
+            "type": "string",
+            "description": "Precipitation unit: mm (default) or inch.",
+            "enum": [
+              "mm",
+              "inch"
+            ]
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "start_date",
+          "end_date",
+          "daily"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://climate-api.open-meteo.com/v1/climate",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "daily": "$daily",
+          "models": "$models",
+          "temperature_unit": "$temperature_unit",
+          "wind_speed_unit": "$wind_speed_unit",
+          "precipitation_unit": "$precipitation_unit"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_ensemble_forecast",
+      "description": "Ensemble weather forecast for a point: every member of a probabilistic model run, to judge forecast uncertainty. For each requested variable the answer holds the control run plus one series per member (suffix _member01, _member02 and so on), up to 35 days ahead depending on the model. Responses are large: ask for few variables and few days.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "models": {
+            "type": "string",
+            "description": "Comma-separated ensemble models (required, there is no automatic choice). Available: icon_seamless, gfs_seamless, ecmwf_ifs025, gem_global, bom_access_global_ensemble, ukmo_global_ensemble_20km."
+          },
+          "hourly": {
+            "type": "string",
+            "description": "Comma-separated hourly variables, e.g. temperature_2m, precipitation, wind_speed_10m, wind_gusts_10m, cloud_cover, snowfall."
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables, e.g. temperature_2m_max, temperature_2m_min, precipitation_sum, wind_speed_10m_max."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for all timestamps and for the daily aggregation, an IANA name such as Europe/Berlin, or auto to use the location's own zone. Default GMT. Set it whenever daily values are requested, otherwise days are cut at midnight GMT."
+          },
+          "forecast_days": {
+            "type": "integer",
+            "description": "Days of forecast (default 7; up to about 35 depending on the model).",
+            "minimum": 0
+          },
+          "past_days": {
+            "type": "integer",
+            "description": "Also return this many past days (default 0).",
+            "minimum": 0
+          },
+          "temperature_unit": {
+            "type": "string",
+            "description": "Temperature unit: celsius (default) or fahrenheit.",
+            "enum": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "wind_speed_unit": {
+            "type": "string",
+            "description": "Wind speed unit: kmh (default), ms, mph or kn.",
+            "enum": [
+              "kmh",
+              "ms",
+              "mph",
+              "kn"
+            ]
+          },
+          "precipitation_unit": {
+            "type": "string",
+            "description": "Precipitation unit: mm (default) or inch.",
+            "enum": [
+              "mm",
+              "inch"
+            ]
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "models"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://ensemble-api.open-meteo.com/v1/ensemble",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "models": "$models",
+          "hourly": "$hourly",
+          "daily": "$daily",
+          "timezone": "$timezone",
+          "forecast_days": "$forecast_days",
+          "past_days": "$past_days",
+          "temperature_unit": "$temperature_unit",
+          "wind_speed_unit": "$wind_speed_unit",
+          "precipitation_unit": "$precipitation_unit"
+        }
+      }
+    },
+    {
+      "name": "open_meteo_get_seasonal_forecast",
+      "description": "Seasonal outlook for a point from the ECMWF seasonal ensemble (SEAS5, about 36 km): daily values for the coming months, one series per ensemble member (suffix _member01 and so on). Long-range outlooks only show tendencies (warmer or wetter than usual), not the weather of a given day.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees (WGS84), -90 to 90, e.g. 52.52.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees (WGS84), -180 to 180, e.g. 13.41.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "daily": {
+            "type": "string",
+            "description": "Comma-separated daily variables, e.g. temperature_2m_max, temperature_2m_min, precipitation_sum, wind_speed_10m_max."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "Time zone for all timestamps and for the daily aggregation, an IANA name such as Europe/Berlin, or auto to use the location's own zone. Default GMT. Set it whenever daily values are requested, otherwise days are cut at midnight GMT."
+          },
+          "forecast_days": {
+            "type": "integer",
+            "description": "Days of outlook (default 45, up to about 7 months).",
+            "minimum": 1
+          },
+          "past_days": {
+            "type": "integer",
+            "description": "Also return this many past days (default 0).",
+            "minimum": 0
+          },
+          "temperature_unit": {
+            "type": "string",
+            "description": "Temperature unit: celsius (default) or fahrenheit.",
+            "enum": [
+              "celsius",
+              "fahrenheit"
+            ]
+          },
+          "wind_speed_unit": {
+            "type": "string",
+            "description": "Wind speed unit: kmh (default), ms, mph or kn.",
+            "enum": [
+              "kmh",
+              "ms",
+              "mph",
+              "kn"
+            ]
+          },
+          "precipitation_unit": {
+            "type": "string",
+            "description": "Precipitation unit: mm (default) or inch.",
+            "enum": [
+              "mm",
+              "inch"
+            ]
+          }
+        },
+        "required": [
+          "latitude",
+          "longitude",
+          "daily"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://seasonal-api.open-meteo.com/v1/seasonal",
+        "queryParams": {
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "daily": "$daily",
+          "timezone": "$timezone",
+          "forecast_days": "$forecast_days",
+          "past_days": "$past_days",
+          "temperature_unit": "$temperature_unit",
+          "wind_speed_unit": "$wind_speed_unit",
+          "precipitation_unit": "$precipitation_unit"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,1113 @@
+{
+  "slug": "intruder",
+  "name": "Intruder",
+  "aliases": [
+    "Intruder.io",
+    "Intruder vulnerability scanner"
+  ],
+  "description": "Intruder vulnerability scanning and attack surface monitoring from any AI agent: issues with occurrences and scanner evidence, fixed occurrences, targets and tags, scans and schedules, open ports and certificates, licence usage and AI pentests. Starts scans and adds comments; adding or deleting targets, cancelling scans and snoozing are switched off.",
+  "instructions": "## Intruder\nThis connector calls the **Intruder API v1** (`https://api.intruder.io/v1`) of Intruder, the vulnerability scanner and attack surface monitoring platform: the issues found on your targets with their occurrences and scanner evidence, fixed occurrences, targets and tags, scans and scan schedules, the open ports of your external attack surface, licence usage and AI pentests.\n\n**Setup (about 3 minutes, account admin)**\n1. API access needs an **account admin** on a **Cloud, Pro, Enterprise or Vanguard** plan. Other users and plans are answered with 403.\n2. In the Intruder portal open **Settings, My account** (in the sidebar under More) and scroll to **API access tokens**.\n3. Name the token (e.g. AnythingMCP), optionally set **Expires on**, click **Create access token** and confirm with your password or single sign-on.\n4. Copy the token at once (it is shown only once) into `INTRUDER_ACCESS_TOKEN`. It is sent as `Authorization: Bearer <token>`. The token is personal: it acts as the admin who created it and stops working when revoked or expired.\n\n**Where to start**\n- `intruder_check_health` shows whose token this is. `intruder_list_licenses` shows how many infrastructure and application licences are used.\n- What is wrong: `intruder_list_issues` (filter by severity, exploit_likelihood, tags or target addresses). An issue groups every place it was found; `intruder_list_issue_occurrences` lists those places and `intruder_list_issue_targets` the affected targets. `intruder_get_occurrence_scanner_output` gives the evidence for one occurrence.\n- What was fixed: `intruder_list_fixed_occurrences` with `remediated_after` and `remediated_before`.\n- What is scanned: `intruder_list_targets` and `intruder_list_tags`. `intruder_list_network_services` lists open ports, products and TLS certificate expiry on external targets.\n- Scans: `intruder_list_scans`, `intruder_get_scan`, `intruder_list_scan_schedules`. `intruder_start_scan` starts a scan now.\n- AI pentests: `intruder_list_ai_pentests`, `intruder_get_ai_pentest`, `intruder_list_ai_pentest_findings`.\n\n**Writing**\n- On at install: `intruder_start_scan` (give `target_addresses` or `tag_names`; with neither it scans every target), `intruder_add_occurrence_comment` and `intruder_add_target_tag`. `intruder_list_occurrence_comments` reads the comments back.\n- Switched off at install, to be enabled by an administrator: `intruder_create_target` (a target takes a licence for 30 days), `intruder_delete_target`, `intruder_remove_target_tag`, `intruder_cancel_scan` and `intruder_snooze_occurrence` (hides a finding from the open issues). Even when enabled, say what will change and wait for the user's confirmation.\n- Only scan systems the account owner is allowed to test.\n\n**Paging and filters**: list answers are `count`, `next`, `previous` and `results`. Send `limit` (at most 100, default 25) and `offset`; stop when `next` is null. Filters that take several values (`tag_names`, `target_addresses`, `issue_ids`, `ports`) are one string with commas. Every path ends with a slash.\n\n**Reading the data**: times are ISO 8601 in UTC. `severity` is critical, high, medium or low; `exploit_likelihood` comes from the EPSS score and is null (filter value `unknown`) when there is none. Deleted targets keep their issues: pass `exclude_deleted_targets` true to leave them out. A scan with status `analysing_results` has finished scanning but its issues are not published yet.\n\n**Limits and errors**: 5,000 requests per hour per user, some endpoints 150 per minute, trial accounts 1 request per second; 429 carries a `Retry-After` header in seconds. 401 means the token is missing, wrong, expired or revoked. 403 means the plan or the user's role does not allow API access. 422 on `intruder_start_scan` means too many scans are already running.",
+  "region": "intl",
+  "category": "monitoring",
+  "icon": "intruder",
+  "docsUrl": "https://developers.intruder.io/docs/welcome",
+  "prerequisites": "An Intruder account on a Cloud, Pro, Enterprise or Vanguard plan and an account admin to create an API access token under Settings, My account. About 3 minutes.",
+  "requiredEnvVars": [
+    "INTRUDER_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "INTRUDER_ACCESS_TOKEN": {
+      "label": "API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Intruder portal, Settings, My account, API access tokens, Create access token. Only account admins can create one; it is shown once.",
+      "link": "https://developers.intruder.io/docs/creating-an-access-token",
+      "pattern": "^(?!Bearer\\s)\\S{20,}$",
+      "patternMessage": "Paste only the token, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Intruder refused the token: it is wrong, expired or revoked. Create a new one under Settings, My account, API access tokens.",
+    "403": "Intruder does not allow API access for this user or plan. The token must belong to an account admin on a Cloud, Pro, Enterprise or Vanguard plan.",
+    "404": "Intruder found nothing with that id. Take ids from the list tools; every path ends with a slash.",
+    "rate_limited": "Intruder allows 5,000 requests per hour (trial accounts 1 per second). Wait for the seconds in the Retry-After header and try again."
+  },
+  "probe": {
+    "tool": "intruder_list_licenses",
+    "params": {
+      "limit": 1
+    }
+  },
+  "connector": {
+    "name": "Intruder API v1",
+    "type": "REST",
+    "baseUrl": "https://api.intruder.io/v1",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{INTRUDER_ACCESS_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "intruder_check_health",
+      "description": "Check that the Intruder API is up and whose token this is. Returns status and authenticated_as: the email address of the token owner, or a \"Not authenticated\" notice when the token was not accepted (this call answers 200 either way).",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/health/"
+      }
+    },
+    {
+      "name": "intruder_list_issues",
+      "description": "List the current issues (vulnerabilities and weaknesses) found on your targets. Each issue has id, severity, title, description, remediation, snoozed, snooze_reason, exploit_likelihood, cvss_score, first_seen_at and vulnerability_category. One issue groups all its occurrences across targets. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ],
+            "description": "Only this severity."
+          },
+          "exploit_likelihood": {
+            "type": "string",
+            "enum": [
+              "known",
+              "very_likely",
+              "likely",
+              "unlikely",
+              "rare",
+              "unknown"
+            ],
+            "description": "Only issues with this likelihood of being exploited (from the EPSS score). unknown matches issues without a score."
+          },
+          "target_addresses": {
+            "type": "string",
+            "description": "Only these targets: addresses separated by commas, e.g. example.com,203.0.113.10."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Only targets carrying one of these tags: tag names separated by commas, e.g. production,dmz."
+          },
+          "issue_ids": {
+            "type": "string",
+            "description": "Only these issues: ids separated by commas, e.g. 101,102.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "vulnerability_categories": {
+            "type": "string",
+            "description": "Only these categories: names separated by commas, e.g. Attack Surface Reduction."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only issues with new occurrences since this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "snoozed": {
+            "type": "boolean",
+            "description": "true for snoozed issues only, false for issues that are not snoozed. Leave out for both."
+          },
+          "exclude_deleted_targets": {
+            "type": "boolean",
+            "description": "true to leave out issues found only on deleted targets. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/",
+        "queryParams": {
+          "severity": "$severity",
+          "exploit_likelihood": "$exploit_likelihood",
+          "target_addresses": "$target_addresses",
+          "tag_names": "$tag_names",
+          "issue_ids": "$issue_ids",
+          "vulnerability_categories": "$vulnerability_categories",
+          "since": "$since",
+          "snoozed": "$snoozed",
+          "exclude_deleted_targets": "$exclude_deleted_targets",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_list_issue_occurrences",
+      "description": "List where one issue occurs: one row per target, port and protocol with id, target, display_address, port, protocol, extra_info, age, snoozed, snooze_reason, snooze_until, exploit_likelihood, cvss_score, first_seen_at, target_last_scanned_at and cves. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "description": "Issue id from intruder_list_issues.",
+            "minimum": 1
+          },
+          "target_addresses": {
+            "type": "string",
+            "description": "Only these targets: addresses separated by commas, e.g. example.com,203.0.113.10."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Only targets carrying one of these tags: tag names separated by commas, e.g. production,dmz."
+          },
+          "since": {
+            "type": "string",
+            "description": "Only occurrences first seen since this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "snoozed": {
+            "type": "boolean",
+            "description": "true for snoozed occurrences only, false for those not snoozed. Leave out for both."
+          },
+          "exclude_deleted_targets": {
+            "type": "boolean",
+            "description": "true to leave out occurrences on deleted targets. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "issue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issue_id}/occurrences/",
+        "queryParams": {
+          "target_addresses": "$target_addresses",
+          "tag_names": "$tag_names",
+          "since": "$since",
+          "snoozed": "$snoozed",
+          "exclude_deleted_targets": "$exclude_deleted_targets",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_list_issue_targets",
+      "description": "List the targets affected by one issue: id, address, display_address and target_type (external, internal, cloud or container_image). Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "description": "Issue id from intruder_list_issues.",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "issue_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issue_id}/targets/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_get_occurrence_scanner_output",
+      "description": "Get the raw scanner evidence for one occurrence of an issue: per finding the plugin (name, cve list, cvss_base_score, cvss3_base_score) and the scanner_output lines that show what was detected. Use it to explain or verify a finding. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "description": "Issue id from intruder_list_issues.",
+            "minimum": 1
+          },
+          "occurrence_id": {
+            "type": "integer",
+            "description": "Occurrence id from intruder_list_issue_occurrences (field id).",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "issue_id",
+          "occurrence_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issue_id}/occurrences/{occurrence_id}/scanner_output/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_list_occurrence_comments",
+      "description": "List the comments on one occurrence, newest first: id, content, commenter_type, user (email), created_at and edited_at. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "description": "Issue id from intruder_list_issues.",
+            "minimum": 1
+          },
+          "occurrence_id": {
+            "type": "integer",
+            "description": "Occurrence id from intruder_list_issue_occurrences (field id).",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "issue_id",
+          "occurrence_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/issues/{issue_id}/occurrences/{occurrence_id}/comments/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_add_occurrence_comment",
+      "description": "Add a plain-text comment to one occurrence of an issue, visible to everyone on the Intruder account (for example a ticket reference or the fix that is planned). Returns the new comment with id, content, user and created_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "description": "Issue id from intruder_list_issues.",
+            "minimum": 1
+          },
+          "occurrence_id": {
+            "type": "integer",
+            "description": "Occurrence id from intruder_list_issue_occurrences (field id).",
+            "minimum": 1
+          },
+          "content": {
+            "type": "string",
+            "description": "The comment as plain text.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "issue_id",
+          "occurrence_id",
+          "content"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/issues/{issue_id}/occurrences/{occurrence_id}/comments/",
+        "bodyMapping": {
+          "content": "$content"
+        }
+      }
+    },
+    {
+      "name": "intruder_snooze_occurrence",
+      "description": "Snooze one occurrence of an issue so that it no longer counts as open, for a period or forever, with a reason. Installed switched off: snoozing hides a real finding from reports and exposure figures. State the reason and get the user's confirmation first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "issue_id": {
+            "type": "integer",
+            "description": "Issue id from intruder_list_issues.",
+            "minimum": 1
+          },
+          "occurrence_id": {
+            "type": "integer",
+            "description": "Occurrence id from intruder_list_issue_occurrences (field id).",
+            "minimum": 1
+          },
+          "reason": {
+            "type": "string",
+            "enum": [
+              "ACCEPT_RISK",
+              "FALSE_POSITIVE",
+              "MITIGATING_CONTROLS"
+            ],
+            "description": "Why it is snoozed: ACCEPT_RISK (risk accepted), FALSE_POSITIVE (verified as not exploitable) or MITIGATING_CONTROLS (another control covers it)."
+          },
+          "details": {
+            "type": "string",
+            "description": "Free-text justification kept with the snooze."
+          },
+          "duration_type": {
+            "type": "string",
+            "enum": [
+              "forever",
+              "day",
+              "week",
+              "month"
+            ],
+            "description": "Unit of the snooze period, or forever."
+          },
+          "duration": {
+            "type": "integer",
+            "description": "Number of days, weeks or months, e.g. 2 with duration_type week. Leave out with forever.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "issue_id",
+          "occurrence_id",
+          "reason",
+          "duration_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/issues/{issue_id}/occurrences/{occurrence_id}/snooze/",
+        "bodyMapping": {
+          "reason": "$reason",
+          "details": "$details",
+          "duration_type": "$duration_type",
+          "duration": "$duration"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "intruder_list_fixed_occurrences",
+      "description": "List occurrences that were fixed (no longer detected), for remediation reports. Each row has id, occurrence_id, title, severity, display_address, affected_host, affected_port, cvss_score, exploit_likelihood, first_seen_at, remediated_at, due_date, tags and remediation. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "remediated_after": {
+            "type": "string",
+            "description": "Only occurrences fixed after this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "remediated_before": {
+            "type": "string",
+            "description": "Only occurrences fixed before this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "severity": {
+            "type": "string",
+            "enum": [
+              "critical",
+              "high",
+              "medium",
+              "low"
+            ],
+            "description": "Only this severity."
+          },
+          "target_addresses": {
+            "type": "string",
+            "description": "Only these targets: addresses separated by commas, e.g. example.com,203.0.113.10."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Only targets carrying one of these tags: tag names separated by commas, e.g. production,dmz."
+          },
+          "exclude_deleted_targets": {
+            "type": "boolean",
+            "description": "true to leave out occurrences on deleted targets. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/occurrences/fixed/",
+        "queryParams": {
+          "remediated_after": "$remediated_after",
+          "remediated_before": "$remediated_before",
+          "severity": "$severity",
+          "target_addresses": "$target_addresses",
+          "tag_names": "$tag_names",
+          "exclude_deleted_targets": "$exclude_deleted_targets",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_list_targets",
+      "description": "List the targets (the systems Intruder scans). Each target has id, address, display_address, ip_address, hostnames, last_scanned, license_type (infrastructure or application), tags, target_status (live, license_exceeded, unscanned, unresponsive or agent_uninstalled), target_type, waf_provider and waf_interference. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Only targets whose address or display address matches, e.g. example.com."
+          },
+          "target_status": {
+            "type": "string",
+            "enum": [
+              "live",
+              "license_exceeded",
+              "unscanned",
+              "unresponsive",
+              "agent_uninstalled"
+            ],
+            "description": "Only targets in this state."
+          },
+          "target_type": {
+            "type": "string",
+            "enum": [
+              "external",
+              "internal",
+              "cloud",
+              "container_image"
+            ],
+            "description": "Only targets of this kind."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Only targets carrying one of these tags: tag names separated by commas, e.g. production,dmz."
+          },
+          "last_scanned_after": {
+            "type": "string",
+            "description": "Only targets last scanned after this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "last_scanned_before": {
+            "type": "string",
+            "description": "Only targets last scanned before this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "waf_interference": {
+            "type": "boolean",
+            "description": "true for targets where a web application firewall blocks the scans, false for the others."
+          },
+          "ordering": {
+            "type": "string",
+            "enum": [
+              "last_scanned",
+              "-last_scanned"
+            ],
+            "description": "Sort by last scan: last_scanned (oldest first, never scanned first) or -last_scanned (newest first)."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/targets/",
+        "queryParams": {
+          "address": "$address",
+          "target_status": "$target_status",
+          "target_type": "$target_type",
+          "tag_names": "$tag_names",
+          "last_scanned_after": "$last_scanned_after",
+          "last_scanned_before": "$last_scanned_before",
+          "waf_interference": "$waf_interference",
+          "ordering": "$ordering",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_create_target",
+      "description": "Add a target (a host name, IP address or URL you own) to Intruder, optionally with tags. Installed switched off: a new target takes one licence, which stays tied to it for 30 days even if the target is deleted, and Intruder may start scanning it. Check intruder_list_licenses and get the user's confirmation first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "address": {
+            "type": "string",
+            "description": "Host name, IP address or URL of the target, e.g. app.example.com or 203.0.113.10. Only add systems you are allowed to scan."
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Tags to put on the target, e.g. production."
+          }
+        },
+        "required": [
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/targets/",
+        "bodyMapping": {
+          "address": "$address",
+          "tags": "$tags"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "intruder_delete_target",
+      "description": "Delete a target from Intruder by id. Installed switched off: the target stops being scanned and its licence is not freed before the 30 days are over. Its past issues stay visible unless filtered with exclude_deleted_targets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "description": "Target id from intruder_list_targets.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "target_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/targets/{target_id}/"
+      },
+      "enabled": false
+    },
+    {
+      "name": "intruder_list_tags",
+      "description": "List the tag names in use on targets. Tags group targets (production, an office, a network) and filter issues, scans and services through tag_names. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tags/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_add_target_tag",
+      "description": "Put a tag on a target; the tag is created if it does not exist yet. Returns the tag name. Tags only label and group targets, they do not change what is scanned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "description": "Target id from intruder_list_targets.",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Tag name, e.g. production.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "target_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/targets/{target_id}/tags/",
+        "bodyMapping": {
+          "name": "$name"
+        }
+      }
+    },
+    {
+      "name": "intruder_remove_target_tag",
+      "description": "Remove one tag from one target. Installed switched off like every delete. Scan schedules and filters that select targets by this tag stop covering the target.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target_id": {
+            "type": "integer",
+            "description": "Target id from intruder_list_targets.",
+            "minimum": 1
+          },
+          "name": {
+            "type": "string",
+            "description": "Tag name exactly as intruder_list_tags returns it."
+          }
+        },
+        "required": [
+          "target_id",
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/targets/{target_id}/tags/{name}/",
+        "encodePathParams": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "intruder_list_scans",
+      "description": "List scans, running and finished. Each scan has id, name, status (in_progress, analysing_results, completed, cancelled, cancelled_no_active_targets or cancelled_no_valid_targets), created_at, scan_type and schedule_period. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": [
+              "in_progress",
+              "analysing_results",
+              "completed",
+              "cancelled",
+              "cancelled_no_active_targets",
+              "cancelled_no_valid_targets"
+            ],
+            "description": "Only scans in this state."
+          },
+          "scan_type": {
+            "type": "string",
+            "enum": [
+              "assessment_schedule",
+              "new_service",
+              "cloudbot_new_target",
+              "rapid_remediation",
+              "advisory",
+              "cloud_security",
+              "container_image"
+            ],
+            "description": "Only scans of this kind, e.g. assessment_schedule for scheduled and manual scans or new_service for emerging threat scans."
+          },
+          "schedule_period": {
+            "type": "string",
+            "enum": [
+              "one_off",
+              "daily",
+              "weekly",
+              "monthly",
+              "quarterly"
+            ],
+            "description": "Only scans with this schedule; one_off for scans started by hand or through the API."
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Only targets carrying one of these tags: tag names separated by commas, e.g. production,dmz."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scans/",
+        "queryParams": {
+          "status": "$status",
+          "scan_type": "$scan_type",
+          "schedule_period": "$schedule_period",
+          "tag_names": "$tag_names",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_get_scan",
+      "description": "Get one scan: id, name, status, scan_type, schedule_period, created_at, start_time, completed_time, target_addresses, throttled and web_ports_only. Poll it after intruder_start_scan until status is completed; issues appear once results are analysed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scan_id": {
+            "type": "integer",
+            "description": "Scan id from intruder_list_scans or intruder_start_scan.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "scan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scans/{scan_id}/"
+      }
+    },
+    {
+      "name": "intruder_start_scan",
+      "description": "Start a vulnerability scan now. Give target_addresses and/or tag_names to choose what is scanned; with neither, Intruder scans every target of the account, so name the scope unless a full scan is wanted. Answers 202 with the new scan (id, status, name, target_addresses); read progress with intruder_get_scan. At most 500 scans can run at once (status 422 beyond that).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "target_addresses": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Addresses of the targets to scan, exactly as intruder_list_targets returns them, e.g. app.example.com."
+          },
+          "tag_names": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Scan every target carrying one of these tags."
+          },
+          "name": {
+            "type": "string",
+            "description": "Optional name shown for the scan in Intruder."
+          },
+          "throttled": {
+            "type": "boolean",
+            "description": "true to scan more slowly, for fragile systems. Default false."
+          },
+          "web_ports_only": {
+            "type": "boolean",
+            "description": "true to scan only the web ports. Default false."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scans/",
+        "bodyMapping": {
+          "target_addresses": "$target_addresses",
+          "tag_names": "$tag_names",
+          "name": "$name",
+          "throttled": "$throttled",
+          "web_ports_only": "$web_ports_only"
+        }
+      }
+    },
+    {
+      "name": "intruder_cancel_scan",
+      "description": "Cancel a scan that is in progress. Installed switched off like every cancellation: results gathered so far are discarded and the targets are not assessed until the next scan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scan_id": {
+            "type": "integer",
+            "description": "Id of a scan with status in_progress, from intruder_list_scans.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "scan_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/scans/{scan_id}/cancel/"
+      },
+      "enabled": false
+    },
+    {
+      "name": "intruder_list_scan_schedules",
+      "description": "List the scan schedules (not paged). Each schedule has id, name, schedule_period, scan_all_targets, next_scan_date, status (scheduled, in_progress, complete or stopped), throttled, web_ports_only, latest_scan_id, latest_scan_status, last_scan_start_time, last_scan_end_time, targets (ids) and target_tags.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "tag_names": {
+            "type": "string",
+            "description": "Only schedules that scan one of these tags or a target carrying one: tag names separated by commas. Schedules that scan all targets are never returned by this filter."
+          },
+          "scan_all_targets": {
+            "type": "boolean",
+            "description": "true for the schedules that scan every target."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/scans/schedules/",
+        "queryParams": {
+          "tag_names": "$tag_names",
+          "scan_all_targets": "$scan_all_targets"
+        }
+      }
+    },
+    {
+      "name": "intruder_list_licenses",
+      "description": "Get the licence usage of the account: total, available and consumed infrastructure licences and the same three numbers for application licences. A target takes one licence for 30 days. Check it before adding targets.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/licenses/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_list_network_services",
+      "description": "List the network services (open ports) Intruder sees on your external targets, ordered by target, port and protocol. Each service has id, target_id, port, protocol, name, product, version, http_title, ssl_cert_expiry_date, waf_provider, first_observed_at and last_observed_at. Use it for attack-surface questions and expiring certificates. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "search": {
+            "type": "string",
+            "description": "Case-insensitive search in service name and product, e.g. nginx."
+          },
+          "names": {
+            "type": "string",
+            "description": "Exact service names separated by commas, e.g. https,ssh."
+          },
+          "ports": {
+            "type": "string",
+            "description": "Ports separated by commas, e.g. 22,3389.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "protocols": {
+            "type": "string",
+            "description": "Protocols separated by commas: tcp, udp.",
+            "pattern": "^(tcp|udp)(,(tcp|udp))*$"
+          },
+          "target_ids": {
+            "type": "string",
+            "description": "Target ids separated by commas, from intruder_list_targets.",
+            "pattern": "^[0-9]+(,[0-9]+)*$"
+          },
+          "tag_names": {
+            "type": "string",
+            "description": "Only targets carrying one of these tags: tag names separated by commas, e.g. production,dmz."
+          },
+          "ssl_cert_expiry_before": {
+            "type": "string",
+            "description": "Only services whose TLS certificate expires at or before this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "ssl_cert_expiry_after": {
+            "type": "string",
+            "description": "Only services whose TLS certificate expires at or after this time. ISO 8601 with a time zone, e.g. 2026-10-15T10:30:00Z."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/attack-surface/services/",
+        "queryParams": {
+          "search": "$search",
+          "names": "$names",
+          "ports": "$ports",
+          "protocols": "$protocols",
+          "target_ids": "$target_ids",
+          "tag_names": "$tag_names",
+          "ssl_cert_expiry_before": "$ssl_cert_expiry_before",
+          "ssl_cert_expiry_after": "$ssl_cert_expiry_after",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_list_ai_pentests",
+      "description": "List the AI pentests of the account, newest first. Each has id, status (pending, started, completed, cancelled, aborted or cancellation_pending), url, application_name, environment, created_at, completed_at, retest_status and release_test_status. Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ai-pentests/",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    },
+    {
+      "name": "intruder_get_ai_pentest",
+      "description": "Get one AI pentest: status of the full test, url and application_name of the tested application, environment (production, staging or development), created_at, completed_at, and the status of the latest retest and release test.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ai_pentest_id": {
+            "type": "string",
+            "description": "AI pentest id from intruder_list_ai_pentests."
+          }
+        },
+        "required": [
+          "ai_pentest_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ai-pentests/{ai_pentest_id}/"
+      }
+    },
+    {
+      "name": "intruder_list_ai_pentest_findings",
+      "description": "List the findings of one AI pentest, most severe first. Each finding has id, title, severity, status (open or fixed), impact, likelihood, overview, evidence, technical_details, remediation, retest_summary and location (file and lines). Answers count, next, previous and results; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ai_pentest_id": {
+            "type": "string",
+            "description": "AI pentest id from intruder_list_ai_pentests."
+          },
+          "statuses": {
+            "type": "string",
+            "description": "Finding statuses separated by commas: open, fixed. Default open.",
+            "pattern": "^(open|fixed)(,(open|fixed))*$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Results per page, 1 to 100. Default 25.",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Zero-based position of the first result, e.g. 50 to skip the first 50. Default 0.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "ai_pentest_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ai-pentests/{ai_pentest_id}/findings/",
+        "queryParams": {
+          "statuses": "$statuses",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      }
+    }
+  ]
+}

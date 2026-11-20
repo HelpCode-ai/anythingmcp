@@ -1,0 +1,1308 @@
+{
+  "slug": "hh-ru",
+  "name": "HeadHunter (hh.ru)",
+  "description": "HeadHunter (hh.ru) job site API for Russia, Belarus, Kazakhstan and Uzbekistan, read-only. Without a key: regions, metro, professional roles, industries, dictionaries, autocomplete for companies, job titles and skills, and vacancies similar to a known one. With an approved application token: vacancy and employer search and details.",
+  "instructions": "## HeadHunter (hh.ru)\nThis connector reads the public **HeadHunter API** at `https://api.hh.ru`, the job site of Russia and its sister sites in Belarus (rabota.by), Kazakhstan (hh.kz), Uzbekistan (hh.uz), Azerbaijan, Georgia and Kyrgyzstan. Everything is read-only.\n\n**What works without any setup**: the reference data and the autocomplete. hh.ru closed its anonymous vacancy and employer endpoints in 2026: `/vacancies`, `/vacancies/id`, `/employers` and `/employers/id` now answer 403 without a token (checked on 2026-11-19). One vacancy list still answered without a token on that day: `hh_ru_list_similar_vacancies`.\n\n**Setup for vacancy and employer search (optional)**\n1. Register an application at https://dev.hh.ru (sign in with an hh.ru account, describe what the application does). HeadHunter reviews every application by hand, which can take up to 15 working days, and approves mainly employers and recruiting services.\n2. Once it is approved, request the application token once: `POST https://api.hh.ru/token` with the form fields `grant_type=client_credentials`, `client_id` and `client_secret`. The token does not expire and is shown afterwards on https://dev.hh.ru/admin. Requesting it again revokes the previous one.\n3. Paste it into `HH_ACCESS_TOKEN`. `hh_ru_get_me` then answers with `auth_type` application.\n\nTools that need the token: `hh_ru_search_vacancies`, `hh_ru_get_vacancy`, `hh_ru_search_employers`, `hh_ru_get_employer`, `hh_ru_get_me`.\n\n**Where to start**: turn names into ids first. `hh_ru_suggest_areas` gives the area id of a city (1 Moscow, 2 Saint Petersburg, 113 all of Russia), `hh_ru_suggest_professional_roles` or `hh_ru_suggest_vacancy_positions` the role ids, `hh_ru_suggest_companies` the employer id. Then search with `hh_ru_search_vacancies` and open a hit with `hh_ru_get_vacancy`. Without a token, pass the id of any vacancy you know (the number at the end of its hh.ru address) to `hh_ru_list_similar_vacancies` and narrow with the same filters.\n\n**Reference data**: `hh_ru_get_dictionaries` (experience, employment forms, work formats, labels, currencies and more in one answer), `hh_ru_list_countries`, `hh_ru_get_area` (one region with its cities; never a whole country, Russia is over 2 MB), `hh_ru_list_metro_stations`, `hh_ru_list_professional_roles`, `hh_ru_list_industries`, `hh_ru_list_languages`, `hh_ru_list_locales`.\n\n**Autocomplete** (at least 2 characters of text): `hh_ru_suggest_areas`, `hh_ru_suggest_professional_roles`, `hh_ru_suggest_vacancy_positions`, `hh_ru_suggest_resume_positions`, `hh_ru_suggest_vacancy_keywords`, `hh_ru_suggest_companies`, `hh_ru_suggest_skills` (ids back to names with `hh_ru_get_skills`), `hh_ru_suggest_educational_institutions` (details with `hh_ru_get_educational_institutions`, faculties with `hh_ru_list_faculties`) and `hh_ru_suggest_fields_of_study`.\n\n**Reading vacancies**: `salary_range` holds `from`, `to`, `currency` (RUR is the rouble) and `gross` (true: before tax), plus `mode` and `frequency`; it is null when the employer gave no salary. `salary` in a search finds ranges near the amount and also vacancies without a salary, unless `label` contains with_salary. Dates are ISO 8601 with a Moscow offset (`2026-11-19T16:04:14+0300`). Ids are strings of digits. Names come in Russian unless `locale` is EN; vacancy texts stay in the language the employer wrote them in.\n\n**Paging and limits**: `page` starts at 0, `per_page` goes up to 100, and a vacancy search never returns more than 2000 results (employers: 5000), so split a large search by area, role or date. hh.ru does not publish a request quota; it answers 429 or a captcha error when a client is too fast, so keep to a few requests per second.\n\n**Errors**: 400 with `bad_argument` names the wrong parameter. 403 with `forbidden` on a vacancy or employer tool means no token was sent; 403 with `bad_authorization` means hh.ru refused the token. 404 means the id does not exist.\n\n**Not covered**: everything that acts for an applicant or an employer (resumes, applications and invitations, publishing vacancies, chats, the paid salary evaluation). Those need a user sign-in through an approved application and are not part of this connector.",
+  "aliases": [
+    "HeadHunter",
+    "hh.ru",
+    "ХедХантер",
+    "HH",
+    "rabota.by",
+    "hh.kz"
+  ],
+  "region": "intl",
+  "category": "hr",
+  "icon": "hh-ru",
+  "docsUrl": "https://api.hh.ru/openapi/redoc",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "HH_ACCESS_TOKEN"
+  ],
+  "envVarMeta": {
+    "HH_ACCESS_TOKEN": {
+      "label": "Application access token (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only for vacancy and employer search. Register an application at dev.hh.ru (HeadHunter approves it by hand, up to 15 working days), request its token once and copy it from dev.hh.ru/admin. Leave empty to use the reference data and autocomplete only.",
+      "link": "https://dev.hh.ru/admin",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9_-]{20,200}$",
+      "patternMessage": "Paste only the access token (letters and digits), without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "hh.ru refused the request. The answer names the wrong parameter under bad_argument; suggestion texts need at least 2 characters.",
+    "403": "hh.ru refused the call. Vacancy and employer tools need HH_ACCESS_TOKEN, the token of an application approved at dev.hh.ru; an answer with bad_authorization means the token is wrong or was replaced by a newer one. The reference data and autocomplete tools need no token.",
+    "404": "hh.ru found no vacancy, employer, region or institution with that id.",
+    "rate_limited": "hh.ru is throttling this address. Wait a minute and keep to a few requests per second."
+  },
+  "probe": {
+    "tool": "hh_ru_list_locales",
+    "params": {}
+  },
+  "prerequisites": "Nothing for the reference data and autocomplete. Vacancy and employer search needs the access token of an application registered at dev.hh.ru, which HeadHunter approves by hand (up to 15 working days, mainly for employers and recruiting services).",
+  "connector": {
+    "name": "HeadHunter API",
+    "type": "REST",
+    "baseUrl": "https://api.hh.ru",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "HH-User-Agent": "AnythingMCP/1.0 (support@anythingmcp.com)",
+      "User-Agent": "AnythingMCP/1.0 (support@anythingmcp.com)"
+    }
+  },
+  "tools": [
+    {
+      "name": "hh_ru_get_dictionaries",
+      "description": "Read the hh.ru reference lists in one answer: experience, employment_form, work_format, working_hours, work_schedule_by_days, vacancy_label, vacancy_search_order, vacancy_search_fields, currency (code, name, rate), education_level, language_level, employer_type and about 50 more, each a list of id and name. No token needed. About 25 KB.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/dictionaries",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_locales",
+      "description": "List the languages the API can answer in (id RU, EN and the regional ones) and which one is current. No token needed. Also the cheapest call to check that hh.ru answers.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/locales"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_countries",
+      "description": "List the countries of the region tree: id, name and url, e.g. 113 Russia, 16 Belarus, 40 Kazakhstan, 97 Uzbekistan. Use the id as area in the vacancy tools or pass it to hh_ru_get_area. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/areas/countries",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_get_area",
+      "description": "Read one region with everything below it: id, parent_id, name, utc_offset, lat, lng and the nested areas list. A city returns one small object, a Russian region about 100 KB, and a whole country (113 Russia) more than 2 MB, so do not call it on a country: find a city with hh_ru_suggest_areas instead. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "area_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,9}$",
+            "description": "Region id, digits only, e.g. 1 for Moscow or 2019 for Moscow Oblast."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "area_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/areas/{area_id}",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_areas",
+      "description": "Find regions and cities by the beginning of their name: id, text, url and the parent chain up to the country. The quick way from a place name to an area id. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a city, region or country name, at least 2 characters. Russian or English text."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/areas",
+        "queryParams": {
+          "text": "$text",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_metro_stations",
+      "description": "List the metro lines and stations of one city: per line id, name and hex_color, per station id (line.station, e.g. 8.189), name, lat, lng and order. Cities with a metro include 1 Moscow, 2 Saint Petersburg, 3 Yekaterinburg, 4 Novosibirsk, 88 Kazan, 1002 Minsk, 160 Almaty. About 70 KB for Moscow. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "city_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,9}$",
+            "description": "Area id of the city, digits only, e.g. 1 for Moscow."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "city_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/metro/{city_id}",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_professional_roles",
+      "description": "List all professional roles grouped by category: categories with id and name, each with roles (id, name, accept_incomplete_resumes, is_default). Role ids filter the vacancy tools through professional_role. About 50 KB. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/professional_roles",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_professional_roles",
+      "description": "Find professional roles by the beginning of a job name: id, text and accept_incomplete_resumes. Smaller than the full role list. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a profession or role name, e.g. аналитик, at least 2 characters. Russian or English text."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/professional_roles",
+        "queryParams": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_industries",
+      "description": "List company industries as a two-level tree: id and name of each sector with its industries (ids such as 7.541). Used as industry in the vacancy tools and returned on employers. About 30 KB. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/industries",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_languages",
+      "description": "List the languages a resume or vacancy can name: id (ISO 639 style, e.g. eng, deu), name and uid. Language levels are in the language_level list of hh_ru_get_dictionaries. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/languages",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_vacancy_positions",
+      "description": "Suggest job titles as employers write them in vacancies: id, text and the professional_roles each title belongs to. Good for turning a loose job name into role ids. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a job title, e.g. менеджер, at least 2 characters. Russian or English text."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/vacancy_positions",
+        "queryParams": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_resume_positions",
+      "description": "Suggest job titles as applicants write them in resumes: id, text and the related specializations with their professional area. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a job title, e.g. разработчик, at least 2 characters. Russian or English text."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/positions",
+        "queryParams": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_vacancy_keywords",
+      "description": "Suggest popular vacancy search phrases for a beginning of text, as the hh.ru search box does: a list of text values to use as text in the vacancy tools. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a search phrase, e.g. python, at least 2 characters. Russian or English text."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/vacancy_search_keyword",
+        "queryParams": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_companies",
+      "description": "Find employers registered on hh.ru by the beginning of their name: id, text (name), url (company site), area, logo_urls and industries. The id is the employer_id of the vacancy and employer tools. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a company name, e.g. Яндекс or sber, at least 2 characters. Russian or English text."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/companies",
+        "queryParams": {
+          "text": "$text",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_skills",
+      "description": "Suggest key skills by the beginning of their name: id and text, e.g. Python 1114. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a skill name, e.g. pyth, at least 2 characters. Russian or English text."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/skill_set",
+        "queryParams": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_get_skills",
+      "description": "Resolve key skill ids to their names: items with id and text. Up to 50 ids per call. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,12}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Skill ids, digits only, from hh_ru_suggest_skills or from the key_skills of a vacancy."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/skills",
+        "queryParams": {
+          "id": "$ids",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_educational_institutions",
+      "description": "Find universities and colleges by name or acronym: id, text (full name with city), acronym, synonyms and area. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a name or acronym, e.g. МГУ, at least 2 characters. Russian or English text."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/educational_institutions",
+        "queryParams": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_get_educational_institutions",
+      "description": "Read universities and colleges by id: id, acronym, text (full name), synonyms and area. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]{1,12}$"
+            },
+            "minItems": 1,
+            "maxItems": 50,
+            "description": "Institution ids, digits only, from hh_ru_suggest_educational_institutions."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/educational_institutions",
+        "queryParams": {
+          "id": "$ids",
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_faculties",
+      "description": "List the faculties of one university: id and name. An institution without faculties returns an empty list. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "institution_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Institution id, digits only, e.g. 38921."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "institution_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/educational_institutions/{institution_id}/faculties",
+        "queryParams": {
+          "locale": "$locale"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_suggest_fields_of_study",
+      "description": "Suggest fields of study (degree specialities) by the beginning of their name: id and text. No token needed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "minLength": 2,
+            "maxLength": 3000,
+            "description": "Beginning of a field of study, e.g. эконом, at least 2 characters. Russian or English text."
+          }
+        },
+        "required": [
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suggests/fields_of_study",
+        "queryParams": {
+          "text": "$text"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_list_similar_vacancies",
+      "description": "List open vacancies similar to one known vacancy, with the same filters as the vacancy search: found, pages, page, per_page and items with id, name, area, salary and salary_range (from, to, currency, gross), employer (id, name), published_at, snippet (requirement, responsibility), experience, employment_form, work_format, professional_roles and alternate_url (the page on hh.ru). On 2026-11-19 this was the only vacancy list hh.ru still answered without a token; the token is sent when one is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vacancy_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Id of the vacancy to compare with: the number at the end of its hh.ru address (hh.ru/vacancy/139663865)."
+          },
+          "text": {
+            "type": "string",
+            "description": "Search words, looked up in the fields named by search_field. Supports the hh.ru query language: quotes for an exact phrase, AND, OR, NOT, and field prefixes such as NAME:python or COMPANY_NAME:yandex."
+          },
+          "search_field": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "company_name",
+                "description"
+              ]
+            },
+            "description": "Where to look for text: name (vacancy title), company_name, description. Default: all three."
+          },
+          "area": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Region ids, e.g. 1 Moscow, 2 Saint Petersburg, 113 all of Russia, 16 Belarus, 40 Kazakhstan. Find ids with hh_ru_suggest_areas."
+          },
+          "metro": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Metro line or station ids from hh_ru_list_metro_stations, e.g. 8 for a line or 8.189 for a station."
+          },
+          "professional_role": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Professional role ids from hh_ru_list_professional_roles or hh_ru_suggest_professional_roles, e.g. 96 for a programmer."
+          },
+          "industry": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Industry ids of the hiring company from hh_ru_list_industries, e.g. 7 or 7.541."
+          },
+          "employer_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only vacancies of these employers. Find ids with hh_ru_suggest_companies or hh_ru_search_employers."
+          },
+          "experience": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "noExperience",
+                "between1And3",
+                "between3And6",
+                "moreThan6"
+              ]
+            },
+            "description": "Required experience: noExperience, between1And3, between3And6, moreThan6 (years)."
+          },
+          "employment_form": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Employment form ids from the vacancy_search_employment_form list of hh_ru_get_dictionaries, e.g. FULL, PART, PROJECT."
+          },
+          "work_format": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ON_SITE",
+                "REMOTE",
+                "HYBRID",
+                "FIELD_WORK"
+              ]
+            },
+            "description": "Work format: ON_SITE, REMOTE, HYBRID or FIELD_WORK (travelling)."
+          },
+          "salary": {
+            "type": "number",
+            "description": "Wanted salary. Finds vacancies whose salary range is close to it, converted at the Bank of Russia rate, and by default also vacancies without a stated salary (add label with_salary to drop those)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code of salary from the currency list of hh_ru_get_dictionaries: RUR (default), USD, EUR, KZT, BYR, UZS and others."
+          },
+          "label": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Vacancy labels from the vacancy_label list of hh_ru_get_dictionaries, e.g. with_salary, with_address, accept_handicapped, accept_kids."
+          },
+          "period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Only vacancies published in the last N days. Do not combine with date_from or date_to."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Published on or after this date, YYYY-MM-DD or YYYY-MM-DDThh:mm:ss+hhmm. Not together with period."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Published on or before this date, YYYY-MM-DD or YYYY-MM-DDThh:mm:ss+hhmm. Not together with period."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "publication_time",
+              "salary_desc",
+              "salary_asc"
+            ],
+            "description": "Sort order: relevance, publication_time (newest first), salary_desc or salary_asc."
+          },
+          "excluded_text": {
+            "type": "string",
+            "description": "Comma-separated words; vacancies containing any of them are left out."
+          },
+          "host": {
+            "type": "string",
+            "enum": [
+              "hh.ru",
+              "rabota.by",
+              "hh1.az",
+              "hh.uz",
+              "hh.kz",
+              "headhunter.ge",
+              "headhunter.kg"
+            ],
+            "description": "Site of the HeadHunter group to read: hh.ru (default, Russia), rabota.by (Belarus), hh1.az, hh.uz, hh.kz, headhunter.ge or headhunter.kg. It does not limit the region: use area for that."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, starting at 0."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Vacancies per page, at most 100. page times per_page cannot go past 2000 results."
+          }
+        },
+        "required": [
+          "vacancy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vacancies/{vacancy_id}/similar_vacancies",
+        "queryParams": {
+          "text": "$text",
+          "search_field": "$search_field",
+          "area": "$area",
+          "metro": "$metro",
+          "professional_role": "$professional_role",
+          "industry": "$industry",
+          "employer_id": "$employer_id",
+          "experience": "$experience",
+          "employment_form": "$employment_form",
+          "work_format": "$work_format",
+          "salary": "$salary",
+          "currency": "$currency",
+          "label": "$label",
+          "period": "$period",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "order_by": "$order_by",
+          "excluded_text": "$excluded_text",
+          "host": "$host",
+          "locale": "$locale",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Authorization": "Bearer ${HH_ACCESS_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_search_vacancies",
+      "description": "Search open vacancies on hh.ru and its sister sites: found, pages, page, per_page and items with id, name, area, salary and salary_range (from, to, currency, gross), employer (id, name), published_at, snippet (requirement, responsibility), experience, employment_form, work_format, professional_roles and alternate_url. Needs HH_ACCESS_TOKEN: without a token hh.ru answers 403. At most 2000 results per search: narrow with filters instead of paging deeper.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Search words, looked up in the fields named by search_field. Supports the hh.ru query language: quotes for an exact phrase, AND, OR, NOT, and field prefixes such as NAME:python or COMPANY_NAME:yandex."
+          },
+          "search_field": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "name",
+                "company_name",
+                "description"
+              ]
+            },
+            "description": "Where to look for text: name (vacancy title), company_name, description. Default: all three."
+          },
+          "area": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Region ids, e.g. 1 Moscow, 2 Saint Petersburg, 113 all of Russia, 16 Belarus, 40 Kazakhstan. Find ids with hh_ru_suggest_areas."
+          },
+          "metro": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Metro line or station ids from hh_ru_list_metro_stations, e.g. 8 for a line or 8.189 for a station."
+          },
+          "professional_role": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Professional role ids from hh_ru_list_professional_roles or hh_ru_suggest_professional_roles, e.g. 96 for a programmer."
+          },
+          "industry": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Industry ids of the hiring company from hh_ru_list_industries, e.g. 7 or 7.541."
+          },
+          "employer_id": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only vacancies of these employers. Find ids with hh_ru_suggest_companies or hh_ru_search_employers."
+          },
+          "experience": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "noExperience",
+                "between1And3",
+                "between3And6",
+                "moreThan6"
+              ]
+            },
+            "description": "Required experience: noExperience, between1And3, between3And6, moreThan6 (years)."
+          },
+          "employment_form": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Employment form ids from the vacancy_search_employment_form list of hh_ru_get_dictionaries, e.g. FULL, PART, PROJECT."
+          },
+          "work_format": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "ON_SITE",
+                "REMOTE",
+                "HYBRID",
+                "FIELD_WORK"
+              ]
+            },
+            "description": "Work format: ON_SITE, REMOTE, HYBRID or FIELD_WORK (travelling)."
+          },
+          "salary": {
+            "type": "number",
+            "description": "Wanted salary. Finds vacancies whose salary range is close to it, converted at the Bank of Russia rate, and by default also vacancies without a stated salary (add label with_salary to drop those)."
+          },
+          "currency": {
+            "type": "string",
+            "description": "Currency code of salary from the currency list of hh_ru_get_dictionaries: RUR (default), USD, EUR, KZT, BYR, UZS and others."
+          },
+          "label": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Vacancy labels from the vacancy_label list of hh_ru_get_dictionaries, e.g. with_salary, with_address, accept_handicapped, accept_kids."
+          },
+          "period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 30,
+            "description": "Only vacancies published in the last N days. Do not combine with date_from or date_to."
+          },
+          "date_from": {
+            "type": "string",
+            "description": "Published on or after this date, YYYY-MM-DD or YYYY-MM-DDThh:mm:ss+hhmm. Not together with period."
+          },
+          "date_to": {
+            "type": "string",
+            "description": "Published on or before this date, YYYY-MM-DD or YYYY-MM-DDThh:mm:ss+hhmm. Not together with period."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "relevance",
+              "publication_time",
+              "salary_desc",
+              "salary_asc"
+            ],
+            "description": "Sort order: relevance, publication_time (newest first), salary_desc or salary_asc."
+          },
+          "excluded_text": {
+            "type": "string",
+            "description": "Comma-separated words; vacancies containing any of them are left out."
+          },
+          "host": {
+            "type": "string",
+            "enum": [
+              "hh.ru",
+              "rabota.by",
+              "hh1.az",
+              "hh.uz",
+              "hh.kz",
+              "headhunter.ge",
+              "headhunter.kg"
+            ],
+            "description": "Site of the HeadHunter group to read: hh.ru (default, Russia), rabota.by (Belarus), hh1.az, hh.uz, hh.kz, headhunter.ge or headhunter.kg. It does not limit the region: use area for that."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, starting at 0."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Vacancies per page, at most 100. page times per_page cannot go past 2000 results."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vacancies",
+        "queryParams": {
+          "text": "$text",
+          "search_field": "$search_field",
+          "area": "$area",
+          "metro": "$metro",
+          "professional_role": "$professional_role",
+          "industry": "$industry",
+          "employer_id": "$employer_id",
+          "experience": "$experience",
+          "employment_form": "$employment_form",
+          "work_format": "$work_format",
+          "salary": "$salary",
+          "currency": "$currency",
+          "label": "$label",
+          "period": "$period",
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "order_by": "$order_by",
+          "excluded_text": "$excluded_text",
+          "host": "$host",
+          "locale": "$locale",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Authorization": "Bearer ${HH_ACCESS_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_get_vacancy",
+      "description": "Read one vacancy in full: name, description (HTML), key_skills, salary and salary_range, area, address with metro stations, employer, experience, employment_form, work_format, working_hours, work_schedule_by_days, professional_roles, languages, published_at, archived and alternate_url. Needs HH_ACCESS_TOKEN: without a token hh.ru answers 403. 404 means the vacancy does not exist or was removed.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vacancy_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Vacancy id, digits only: the number at the end of hh.ru/vacancy/139663865."
+          },
+          "host": {
+            "type": "string",
+            "enum": [
+              "hh.ru",
+              "rabota.by",
+              "hh1.az",
+              "hh.uz",
+              "hh.kz",
+              "headhunter.ge",
+              "headhunter.kg"
+            ],
+            "description": "Site of the HeadHunter group to read: hh.ru (default, Russia), rabota.by (Belarus), hh1.az, hh.uz, hh.kz, headhunter.ge or headhunter.kg. It does not limit the region: use area for that."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "vacancy_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/vacancies/{vacancy_id}",
+        "queryParams": {
+          "host": "$host",
+          "locale": "$locale"
+        },
+        "headers": {
+          "Authorization": "Bearer ${HH_ACCESS_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_search_employers",
+      "description": "Search employers by text in their name and description: found, pages, page, per_page and items with id, name, url, alternate_url, vacancies_url, open_vacancies and logo_urls. Needs HH_ACCESS_TOKEN: without a token hh.ru answers 403 (use hh_ru_suggest_companies for a keyless name lookup). At most 5000 results per search.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Words to find in the employer name or description."
+          },
+          "area": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Region ids of the employer, from hh_ru_suggest_areas."
+          },
+          "type": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Employer type ids from the employer_type list of hh_ru_get_dictionaries: company, agency, private_recruiter, project_director."
+          },
+          "only_with_vacancies": {
+            "type": "boolean",
+            "description": "true: only employers with open vacancies right now. Default false."
+          },
+          "sort_by": {
+            "type": "string",
+            "enum": [
+              "by_name",
+              "by_vacancies_open"
+            ],
+            "description": "by_name (default) or by_vacancies_open (most open vacancies first)."
+          },
+          "host": {
+            "type": "string",
+            "enum": [
+              "hh.ru",
+              "rabota.by",
+              "hh1.az",
+              "hh.uz",
+              "hh.kz",
+              "headhunter.ge",
+              "headhunter.kg"
+            ],
+            "description": "Site of the HeadHunter group to read: hh.ru (default, Russia), rabota.by (Belarus), hh1.az, hh.uz, hh.kz, headhunter.ge or headhunter.kg. It does not limit the region: use area for that."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, starting at 0."
+          },
+          "per_page": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20,
+            "description": "Employers per page, at most 100."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employers",
+        "queryParams": {
+          "text": "$text",
+          "area": "$area",
+          "type": "$type",
+          "only_with_vacancies": "$only_with_vacancies",
+          "sort_by": "$sort_by",
+          "host": "$host",
+          "locale": "$locale",
+          "page": "$page",
+          "per_page": "$per_page"
+        },
+        "headers": {
+          "Authorization": "Bearer ${HH_ACCESS_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_get_employer",
+      "description": "Read one employer profile: name, type, description (HTML), site_url, area, industries, open_vacancies, vacancies_url, logo_urls, trusted and accredited_it_employer. Needs HH_ACCESS_TOKEN: without a token hh.ru answers 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "employer_id": {
+            "type": "string",
+            "pattern": "^[0-9]{1,12}$",
+            "description": "Employer id, digits only, e.g. 1740. Find it with hh_ru_suggest_companies."
+          },
+          "host": {
+            "type": "string",
+            "enum": [
+              "hh.ru",
+              "rabota.by",
+              "hh1.az",
+              "hh.uz",
+              "hh.kz",
+              "headhunter.ge",
+              "headhunter.kg"
+            ],
+            "description": "Site of the HeadHunter group to read: hh.ru (default, Russia), rabota.by (Belarus), hh1.az, hh.uz, hh.kz, headhunter.ge or headhunter.kg. It does not limit the region: use area for that."
+          },
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        },
+        "required": [
+          "employer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/employers/{employer_id}",
+        "queryParams": {
+          "host": "$host",
+          "locale": "$locale"
+        },
+        "headers": {
+          "Authorization": "Bearer ${HH_ACCESS_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "hh_ru_get_me",
+      "description": "Show whom HH_ACCESS_TOKEN belongs to: auth_type (application for an application token), is_application, is_applicant, is_employer and, for a user token, the name and e-mail. Use it to check the token; without a token hh.ru answers 403.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "locale": {
+            "type": "string",
+            "enum": [
+              "RU",
+              "EN"
+            ],
+            "description": "Language of the names in the answer: RU (default) or EN."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me",
+        "queryParams": {
+          "locale": "$locale"
+        },
+        "headers": {
+          "Authorization": "Bearer ${HH_ACCESS_TOKEN}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

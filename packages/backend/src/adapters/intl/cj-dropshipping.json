@@ -1,0 +1,1349 @@
+{
+  "slug": "cj-dropshipping",
+  "name": "CJ Dropshipping",
+  "description": "CJ Dropshipping API 2.0: product catalogue with variants, stock per warehouse, orders created as unpaid orders, freight calculation, tracking and disputes. API key.",
+  "instructions": "## CJ Dropshipping\nThis connector works with the **CJ Dropshipping API 2.0** (`https://developers.cjdropshipping.com/api2.0/v1`): the product catalogue with variants and stock, warehouses, your orders, shipping prices, tracking and disputes.\n\n**Setup (about 3 minutes)**\n1. In your CJ account open **Apps, Install App**, and install the **API** app under Others.\n2. Open the API page (My CJ, Authorization, API), click **Add API**, give the key a name and choose the type **API Key**.\n3. Copy the key from the column **API Key & MCP Token** into `CJ_API_KEY`.\n\nThe connector exchanges the key for an access token (valid 180 days) and sends it in the `CJ-Access-Token` header; it logs in again when CJ refuses the token.\n\n**Where to start**: `cj_dropshipping_get_settings` shows the account and its limits. `cj_dropshipping_search_products` finds products; `cj_dropshipping_get_product` and `cj_dropshipping_list_variants` give the variant ids (vid) that stock, freight and orders work with.\n\n**Products and stock**: `cj_dropshipping_list_categories`, `cj_dropshipping_search_products`, `cj_dropshipping_get_product`, `cj_dropshipping_list_my_products`, `cj_dropshipping_list_variants`, `cj_dropshipping_get_variant`, `cj_dropshipping_list_product_reviews`. Stock per warehouse: `cj_dropshipping_get_stock_by_variant`, `cj_dropshipping_get_stock_by_sku`, `cj_dropshipping_get_stock_by_product`. Warehouses: `cj_dropshipping_list_global_warehouses`, `cj_dropshipping_list_warehouses`, `cj_dropshipping_get_warehouse`.\n\n**Orders**: `cj_dropshipping_list_orders`, `cj_dropshipping_get_order` and `cj_dropshipping_get_order_logs` read them. `cj_dropshipping_create_order` always creates an **unpaid** order (payType 3): CJ saves it without charging anything, and the account owner pays it in My CJ. Use is_sandbox 1 to try the flow without a real order. `cj_dropshipping_confirm_order`, `cj_dropshipping_delete_order` and `cj_dropshipping_cancel_order` are installed switched off. `cj_dropshipping_get_balance` reads the wallet; this connector has no tool that pays from it.\n\n**Shipping and tracking**: `cj_dropshipping_calculate_freight` prices the shipping methods for a list of variants (its logisticName goes into the order), `cj_dropshipping_get_tracking` follows parcels.\n\n**Disputes (read only)**: `cj_dropshipping_list_dispute_products`, `cj_dropshipping_list_disputes`, `cj_dropshipping_get_dispute`.\n\n**Order statuses**: CREATED (saved, not confirmed), IN_CART, UNPAID (confirmed, has a CJ order number), UNSHIPPED with the sub-statuses PENDING and PROCESSING, SHIPPED, DELIVERED, CANCELLED.\n\n**Limits**: free accounts may send 1 request per second (Plus 2, Prime 4, Advanced 6), at most 10 per second per address. Every account has daily API points (50,000 base): a product search costs 50, product, variant, stock and freight calls 10 each; orders, tracking and disputes cost none. At most 3 CJ accounts may call from one address within 24 hours.\n\n**Answers**: every call answers `code`, `result`, `message`, `data` and `requestId`. Code 200 means success; other codes are reported as errors with the message of CJ. Amounts are in USD, weights in grams, sizes in millimetres. Times in list filters are UTC.",
+  "aliases": [
+    "CJ",
+    "CJDropshipping",
+    "cjdropshipping.com",
+    "CJ Dropshipping API"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "cj-dropshipping",
+  "docsUrl": "https://developers.cjdropshipping.com/en/api/introduction.html",
+  "requiredEnvVars": [
+    "CJ_API_KEY"
+  ],
+  "envVarMeta": {
+    "CJ_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "My CJ, Authorization, API: click Add API, choose the type API Key, then copy the key from the column API Key & MCP Token. The API app must be installed first (Apps, Install App, Others).",
+      "link": "https://developers.cjdropshipping.com/en/api/start/apikey.html",
+      "pattern": "^\\S{16,300}$",
+      "patternMessage": "Paste the API key only, without spaces. It usually looks like CJ1234567@api@ followed by letters and digits."
+    }
+  },
+  "verifyHints": {
+    "400": "CJ refused the request. The message names the field; check ids (pid, vid, order id) and date ranges of at most 90 days.",
+    "401": "CJ did not accept the API key or the token it issued. Copy the key again from My CJ, Authorization, API (type API Key) and check that the API app is installed.",
+    "403": "CJ refused the call for this account: the API access is disabled, or the API store is not authorized. Reactivate it under My CJ, Authorization, API.",
+    "404": "CJ does not know this interface or record. Check the id.",
+    "rate_limited": "CJ limits free accounts to 1 request per second and every account to its daily API points. Wait a moment; the points reset at 00:00 UTC."
+  },
+  "probe": {
+    "tool": "cj_dropshipping_get_settings",
+    "params": {}
+  },
+  "prerequisites": "A CJ Dropshipping account (free sign-up) with the API app installed and an API key created on the API page of My CJ. About 3 minutes.",
+  "connector": {
+    "name": "CJ Dropshipping API 2.0",
+    "type": "REST",
+    "baseUrl": "https://developers.cjdropshipping.com/api2.0/v1",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://developers.cjdropshipping.com/api2.0/v1/authentication/getAccessToken",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "apiKey": "${password}"
+      },
+      "username": "{{CJ_API_KEY}}",
+      "password": "{{CJ_API_KEY}}",
+      "tokenJsonPath": "data.accessToken",
+      "expiryJsonPath": "data.accessTokenExpiryDate",
+      "expiryFormat": "iso8601",
+      "tokenTTLSeconds": 1296000,
+      "proactiveRefreshSeconds": 86400,
+      "refreshOn401": true,
+      "refreshOnBody401": true,
+      "headerName": "CJ-Access-Token",
+      "headerTemplate": "${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "code",
+          "in": [
+            1600001,
+            1600002,
+            1600030
+          ],
+          "messagePath": "message",
+          "status": 401
+        },
+        {
+          "path": "code",
+          "in": [
+            1600004,
+            1600005,
+            1600006,
+            1600008,
+            1600014
+          ],
+          "messagePath": "message",
+          "status": 403
+        },
+        {
+          "path": "code",
+          "in": [
+            1600200,
+            1600201
+          ],
+          "messagePath": "message",
+          "status": 429
+        },
+        {
+          "path": "code",
+          "in": [
+            1600100,
+            1600101
+          ],
+          "messagePath": "message",
+          "status": 404
+        },
+        {
+          "path": "code",
+          "matches": "^(?!(200|0)$)[0-9]+$",
+          "messagePath": "message",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "cj_dropshipping_get_settings",
+      "description": "Read the account behind the API key: openId, name and email, the per-endpoint quota limits, the request-per-second limit of the account level and the sandbox flag. Costs no points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/setting/get"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_categories",
+      "description": "List the CJ product categories as a three-level tree: categoryFirstName with categoryFirstList, categorySecondName with categorySecondList, and the third level with categoryId and categoryName. Use categoryId to filter cj_dropshipping_search_products. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/getCategory"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_search_products",
+      "description": "Search the CJ catalogue (Product List V2): data.content[].productList with id (the pid), nameEn, sku (the SPU), bigImage, sellPrice and nowPrice in USD, categoryId, listedNum, warehouseInventoryNum, addMarkStatus (1 = free shipping) and supplierName, plus pageNumber, pageSize, totalRecords and totalPages. Each call costs 50 of the daily API points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "Product name or SKU keyword.",
+            "maxLength": 200
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, 1 to 1000 (default 1).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 1
+          },
+          "size": {
+            "type": "integer",
+            "description": "Products per page, 1 to 100 (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Third-level category id from cj_dropshipping_list_categories."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Only products with stock in this country, as a two-letter code such as US, CN, GB or DE.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "start_sell_price": {
+            "type": "number",
+            "description": "Lowest sell price in USD.",
+            "minimum": 0
+          },
+          "end_sell_price": {
+            "type": "number",
+            "description": "Highest sell price in USD.",
+            "minimum": 0
+          },
+          "free_shipping": {
+            "type": "integer",
+            "description": "1 = only products with free shipping, 0 = only products without.",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "product_flag": {
+            "type": "integer",
+            "description": "0 = trending, 1 = new, 2 = video, 3 = slow-moving products.",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ]
+          },
+          "start_warehouse_inventory": {
+            "type": "integer",
+            "description": "Only products with at least this stock.",
+            "minimum": 0
+          },
+          "verified_warehouse": {
+            "type": "integer",
+            "description": "1 = verified inventory only, 2 = unverified only, 0 = all (default).",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          },
+          "order_by": {
+            "type": "integer",
+            "description": "Sort field: 0 best match (default), 1 listing count, 2 sell price, 3 create time, 4 inventory.",
+            "enum": [
+              0,
+              1,
+              2,
+              3,
+              4
+            ]
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort direction: desc (default) or asc.",
+            "enum": [
+              "desc",
+              "asc"
+            ]
+          },
+          "features": {
+            "type": "array",
+            "description": "Extra data to return: enable_description, enable_category, enable_combine, enable_video.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "enable_description",
+                "enable_category",
+                "enable_combine",
+                "enable_video"
+              ]
+            }
+          },
+          "supplier_id": {
+            "type": "string",
+            "description": "Only products of this supplier id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/listV2",
+        "queryParams": {
+          "keyWord": "$keyword",
+          "page": "$page",
+          "size": "$size",
+          "categoryId": "$category_id",
+          "countryCode": "$country_code",
+          "startSellPrice": "$start_sell_price",
+          "endSellPrice": "$end_sell_price",
+          "addMarkStatus": "$free_shipping",
+          "productFlag": "$product_flag",
+          "startWarehouseInventory": "$start_warehouse_inventory",
+          "verifiedWarehouse": "$verified_warehouse",
+          "orderBy": "$order_by",
+          "sort": "$sort",
+          "features": "$features",
+          "supplierId": "$supplier_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_product",
+      "description": "Read one product with its variants: pid, productNameEn, productSku, images, weights in grams, categoryId, HS code (entryCode), materials, packaging, description, sellPrice and suggestSellPrice in USD, supplier, and variants with vid, variantSku, variantKey, sizes in mm, variantWeight, variantSellPrice and variantSugSellPrice. Give exactly one of pid, product_sku or variant_sku. Costs 10 points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pid": {
+            "type": "string",
+            "description": "CJ product id (pid). Give exactly one of pid, product_sku or variant_sku.",
+            "pattern": "^[A-Za-z0-9-]{6,64}$"
+          },
+          "product_sku": {
+            "type": "string",
+            "description": "CJ product SKU (SPU), e.g. CJNSSYCS03214."
+          },
+          "variant_sku": {
+            "type": "string",
+            "description": "CJ variant SKU, e.g. CJNSSYCS03214-Black-L."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Only return variants with stock in this country (two-letter code).",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "features": {
+            "type": "array",
+            "description": "Extra data: enable_combine (combination variants), enable_video (product videos).",
+            "items": {
+              "type": "string",
+              "enum": [
+                "enable_combine",
+                "enable_video"
+              ]
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/query",
+        "queryParams": {
+          "pid": "$pid",
+          "productSku": "$product_sku",
+          "variantSku": "$variant_sku",
+          "countryCode": "$country_code",
+          "features": "$features"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_my_products",
+      "description": "List the products saved to My Products of the account: productId, productName, nameEn, sku, bigImage, totalPrice, productType, listedShopNum and createAt. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "keyword": {
+            "type": "string",
+            "description": "SKU, SPU or product name to search for."
+          },
+          "category_id": {
+            "type": "string",
+            "description": "Category id from cj_dropshipping_list_categories."
+          },
+          "start_at": {
+            "type": "string",
+            "description": "Only products added from this time on, as CJ shows it in createAt."
+          },
+          "end_at": {
+            "type": "string",
+            "description": "Only products added up to this time."
+          },
+          "is_listed": {
+            "type": "integer",
+            "description": "1 = only products listed to a store, 0 = only products not listed.",
+            "enum": [
+              0,
+              1
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/myProduct/query",
+        "queryParams": {
+          "keyword": "$keyword",
+          "categoryId": "$category_id",
+          "startAt": "$start_at",
+          "endAt": "$end_at",
+          "isListed": "$is_listed"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_variants",
+      "description": "List all variants of a product: vid, variantSku, variantNameEn, variantKey, variantImage, sizes in mm, variantWeight in grams, variantSellPrice and variantSugSellPrice in USD. Give exactly one of pid, product_sku or variant_sku. Costs 10 points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pid": {
+            "type": "string",
+            "description": "CJ product id (pid). Give exactly one of pid, product_sku or variant_sku.",
+            "pattern": "^[A-Za-z0-9-]{6,64}$"
+          },
+          "product_sku": {
+            "type": "string",
+            "description": "CJ product SKU (SPU)."
+          },
+          "variant_sku": {
+            "type": "string",
+            "description": "CJ variant SKU."
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Only variants with stock in this country (two-letter code).",
+            "pattern": "^[A-Za-z]{2}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/variant/query",
+        "queryParams": {
+          "pid": "$pid",
+          "productSku": "$product_sku",
+          "variantSku": "$variant_sku",
+          "countryCode": "$country_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_variant",
+      "description": "Read one variant by its vid: variantSku, variantNameEn, variantKey, sizes, weight and variantSellPrice in USD. With inventory true it also returns inventories per country with totalInventory, cjInventory, factoryInventory and the stock per warehouse (stockId). Costs 10 points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vid": {
+            "type": "string",
+            "description": "CJ variant id (vid), e.g. 1371342252697325568 or 7874B45D-E971-4DC8-8F59-40530B0F6B77.",
+            "pattern": "^[A-Za-z0-9-]{6,64}$"
+          },
+          "features": {
+            "type": "string",
+            "description": "enable_inventory adds the stock per country and warehouse.",
+            "enum": [
+              "enable_inventory"
+            ]
+          }
+        },
+        "required": [
+          "vid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/variant/queryByVid",
+        "queryParams": {
+          "vid": "$vid",
+          "features": "$features"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_stock_by_variant",
+      "description": "Read the stock of one variant per regional warehouse: areaId, areaEn, countryCode, totalInventoryNum, cjInventoryNum (in CJ warehouses), factoryInventoryNum (at the supplier) and stock per sub-warehouse. Costs 10 points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "vid": {
+            "type": "string",
+            "description": "CJ variant id (vid), e.g. 1371342252697325568 or 7874B45D-E971-4DC8-8F59-40530B0F6B77.",
+            "pattern": "^[A-Za-z0-9-]{6,64}$"
+          }
+        },
+        "required": [
+          "vid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/stock/queryByVid",
+        "queryParams": {
+          "vid": "$vid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_stock_by_sku",
+      "description": "Read the stock of a product or variant by SKU or SPU, per regional warehouse: areaEn, countryCode, totalInventoryNum, cjInventoryNum, factoryInventoryNum and stock per sub-warehouse. Costs 10 points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "CJ variant SKU or product SPU, e.g. CJDS2012593."
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/stock/queryBySku",
+        "queryParams": {
+          "sku": "$sku"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_stock_by_product",
+      "description": "Read the stock of a whole product by pid: inventories per regional warehouse and variantInventories with the stock of each vid per country (totalInventory, cjInventory, factoryInventory, verifiedWarehouse). Costs 10 points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pid": {
+            "type": "string",
+            "description": "CJ product id (pid), e.g. 000B9312-456A-4D31-94BD-B083E2A198E8 or 1444929719182168064.",
+            "pattern": "^[A-Za-z0-9-]{6,64}$"
+          }
+        },
+        "required": [
+          "pid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/stock/getInventoryByPid",
+        "queryParams": {
+          "pid": "$pid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_product_reviews",
+      "description": "List buyer reviews of a product: commentId, comment, commentUrls (pictures), commentUser, score, countryCode and commentDate. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pid": {
+            "type": "string",
+            "description": "CJ product id (pid), e.g. 000B9312-456A-4D31-94BD-B083E2A198E8 or 1444929719182168064.",
+            "pattern": "^[A-Za-z0-9-]{6,64}$"
+          },
+          "score": {
+            "type": "integer",
+            "description": "Only reviews with this score, 1 to 5.",
+            "minimum": 1,
+            "maximum": 5
+          },
+          "page_num": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Reviews per page (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          }
+        },
+        "required": [
+          "pid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/productComments",
+        "queryParams": {
+          "pid": "$pid",
+          "score": "$score",
+          "pageNum": "$page_num",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_global_warehouses",
+      "description": "List the CJ regional (global) warehouses: areaId, areaEn, countryCode and nameEn. The areaId filters cj_dropshipping_list_warehouses and cj_dropshipping_list_orders. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/product/globalWarehouseList"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_warehouses",
+      "description": "List the CJ self-operated sub-warehouses: storageId, name, city, province, areaId, areaName and countryCode. Supplier warehouses are not included. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "area_id": {
+            "type": "integer",
+            "description": "Only sub-warehouses of this regional warehouse (areaId of cj_dropshipping_list_global_warehouses, e.g. 1 = China, 2 = US).",
+            "minimum": 1
+          },
+          "country_code": {
+            "type": "string",
+            "description": "Only sub-warehouses in this country (two-letter code).",
+            "pattern": "^[A-Za-z]{2}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouse/list",
+        "queryParams": {
+          "areaId": "$area_id",
+          "countryCode": "$country_code"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_warehouse",
+      "description": "Read one warehouse: name, areaId, country, province, city, address, contact, phone, zip code, whether self pickup is possible and the logistics brands it ships with. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Warehouse id (storageId of cj_dropshipping_list_warehouses or of an order)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouse/detail",
+        "queryParams": {
+          "id": "$id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_orders",
+      "description": "List CJ orders, newest first: data.list with orderId, orderNum (your order number), cjOrderId, orderStatus and subStatus, recipient and address, logisticName, trackNumber and trackingUrl, orderAmount, productAmount and postageAmount in USD, createDate, paymentDate, storageName and isSandbox, plus pageNum, pageSize and total. Date ranges cover at most 90 days. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_num": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Orders per page (default 20).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 20
+          },
+          "status": {
+            "type": "string",
+            "description": "Order status. PENDING and PROCESSING are sub-statuses of UNSHIPPED.",
+            "enum": [
+              "CREATED",
+              "IN_CART",
+              "UNPAID",
+              "PENDING",
+              "PROCESSING",
+              "UNSHIPPED",
+              "SHIPPED",
+              "DELIVERED",
+              "CANCELLED",
+              "OTHER"
+            ]
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Only these CJ order ids.",
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 100
+          },
+          "shipment_order_id": {
+            "type": "string",
+            "description": "Only the order with this shipment order id."
+          },
+          "payment_date_from": {
+            "type": "string",
+            "description": "Paid from this time on (UTC), format yyyy-MM-dd HH:mm:ss. Send together with payment_date_to.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "payment_date_to": {
+            "type": "string",
+            "description": "Paid up to this time (UTC), format yyyy-MM-dd HH:mm:ss, at most 90 days after payment_date_from.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "create_date_from": {
+            "type": "integer",
+            "description": "Created from this moment on, as UTC epoch milliseconds. Send together with create_date_to.",
+            "minimum": 0
+          },
+          "create_date_to": {
+            "type": "integer",
+            "description": "Created up to this moment, as UTC epoch milliseconds, at most 90 days after create_date_from.",
+            "minimum": 0
+          },
+          "area_id": {
+            "type": "integer",
+            "description": "Only orders shipped from this regional warehouse (areaId).",
+            "minimum": 1
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shopping/order/list",
+        "queryParams": {
+          "pageNum": "$page_num",
+          "pageSize": "$page_size",
+          "status": "$status",
+          "orderIds": "$order_ids",
+          "shipmentOrderId": "$shipment_order_id",
+          "paymentDateFrom": "$payment_date_from",
+          "paymentDateTo": "$payment_date_to",
+          "createDateFrom": "$create_date_from",
+          "createDateTo": "$create_date_to",
+          "areaId": "$area_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_order",
+      "description": "Read one order by the CJ order id or your own order number: status and sub-status, cjOrderCode, recipient and address, logisticName, trackNumber, trackingUrl, amounts in USD (orderAmount, productAmount, taxes and duties), dates, warehouse, disputeId and productList with vid, quantity, sellPrice and lineItemId. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CJ order id or your own order number."
+          },
+          "features": {
+            "type": "array",
+            "description": "LOGISTICS_TIMELINESS adds the expected delivery time per shipping method.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "LOGISTICS_TIMELINESS"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shopping/order/getOrderDetail",
+        "queryParams": {
+          "orderId": "$order_id",
+          "features": "$features"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_order_logs",
+      "description": "Read the log of one order, as under Order Logs in My CJ: logContent, operator, node, createDate and nodeName. By default only the Dispatched records; full_timeline true returns every record, newest first. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_code": {
+            "type": "string",
+            "description": "CJ order number (cjOrderCode of cj_dropshipping_get_order), e.g. SD2511270845250460800."
+          },
+          "full_timeline": {
+            "type": "boolean",
+            "description": "true returns the full timeline instead of the Dispatched records only."
+          }
+        },
+        "required": [
+          "order_code"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shopping/order/queryOrderLog",
+        "bodyMapping": {
+          "orderCode": "$order_code",
+          "fullTimeline": "$full_timeline"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_create_order",
+      "description": "Create a CJ order as an unpaid order (payType 3): it is saved under the account without payment, add-to-cart or confirmation, and nothing is charged. The account owner reviews and pays it in My CJ. Returns orderId, orderNumber, productAmount, postageAmount and orderAmount in USD, orderStatus and any interceptOrderReasons. A repeated order_number is refused. Get logistic_name from cj_dropshipping_calculate_freight.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_number": {
+            "type": "string",
+            "description": "Your own unique order number.",
+            "minLength": 1,
+            "maxLength": 50
+          },
+          "shipping_customer_name": {
+            "type": "string",
+            "description": "Recipient name."
+          },
+          "shipping_address": {
+            "type": "string",
+            "description": "Recipient address line 1."
+          },
+          "shipping_address2": {
+            "type": "string",
+            "description": "Recipient address line 2."
+          },
+          "house_number": {
+            "type": "string",
+            "description": "House number, where the country needs it separately."
+          },
+          "shipping_city": {
+            "type": "string",
+            "description": "Destination city."
+          },
+          "shipping_province": {
+            "type": "string",
+            "description": "Destination province or state."
+          },
+          "shipping_county": {
+            "type": "string",
+            "description": "Destination county or district."
+          },
+          "shipping_zip": {
+            "type": "string",
+            "description": "Destination postal code."
+          },
+          "shipping_country_code": {
+            "type": "string",
+            "description": "Destination country as a two-letter code, e.g. US.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "shipping_country": {
+            "type": "string",
+            "description": "Destination country name, e.g. United States."
+          },
+          "shipping_phone": {
+            "type": "string",
+            "description": "Recipient phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Recipient email."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Tax id of the recipient, where customs needs it."
+          },
+          "remark": {
+            "type": "string",
+            "description": "Order remark."
+          },
+          "logistic_name": {
+            "type": "string",
+            "description": "Shipping method name, e.g. CJPacket Ordinary or PostNL (logisticName of cj_dropshipping_calculate_freight)."
+          },
+          "from_country_code": {
+            "type": "string",
+            "description": "Country the goods ship from as a two-letter code, e.g. CN or US.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "storage_id": {
+            "type": "string",
+            "description": "CJ warehouse id to ship from, for platform logistics."
+          },
+          "ioss_type": {
+            "type": "integer",
+            "description": "IOSS for EU orders: 1 = no IOSS, 2 = your own IOSS number, 3 = the CJ IOSS.",
+            "enum": [
+              1,
+              2,
+              3
+            ]
+          },
+          "ioss_number": {
+            "type": "string",
+            "description": "Your IOSS number, with ioss_type 2."
+          },
+          "store_name": {
+            "type": "string",
+            "description": "Name of the API store in CJ the order belongs to. Default: the default API store."
+          },
+          "is_sandbox": {
+            "type": "integer",
+            "description": "1 creates a sandbox order (no real payment or fulfilment), 0 a normal order (default).",
+            "enum": [
+              0,
+              1
+            ]
+          },
+          "products": {
+            "type": "array",
+            "description": "Order lines, e.g. [{\"vid\": \"1371342252697325568\", \"quantity\": 1}]. Each line needs vid or sku, and quantity.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "vid": {
+                  "type": "string",
+                  "description": "CJ variant id."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "CJ variant SKU, used when vid is not given."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity.",
+                  "minimum": 1
+                },
+                "unitPrice": {
+                  "type": "number",
+                  "description": "Your selling price per item, for customs."
+                },
+                "storeLineItemId": {
+                  "type": "string",
+                  "description": "Line item id of your own store order."
+                }
+              },
+              "required": [
+                "quantity"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "order_number",
+          "shipping_customer_name",
+          "shipping_address",
+          "shipping_city",
+          "shipping_province",
+          "shipping_country_code",
+          "shipping_country",
+          "logistic_name",
+          "from_country_code",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shopping/order/createOrderV2",
+        "bodyMapping": {
+          "orderNumber": "$order_number",
+          "shippingCustomerName": "$shipping_customer_name",
+          "shippingAddress": "$shipping_address",
+          "shippingAddress2": "$shipping_address2",
+          "houseNumber": "$house_number",
+          "shippingCity": "$shipping_city",
+          "shippingProvince": "$shipping_province",
+          "shippingCounty": "$shipping_county",
+          "shippingZip": "$shipping_zip",
+          "shippingCountryCode": "$shipping_country_code",
+          "shippingCountry": "$shipping_country",
+          "shippingPhone": "$shipping_phone",
+          "email": "$email",
+          "taxId": "$tax_id",
+          "remark": "$remark",
+          "logisticName": "$logistic_name",
+          "fromCountryCode": "$from_country_code",
+          "storageId": "$storage_id",
+          "iossType": "$ioss_type",
+          "iossNumber": "$ioss_number",
+          "storeName": "$store_name",
+          "isSandbox": "$is_sandbox",
+          "payType": 3,
+          "products": "$products"
+        }
+      }
+    },
+    {
+      "name": "cj_dropshipping_confirm_order",
+      "description": "Confirm a created order: it moves from CREATED to UNPAID and gets its CJ order number, ready to be paid in My CJ. Nothing is charged by this call. Installed switched off, so that orders stay drafts until the account owner decides.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CJ order id of an order in status CREATED."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/shopping/order/confirmOrder",
+        "bodyMapping": {
+          "orderId": "$order_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "cj_dropshipping_delete_order",
+      "description": "Delete an order that is still CREATED or IN_CART; it goes to the trash. Confirmed, paid or shipped orders cannot be deleted. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CJ order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shopping/order/deleteOrder",
+        "queryParams": {
+          "orderId": "$order_id"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "cj_dropshipping_cancel_order",
+      "description": "Cancel an unpaid parent order (cj_order_id) or take one sub-order out of it (cj_order_code). Not a refund: paid orders cannot be cancelled here. Returns status, which can be PROCESSING or FAILED. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "cj_order_id": {
+            "type": "string",
+            "description": "CJ parent order number (cjOrderId of cj_dropshipping_get_order): cancels the whole parent order."
+          },
+          "cj_order_code": {
+            "type": "string",
+            "description": "CJ sub-order number (cjOrderCode): removes only this sub-order."
+          },
+          "return_to": {
+            "type": "string",
+            "description": "Where the sub-orders go: CART (default), TRASH or CREATED.",
+            "enum": [
+              "CART",
+              "TRASH",
+              "CREATED"
+            ]
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shopping/order/cancel",
+        "bodyMapping": {
+          "cjOrderId": "$cj_order_id",
+          "cjOrderCode": "$cj_order_code",
+          "returnTo": "$return_to"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "cj_dropshipping_get_balance",
+      "description": "Read the CJ wallet balance in USD: amount (available), noWithdrawalAmount and freezeAmount. Nothing is paid. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shopping/pay/getBalance"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_calculate_freight",
+      "description": "Calculate the shipping options for a list of variants between two countries: logisticName, logisticPrice in USD, logisticAging (delivery time in days), taxesFee, clearanceOperationFee and totalPostageFee. A calculation only, nothing is ordered. Costs 10 points. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start_country_code": {
+            "type": "string",
+            "description": "Country the goods ship from, e.g. CN.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "end_country_code": {
+            "type": "string",
+            "description": "Destination country, e.g. US.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "zip": {
+            "type": "string",
+            "description": "Destination postal code, for a more exact price."
+          },
+          "tax_id": {
+            "type": "string",
+            "description": "Tax id of the recipient."
+          },
+          "house_number": {
+            "type": "string",
+            "description": "House number of the recipient."
+          },
+          "ioss_number": {
+            "type": "string",
+            "description": "IOSS number for EU shipments."
+          },
+          "products": {
+            "type": "array",
+            "description": "Variants to ship, e.g. [{\"vid\": \"1371342252697325568\", \"quantity\": 1}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "vid": {
+                  "type": "string",
+                  "description": "CJ variant id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity.",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "vid",
+                "quantity"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "start_country_code",
+          "end_country_code",
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/logistic/freightCalculate",
+        "bodyMapping": {
+          "startCountryCode": "$start_country_code",
+          "endCountryCode": "$end_country_code",
+          "zip": "$zip",
+          "taxId": "$tax_id",
+          "houseNumber": "$house_number",
+          "iossNumber": "$ioss_number",
+          "products": "$products"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_tracking",
+      "description": "Read the tracking of one or more parcels: trackingNumber, trackingFrom, trackingTo, deliveryDay, deliveryTime, trackingStatus, lastMileCarrier and lastTrackNumber. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "track_numbers": {
+            "type": "array",
+            "description": "Tracking numbers, e.g. [\"CJPKL7160102171YQ\"].",
+            "items": {
+              "type": "string"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "track_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/logistic/trackInfo",
+        "queryParams": {
+          "trackNumber": "$track_numbers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_dispute_products",
+      "description": "List the items of an order that a dispute can be opened for: lineItemId, cjProductId, cjVariantId, sku, cjProductName, price, quantity, supplierName and canChoose. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "CJ order id."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disputes/disputeProducts",
+        "queryParams": {
+          "orderId": "$order_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_list_disputes",
+      "description": "List disputes: disputeId, status, disputeReason, refundMoney, replacementAmount, resendOrderCode, finallyDeal, createDate, updateDate and the products concerned, plus pageNum, pageSize and total. Status codes: 100 pending processing, 200 pending review, 300 finance review, 400 on hold, 500 customer confirmation, 600 completed, 700 cancelled. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Only disputes of this CJ order id."
+          },
+          "dispute_id": {
+            "type": "integer",
+            "description": "Only this dispute id.",
+            "minimum": 1
+          },
+          "order_number": {
+            "type": "string",
+            "description": "Only disputes of this customer order number."
+          },
+          "status": {
+            "type": "string",
+            "description": "Status codes, comma-separated, e.g. 100,200.",
+            "pattern": "^[0-9]{3}(,[0-9]{3})*$"
+          },
+          "start_date": {
+            "type": "integer",
+            "description": "Created after this moment, UTC epoch milliseconds. Pair with end_date, at most 90 days.",
+            "minimum": 0
+          },
+          "end_date": {
+            "type": "integer",
+            "description": "Created before this moment, UTC epoch milliseconds.",
+            "minimum": 0
+          },
+          "page_num": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Disputes per page (default 10).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disputes/getDisputeList",
+        "queryParams": {
+          "orderId": "$order_id",
+          "disputeId": "$dispute_id",
+          "orderNumber": "$order_number",
+          "status": "$status",
+          "startDate": "$start_date",
+          "endDate": "$end_date",
+          "pageNum": "$page_num",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "cj_dropshipping_get_dispute",
+      "description": "Read one dispute: status, disputeReason, money and refundAmount in USD, replacementAmount, resendOrderCode, finallyDeal, createDate, refundDetails (type and amount) and productList. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "dispute_id": {
+            "type": "string",
+            "description": "Dispute id from cj_dropshipping_list_disputes.",
+            "pattern": "^[0-9A-Za-z-]{1,40}$"
+          }
+        },
+        "required": [
+          "dispute_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/disputes/getDisputeDetail",
+        "queryParams": {
+          "disputeId": "$dispute_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

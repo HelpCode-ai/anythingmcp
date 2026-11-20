@@ -1,0 +1,1036 @@
+{
+  "slug": "mattermost",
+  "name": "Mattermost",
+  "aliases": [
+    "Mattermost Cloud",
+    "Mattermost chat"
+  ],
+  "description": "Mattermost team chat from any AI agent, self-hosted or Cloud: teams, channels, messages and threads, message and file search, users, pinned posts, reactions and file descriptions. Sends messages, replies in threads, edits posts and reacts in the name of a bot or user account; deleting is switched off.",
+  "instructions": "## Mattermost\nThis connector calls the **Mattermost REST API v4** of one Mattermost server, self-hosted or Mattermost Cloud: teams, channels, messages and threads, search, users, reactions and the description of attached files. It reads what its account can read and posts in that account's name.\n\n**Setup (about 5 minutes)**\n1. `MATTERMOST_URL`: the address you open Mattermost at, without a trailing slash and without `/api/v4`, e.g. `https://chat.example.com` or `https://yourcompany.cloud.mattermost.com`.\n2. Choose the account the connector acts as:\n   - **Bot account** (recommended for a shared assistant): a system admin opens **System Console, Integrations, Bot Accounts** (enable bot account creation there first), then **Integrations, Bot Accounts, Add Bot Account** in a team's menu, and copies the token shown once. Add the bot to every team and channel it should read or post in.\n   - **Personal access token** (acts as you): a system admin enables **System Console, Integrations, Integration Management, Enable Personal Access Tokens** and allows them for your user (System Console, Users, your user, Manage Roles). Then open **Profile, Security, Personal Access Tokens, Create Token** and copy the **Access Token** (not the Token ID); it is shown once.\n3. Paste the token into `MATTERMOST_TOKEN`. It is sent as `Authorization: Bearer <token>` and does not expire unless the server sets an expiry or it is revoked.\n\n**Where Mattermost runs**\n- **Self-hosted AnythingMCP**: a Mattermost server on a private network (`http://10.0.0.5:8065`, an internal host name) is blocked by the outbound SSRF guard by default; an administrator must allow the host through the `SSRF_ALLOWED_HOSTS` environment variable or the allowlist in the admin settings.\n- **AnythingMCP Cloud**: Cloud can only reach a server that is public over HTTPS. A private address is refused.\n\n**Where to start**\n- `mattermost_get_me` for the account's own id, then `mattermost_list_my_teams` for team ids and `mattermost_list_my_channels` for the channels of a team (public, private, direct and group messages).\n- Read: `mattermost_list_channel_posts`, `mattermost_get_thread`, `mattermost_get_post`, `mattermost_list_pinned_posts`. Search: `mattermost_search_posts` and `mattermost_search_files`.\n- Find a channel: `mattermost_search_channels`, `mattermost_get_channel_by_name`, `mattermost_list_public_channels`; details with `mattermost_get_channel`, `mattermost_get_channel_stats` and `mattermost_list_channel_members`.\n- People: `mattermost_search_users`, `mattermost_get_user`, `mattermost_get_user_by_username`, `mattermost_list_users`, `mattermost_list_team_members`. Teams: `mattermost_list_teams`, `mattermost_get_team`, `mattermost_get_team_by_name`.\n- Threads the account follows: `mattermost_list_followed_threads`. Reactions: `mattermost_list_post_reactions`. Files: `mattermost_list_post_files` and `mattermost_get_file_info` (descriptions only, never the content).\n\n**Writing**\n- `mattermost_create_post` sends a message at once; with `root_id` it replies in a thread. For a direct message call `mattermost_create_direct_channel` first and post to the channel id it returns. Say where the message goes and what it says before sending, unless the user already dictated both.\n- `mattermost_update_post` edits a post or pins it. `mattermost_add_reaction` adds an emoji reaction.\n- Switched off at install: `mattermost_delete_post` and `mattermost_remove_reaction`. Channels, teams and users cannot be created, changed or removed through this connector, and files cannot be uploaded.\n\n**Reading the data**\n- Ids are 26 lower-case letters and digits. Posts carry `user_id` and `channel_id`, not names: resolve them with `mattermost_get_user` and `mattermost_get_channel`.\n- Post lists come as `order` (ids, newest first) and `posts` (a map from id to post). A post with a `root_id` is a reply; its thread is `mattermost_get_thread` with any id of the thread.\n- Times are Unix epoch **milliseconds** in UTC. `delete_at` 0 means not deleted.\n- Channel `type`: O public, P private, D direct message, G group message. The `name` of a team or channel is the handle in its URL; `display_name` is what people see.\n- The account only sees channels it is a member of (plus public channels of its teams). A 403 on a channel usually means the bot or user has not been added to it.\n\n**Limits and errors**: lists return 60 items per page (at most 200); pages start at 0. A server with rate limiting on answers 429 and sends `X-Ratelimit-Reset` (seconds to wait); the default is 10 requests per second. 401: the token is wrong or revoked, or personal access tokens were switched off. 403: the account lacks the permission. 404: the id does not exist, or `MATTERMOST_URL` is wrong or already ends in `/api/v4`. Search needs at least one term and finds only what the account may read.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "mattermost",
+  "docsUrl": "https://docs.mattermost.com/api",
+  "prerequisites": "A Mattermost server (self-hosted or Mattermost Cloud) reachable from AnythingMCP (on Cloud: public over HTTPS) and a bot account token or a personal access token. A system admin must have enabled bot accounts or personal access tokens. About 5 minutes.",
+  "requiredEnvVars": [
+    "MATTERMOST_URL",
+    "MATTERMOST_TOKEN"
+  ],
+  "envVarMeta": {
+    "MATTERMOST_URL": {
+      "label": "Mattermost URL",
+      "kind": "address",
+      "help": "The address you open Mattermost at, without a trailing slash and without /api/v4. On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "https://chat.example.com",
+      "pattern": "^https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https:// or http://, without a trailing slash, e.g. https://chat.example.com."
+    },
+    "MATTERMOST_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The token of a bot account (Integrations, Bot Accounts) or a personal access token (Profile, Security, Personal Access Tokens, Create Token). Copy the Access Token, not the Token ID; it is shown once.",
+      "link": "https://docs.mattermost.com/developers/integrate/reference/personal-access-token",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9]{20,64}$",
+      "patternMessage": "Paste only the access token (26 letters and digits), without Bearer in front. The Token ID shown next to it is not the token."
+    }
+  },
+  "verifyHints": {
+    "401": "Mattermost refused the token: it is wrong or revoked, the Token ID was pasted instead of the Access Token, or personal access tokens were switched off on the server.",
+    "403": "Mattermost accepted the token but this account may not do that. Add the bot or user to the team and channel, or ask a system admin for the permission.",
+    "404": "Nothing answered at this address or the id does not exist. Check MATTERMOST_URL: the address you open Mattermost at, without /api/v4 and without a trailing slash.",
+    "rate_limited": "The Mattermost server is rate-limiting this account. Wait the seconds given in X-Ratelimit-Reset and try again.",
+    "unreachable": "The Mattermost server cannot be reached. Check MATTERMOST_URL; a server on a private network must be allowed in the SSRF allowlist (self-hosted) or be public over HTTPS (Cloud)."
+  },
+  "probe": {
+    "tool": "mattermost_get_me"
+  },
+  "connector": {
+    "name": "Mattermost REST API v4",
+    "type": "REST",
+    "baseUrl": "{{MATTERMOST_URL}}/api/v4",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MATTERMOST_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "mattermost_get_me",
+      "description": "Get the account this connector acts as (the owner of the token or the bot): id, username, email, first_name, last_name, nickname, roles, locale and timezone. The id is needed for reactions and direct messages, and posts are written in this account's name.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me"
+      }
+    },
+    {
+      "name": "mattermost_list_users",
+      "description": "List users, optionally only the members of one team or channel. Each user has id, username, first_name, last_name, nickname, email (when visible to this account), position, roles and delete_at (non-zero for a deactivated account). Pages with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "in_team": {
+            "type": "string",
+            "description": "Only members of this team (team id)."
+          },
+          "in_channel": {
+            "type": "string",
+            "description": "Only members of this channel (channel id)."
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true for active accounts only."
+          },
+          "sort": {
+            "type": "string",
+            "enum": [
+              "last_activity_at",
+              "create_at"
+            ],
+            "description": "Sort order, only together with in_team: last_activity_at or create_at. Default by username."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, at most 200. Default 60.",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "in_team": "$in_team",
+          "in_channel": "$in_channel",
+          "active": "$active",
+          "sort": "$sort",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "mattermost_search_users",
+      "description": "Find users by a term matched against username, full name, nickname and email. Returns the matching users with id, username, first_name, last_name, nickname, email and position. Use it to turn a name into a user id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Text to look for, e.g. a first name, a username or an email address."
+          },
+          "team_id": {
+            "type": "string",
+            "description": "Only users of this team (team id)."
+          },
+          "in_channel_id": {
+            "type": "string",
+            "description": "Only members of this channel (channel id)."
+          },
+          "allow_inactive": {
+            "type": "boolean",
+            "description": "true to include deactivated accounts. Default false."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of users. Default 100.",
+            "minimum": 1,
+            "maximum": 1000
+          }
+        },
+        "required": [
+          "term"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users/search",
+        "bodyMapping": {
+          "term": "$term",
+          "team_id": "$team_id",
+          "in_channel_id": "$in_channel_id",
+          "allow_inactive": "$allow_inactive",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mattermost_get_user",
+      "description": "Get one user by id: username, first_name, last_name, nickname, email (when visible), position, roles, locale, timezone and delete_at. Use it to turn the user_id of a post into a name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "User id (26 characters) from mattermost_search_users or mattermost_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "mattermost_get_user_by_username",
+      "description": "Get one user by username (the handle after the @ sign, without the @): id, first_name, last_name, nickname, email (when visible), position and roles.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Username without the @ sign, e.g. anna.rossi."
+          }
+        },
+        "required": [
+          "username"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/username/{username}"
+      }
+    },
+    {
+      "name": "mattermost_list_my_teams",
+      "description": "List the teams this account belongs to: id, name (the URL handle), display_name, description, type (O for open, I for invite only) and delete_at. Start here: channels and searches need a team id.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/teams"
+      }
+    },
+    {
+      "name": "mattermost_list_teams",
+      "description": "List the teams of the server that this account may see: its own teams plus teams open to join (all teams for a system admin). Each team has id, name, display_name, description and type. Pages with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, at most 200. Default 60.",
+            "minimum": 1,
+            "maximum": 200
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "mattermost_get_team",
+      "description": "Get one team by id: name, display_name, description, type, company_name, allowed_domains, allow_open_invite, create_at and delete_at.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}"
+      }
+    },
+    {
+      "name": "mattermost_get_team_by_name",
+      "description": "Get one team by its name, the handle in the team URL (for https://chat.example.com/engineering/channels/town-square the name is engineering): id, display_name, description and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_name": {
+            "type": "string",
+            "description": "Team name as it appears in the URL, lower case, e.g. engineering."
+          }
+        },
+        "required": [
+          "team_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/name/{team_name}"
+      }
+    },
+    {
+      "name": "mattermost_list_team_members",
+      "description": "List the members of a team: user_id, roles, scheme_admin (team admin), scheme_guest and delete_at per member. Names are not included: resolve user ids with mattermost_get_user. Pages with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, at most 200. Default 60.",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/members",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "mattermost_list_my_channels",
+      "description": "List every channel of one team that this account is a member of, including private channels, direct messages (type D) and group messages (type G). Each channel has id, name, display_name, type (O public, P private, D direct, G group), header, purpose, last_post_at and total_msg_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/teams/{team_id}/channels"
+      }
+    },
+    {
+      "name": "mattermost_list_public_channels",
+      "description": "List the public channels of a team, whether or not this account has joined them: id, name, display_name, header, purpose and last_post_at. Pages with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, at most 200. Default 60.",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/channels",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "mattermost_search_channels",
+      "description": "Find channels of a team by a term matched against the channel name, display name and purpose. Returns public channels and the private channels this account belongs to, each with id, name, display_name and type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          },
+          "term": {
+            "type": "string",
+            "description": "Text to look for in channel names, e.g. marketing."
+          }
+        },
+        "required": [
+          "team_id",
+          "term"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/teams/{team_id}/channels/search",
+        "bodyMapping": {
+          "term": "$term"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mattermost_get_channel",
+      "description": "Get one channel by id: team_id, name, display_name, type, header, purpose, creator_id, create_at, last_post_at and total_msg_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id (26 characters) from mattermost_list_my_channels or mattermost_search_channels."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channel_id}"
+      }
+    },
+    {
+      "name": "mattermost_get_channel_by_name",
+      "description": "Get one channel by its name, the handle in the channel URL (for https://chat.example.com/engineering/channels/release-notes the name is release-notes), inside a team: id, display_name, type, header and purpose.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          },
+          "channel_name": {
+            "type": "string",
+            "description": "Channel name as it appears in the URL, lower case with hyphens, e.g. town-square."
+          }
+        },
+        "required": [
+          "team_id",
+          "channel_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/teams/{team_id}/channels/name/{channel_name}"
+      }
+    },
+    {
+      "name": "mattermost_list_channel_members",
+      "description": "List the members of a channel: user_id, roles, last_viewed_at, msg_count and mention_count per member. Names are not included: resolve user ids with mattermost_get_user. Pages with page and per_page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id (26 characters) from mattermost_list_my_channels or mattermost_search_channels."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, at most 200. Default 60.",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channel_id}/members",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "mattermost_get_channel_stats",
+      "description": "Get the size of a channel: member_count, guest_count, pinnedpost_count and files_count.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id (26 characters) from mattermost_list_my_channels or mattermost_search_channels."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channel_id}/stats"
+      }
+    },
+    {
+      "name": "mattermost_create_direct_channel",
+      "description": "Open the direct message channel between two users (it is created when it does not exist yet) and return it with its id. To send someone a direct message: pass your own id from mattermost_get_me and the other user's id, then call mattermost_create_post with the returned channel id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id, from mattermost_get_me."
+          },
+          "other_user_id": {
+            "type": "string",
+            "description": "User id of the other person, from mattermost_search_users."
+          }
+        },
+        "required": [
+          "user_id",
+          "other_user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/channels/direct",
+        "bodyMapping": [
+          "$user_id",
+          "$other_user_id"
+        ]
+      }
+    },
+    {
+      "name": "mattermost_list_channel_posts",
+      "description": "Read the messages of a channel, newest first. Returns order (post ids, newest first) and posts (a map from id to post with id, user_id, message, create_at, update_at, root_id for replies, reply_count, file_ids, is_pinned and props), plus next_post_id and prev_post_id. Page with page and per_page, or pass since to get everything changed after a moment. Times such as create_at and update_at are Unix epoch milliseconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id (26 characters) from mattermost_list_my_channels or mattermost_search_channels."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, at most 200. Default 60.",
+            "minimum": 1,
+            "maximum": 200
+          },
+          "since": {
+            "type": "integer",
+            "description": "Only posts created or changed after this time, Unix epoch milliseconds, e.g. 1763510400000. Do not combine with page, per_page, before or after; at most 1000 posts come back.",
+            "minimum": 1
+          },
+          "before": {
+            "type": "string",
+            "description": "Only posts older than this post id."
+          },
+          "after": {
+            "type": "string",
+            "description": "Only posts newer than this post id."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channel_id}/posts",
+        "queryParams": {
+          "page": "$page",
+          "per_page": "$per_page",
+          "since": "$since",
+          "before": "$before",
+          "after": "$after"
+        }
+      }
+    },
+    {
+      "name": "mattermost_get_post",
+      "description": "Get one post by id: channel_id, user_id, message, create_at, update_at, edit_at, root_id (set when it is a reply), reply_count, file_ids, is_pinned, props and metadata with files, reactions and embeds. Times such as create_at and update_at are Unix epoch milliseconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{post_id}"
+      }
+    },
+    {
+      "name": "mattermost_get_thread",
+      "description": "Get a whole thread: the root post and every reply. Works with the id of any post in the thread. Returns order (post ids) and posts (a map from id to post), as mattermost_list_channel_posts does.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Posts per page for a long thread. Leave out for the whole thread.",
+            "minimum": 1
+          },
+          "from_post": {
+            "type": "string",
+            "description": "Post id to continue from on the next page."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{post_id}/thread",
+        "queryParams": {
+          "perPage": "$per_page",
+          "fromPost": "$from_post"
+        }
+      }
+    },
+    {
+      "name": "mattermost_list_pinned_posts",
+      "description": "List the posts pinned in a channel, as order and posts like mattermost_list_channel_posts. Pinned posts usually hold the rules, links and decisions of a channel.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel id (26 characters) from mattermost_list_my_channels or mattermost_search_channels."
+          }
+        },
+        "required": [
+          "channel_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels/{channel_id}/pinned"
+      }
+    },
+    {
+      "name": "mattermost_search_posts",
+      "description": "Search the messages of one team that this account can read. Returns order, posts (a map from id to post) and matches. The terms accept Mattermost search modifiers: from:username, in:channel-name, before:2026-11-01, after:2026-10-01, on:2026-10-15, quoted phrases and a minus sign in front of a word to exclude it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          },
+          "terms": {
+            "type": "string",
+            "description": "Search terms, e.g. deployment failed in:devops after:2026-11-01."
+          },
+          "is_or_search": {
+            "type": "boolean",
+            "description": "true to match any of the words, false to match all of them. Default false.",
+            "default": false
+          },
+          "time_zone_offset": {
+            "type": "integer",
+            "description": "Offset of the user's time zone from UTC in seconds, for the date modifiers, e.g. 3600 for UTC+1. Default 0."
+          },
+          "include_deleted_channels": {
+            "type": "boolean",
+            "description": "true to search archived channels too. Default false."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Only servers with Elasticsearch or OpenSearch page the results.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Posts per page. Only servers with Elasticsearch or OpenSearch page the results.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "team_id",
+          "terms"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/teams/{team_id}/posts/search",
+        "bodyMapping": {
+          "terms": "$terms",
+          "is_or_search": "$is_or_search",
+          "time_zone_offset": "$time_zone_offset",
+          "include_deleted_channels": "$include_deleted_channels",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "mattermost_create_post",
+      "description": "Send a message to a channel, or reply in a thread when root_id is given. The message is posted at once in the name of the connector's account and everyone in the channel sees it. Markdown is supported; mention people with @username. Returns the new post with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Id of the channel to post in (26 characters). For a direct message use the id from mattermost_create_direct_channel."
+          },
+          "message": {
+            "type": "string",
+            "description": "Text of the message, Markdown allowed. At most 16383 characters.",
+            "minLength": 1
+          },
+          "root_id": {
+            "type": "string",
+            "description": "Id of the first post of a thread, to reply in that thread. Leave out for a new message."
+          },
+          "file_ids": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of files already uploaded to Mattermost to attach, at most 5.",
+            "maxItems": 5
+          }
+        },
+        "required": [
+          "channel_id",
+          "message"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/posts",
+        "bodyMapping": {
+          "channel_id": "$channel_id",
+          "message": "$message",
+          "root_id": "$root_id",
+          "file_ids": "$file_ids"
+        }
+      }
+    },
+    {
+      "name": "mattermost_update_post",
+      "description": "Edit the text of an existing post or pin and unpin it. Only the fields given are changed. Editing another person's post needs the matching permission; Mattermost marks the post as edited.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          },
+          "message": {
+            "type": "string",
+            "description": "New text of the post, Markdown allowed."
+          },
+          "is_pinned": {
+            "type": "boolean",
+            "description": "true to pin the post to its channel, false to unpin it."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/posts/{post_id}/patch",
+        "bodyMapping": {
+          "message": "$message",
+          "is_pinned": "$is_pinned"
+        }
+      }
+    },
+    {
+      "name": "mattermost_delete_post",
+      "description": "Delete a post. Installed switched off: the message disappears for everyone, and deleting the first post of a thread removes its replies from view as well. It cannot be restored through the API.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/posts/{post_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "mattermost_list_followed_threads",
+      "description": "List the threads this account follows in a team (needs collapsed reply threads on the server). Returns total, total_unread_threads, total_unread_mentions and threads, each with id (the root post id), reply_count, last_reply_at, unread_replies, unread_mentions, participants and the root post.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          },
+          "since": {
+            "type": "integer",
+            "description": "Only threads updated after this time, Unix epoch milliseconds.",
+            "minimum": 1
+          },
+          "extended": {
+            "type": "boolean",
+            "description": "true to include the participants' user details."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Default 0.",
+            "minimum": 0
+          },
+          "per_page": {
+            "type": "integer",
+            "description": "Items per page, at most 200. Default 60.",
+            "minimum": 1,
+            "maximum": 200
+          }
+        },
+        "required": [
+          "team_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/me/teams/{team_id}/threads",
+        "queryParams": {
+          "since": "$since",
+          "extended": "$extended",
+          "page": "$page",
+          "per_page": "$per_page"
+        }
+      }
+    },
+    {
+      "name": "mattermost_list_post_reactions",
+      "description": "List the emoji reactions on a post: user_id, emoji_name and create_at per reaction. An empty answer means nobody reacted.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{post_id}/reactions"
+      }
+    },
+    {
+      "name": "mattermost_add_reaction",
+      "description": "React to a post with an emoji in the name of the connector's account, for example to acknowledge a request. Returns the reaction. A reaction can only be added for the account the token belongs to.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Your own user id, from mattermost_get_me. Mattermost refuses any other user."
+          },
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          },
+          "emoji_name": {
+            "type": "string",
+            "description": "Emoji name without colons, e.g. thumbsup, white_check_mark or eyes.",
+            "pattern": "^[A-Za-z0-9_+-]+$"
+          }
+        },
+        "required": [
+          "user_id",
+          "post_id",
+          "emoji_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/reactions",
+        "bodyMapping": {
+          "user_id": "$user_id",
+          "post_id": "$post_id",
+          "emoji_name": "$emoji_name"
+        }
+      }
+    },
+    {
+      "name": "mattermost_remove_reaction",
+      "description": "Remove one of this account's own emoji reactions from a post. Installed switched off like every delete.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          },
+          "emoji_name": {
+            "type": "string",
+            "description": "Emoji name without colons, as mattermost_list_post_reactions returns it.",
+            "pattern": "^[A-Za-z0-9_+-]+$"
+          }
+        },
+        "required": [
+          "post_id",
+          "emoji_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/me/posts/{post_id}/reactions/{emoji_name}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "mattermost_list_post_files",
+      "description": "List the files attached to a post: id, name, extension, size in bytes, mime_type, create_at and, for images, width and height. Only the description of the files is returned, not their content.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "description": "Post id (26 characters) from a post list or search."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{post_id}/files/info"
+      }
+    },
+    {
+      "name": "mattermost_get_file_info",
+      "description": "Get the description of one uploaded file: name, extension, size in bytes, mime_type, the post and channel it belongs to, the uploader (creator_id) and create_at. The content of the file is not returned.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "file_id": {
+            "type": "string",
+            "description": "File id (26 characters) from file_ids of a post or from mattermost_list_post_files."
+          }
+        },
+        "required": [
+          "file_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/files/{file_id}/info"
+      }
+    },
+    {
+      "name": "mattermost_search_files",
+      "description": "Search the files shared in one team by file name, extension and, when the server extracts it, file content. Returns order and file_infos (a map from id to file with name, extension, size, mime_type, channel_id, post_id and create_at). The terms accept from:username, in:channel-name and ext:pdf.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "team_id": {
+            "type": "string",
+            "description": "Team id (26 characters) from mattermost_list_my_teams."
+          },
+          "terms": {
+            "type": "string",
+            "description": "Search terms, e.g. budget ext:xlsx in:finance."
+          },
+          "is_or_search": {
+            "type": "boolean",
+            "description": "true to match any of the words, false to match all of them. Default false.",
+            "default": false
+          },
+          "include_deleted_channels": {
+            "type": "boolean",
+            "description": "true to search archived channels too. Default false."
+          }
+        },
+        "required": [
+          "team_id",
+          "terms"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/teams/{team_id}/files/search",
+        "bodyMapping": {
+          "terms": "$terms",
+          "is_or_search": "$is_or_search",
+          "include_deleted_channels": "$include_deleted_channels"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

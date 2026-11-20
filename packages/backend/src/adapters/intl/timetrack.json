@@ -1,0 +1,1503 @@
+{
+  "slug": "timetrack",
+  "name": "TimeTrack",
+  "aliases": [
+    "TimeTrack Enterprise",
+    "timetrackapp"
+  ],
+  "description": "TimeTrack time tracking: employees, clients, projects, project time entries, attendance with clock in and out, absences and absence types, expenses, daily and grouped timesheet reports and timers. App key and secret.",
+  "instructions": "## TimeTrack\nThis connector works with the **TimeTrack API** (TimeTrack Enterprise, timetrackapp.com) of your own account at `https://<account>.timetrackenterprise.com/api/v2/ext`: employees, clients, projects, task types, project time entries, attendance (clock in and out), absences, expenses, timesheet reports and the two timers.\n\n**Setup (about 3 minutes)**\n1. Sign in to the TimeTrack web app as an administrator and open **Settings, General, API**.\n2. Copy the **App Key** into `TIMETRACK_API_KEY` and the **App Secret** into `TIMETRACK_API_SECRET`. Both are generated for you; a new secret can be generated there at any time, which invalidates the old one.\n3. Put the first part of your TimeTrack address into `TIMETRACK_ACCOUNT`: for `https://acme.timetrackenterprise.com` that is `acme`.\n\nEvery call sends the two values in the headers `X-TimeTrack-Api-Key` and `X-TimeTrack-Api-Secret`. The API acts for the whole account, not for one employee.\n\n**Where to start**: `timetrack_list_users` returns the usernames that every other tool uses to name an employee. `timetrack_list_clients` and `timetrack_list_projects` return the client and project names that time entries refer to (by name, not by ID).\n\n**Master data**: `timetrack_get_user`, `timetrack_get_client`, `timetrack_create_client`, `timetrack_get_project`, `timetrack_create_project`, `timetrack_update_project`, `timetrack_list_tasks` (the task types time is booked on).\n\n**Project time**: `timetrack_list_project_time_entries`, `timetrack_get_project_time_entry`, `timetrack_create_project_time_entry`, `timetrack_update_project_time_entry`. `timetrack_delete_project_time_entry` is installed switched off. `timetrack_list_expenses` lists expenses booked on projects.\n\n**Attendance**: `timetrack_list_attendances`, `timetrack_get_attendance`, `timetrack_create_attendance`, `timetrack_update_attendance`; `timetrack_delete_attendance` is switched off. To clock in or out now use `timetrack_start_attendance_timer` and `timetrack_stop_attendance_timer`; `timetrack_get_attendance_timer` tells whether someone is clocked in.\n\n**Project timer**: `timetrack_get_project_timer`, `timetrack_start_project_timer`, `timetrack_stop_project_timer`.\n\n**Absences**: `timetrack_list_absence_types` gives the type IDs, `timetrack_list_absences` and `timetrack_get_absence` read requests, `timetrack_create_absence` files one and `timetrack_update_absence` approves (status 1) or disapproves (status 2) it. `timetrack_delete_absence` is switched off.\n\n**Reports**: `timetrack_list_daily_reports` returns one timesheet record per day, `timetrack_get_grouped_report` the totals with overtime and vacation carries. Durations in reports are seconds; in time entries they are minutes.\n\n**Paging**: lists return 50 records unless you pass `limit` (at most 1000); `page_number` starts at 0.\n\n**Dates**: absences take plain dates (`YYYY-MM-DD`); time entries, expenses, reports and timers take timestamps such as `2026-10-20T09:00:00.000Z`. The timer tools need the real current time in `date`.\n\n**Rate limit**: 30 requests per minute. Use filters and a large `limit` instead of one call per record.\n\n**Errors**: a failed call answers `errors`, a list with `title`, `status`, `code` and `detail`. 401: key or secret wrong. 403: action not allowed. 404: record not found, or deleted. 422: a parameter is wrong or the change conflicts with existing data (an unknown username, client or project name is the usual cause).",
+  "region": "intl",
+  "category": "time-tracking",
+  "icon": "timetrack",
+  "docsUrl": "https://www.timetrackapp.com/en/api/",
+  "prerequisites": "A TimeTrack account at timetrackenterprise.com and administrator access to Settings, General, API, where the App Key and App Secret are shown. About 3 minutes.",
+  "requiredEnvVars": [
+    "TIMETRACK_ACCOUNT",
+    "TIMETRACK_API_KEY",
+    "TIMETRACK_API_SECRET"
+  ],
+  "envVarMeta": {
+    "TIMETRACK_ACCOUNT": {
+      "label": "Account name",
+      "kind": "address",
+      "help": "The first part of your TimeTrack address: for https://acme.timetrackenterprise.com enter acme.",
+      "example": "acme",
+      "pattern": "^[a-z0-9]([a-z0-9-]{0,61}[a-z0-9])?$",
+      "patternMessage": "Enter only the account name in lower case, without https:// and without .timetrackenterprise.com."
+    },
+    "TIMETRACK_API_KEY": {
+      "label": "App Key",
+      "kind": "credential",
+      "secret": true,
+      "help": "TimeTrack web app, Settings, General, API: copy the App Key.",
+      "link": "https://www.timetrackapp.com/en/api/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the App Key without spaces."
+    },
+    "TIMETRACK_API_SECRET": {
+      "label": "App Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Shown next to the App Key under Settings, General, API. Generating a new secret there invalidates the old one.",
+      "link": "https://www.timetrackapp.com/en/api/",
+      "pattern": "^\\S{8,200}$",
+      "patternMessage": "Paste the App Secret without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "TimeTrack did not accept the App Key and App Secret. Copy both again from Settings, General, API, and check they belong to the account in TIMETRACK_ACCOUNT.",
+    "403": "TimeTrack does not allow this action for the API of this account.",
+    "404": {
+      "hint": "No TimeTrack account answers under this name, or the record does not exist. The account name is the first part of your address, before .timetrackenterprise.com.",
+      "field": "TIMETRACK_ACCOUNT"
+    },
+    "422": "TimeTrack refused the values: check the username, client and project names (exact spelling) and the date formats.",
+    "rate_limited": "TimeTrack allows 30 requests per minute. Wait a minute and use filters or a larger limit."
+  },
+  "probe": {
+    "tool": "timetrack_list_absence_types",
+    "params": {}
+  },
+  "connector": {
+    "name": "TimeTrack API",
+    "type": "REST",
+    "baseUrl": "https://{{TIMETRACK_ACCOUNT}}.timetrackenterprise.com/api/v2/ext",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-TimeTrack-Api-Key",
+      "apiKey": "{{TIMETRACK_API_KEY}}",
+      "extraHeaders": {
+        "X-TimeTrack-Api-Secret": "{{TIMETRACK_API_SECRET}}"
+      }
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "timetrack_list_users",
+      "description": "List the employees of the TimeTrack account: ID, username, email, firstName, lastName, personalNumber, language, hourRate and the flags admin, external, teamLead and enabled. Other tools identify an employee by `username`. Filter by name, email or enabled state. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Only the employee with this username."
+          },
+          "email": {
+            "type": "string",
+            "description": "Only the employee with this email address."
+          },
+          "first_name": {
+            "type": "string",
+            "description": "Filter by first name."
+          },
+          "last_name": {
+            "type": "string",
+            "description": "Filter by last name."
+          },
+          "enabled": {
+            "type": "boolean",
+            "description": "true: only active employees. false: only disabled ones."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users",
+        "queryParams": {
+          "username": "$username",
+          "email": "$email",
+          "firstName": "$first_name",
+          "lastName": "$last_name",
+          "enabled": "$enabled",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_user",
+      "description": "Read one employee by numeric ID: username, email, first and last name, personal number, language, hourly rate and the admin, external, teamLead and enabled flags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "description": "Numeric ID of the employee.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_list_clients",
+      "description": "List clients (customers that projects are booked for): ID, name, enabled, color, notes, email, phone, address fields, contactPerson and the free fields field1 to field3. Filter by a part of the name. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only clients whose name contains this text."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients",
+        "queryParams": {
+          "name": "$name",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_client",
+      "description": "Read one client by numeric ID: name, enabled, contact details, address and free fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "client_id": {
+            "type": "integer",
+            "description": "Numeric ID of the client.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/clients/{client_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_create_client",
+      "description": "Create a client and return it. Projects are created under a client, so a new customer needs this first. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Client name. It must be unique: projects and time entries refer to the client by this name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address of the client."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "address": {
+            "type": "string",
+            "description": "Street address."
+          },
+          "address2": {
+            "type": "string",
+            "description": "Address addition."
+          },
+          "address_zip_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "address_city": {
+            "type": "string",
+            "description": "City."
+          },
+          "address_country": {
+            "type": "string",
+            "description": "Country as a two-letter ISO code, e.g. DE, AT or CH."
+          },
+          "contact_person": {
+            "type": "string",
+            "description": "Name of the contact person."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "field1": {
+            "type": "string",
+            "description": "Free field 1, e.g. a VAT number."
+          },
+          "field2": {
+            "type": "string",
+            "description": "Free field 2."
+          },
+          "field3": {
+            "type": "string",
+            "description": "Free field 3."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients",
+        "bodyMapping": {
+          "name": "$name",
+          "email": "$email",
+          "phone": "$phone",
+          "address": "$address",
+          "address2": "$address2",
+          "addressZipCode": "$address_zip_code",
+          "addressCity": "$address_city",
+          "addressCountry": "$address_country",
+          "contactPerson": "$contact_person",
+          "notes": "$notes",
+          "field1": "$field1",
+          "field2": "$field2",
+          "field3": "$field3"
+        }
+      }
+    },
+    {
+      "name": "timetrack_list_projects",
+      "description": "List projects: ID, projectName, clientName, projectEnabled, notes, hourRate, timeEstimated (planned duration in minutes) and budgetEstimated. Filter by a part of the project or client name. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Only projects whose name contains this text."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Only projects whose client name contains this text."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects",
+        "queryParams": {
+          "projectName": "$project_name",
+          "clientName": "$client_name",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_project",
+      "description": "Read one project by numeric ID: projectName, clientName, projectEnabled, notes, hourRate, timeEstimated in minutes and budgetEstimated. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric ID of the project.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/projects/{project_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_create_project",
+      "description": "Create a project under an existing client and return it. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_name": {
+            "type": "string",
+            "description": "Project name."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Exact name of an existing client (see timetrack_list_clients)."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "hour_rate": {
+            "type": "number",
+            "description": "Hourly rate of the project.",
+            "minimum": 0
+          },
+          "time_estimated": {
+            "type": "integer",
+            "description": "Planned duration of the project in minutes.",
+            "minimum": 0
+          },
+          "budget_estimated": {
+            "type": "number",
+            "description": "Planned budget of the project.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project_name",
+          "client_name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/projects",
+        "bodyMapping": {
+          "projectName": "$project_name",
+          "clientName": "$client_name",
+          "notes": "$notes",
+          "hourRate": "$hour_rate",
+          "timeEstimated": "$time_estimated",
+          "budgetEstimated": "$budget_estimated"
+        }
+      }
+    },
+    {
+      "name": "timetrack_update_project",
+      "description": "Change a project: notes, hourly rate, planned time or budget, its name or its client. Only the fields you pass change. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "project_id": {
+            "type": "integer",
+            "description": "Numeric ID of the project.",
+            "minimum": 1
+          },
+          "project_name": {
+            "type": "string",
+            "description": "New project name."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Exact name of an existing client to move the project to."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          },
+          "hour_rate": {
+            "type": "number",
+            "description": "Hourly rate of the project.",
+            "minimum": 0
+          },
+          "time_estimated": {
+            "type": "integer",
+            "description": "Planned duration in minutes.",
+            "minimum": 0
+          },
+          "budget_estimated": {
+            "type": "number",
+            "description": "Planned budget.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "project_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/projects/{project_id}",
+        "bodyMapping": {
+          "projectName": "$project_name",
+          "clientName": "$client_name",
+          "notes": "$notes",
+          "hourRate": "$hour_rate",
+          "timeEstimated": "$time_estimated",
+          "budgetEstimated": "$budget_estimated"
+        }
+      }
+    },
+    {
+      "name": "timetrack_list_tasks",
+      "description": "List the task types that project time is booked on (for example Development or Consulting): ID, name, notes and hourRate. Time entries refer to a task by its name. Filter by a part of the name. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only tasks whose name contains this text."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/tasks",
+        "queryParams": {
+          "name": "$name",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_list_project_time_entries",
+      "description": "List time booked on projects: ID, user, clientName, projectName, task, from and to (timestamps), workedMinutes (break not included), breakMinutes, hourRate, billable, flatRate, details (notes), tags and GPS coordinates of start and end. Filter by employee, client, project and time range. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Only entries of this employee. TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Only entries of this client (exact client name)."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Only entries of this project (exact project name)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only entries from this time on. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only entries up to this time. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project_time_entries",
+        "queryParams": {
+          "username": "$username",
+          "clientName": "$client_name",
+          "projectName": "$project_name",
+          "from": "$from",
+          "to": "$to",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_project_time_entry",
+      "description": "Read one project time entry by numeric ID: employee, client, project, task, start and end, worked and break minutes, rate, billable flag and notes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "integer",
+            "description": "Numeric ID of the time entry.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/project_time_entries/{entry_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_create_project_time_entry",
+      "description": "Book working time of an employee on a project and return the entry. Client and project must exist and are given by name. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Exact name of the client."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Exact name of the project of that client."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the work. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the work. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "task": {
+            "type": "string",
+            "description": "Name of the task type, e.g. Development (see timetrack_list_tasks)."
+          },
+          "break_minutes": {
+            "type": "integer",
+            "description": "Break within the entry, in minutes.",
+            "minimum": 0
+          },
+          "hour_rate": {
+            "type": "number",
+            "description": "Hourly rate for this entry. Default: the rate of the project, task or employee.",
+            "minimum": 0
+          },
+          "billable": {
+            "type": "boolean",
+            "description": "false marks the entry as not billable. Default true."
+          },
+          "details": {
+            "type": "string",
+            "description": "Notes on the work done."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Hashtags of the entry."
+          }
+        },
+        "required": [
+          "username",
+          "client_name",
+          "project_name",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/project_time_entries",
+        "bodyMapping": {
+          "username": "$username",
+          "clientName": "$client_name",
+          "projectName": "$project_name",
+          "from": "$from",
+          "to": "$to",
+          "task": "$task",
+          "breakMinutes": "$break_minutes",
+          "hourRate": "$hour_rate",
+          "billable": "$billable",
+          "details": "$details",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "timetrack_update_project_time_entry",
+      "description": "Correct a project time entry: start, end, break, task, rate, billable flag or notes. Employee, client and project cannot be changed: delete the entry in TimeTrack and book a new one. Only the fields you pass change. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "integer",
+            "description": "Numeric ID of the time entry.",
+            "minimum": 1
+          },
+          "from": {
+            "type": "string",
+            "description": "New start. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "New end. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "task": {
+            "type": "string",
+            "description": "Name of the task type."
+          },
+          "break_minutes": {
+            "type": "integer",
+            "description": "Break in minutes.",
+            "minimum": 0
+          },
+          "hour_rate": {
+            "type": "number",
+            "description": "Hourly rate for this entry.",
+            "minimum": 0
+          },
+          "billable": {
+            "type": "boolean",
+            "description": "true billable, false not billable."
+          },
+          "details": {
+            "type": "string",
+            "description": "Notes on the work done."
+          },
+          "tags": {
+            "type": "string",
+            "description": "Hashtags of the entry."
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/project_time_entries/{entry_id}",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "task": "$task",
+          "breakMinutes": "$break_minutes",
+          "hourRate": "$hour_rate",
+          "billable": "$billable",
+          "details": "$details",
+          "tags": "$tags"
+        }
+      }
+    },
+    {
+      "name": "timetrack_delete_project_time_entry",
+      "description": "Delete a project time entry. The booked time disappears from reports and invoices. Installed switched off; correct an entry with timetrack_update_project_time_entry where possible. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "entry_id": {
+            "type": "integer",
+            "description": "Numeric ID of the time entry.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "entry_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/project_time_entries/{entry_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "timetrack_list_attendances",
+      "description": "List attendance entries (clock in and clock out without a project): ID, user, from, to, workedMinutes, breakMinutes, notes, manual (entered by hand or by the timer) and GPS coordinates. An entry without `to` is still running. Filter by employee and time range. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Only entries of this employee. TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only entries from this time on. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only entries up to this time. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/attendances",
+        "queryParams": {
+          "username": "$username",
+          "from": "$from",
+          "to": "$to",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_attendance",
+      "description": "Read one attendance entry by numeric ID: employee, start, end, worked and break minutes, notes and whether it was entered manually. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attendance_id": {
+            "type": "integer",
+            "description": "Numeric ID of the attendance entry.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "attendance_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/attendances/{attendance_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_create_attendance",
+      "description": "Record working time of an employee after the fact (start and end known) and return the entry. For clocking in now use timetrack_start_attendance_timer. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of work. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of work. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "break_minutes": {
+            "type": "integer",
+            "description": "Break within the entry, in minutes.",
+            "minimum": 0
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          }
+        },
+        "required": [
+          "username",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/attendances",
+        "bodyMapping": {
+          "username": "$username",
+          "from": "$from",
+          "to": "$to",
+          "breakMinutes": "$break_minutes",
+          "minutesBreak": "$break_minutes",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "timetrack_update_attendance",
+      "description": "Correct an attendance entry: start, end, break or notes. The employee cannot be changed. Only the fields you pass change. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attendance_id": {
+            "type": "integer",
+            "description": "Numeric ID of the attendance entry.",
+            "minimum": 1
+          },
+          "from": {
+            "type": "string",
+            "description": "New start. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "New end. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "break_minutes": {
+            "type": "integer",
+            "description": "Break in minutes.",
+            "minimum": 0
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes."
+          }
+        },
+        "required": [
+          "attendance_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/attendances/{attendance_id}",
+        "bodyMapping": {
+          "from": "$from",
+          "to": "$to",
+          "breakMinutes": "$break_minutes",
+          "minutesBreak": "$break_minutes",
+          "notes": "$notes"
+        }
+      }
+    },
+    {
+      "name": "timetrack_delete_attendance",
+      "description": "Mark an attendance entry as deleted. The working time disappears from the timesheet of the employee. Installed switched off; correct an entry with timetrack_update_attendance where possible. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "attendance_id": {
+            "type": "integer",
+            "description": "Numeric ID of the attendance entry.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "attendance_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/attendances/{attendance_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "timetrack_list_absence_types",
+      "description": "List the absence types of the account (vacation, sick leave, time off in lieu and so on): ID, name and shortName. The ID is what an absence carries as absenceType. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absence_types"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_list_absences",
+      "description": "List absences: ID, user, from and to (dates), status (0 new and waiting for approval, 1 approved, 2 disapproved), absenceType (ID) and absenceTypeName (short code). Filter by employee, date range and type. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Only absences of this employee. TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only absences from this day on. Date as YYYY-MM-DD, e.g. `2026-10-26`."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only absences up to this day. Date as YYYY-MM-DD, e.g. `2026-10-26`."
+          },
+          "absence_type": {
+            "type": "integer",
+            "description": "Only absences of this type: an ID from timetrack_list_absence_types.",
+            "minimum": 1
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absences",
+        "queryParams": {
+          "username": "$username",
+          "from": "$from",
+          "to": "$to",
+          "absenceType": "$absence_type",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_absence",
+      "description": "Read one absence by numeric ID: employee, first and last day, status (0 waiting, 1 approved, 2 disapproved) and absence type. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "absence_id": {
+            "type": "integer",
+            "description": "Numeric ID of the absence.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "absence_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/absences/{absence_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_create_absence",
+      "description": "Request an absence (vacation, sick leave) for an employee and return it. A new absence has status 0 and waits for approval unless the account approves that type automatically. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "absence_type": {
+            "type": "integer",
+            "description": "ID of the absence type from timetrack_list_absence_types.",
+            "minimum": 1
+          },
+          "from": {
+            "type": "string",
+            "description": "First day of the absence. Date as YYYY-MM-DD, e.g. `2026-10-26`."
+          },
+          "to": {
+            "type": "string",
+            "description": "Last day of the absence. Date as YYYY-MM-DD, e.g. `2026-10-26`."
+          }
+        },
+        "required": [
+          "username",
+          "absence_type",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/absences",
+        "bodyMapping": {
+          "username": "$username",
+          "absenceType": "$absence_type",
+          "from": "$from",
+          "to": "$to"
+        }
+      }
+    },
+    {
+      "name": "timetrack_update_absence",
+      "description": "Approve or disapprove an absence by setting its status. Status is the only field the API lets you change; for other dates delete the absence in TimeTrack and request a new one. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "absence_id": {
+            "type": "integer",
+            "description": "Numeric ID of the absence.",
+            "minimum": 1
+          },
+          "status": {
+            "type": "integer",
+            "description": "New status: 0 waiting for approval, 1 approved, 2 disapproved.",
+            "enum": [
+              0,
+              1,
+              2
+            ]
+          }
+        },
+        "required": [
+          "absence_id",
+          "status"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/absences/{absence_id}",
+        "bodyMapping": {
+          "status": "$status"
+        }
+      }
+    },
+    {
+      "name": "timetrack_delete_absence",
+      "description": "Delete an absence. Installed switched off: an approved vacation or sick leave should normally be disapproved with timetrack_update_absence, which keeps the record. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "absence_id": {
+            "type": "integer",
+            "description": "Numeric ID of the absence.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "absence_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/absences/{absence_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "timetrack_list_expenses",
+      "description": "List expenses booked on projects: ID, user, clientName, projectName, name, price, quantity, billable, payType, details, tags and date. Filter by name, employee, client, project and time range. Read-only, 50 per page.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Only expenses with this name."
+          },
+          "username": {
+            "type": "string",
+            "description": "Only expenses of this employee. TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Only expenses of this client (exact name)."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Only expenses of this project (exact name)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Only expenses from this time on. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "Only expenses up to this time. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/expenses",
+        "queryParams": {
+          "name": "$name",
+          "username": "$username",
+          "clientName": "$client_name",
+          "projectName": "$project_name",
+          "from": "$from",
+          "to": "$to",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_list_daily_reports",
+      "description": "Read the daily timesheet records of an employee for a period, one per day: workDate, workStart, workEnd, targetSeconds, workedSeconds, workTargetDifference, breakSeconds, surchargeSeconds, holidaySeconds, up to three absences with their seconds and short code, weekday (1 to 7, 8 on a public holiday) and holiday. All durations are seconds. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Employee to report on. TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "page_number": {
+            "type": "integer",
+            "description": "Page number, starting at 0. Raise it by 1 while a page comes back full.",
+            "minimum": 0,
+            "default": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page. Default 50, at most 1000.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          }
+        },
+        "required": [
+          "username",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/work_reports",
+        "queryParams": {
+          "username": "$username",
+          "from": "$from",
+          "to": "$to",
+          "page_number": "$page_number",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_grouped_report",
+      "description": "Read the totals of an employee for a period: targetSeconds, workedSeconds, workTargetDifference (overtime or minus hours), surchargedSeconds, holidaySeconds, absenceSeconds, each also as HH:mm text, plus the absences, overtime carries and vacation carries of the year. Use it for overtime and vacation balance questions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "Employee to report on. TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          }
+        },
+        "required": [
+          "username",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/work_reports/group",
+        "queryParams": {
+          "username": "$username",
+          "from": "$from",
+          "to": "$to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_get_attendance_timer",
+      "description": "Read the running attendance timer of an employee (is the person clocked in): from, to, workedMinutes, breakMinutes, manual and notes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Current local time of the employee as a timestamp, e.g. `2026-10-23T16:00:00.000Z`. TimeTrack uses it to compute the durations, so always pass the real current time."
+          }
+        },
+        "required": [
+          "username",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/attendance_timer",
+        "queryParams": {
+          "username": "$username",
+          "date": "$date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_start_attendance_timer",
+      "description": "Clock an employee in: start the attendance timer at the given time. Fails when a timer is already running. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Clock-in time. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          }
+        },
+        "required": [
+          "username",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/attendance_timer/start",
+        "bodyMapping": {
+          "username": "$username",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "timetrack_stop_attendance_timer",
+      "description": "Clock an employee out: stop the running attendance timer at the given time, which completes the attendance entry. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Clock-out time. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          }
+        },
+        "required": [
+          "username",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/attendance_timer/stop",
+        "bodyMapping": {
+          "username": "$username",
+          "date": "$date"
+        }
+      }
+    },
+    {
+      "name": "timetrack_get_project_timer",
+      "description": "Read the project timer of an employee: startedAt, workedSeconds, breakSeconds, the state flags playing, paused and stopped, and clientName, projectName, taskName and note. While the timer is playing, workedSeconds is the last saved value. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Current local time of the employee as a timestamp, e.g. `2026-10-23T16:00:00.000Z`. TimeTrack uses it to compute the durations, so always pass the real current time."
+          }
+        },
+        "required": [
+          "username",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timers/project_timer",
+        "queryParams": {
+          "username": "$username",
+          "date": "$date"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "timetrack_start_project_timer",
+      "description": "Start the project timer of an employee on a client and project at the given time. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "client_name": {
+            "type": "string",
+            "description": "Exact name of the client."
+          },
+          "project_name": {
+            "type": "string",
+            "description": "Exact name of the project."
+          },
+          "date": {
+            "type": "string",
+            "description": "Start time. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          },
+          "task_name": {
+            "type": "string",
+            "description": "Name of the task type, e.g. Development."
+          },
+          "note": {
+            "type": "string",
+            "description": "Note on the work."
+          }
+        },
+        "required": [
+          "username",
+          "client_name",
+          "project_name",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timers/project_timer/start",
+        "bodyMapping": {
+          "username": "$username",
+          "clientName": "$client_name",
+          "projectName": "$project_name",
+          "date": "$date",
+          "taskName": "$task_name",
+          "note": "$note"
+        }
+      }
+    },
+    {
+      "name": "timetrack_stop_project_timer",
+      "description": "Stop the running project timer of an employee at the given time, which saves a project time entry. Writes to TimeTrack.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "username": {
+            "type": "string",
+            "description": "TimeTrack username of the employee (the `username` field of timetrack_list_users, not the email)."
+          },
+          "date": {
+            "type": "string",
+            "description": "Stop time. ISO 8601 timestamp in UTC, e.g. `2026-10-20T09:00:00.000Z`."
+          }
+        },
+        "required": [
+          "username",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/timers/project_timer/stop",
+        "bodyMapping": {
+          "username": "$username",
+          "date": "$date"
+        }
+      }
+    }
+  ]
+}

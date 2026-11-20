@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Microsoft Clarity connector">
+  <rect width="128" height="128" rx="24" fill="#1B6FE0"/>
+  <path d="M90 82.5C83.8 92.6 73.6 98 62 98c-19.5 0-34-14.6-34-34s14.5-34 34-34c11.6 0 21.8 5.4 28 15.5L78.2 52.7C74.6 46.6 69 43.2 62 43.2c-11.6 0-20 8.8-20 20.8s8.4 20.8 20 20.8c7 0 12.6-3.4 16.2-9.5Z" fill="#fff"/>
+  <rect x="88" y="58" width="12" height="12" rx="3" fill="#fff"/>
+</svg>

@@ -1,0 +1,889 @@
+{
+  "slug": "evolution-api",
+  "name": "Evolution API",
+  "aliases": [
+    "Evolution API WhatsApp",
+    "EvolutionAPI",
+    "Evolution WhatsApp"
+  ],
+  "description": "Let your AI use a WhatsApp number through your own Evolution API server (v2), the self-hosted open-source WhatsApp gateway: read stored chats, messages, contacts and groups, check numbers, and send text, media, voice messages and locations. Unofficial gateway; for Meta's official API use WhatsApp Business Cloud API.",
+  "instructions": "## Evolution API\nThis connector talks to an **Evolution API** server (version 2), an open-source WhatsApp gateway that you host yourself. One connector works with one **instance**, that is one linked WhatsApp number: connection state, chats, messages and contacts the server has stored, groups, number checks, and sending text, media, audio and locations.\n\n**Unofficial gateway, read this first.** Evolution API is not a Meta product. With its default Baileys integration it drives a normal WhatsApp or WhatsApp Business account that you link by QR code, the way WhatsApp Web does. WhatsApp does not support this and can limit or ban numbers that send automated or unsolicited messages. The official route is the **WhatsApp Business Cloud API** connector in this catalog (Meta's API, with approved templates). Use this connector only with a number you own, for conversations people expect, and at a human pace.\n\n**Setup (about 10 minutes, you run the server)**\n1. Install Evolution API v2 following https://doc.evolution-api.com/v2 (Docker with PostgreSQL and Redis). On AnythingMCP Cloud the server must be reachable from the internet over HTTPS.\n2. In its manager (`/manager`) create an instance and link the phone by scanning the QR code (WhatsApp, Linked devices). The instance must show **open**.\n3. Fill in `EVOLUTION_API_URL` (the server address) and `EVOLUTION_INSTANCE` (the instance name, exactly as in the manager).\n4. Fill in `EVOLUTION_API_KEY`. Prefer the **token of the instance** (shown on the instance in the manager): it only reaches that instance. The global key (`AUTHENTICATION_API_KEY` in the server's environment) reaches every instance and can create and delete them. The key is sent in the `apikey` header.\n\n**Where to start**: `evolution_api_get_connection_state` must answer `open`. `evolution_api_list_instances` shows the linked number, `evolution_api_get_server_info` the server version. Then `evolution_api_find_chats` for the latest conversations and `evolution_api_find_messages` for one of them.\n\n**Reading**: `evolution_api_find_chats`, `evolution_api_find_messages`, `evolution_api_find_contacts`, `evolution_api_fetch_profile`, `evolution_api_check_whatsapp_numbers`, `evolution_api_list_groups`, `evolution_api_get_group`, `evolution_api_list_group_participants`, `evolution_api_get_settings` and `evolution_api_get_webhook`. The find tools are POST requests that only read.\n\n**Writing**: `evolution_api_send_text`, `evolution_api_send_media` (image, video or document by URL), `evolution_api_send_audio` (voice message by URL), `evolution_api_send_location`, `evolution_api_send_reaction`, `evolution_api_update_message`, `evolution_api_delete_message` (switched off at install), `evolution_api_mark_messages_read` and `evolution_api_send_presence` (typing). Every send leaves at once from the linked phone number: confirm the recipient and the content with the user.\n\n**Field notes**\n- Recipients: pass `number` as digits with country code (5511999998888) or as a WhatsApp id. Ids (`remoteJid`) end in `@s.whatsapp.net` for a person and `@g.us` for a group; WhatsApp also uses `@lid` ids that hide the phone number. Pass ids back exactly as received.\n- Unknown numbers: call `evolution_api_check_whatsapp_numbers` and write to the `jid` it returns. A send to a number that is not on WhatsApp answers 400 with `exists: false`.\n- A message is identified by its key: `remoteJid`, `fromMe` and `id`. Reactions, edits, deletes and read receipts need all three.\n- Message text is in `message.conversation` or `message.extendedTextMessage.text`. `messageTimestamp` is Unix seconds.\n- Chats, messages and contacts come from the server's own database: what it stored since the instance was linked. With the settings `groupsIgnore` or without `syncFullHistory`, group chats or older history are missing. Check them with the settings tool.\n- The state `connecting` or `close` means the phone must be linked again in the manager; this connector does not show QR codes and does not create, restart, log out or delete instances.\n- Pace: wait a few seconds between messages (`delay` shows typing first) and do not write to people who never contacted the number; that is what gets numbers banned.",
+  "region": "intl",
+  "category": "messaging",
+  "icon": "evolution-api",
+  "docsUrl": "https://doc.evolution-api.com/v2/api-reference/get-information",
+  "prerequisites": "Your own Evolution API v2 server (self-hosted), reachable from AnythingMCP (on Cloud: public over HTTPS), with an instance linked to a WhatsApp number by QR code, and that instance's token or the global API key. Evolution API is an unofficial gateway; the official route is the WhatsApp Business Cloud API connector.",
+  "requiredEnvVars": [
+    "EVOLUTION_API_URL",
+    "EVOLUTION_API_KEY",
+    "EVOLUTION_INSTANCE"
+  ],
+  "envVarMeta": {
+    "EVOLUTION_API_URL": {
+      "label": "Evolution API server address",
+      "kind": "address",
+      "help": "The address of your Evolution API server, without /manager and without a trailing slash. On AnythingMCP Cloud it must be public over HTTPS.",
+      "example": "https://evolution.example.com",
+      "pattern": "^(?!.*/manager/?$)https?://[^\\s/]+(/[^\\s]*[^\\s/])?$",
+      "patternMessage": "Enter the full address starting with https:// or http://, without /manager and without a trailing slash, e.g. https://evolution.example.com."
+    },
+    "EVOLUTION_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The token of the instance (shown on the instance in the Evolution manager), or the global key AUTHENTICATION_API_KEY of the server. The instance token is the safer choice.",
+      "link": "https://doc.evolution-api.com/v2/en/get-started/introduction",
+      "pattern": "^\\S{6,}$",
+      "patternMessage": "Paste the API key without spaces."
+    },
+    "EVOLUTION_INSTANCE": {
+      "label": "Instance name",
+      "kind": "setting",
+      "help": "The name of the instance (the linked WhatsApp number) exactly as shown in the Evolution manager. Write a space in the name as %20.",
+      "example": "my-whatsapp",
+      "pattern": "^[^\\s/?#]{1,100}$",
+      "patternMessage": "Use the instance name as shown in the manager, without slashes; write a space as %20."
+    }
+  },
+  "instructionFacts": [
+    "This connector works with the Evolution API instance {{EVOLUTION_INSTANCE}}."
+  ],
+  "verifyHints": {
+    "400": "Evolution API refused the request. A send to a number that is not on WhatsApp answers this way (exists false); otherwise the message names the missing or wrong field.",
+    "401": "Evolution API refused the API key. Use the token of this instance from the manager, or the server's global AUTHENTICATION_API_KEY.",
+    "403": "The API key may not use this instance or this operation. An instance token only works for its own instance.",
+    "404": "No instance with this name exists on the server, or the address is wrong. Check EVOLUTION_INSTANCE (exactly as in the manager) and EVOLUTION_API_URL.",
+    "unreachable": "The Evolution API server did not answer. Check EVOLUTION_API_URL and that the server is running; on AnythingMCP Cloud it must be reachable from the internet over HTTPS."
+  },
+  "probe": {
+    "tool": "evolution_api_get_connection_state"
+  },
+  "connector": {
+    "name": "Evolution API v2",
+    "type": "REST",
+    "baseUrl": "{{EVOLUTION_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "apikey",
+      "apiKey": "{{EVOLUTION_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "evolution_api_get_server_info",
+      "description": "Read the Evolution API server itself: status, welcome message, version and the address of its manager and documentation. Use it to check the server address and to see which version runs. Read-only, needs no instance.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_list_instances",
+      "description": "List the instances (linked WhatsApp accounts) the API key may see: name, connectionStatus (open, connecting, close), ownerJid (the linked number), profileName, the integration type and counts of messages, contacts and chats. An instance token only shows its own instance, the global key shows all. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "instance_name": {
+            "type": "string",
+            "description": "Only the instance with this name. Leave out to list all.",
+            "pattern": "^[^\\s/?#]{1,100}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/instance/fetchInstances",
+        "queryParams": {
+          "instanceName": "$instance_name"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_get_connection_state",
+      "description": "Read whether the connector's instance is connected to WhatsApp: instance.state is open (ready), connecting (waiting for the QR code or reconnecting) or close (logged out). Messages can only be sent while it is open. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/instance/connectionState/{{EVOLUTION_INSTANCE}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_get_settings",
+      "description": "Read the behaviour settings of the instance: rejectCall, groupsIgnore (group messages are not stored), alwaysOnline, readMessages (auto read receipts), readStatus and syncFullHistory. They explain why group chats or older history may be missing. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/settings/find/{{EVOLUTION_INSTANCE}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_get_webhook",
+      "description": "Read the webhook of the instance: enabled, url and the list of events sent there. Useful to see which other system already receives this account's messages. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhook/find/{{EVOLUTION_INSTANCE}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_send_text",
+      "description": "Send a WhatsApp text message from the linked account to a person or a group. Returns the message key (remoteJid, fromMe, id), the message, messageTimestamp and status. It leaves at once and is seen as coming from that phone number, so confirm the text and the recipient with the user. Check an unknown number with evolution_api_check_whatsapp_numbers first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Recipient: a phone number with country code, digits only (e.g. 5511999998888 or 4915112345678), or a WhatsApp id (JID) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. WhatsApp formatting works: *bold*, _italic_, ~strikethrough~."
+          },
+          "delay": {
+            "type": "integer",
+            "description": "Milliseconds to show \"typing...\" before the message is sent, e.g. 1200.",
+            "minimum": 0,
+            "maximum": 60000
+          },
+          "link_preview": {
+            "type": "boolean",
+            "description": "false sends links without a preview."
+          },
+          "mentions_everyone": {
+            "type": "boolean",
+            "description": "true mentions every member of the group."
+          },
+          "mentioned": {
+            "type": "array",
+            "description": "Numbers to mention in a group, digits only with country code; the text must contain @ followed by the number.",
+            "items": {
+              "type": "string"
+            }
+          },
+          "quoted": {
+            "type": "object",
+            "description": "Message to quote as a reply: an object with the key of that message, e.g. `{\"key\":{\"id\":\"3EB0A1B2C3D4E5F6A7B8\"}}`. Add `\"message\":{\"conversation\":\"quoted text\"}` when the server does not store messages."
+          }
+        },
+        "required": [
+          "number",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message/sendText/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "number": "$number",
+          "text": "$text",
+          "delay": "$delay",
+          "linkPreview": "$link_preview",
+          "mentionsEveryOne": "$mentions_everyone",
+          "mentioned": "$mentioned",
+          "quoted": "$quoted"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_send_media",
+      "description": "Send an image, video or document from a URL as a WhatsApp message, with an optional caption. The Evolution API server downloads the file, so the URL must be reachable from it. Returns the message key and status. It leaves at once, so confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Recipient: a phone number with country code, digits only (e.g. 5511999998888 or 4915112345678), or a WhatsApp id (JID) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "mediatype": {
+            "type": "string",
+            "description": "Kind of media: image, video or document.",
+            "enum": [
+              "image",
+              "video",
+              "document"
+            ]
+          },
+          "media_url": {
+            "type": "string",
+            "description": "URL of the file.",
+            "format": "uri",
+            "pattern": "^https?://\\S+$"
+          },
+          "mimetype": {
+            "type": "string",
+            "description": "MIME type of the file, e.g. image/png or application/pdf.",
+            "pattern": "^[a-z]+/[A-Za-z0-9.+-]+$"
+          },
+          "file_name": {
+            "type": "string",
+            "description": "File name shown to the recipient, e.g. offer.pdf. Needed for documents."
+          },
+          "caption": {
+            "type": "string",
+            "description": "Text shown with the media."
+          },
+          "delay": {
+            "type": "integer",
+            "description": "Milliseconds to show \"typing...\" before the message is sent, e.g. 1200.",
+            "minimum": 0,
+            "maximum": 60000
+          },
+          "quoted": {
+            "type": "object",
+            "description": "Message to quote as a reply: an object with the key of that message, e.g. `{\"key\":{\"id\":\"3EB0A1B2C3D4E5F6A7B8\"}}`. Add `\"message\":{\"conversation\":\"quoted text\"}` when the server does not store messages."
+          }
+        },
+        "required": [
+          "number",
+          "mediatype",
+          "media_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message/sendMedia/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "number": "$number",
+          "mediatype": "$mediatype",
+          "media": "$media_url",
+          "mimetype": "$mimetype",
+          "fileName": "$file_name",
+          "caption": "$caption",
+          "delay": "$delay",
+          "quoted": "$quoted"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_send_audio",
+      "description": "Send an audio file from a URL as a WhatsApp voice message (it shows as a recorded voice note). The server downloads and converts the file. Returns the message key and status. It leaves at once, so confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Recipient: a phone number with country code, digits only (e.g. 5511999998888 or 4915112345678), or a WhatsApp id (JID) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "audio_url": {
+            "type": "string",
+            "description": "URL of the audio file (MP3, OGG, M4A).",
+            "format": "uri",
+            "pattern": "^https?://\\S+$"
+          },
+          "delay": {
+            "type": "integer",
+            "description": "Milliseconds to show \"typing...\" before the message is sent, e.g. 1200.",
+            "minimum": 0,
+            "maximum": 60000
+          },
+          "quoted": {
+            "type": "object",
+            "description": "Message to quote as a reply: an object with the key of that message, e.g. `{\"key\":{\"id\":\"3EB0A1B2C3D4E5F6A7B8\"}}`. Add `\"message\":{\"conversation\":\"quoted text\"}` when the server does not store messages."
+          }
+        },
+        "required": [
+          "number",
+          "audio_url"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message/sendWhatsAppAudio/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "number": "$number",
+          "audio": "$audio_url",
+          "delay": "$delay",
+          "quoted": "$quoted"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_send_location",
+      "description": "Send a location pin with a name and an address as a WhatsApp message. Returns the message key and status. It leaves at once, so confirm with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Recipient: a phone number with country code, digits only (e.g. 5511999998888 or 4915112345678), or a WhatsApp id (JID) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "latitude": {
+            "type": "number",
+            "description": "Latitude in decimal degrees.",
+            "minimum": -90,
+            "maximum": 90
+          },
+          "longitude": {
+            "type": "number",
+            "description": "Longitude in decimal degrees.",
+            "minimum": -180,
+            "maximum": 180
+          },
+          "name": {
+            "type": "string",
+            "description": "Name of the place."
+          },
+          "address": {
+            "type": "string",
+            "description": "Address of the place."
+          },
+          "delay": {
+            "type": "integer",
+            "description": "Milliseconds to show \"typing...\" before the message is sent, e.g. 1200.",
+            "minimum": 0,
+            "maximum": 60000
+          }
+        },
+        "required": [
+          "number",
+          "latitude",
+          "longitude",
+          "name",
+          "address"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message/sendLocation/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "number": "$number",
+          "latitude": "$latitude",
+          "longitude": "$longitude",
+          "name": "$name",
+          "address": "$address",
+          "delay": "$delay"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_send_reaction",
+      "description": "Put an emoji reaction of the linked account on a message, or remove it with an empty reaction. The other side sees it at once.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "remote_jid": {
+            "type": "string",
+            "description": "Chat that holds the message: the WhatsApp id (remoteJid) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to react to: key.id of that message (e.g. 3EB0A1B2C3D4E5F6A7B8).",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "from_me": {
+            "type": "boolean",
+            "description": "true when the linked account sent that message, false when it was received (key.fromMe of the message)."
+          },
+          "reaction": {
+            "type": "string",
+            "description": "One emoji, e.g. 👍. An empty text removes the reaction."
+          }
+        },
+        "required": [
+          "remote_jid",
+          "message_id",
+          "from_me",
+          "reaction"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message/sendReaction/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "key": {
+            "remoteJid": "$remote_jid",
+            "fromMe": "$from_me",
+            "id": "$message_id"
+          },
+          "reaction": "$reaction"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_send_presence",
+      "description": "Show an activity of the linked account in a chat for a short time: composing (\"typing...\"), recording (a voice note) or paused. Nothing is stored in the chat.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Chat: a phone number with country code, digits only (e.g. 5511999998888 or 4915112345678), or a WhatsApp id (JID) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "presence": {
+            "type": "string",
+            "description": "Activity to show.",
+            "enum": [
+              "composing",
+              "recording",
+              "paused"
+            ]
+          },
+          "delay": {
+            "type": "integer",
+            "description": "How long to show it, in milliseconds (e.g. 3000).",
+            "minimum": 0,
+            "maximum": 60000,
+            "default": 3000
+          }
+        },
+        "required": [
+          "number",
+          "presence"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/sendPresence/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "number": "$number",
+          "presence": "$presence",
+          "delay": "$delay"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_mark_messages_read",
+      "description": "Mark received messages as read (the blue ticks the sender sees). Pass each message with its chat, id and fromMe. The sender notices, so only do it when the user wants the chat to count as read.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "read_messages": {
+            "type": "array",
+            "description": "Messages to mark as read, e.g. `[{\"remoteJid\":\"5511999998888@s.whatsapp.net\",\"fromMe\":false,\"id\":\"3EB0A1B2C3D4E5F6A7B8\"}]`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "remoteJid": {
+                  "type": "string",
+                  "description": "Chat id of the message."
+                },
+                "fromMe": {
+                  "type": "boolean",
+                  "description": "false for a received message."
+                },
+                "id": {
+                  "type": "string",
+                  "description": "key.id of the message."
+                }
+              },
+              "required": [
+                "remoteJid",
+                "fromMe",
+                "id"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "read_messages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/markMessageAsRead/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "readMessages": "$read_messages"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_update_message",
+      "description": "Change the text of a message the linked account sent. WhatsApp allows edits for about 15 minutes after sending and marks the message as edited for everyone.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Chat that holds the message: a phone number with country code, digits only (e.g. 5511999998888 or 4915112345678), or a WhatsApp id (JID) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "remote_jid": {
+            "type": "string",
+            "description": "The same chat as a WhatsApp id: the WhatsApp id (remoteJid) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to edit: key.id of that message (e.g. 3EB0A1B2C3D4E5F6A7B8).",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "New message text."
+          }
+        },
+        "required": [
+          "number",
+          "remote_jid",
+          "message_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/updateMessage/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "number": "$number",
+          "text": "$text",
+          "key": {
+            "remoteJid": "$remote_jid",
+            "fromMe": true,
+            "id": "$message_id"
+          }
+        }
+      }
+    },
+    {
+      "name": "evolution_api_delete_message",
+      "description": "Delete a message for everyone in a chat. Works for messages the linked account sent (and, as a group admin, for those of others) within WhatsApp's time limit. This cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "remote_jid": {
+            "type": "string",
+            "description": "Chat that holds the message: the WhatsApp id (remoteJid) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Id of the message to delete: key.id of that message (e.g. 3EB0A1B2C3D4E5F6A7B8).",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "from_me": {
+            "type": "boolean",
+            "description": "true when the linked account sent that message, false when it was received (key.fromMe of the message)."
+          },
+          "participant": {
+            "type": "string",
+            "description": "In a group: WhatsApp id of the member who sent the message."
+          }
+        },
+        "required": [
+          "remote_jid",
+          "message_id",
+          "from_me"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/chat/deleteMessageForEveryone/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "id": "$message_id",
+          "remoteJid": "$remote_jid",
+          "fromMe": "$from_me",
+          "participant": "$participant"
+        }
+      }
+    },
+    {
+      "name": "evolution_api_check_whatsapp_numbers",
+      "description": "Check whether phone numbers are registered on WhatsApp: for each number, exists (true or false), jid (the id to write to) and number. Use the returned jid, because WhatsApp rewrites some national numbers (the Brazilian ninth digit). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "numbers": {
+            "type": "array",
+            "description": "Phone numbers with country code, digits only, e.g. [\"5511999998888\",\"4915112345678\"].",
+            "items": {
+              "type": "string",
+              "pattern": "^\\+?[0-9]{6,20}$"
+            },
+            "minItems": 1,
+            "maxItems": 50
+          }
+        },
+        "required": [
+          "numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/whatsappNumbers/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "numbers": "$numbers"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_find_chats",
+      "description": "List the chats stored for the instance, most recently active first: remoteJid, pushName, profilePicUrl, updatedAt, unreadCount and lastMessage (key, text and messageTimestamp). Only what the server has stored is listed. Read-only; page with take and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "remote_jid": {
+            "type": "string",
+            "description": "Only the chat with this number or WhatsApp id.",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "take": {
+            "type": "integer",
+            "description": "Chats to return, e.g. 50. Without it the server returns all of them.",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 50
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Chats to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/findChats/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "where": {
+            "remoteJid": "$remote_jid"
+          },
+          "take": "$take",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_find_messages",
+      "description": "Read the messages stored for the instance, newest first, usually for one chat: messages.records[] with key (remoteJid, fromMe, id), pushName, messageType, message (conversation or extendedTextMessage.text hold the text; imageMessage, audioMessage and others describe media) and messageTimestamp (Unix seconds), plus messages.total, pages and currentPage. Only what the server has stored is available. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "remote_jid": {
+            "type": "string",
+            "description": "Only messages of the chat with this WhatsApp id (e.g. 5511999998888@s.whatsapp.net or a group id ending in @g.us).",
+            "pattern": "^[^\\s/]{5,120}$"
+          },
+          "message_id": {
+            "type": "string",
+            "description": "Only the message with this key.id.",
+            "pattern": "^[^\\s/]{3,200}$"
+          },
+          "from_me": {
+            "type": "boolean",
+            "description": "true returns only messages the linked account sent. Leave out for both directions."
+          },
+          "from_time": {
+            "type": "string",
+            "description": "Start of a time range, ISO 8601 (e.g. 2026-11-01T00:00:00Z). Only applied together with to_time."
+          },
+          "to_time": {
+            "type": "string",
+            "description": "End of a time range, ISO 8601. Only applied together with from_time."
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1.",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Messages per page (default 50).",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 50
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/findMessages/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "where": {
+            "key": {
+              "remoteJid": "$remote_jid",
+              "id": "$message_id",
+              "fromMe": "$from_me"
+            },
+            "messageTimestamp": {
+              "gte": "$from_time",
+              "lte": "$to_time"
+            }
+          },
+          "page": "$page",
+          "offset": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_find_contacts",
+      "description": "List the contacts stored for the instance: remoteJid, pushName (the name the person chose) and profilePicUrl. Pass a WhatsApp id to look up one contact. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "remote_jid": {
+            "type": "string",
+            "description": "Only the contact with this number or WhatsApp id. Leave out to list all contacts, which can be a long answer.",
+            "pattern": "^[^\\s/]{5,120}$"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/findContacts/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "where": {
+            "remoteJid": "$remote_jid"
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_fetch_profile",
+      "description": "Read the public WhatsApp profile of a number: wuid, name, picture, status text and, for a business account, description, website, e-mail and category. What is returned depends on the privacy settings of that person. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "number": {
+            "type": "string",
+            "description": "Number to look up: a phone number with country code, digits only (e.g. 5511999998888 or 4915112345678), or a WhatsApp id (JID) as returned by the API, ending in @s.whatsapp.net for a person or @g.us for a group.",
+            "pattern": "^[^\\s/]{5,120}$"
+          }
+        },
+        "required": [
+          "number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/chat/fetchProfile/{{EVOLUTION_INSTANCE}}",
+        "bodyMapping": {
+          "number": "$number"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_list_groups",
+      "description": "List the WhatsApp groups the linked account is in: id (ends in @g.us), subject, owner, size, creation time, desc, and whether only admins may write (announce) or edit the group info (restrict). With get_participants true each group also carries its members, which is slow on accounts with many groups. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "get_participants": {
+            "type": "boolean",
+            "description": "true includes the member list of every group (slow). Default false.",
+            "default": false
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/group/fetchAllGroups/{{EVOLUTION_INSTANCE}}",
+        "queryParams": {
+          "getParticipants": "$get_participants"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_get_group",
+      "description": "Read one WhatsApp group by its id: subject, owner, size, creation time, description, settings and participants with their admin role. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_jid": {
+            "type": "string",
+            "description": "Group id (JID) ending in @g.us, from evolution_api_list_groups.",
+            "pattern": "^[^\\s/]{5,120}$"
+          }
+        },
+        "required": [
+          "group_jid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/group/findGroupInfos/{{EVOLUTION_INSTANCE}}",
+        "queryParams": {
+          "groupJid": "$group_jid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "evolution_api_list_group_participants",
+      "description": "List the members of a WhatsApp group: participants[] with id and admin (admin, superadmin or empty for a normal member). Ids can be @lid ids when WhatsApp hides the phone number. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_jid": {
+            "type": "string",
+            "description": "Group id (JID) ending in @g.us, from evolution_api_list_groups.",
+            "pattern": "^[^\\s/]{5,120}$"
+          }
+        },
+        "required": [
+          "group_jid"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/group/participants/{{EVOLUTION_INSTANCE}}",
+        "queryParams": {
+          "groupJid": "$group_jid"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

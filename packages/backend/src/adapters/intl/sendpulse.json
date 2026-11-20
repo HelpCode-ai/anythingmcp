@@ -1,0 +1,1268 @@
+{
+  "slug": "sendpulse",
+  "name": "SendPulse",
+  "aliases": [
+    "SendPulse SMTP",
+    "SendPulse chatbots",
+    "Send Pulse"
+  ],
+  "description": "Let your AI work with SendPulse: mailing lists and contacts, e-mail campaigns and their statistics, single transactional e-mails through the SMTP service with their delivery log, and the chats of your WhatsApp and Telegram chatbots. Client ID and secret.",
+  "instructions": "## SendPulse\nThis connector works with the **SendPulse REST API** (`https://api.sendpulse.com`) of one SendPulse account: mailing lists and their contacts, e-mail campaigns and their statistics, templates, senders, the blacklist and the balance; the **SMTP service** for single transactional e-mails and their delivery log; SMS (switched off); and the **WhatsApp and Telegram chatbots** with their chats and messages.\n\n**Setup (about 2 minutes)**\n1. Sign in at https://login.sendpulse.com and open **Settings**, tab **API**, section **Client credentials**.\n2. Copy the **ID** into `SENDPULSE_CLIENT_ID` and the **Secret** into `SENDPULSE_CLIENT_SECRET`.\n\nThe connector exchanges them at `/oauth/access_token` (client credentials) for a token that lasts one hour and renews it by itself.\n\n**Where to start**: `sendpulse_get_balance_details` shows the plan and what is left of it. `sendpulse_list_mailing_lists` gives the list ids, `sendpulse_list_campaigns` the campaigns.\n\n**Mailing lists and contacts**: `sendpulse_list_mailing_lists`, `sendpulse_get_mailing_list`, `sendpulse_list_mailing_list_variables`, `sendpulse_list_mailing_list_emails`,`sendpulse_create_mailing_list`, `sendpulse_add_emails_to_mailing_list`, `sendpulse_unsubscribe_emails` and `sendpulse_remove_emails_from_mailing_list` (switched off at install). `sendpulse_get_email_info` and `sendpulse_get_email_campaign_stats` look one address up across the account.\n\n**Campaigns**: `sendpulse_list_campaigns` and `sendpulse_get_campaign` (with the statistics) are reads. `sendpulse_create_campaign` mails a whole list and `sendpulse_cancel_campaign` stops a scheduled one; both are switched off at install. `sendpulse_list_templates`, `sendpulse_list_senders`, `sendpulse_list_blacklist`, `sendpulse_get_balance`.\n\n**Transactional e-mail**: `sendpulse_send_smtp_email` sends one e-mail to one or a few people through the SMTP service, which must be activated in the account first (SMTP, Settings: SendPulse reviews a short application). `sendpulse_list_smtp_senders` shows the allowed From addresses. `sendpulse_list_smtp_emails` and `sendpulse_get_smtp_email` are the delivery log with opens and clicks; `sendpulse_list_smtp_bounces` and `sendpulse_list_smtp_unsubscribed` show who cannot be reached.\n\n**SMS**: `sendpulse_send_sms` costs money per message and is switched off at install.\n\n**Chatbots**: `sendpulse_list_whatsapp_bots`, `sendpulse_list_whatsapp_chats`, `sendpulse_list_whatsapp_messages`, `sendpulse_get_whatsapp_contact_by_phone` and `sendpulse_send_whatsapp_message`; `sendpulse_list_telegram_bots`, `sendpulse_list_telegram_chats`, `sendpulse_list_telegram_messages` and `sendpulse_send_telegram_message`. First list the bots for a `bot_id`, then the chats for a `contact_id`.\n\n**Field notes**\n- HTML must be Base64: the SMTP service and campaigns take the HTML of an e-mail Base64-encoded (UTF-8), while `text` is plain. The connector cannot encode it for you, so pass `html_base64` already encoded and keep the HTML short, or use a stored template with variables, which needs no encoding.\n- Contact statuses in a list: New, Active, Unsubscribed, Rejected (hard bounce), Blocked, awaiting confirmation. Campaigns only go to New and Active.\n- Dates are `YYYY-MM-DD HH:MM:SS` in the time zone of the account; chatbot timestamps are ISO 8601.\n- Paging: `limit` and `offset` for the e-mail service, `size` and `skip` for chatbots. A contact list returns at most 100 rows per call.\n- WhatsApp: a free-form message is only delivered within 24 hours after the contact last wrote; outside that window WhatsApp requires an approved template.\n- Limits: at most 10 requests per second, and per-minute and per-day quotas that depend on the plan; SendPulse answers 429 when they are used up. A campaign can be created at most 4 times per hour.\n- Chatbot answers are wrapped as `success` and `data`; the e-mail service answers plain lists and objects, with errors as `error_code` and `message`.",
+  "region": "intl",
+  "category": "marketing-automation",
+  "icon": "sendpulse",
+  "docsUrl": "https://sendpulse.com/integrations/api",
+  "prerequisites": "A SendPulse account (the free plan works) and its API client credentials from Settings, API. Sending transactional e-mails also needs the SMTP service activated in the account. About 2 minutes.",
+  "requiredEnvVars": [
+    "SENDPULSE_CLIENT_ID",
+    "SENDPULSE_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "SENDPULSE_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "SendPulse, Settings, tab API, Client credentials: the ID.",
+      "link": "https://login.sendpulse.com/settings/#api",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste the ID only, letters and digits without spaces."
+    },
+    "SENDPULSE_CLIENT_SECRET": {
+      "label": "Client secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "SendPulse, Settings, tab API, Client credentials: the Secret.",
+      "link": "https://login.sendpulse.com/settings/#api",
+      "pattern": "^[A-Za-z0-9]{16,64}$",
+      "patternMessage": "Paste the Secret only, letters and digits without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "SendPulse refused the request; the message names the field. An HTML body that is not Base64, or a sender address that is not confirmed, are the usual causes.",
+    "401": "SendPulse did not issue or accept a token for this ID and Secret. Copy both again from Settings, API, Client credentials.",
+    "403": "The account may not use this service. The SMTP service and some chatbot functions must be activated or are part of a paid plan.",
+    "404": "SendPulse found no mailing list, campaign, e-mail or contact with that id.",
+    "rate_limited": "SendPulse allows at most 10 requests per second and has per-minute and per-day quotas that depend on the plan. Wait and try again."
+  },
+  "probe": {
+    "tool": "sendpulse_get_balance"
+  },
+  "connector": {
+    "name": "SendPulse REST API",
+    "type": "REST",
+    "baseUrl": "https://api.sendpulse.com",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "grant": "client_credentials",
+      "clientId": "{{SENDPULSE_CLIENT_ID}}",
+      "clientSecret": "{{SENDPULSE_CLIENT_SECRET}}",
+      "tokenUrl": "https://api.sendpulse.com/oauth/access_token",
+      "tokenAuthMethod": "client_secret_post"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "sendpulse_list_mailing_lists",
+      "description": "List the mailing lists (address books) of the account: id, name, all_email_qty, active_email_qty, inactive_email_qty, phone counts, creationdate and status_explain (Active, Blocked and so on). Start here to get list ids. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addressbooks",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_get_mailing_list",
+      "description": "Read one mailing list by id: name, the counts of all, active and inactive e-mail addresses, creation date and status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Mailing list id (from sendpulse_list_mailing_lists).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addressbooks/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_mailing_list_variables",
+      "description": "List the variables (custom fields such as name or city) defined for a mailing list, each with name and type (string, number, date). Use the names when adding contacts with variables. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Mailing list id (from sendpulse_list_mailing_lists).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addressbooks/{id}/variables"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_mailing_list_emails",
+      "description": "List the contacts of a mailing list: email, status and status_explain (New, Active, Unsubscribed, Rejected, Blocked and others), and the variables stored for each. Read-only, at most 100 per call; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Mailing list id (from sendpulse_list_mailing_lists).",
+            "minimum": 1
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return (at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging.",
+            "minimum": 0
+          },
+          "active": {
+            "type": "boolean",
+            "description": "true returns only contacts with the status Active or New."
+          },
+          "not_active": {
+            "type": "boolean",
+            "description": "true returns only inactive contacts (unsubscribed, rejected, unconfirmed)."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/addressbooks/{id}/emails",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "active": "$active",
+          "not_active": "$not_active"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_create_mailing_list",
+      "description": "Create a new, empty mailing list (address book) with the given name. Returns its id. Add contacts afterwards with sendpulse_add_emails_to_mailing_list.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the new mailing list.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addressbooks",
+        "bodyMapping": {
+          "bookName": "$name"
+        }
+      }
+    },
+    {
+      "name": "sendpulse_add_emails_to_mailing_list",
+      "description": "Add contacts to a mailing list without a confirmation e-mail (single opt-in). Each entry is an e-mail address, or an object with email and variables. Returns result true. Only add people who agreed to receive mail from this sender; added addresses count towards the plan's subscriber quota.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Mailing list id (from sendpulse_list_mailing_lists).",
+            "minimum": 1
+          },
+          "emails": {
+            "type": "array",
+            "description": "Contacts to add: plain addresses `[\"jane@example.com\"]`, or objects with variables `[{\"email\":\"jane@example.com\",\"variables\":{\"name\":\"Jane\",\"Phone\":\"+4915112345678\"}}]`.",
+            "items": {},
+            "minItems": 1
+          }
+        },
+        "required": [
+          "id",
+          "emails"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addressbooks/{id}/emails",
+        "bodyMapping": {
+          "emails": "$emails"
+        }
+      }
+    },
+    {
+      "name": "sendpulse_unsubscribe_emails",
+      "description": "Unsubscribe contacts from one mailing list: they stay in the list with the status Unsubscribed and receive no more campaigns sent to it. Use it to honour an opt-out request. Returns result true.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Mailing list id (from sendpulse_list_mailing_lists).",
+            "minimum": 1
+          },
+          "emails": {
+            "type": "array",
+            "description": "E-mail addresses to unsubscribe from this list.",
+            "items": {
+              "type": "string",
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "id",
+          "emails"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/addressbooks/{id}/emails/unsubscribe",
+        "bodyMapping": {
+          "emails": "$emails"
+        }
+      }
+    },
+    {
+      "name": "sendpulse_remove_emails_from_mailing_list",
+      "description": "Delete contacts from a mailing list, up to 100 addresses per call. Their variables and history in that list are lost; to stop mailings but keep the record use sendpulse_unsubscribe_emails. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Mailing list id (from sendpulse_list_mailing_lists).",
+            "minimum": 1
+          },
+          "emails": {
+            "type": "array",
+            "description": "E-mail addresses to delete from this list.",
+            "items": {
+              "type": "string",
+              "pattern": "^[^\\s@]+@[^\\s@]+$"
+            },
+            "minItems": 1,
+            "maxItems": 100
+          }
+        },
+        "required": [
+          "id",
+          "emails"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/addressbooks/{id}/emails",
+        "bodyMapping": {
+          "emails": "$emails"
+        }
+      }
+    },
+    {
+      "name": "sendpulse_get_email_info",
+      "description": "Look up one e-mail address across the whole account: every mailing list it is in (book_id), its status there (New, Active, Unsubscribed and so on) and the variables stored for it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "E-mail address to look up, e.g. jane@example.com.",
+            "pattern": "^[^\\s@/]+@[^\\s@/]+$"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/{email}",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_get_email_campaign_stats",
+      "description": "Read what one e-mail address received: statistic with the number of campaigns sent, opened (open) and clicked (link), whether it is on the blacklist, and the mailing lists it belongs to. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "E-mail address to look up, e.g. jane@example.com.",
+            "pattern": "^[^\\s@/]+@[^\\s@/]+$"
+          }
+        },
+        "required": [
+          "email"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/emails/{email}/campaigns",
+        "encodePathParams": true
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_campaigns",
+      "description": "List the e-mail campaigns of the account: id, name, status (a code: 0 new, 1 in moderation, 2 sending, 3 sent, 16 cancelled by the user), send_date, all_email_qty, the price and the sender data. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_get_campaign",
+      "description": "Read one e-mail campaign with its results: name, message (sender_name, sender_email, subject, body, list_id), status, send_date, all_email_qty, permalink and statistics (counts for Sent, Delivered, Opened, Link redirected, User unsubscribe, Marked as spam and the error groups). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Campaign id (from sendpulse_list_campaigns).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_create_campaign",
+      "description": "Create an e-mail campaign that is sent to every active contact of a mailing list, at once or at send_date. Uses a stored template (template_id) or an HTML body passed as Base64. Returns the campaign id. This mails a whole list and counts against the plan (at most 4 campaigns per hour). Installed switched off; once switched on, confirm sender, subject, list and time with the user.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender_name": {
+            "type": "string",
+            "description": "Sender name shown to recipients."
+          },
+          "sender_email": {
+            "type": "string",
+            "description": "Sender address; must be a confirmed sender (sendpulse_list_senders), e.g. jane@example.com.",
+            "pattern": "^[^\\s@/]+@[^\\s@/]+$"
+          },
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "list_id": {
+            "type": "integer",
+            "description": "Mailing list id (from sendpulse_list_mailing_lists).",
+            "minimum": 1
+          },
+          "template_id": {
+            "type": "string",
+            "description": "Id of a stored template (id or real_id from sendpulse_list_templates). Give this or body_base64."
+          },
+          "body_base64": {
+            "type": "string",
+            "description": "HTML of the e-mail, Base64-encoded (UTF-8). Give this or template_id.",
+            "pattern": "^[A-Za-z0-9+/=\\s]+$"
+          },
+          "name": {
+            "type": "string",
+            "description": "Internal campaign name."
+          },
+          "send_date": {
+            "type": "string",
+            "description": "When to send, as YYYY-MM-DD HH:MM:SS; not in the past. Leave out to send at once.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "is_test": {
+            "type": "boolean",
+            "description": "true sends only one test e-mail to the sender address."
+          }
+        },
+        "required": [
+          "sender_name",
+          "sender_email",
+          "subject",
+          "list_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/campaigns",
+        "bodyMapping": {
+          "sender_name": "$sender_name",
+          "sender_email": "$sender_email",
+          "subject": "$subject",
+          "list_id": "$list_id",
+          "template_id": "$template_id",
+          "body": "$body_base64",
+          "name": "$name",
+          "send_date": "$send_date",
+          "is_test": "$is_test"
+        }
+      }
+    },
+    {
+      "name": "sendpulse_cancel_campaign",
+      "description": "Cancel a scheduled e-mail campaign that has not started sending yet. A campaign that is already being sent cannot be stopped this way. Returns result true. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "description": "Campaign id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/campaigns/{id}"
+      }
+    },
+    {
+      "name": "sendpulse_list_templates",
+      "description": "List e-mail templates: id, real_id, name, name_slug, lang, category, created and preview. With owner me only the account's own templates, otherwise SendPulse's system templates. The id or real_id is what campaigns and transactional e-mails take as template id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "owner": {
+            "type": "string",
+            "description": "me returns only your own templates.",
+            "enum": [
+              "me"
+            ],
+            "default": "me"
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates",
+        "queryParams": {
+          "owner": "$owner"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_senders",
+      "description": "List the sender addresses of the account for campaigns: email, name, status (Active or awaiting confirmation) and is_allowed_for_smtp. Only an active sender can be used as the From address. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/senders"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_blacklist",
+      "description": "List the e-mail addresses on the account's blacklist: addresses that never receive a campaign, whatever list they are in. The answer is a plain list of addresses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/blacklist"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_get_balance",
+      "description": "Read the money balance of the account in its currency: currency and balance_currency. It pays for extras such as SMS and overage; the e-mail quota of the plan is shown by sendpulse_get_balance_details. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/balance"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_get_balance_details",
+      "description": "Read the detailed balance and plan of the account: balance (main, bonus, currency) and, per service (email, smtp, push), the tariff name, its limits, what is used and when it ends. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/user/balance/detail"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_send_smtp_email",
+      "description": "Send one transactional e-mail through the SendPulse SMTP service to one or a few recipients (not a list). Returns result true and the message id. Give the content either as a stored template (template), or as text together with html_base64, the HTML Base64-encoded. The sender must be a confirmed SMTP sender (sendpulse_list_smtp_senders). The e-mail leaves at once, so confirm recipient, subject and text with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "subject": {
+            "type": "string",
+            "description": "Subject line."
+          },
+          "from_email": {
+            "type": "string",
+            "description": "Sender address; a confirmed SMTP sender, e.g. jane@example.com.",
+            "pattern": "^[^\\s@/]+@[^\\s@/]+$"
+          },
+          "from_name": {
+            "type": "string",
+            "description": "Sender name shown to the recipient."
+          },
+          "to": {
+            "type": "array",
+            "description": "Recipients, e.g. `[{\"email\":\"jane@example.com\",\"name\":\"Jane\"}]`.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "email": {
+                  "type": "string",
+                  "description": "Recipient address."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Recipient name."
+                }
+              },
+              "required": [
+                "email"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 50
+          },
+          "text": {
+            "type": "string",
+            "description": "Plain-text version of the e-mail. Needed unless a template is used."
+          },
+          "html_base64": {
+            "type": "string",
+            "description": "HTML version of the e-mail, Base64-encoded (UTF-8). Needed together with text unless a template is used; simple HTML such as paragraphs of the same text is enough.",
+            "pattern": "^[A-Za-z0-9+/=\\s]+$"
+          },
+          "template": {
+            "type": "object",
+            "description": "A stored template instead of text and html_base64: an object with id (id or real_id from sendpulse_list_templates) and variables, e.g. `{\"id\":123456,\"variables\":{\"name\":\"Jane\",\"code\":\"123456\"}}`."
+          },
+          "cc": {
+            "type": "array",
+            "description": "Recipients in copy, same shape as to.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "bcc": {
+            "type": "array",
+            "description": "Recipients in blind copy, same shape as to.",
+            "items": {
+              "type": "object"
+            }
+          },
+          "auto_plain_text": {
+            "type": "boolean",
+            "description": "true lets SendPulse build the text part from the HTML."
+          }
+        },
+        "required": [
+          "subject",
+          "from_email",
+          "from_name",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/smtp/emails",
+        "bodyMapping": {
+          "email": {
+            "subject": "$subject",
+            "from": {
+              "name": "$from_name",
+              "email": "$from_email"
+            },
+            "to": "$to",
+            "text": "$text",
+            "html": "$html_base64",
+            "template": "$template",
+            "cc": "$cc",
+            "bcc": "$bcc",
+            "auto_plain_text": "$auto_plain_text"
+          }
+        }
+      }
+    },
+    {
+      "name": "sendpulse_list_smtp_emails",
+      "description": "List the transactional e-mails sent through the SMTP service, newest first: id, sender, recipient, subject, send_date, smtp_answer_code and smtp_answer_data (the delivery answer) and tracking (opens and clicks). Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging.",
+            "minimum": 0
+          },
+          "from": {
+            "type": "string",
+            "description": "Only e-mails sent on or after this day, as YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "to": {
+            "type": "string",
+            "description": "Only e-mails sent on or before this day, as YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "sender": {
+            "type": "string",
+            "description": "Only e-mails from this sender address."
+          },
+          "recipient": {
+            "type": "string",
+            "description": "Only e-mails to this recipient address."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smtp/emails",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset",
+          "from": "$from",
+          "to": "$to",
+          "sender": "$sender",
+          "recipient": "$recipient"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_get_smtp_email",
+      "description": "Read one transactional e-mail by its id: sender, recipient, subject, send_date, the SMTP answer of the receiving server (code and text) and tracking with every open and click (time, browser, country). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "Message id (from sendpulse_list_smtp_emails or the send answer), e.g. pzkic9-0afezp-fc.",
+            "pattern": "^[A-Za-z0-9_-]{4,100}$"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smtp/emails/{id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_smtp_bounces",
+      "description": "List the transactional e-mails that bounced within 24 hours: the addresses and the SMTP answer that explains each bounce. Without date it covers the last 24 hours. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Day to report on, as YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smtp/bounces/day",
+        "queryParams": {
+          "date": "$date",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_smtp_unsubscribed",
+      "description": "List the recipients who unsubscribed from transactional e-mails or reported them as spam: email, unsubscribe_by_link, unsubscribe_by_user, spam_complaint and date. These addresses no longer receive SMTP e-mails. Read-only; page with limit and offset.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date": {
+            "type": "string",
+            "description": "Only this day, as YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Number of records to return.",
+            "minimum": 1
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Number of records to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smtp/unsubscribe",
+        "queryParams": {
+          "date": "$date",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_smtp_senders",
+      "description": "List the sender addresses confirmed for the SMTP service. Only these can be used as from_email in sendpulse_send_smtp_email. The answer is a plain list of addresses. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/smtp/senders"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_send_sms",
+      "description": "Send an SMS to a list of phone numbers. Every message is charged to the account balance, with the price depending on the country and route, so the tool is installed switched off; when it is switched on, confirm numbers and text with the user. Returns result, campaign_id and counters. emulate true builds the campaign without sending or charging.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sender": {
+            "type": "string",
+            "description": "Sender name, up to 11 letters and digits; some countries require a registered sender name.",
+            "maxLength": 11
+          },
+          "phones": {
+            "type": "array",
+            "description": "Phone numbers in international format, digits only, e.g. [\"380931234567\"].",
+            "items": {
+              "type": "string",
+              "pattern": "^\\+?[0-9]{6,20}$"
+            },
+            "minItems": 1
+          },
+          "body": {
+            "type": "string",
+            "description": "Text of the SMS."
+          },
+          "date": {
+            "type": "string",
+            "description": "When to send, as YYYY-MM-DD HH:MM:SS. Leave out to send at once.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}:[0-9]{2}$"
+          },
+          "route": {
+            "type": "object",
+            "description": "Delivery route per country, e.g. `{\"UA\":\"international\"}`. Only where the operator requires it."
+          },
+          "emulate": {
+            "type": "boolean",
+            "description": "true tests the call: nothing is sent and nothing is charged."
+          }
+        },
+        "required": [
+          "sender",
+          "phones",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sms/send",
+        "bodyMapping": {
+          "sender": "$sender",
+          "phones": "$phones",
+          "body": "$body",
+          "date": "$date",
+          "route": "$route",
+          "emulate": "$emulate"
+        }
+      }
+    },
+    {
+      "name": "sendpulse_list_whatsapp_bots",
+      "description": "List the WhatsApp chatbots connected to the account: id, name, status, channel_data (the phone number and business name), inbox with the count of total and unread chats, and created_at. The id is the bot_id of the other WhatsApp tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "description": "Records per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Records to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whatsapp/bots",
+        "queryParams": {
+          "size": "$size",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_whatsapp_chats",
+      "description": "List the conversations of a WhatsApp chatbot, most recent first: contact (id, name, phone in channel_data, tags, variables, last_activity_at), inbox_last_message and inbox_unread. Read-only; page with size and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bot_id": {
+            "type": "string",
+            "description": "Bot id (from the list-bots tool of the same channel), a 24-character id.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Records to skip, for paging.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "bot_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whatsapp/chats",
+        "queryParams": {
+          "bot_id": "$bot_id",
+          "size": "$size",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_whatsapp_messages",
+      "description": "Read the messages exchanged with one WhatsApp contact: id, direction (incoming or outgoing), type, data (the content), status, sent_by, is_paid and created_at. Read-only; page with size and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id of the subscriber in that bot (contact.id in the chat list), a 24-character id.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Records to skip, for paging.",
+            "minimum": 0
+          },
+          "order": {
+            "type": "string",
+            "description": "asc (oldest first) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whatsapp/chats/messages",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "size": "$size",
+          "skip": "$skip",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_get_whatsapp_contact_by_phone",
+      "description": "Find the contact of a WhatsApp chatbot by phone number: id (the contact_id to write to), status, channel_data (name, phone), tags, variables, is_chat_opened and last_activity_at. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bot_id": {
+            "type": "string",
+            "description": "Bot id (from the list-bots tool of the same channel), a 24-character id.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number in international format, digits only, e.g. 380931234567.",
+            "pattern": "^[0-9]{6,20}$"
+          }
+        },
+        "required": [
+          "bot_id",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/whatsapp/contacts/getByPhone",
+        "queryParams": {
+          "bot_id": "$bot_id",
+          "phone": "$phone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_send_whatsapp_message",
+      "description": "Send a free-form text message through a WhatsApp chatbot to a contact. WhatsApp only delivers free-form messages within 24 hours after the contact last wrote; later only an approved template works, which this connector does not send. Returns the message. Delivered at once, so confirm the text with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id of the subscriber in that bot (contact.id in the chat list), a 24-character id.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text."
+          }
+        },
+        "required": [
+          "contact_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/whatsapp/contacts/send",
+        "bodyMapping": {
+          "contact_id": "$contact_id",
+          "message": {
+            "type": "text",
+            "text": {
+              "body": "$text"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "sendpulse_list_telegram_bots",
+      "description": "List the Telegram chatbots connected to the account: id, name, status, channel_data (the bot username), inbox with the count of total and unread chats, and created_at. The id is the bot_id of the other Telegram tools. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "size": {
+            "type": "integer",
+            "description": "Records per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Records to skip, for paging.",
+            "minimum": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/telegram/bots",
+        "queryParams": {
+          "size": "$size",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_telegram_chats",
+      "description": "List the conversations of a Telegram chatbot, most recent first: contact (id, name and username in channel_data, tags, variables, last_activity_at), inbox_last_message and inbox_unread. Read-only; page with size and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "bot_id": {
+            "type": "string",
+            "description": "Bot id (from the list-bots tool of the same channel), a 24-character id.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Records to skip, for paging.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "bot_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/telegram/chats",
+        "queryParams": {
+          "bot_id": "$bot_id",
+          "size": "$size",
+          "skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_list_telegram_messages",
+      "description": "Read the messages exchanged with one Telegram contact of a chatbot: id, direction (incoming or outgoing), type, data (the content), status, sent_by and created_at. Read-only; page with size and skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id of the subscriber in that bot (contact.id in the chat list), a 24-character id.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "size": {
+            "type": "integer",
+            "description": "Records per page (default 20).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Records to skip, for paging.",
+            "minimum": 0
+          },
+          "order": {
+            "type": "string",
+            "description": "asc (oldest first) or desc (newest first).",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/telegram/chats/messages",
+        "queryParams": {
+          "contact_id": "$contact_id",
+          "size": "$size",
+          "skip": "$skip",
+          "order": "$order"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sendpulse_send_telegram_message",
+      "description": "Send a text message through a Telegram chatbot to one of its subscribers. Returns the message. The contact must have started the bot and not blocked it. Delivered at once, so confirm the text with the user.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "Contact id of the subscriber in that bot (contact.id in the chat list), a 24-character id.",
+            "pattern": "^[A-Za-z0-9]{8,40}$"
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text, up to 1024 characters.",
+            "maxLength": 1024
+          }
+        },
+        "required": [
+          "contact_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/telegram/contacts/sendText",
+        "bodyMapping": {
+          "contact_id": "$contact_id",
+          "text": "$text"
+        }
+      }
+    }
+  ]
+}

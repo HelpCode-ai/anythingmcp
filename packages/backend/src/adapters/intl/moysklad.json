@@ -1,0 +1,1716 @@
+{
+  "slug": "moysklad",
+  "name": "MoySklad",
+  "description": "MoySklad (МойСклад) JSON API 1.2 for trade and warehouse management: assortment and products, stock reports, counterparties, customer orders, shipments, supplies, invoices, stores and profit and turnover reports. Access token.",
+  "instructions": "## MoySklad\nThis connector works with the **MoySklad JSON API 1.2** (`https://api.moysklad.ru/api/remap/1.2`), the Russian cloud service for trade and warehouse management (МойСклад): products and assortment, stock reports, counterparties, customer orders, shipments (demands), supplies, invoices, stores, organizations and the profit and turnover reports.\n\n**Setup (about 3 minutes)**\n1. In MoySklad open the settings (Настройки) and the section for access tokens (Токены), create a token for the user the AI should act as, and copy it. It is shown only once.\n2. Paste it into `MOYSKLAD_TOKEN`.\n\nWithout that section a token can also be issued with the login and password: a `POST` to `/security/token` with HTTP Basic answers `access_token` (this revokes the earlier tokens of the user). The token acts with the rights of its user, so a user with read-only rights makes a read-only connector.\n\nThe connector sends `Authorization: Bearer`, `Accept-Encoding: gzip` and `Accept: application/json;charset=utf-8` on every call. MoySklad refuses calls without gzip with 415 and no body.\n\n**Where to start**: `moysklad_get_employee_context` shows the user and its rights. `moysklad_list_assortment` searches everything that can be sold, `moysklad_get_current_stock` gives stock numbers fast, and `moysklad_list_customer_orders` lists orders.\n\n**Catalogue**: `moysklad_list_assortment`, `moysklad_list_products`, `moysklad_get_product`, `moysklad_create_product`, `moysklad_update_product`, `moysklad_list_product_folders`.\n\n**Stock**: `moysklad_get_stock_report` (all stores, with cost and sale price), `moysklad_get_stock_by_store` (per store) and `moysklad_get_current_stock` (ids and one number, no paging, good for frequent checks). The two extended reports count as 5 requests each.\n\n**Counterparties**: `moysklad_list_counterparties`, `moysklad_get_counterparty`, `moysklad_create_counterparty`, `moysklad_update_counterparty`.\n\n**Documents**: `moysklad_list_customer_orders`, `moysklad_get_customer_order`, `moysklad_get_customer_order_metadata` (statuses), `moysklad_create_customer_order`, `moysklad_update_customer_order`; `moysklad_list_demands` and `moysklad_get_demand` (shipments); `moysklad_list_supplies` and `moysklad_get_supply` (goods received); `moysklad_list_invoices_out` and `moysklad_get_invoice_out`. References: `moysklad_list_stores`, `moysklad_list_organizations`.\n\n**Reports**: `moysklad_get_profit_by_product`, `moysklad_get_profit_by_counterparty`, `moysklad_get_turnover`, `moysklad_get_dashboard`.\n\n**Paging**: lists return at most 1000 rows per call (`limit`, default here 100) from `offset`; `meta.size` is the total and `meta.nextHref` is present while more rows follow. With `expand` the limit is 100: a larger limit makes MoySklad ignore the expand. Document lines beyond the first 1000 are read through the positions of the document.\n\n**Money and dates**: all amounts and prices are in kopecks (minor units): 150000 means 1500.00. Dates are `YYYY-MM-DD HH:MM:SS` in Moscow time. Ids are UUIDs.\n\n**References (meta)**: another object is referenced as an object with `meta` holding `href`, `type` and `mediaType`, never by a bare id. Every row carries its own `meta`: copy it when a tool asks for a reference (store, state, the assortment of an order line). In list filters a reference is its href; in the short stock report it is the bare id.\n\n**Filters**: `filter` joins conditions with `;`. Operators: `=`, `!=`, `>`, `<`, `>=`, `<=`, `~` contains, `~=` starts with, `=~` ends with. `search` is a full-text search. `order` sorts, e.g. `moment,desc`.\n\n**Limits**: a user token gets 45 units per 3 seconds and each request costs several units (4 from 1 December 2026, so about 11 requests per 3 seconds; the two extended stock reports cost 5). At most 5 calls of one user in parallel. A 429 carries `X-Lognex-Retry-After` in milliseconds. MoySklad switches API access off for users that keep sending failing calls (more than 200 identical failing requests a minute), so do not retry errors in a loop. Deleting objects and payments is not part of this connector.",
+  "aliases": [
+    "МойСклад",
+    "Мой Склад",
+    "MoySklad JSON API",
+    "moysklad.ru"
+  ],
+  "region": "intl",
+  "category": "erp",
+  "icon": "moysklad",
+  "docsUrl": "https://dev.moysklad.ru/doc/api/remap/1.2/",
+  "requiredEnvVars": [
+    "MOYSKLAD_TOKEN"
+  ],
+  "envVarMeta": {
+    "MOYSKLAD_TOKEN": {
+      "label": "Access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "MoySklad, settings (Настройки), access tokens (Токены): create a token for the user and copy it; it is shown once. The token has the rights of that user.",
+      "link": "https://dev.moysklad.ru/doc/api/remap/1.2/#/general#3-autentifikaciya",
+      "pattern": "^(?!Bearer\\s)\\S{20,200}$",
+      "patternMessage": "Paste only the token, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "MoySklad refused the request. errors in the answer names the code and the field: a wrong filter, a date not in YYYY-MM-DD HH:MM:SS, or a reference without meta.",
+    "401": "MoySklad refused the token: it is wrong, was revoked (issuing a new token revokes the old ones) or the user was disabled. Create a new token in the settings.",
+    "403": "The user behind the token has no right for this, the plan does not include the JSON API, or API access of the user was switched off after too many failing calls (ask MoySklad support to restore it).",
+    "404": "MoySklad found no object with that id. Ids are UUIDs taken from the id field of a list.",
+    "rate_limited": "MoySklad allows about 11 to 15 requests per 3 seconds for a user token. Wait for X-Lognex-Retry-After milliseconds and do not repeat the call in a loop."
+  },
+  "probe": {
+    "tool": "moysklad_get_employee_context",
+    "params": {}
+  },
+  "prerequisites": "A MoySklad account on a plan that includes the JSON API, and an access token of a user (created in the settings, or issued with login and password at /security/token). About 3 minutes.",
+  "connector": {
+    "name": "MoySklad JSON API 1.2",
+    "type": "REST",
+    "baseUrl": "https://api.moysklad.ru/api/remap/1.2",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{MOYSKLAD_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json;charset=utf-8",
+      "Accept-Encoding": "gzip",
+      "Content-Type": "application/json"
+    }
+  },
+  "tools": [
+    {
+      "name": "moysklad_get_employee_context",
+      "description": "Read the employee the token belongs to: name, email, the account, and the permissions per entity. Use it to check the token and what it may read or write. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/context/employee"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_list_assortment",
+      "description": "List everything that can be sold in one list: products, variants (modifications), services, bundles and consignments, each with id, meta, name, code, article, salePrices and buyPrice in kopecks, and stock, reserve, inTransit and quantity. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "What to list: product (variants folded into their product), variant (default) or consignment.",
+            "enum": [
+              "product",
+              "variant",
+              "consignment"
+            ]
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. product, images). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/assortment",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "groupBy": "$group_by",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_list_products",
+      "description": "List products: id, name, code, article, description, productFolder, uom, salePrices, buyPrice and minPrice in kopecks, barcodes, vat, weight, volume, archived and updated. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. productFolder, supplier, images). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/product",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_product",
+      "description": "Read one product with its prices in kopecks, barcodes, units, folder, supplier, custom fields (attributes) and tracking settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id (the id field, a UUID).",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "expand": {
+            "type": "string",
+            "description": "References to replace by the objects themselves, comma-separated (e.g. productFolder, supplier)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/product/{product_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_create_product",
+      "description": "Create a product with a name and optionally code, article, description, VAT, weight and purchase price. Returns the product with its id and meta. Prices are in kopecks. Sale prices per price type go in extra_fields as salePrices.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Product name.",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "code": {
+            "type": "string",
+            "description": "Product code."
+          },
+          "article": {
+            "type": "string",
+            "description": "Article (SKU)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "external_code": {
+            "type": "string",
+            "description": "External code, e.g. the id in your shop."
+          },
+          "vat": {
+            "type": "integer",
+            "description": "VAT rate in percent, e.g. 20.",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "weight": {
+            "type": "number",
+            "description": "Weight in kilograms."
+          },
+          "volume": {
+            "type": "number",
+            "description": "Volume in cubic metres."
+          },
+          "buy_price": {
+            "type": "object",
+            "description": "Purchase price as {\"value\": 50000}, in kopecks (50000 = 500.00). A currency can be added as a meta reference."
+          },
+          "min_price": {
+            "type": "object",
+            "description": "Minimum sale price as {\"value\": 90000}, in kopecks."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true moves the product to the archive."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Any other fields of the MoySklad object to set, as the JSON API names them, e.g. {\"externalCode\": \"A-1\", \"attributes\": [...]}. References are objects with meta (href, type, mediaType)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/entity/product",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "article": "$article",
+          "description": "$description",
+          "externalCode": "$external_code",
+          "vat": "$vat",
+          "weight": "$weight",
+          "volume": "$volume",
+          "buyPrice": "$buy_price",
+          "minPrice": "$min_price",
+          "archived": "$archived",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "moysklad_update_product",
+      "description": "Update a product: only the fields given change. Returns the updated product. MoySklad blocks a user that sends more than 100 updates of the same object per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "string",
+            "description": "Product id.",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "New product name.",
+            "maxLength": 255
+          },
+          "code": {
+            "type": "string",
+            "description": "Product code."
+          },
+          "article": {
+            "type": "string",
+            "description": "Article (SKU)."
+          },
+          "description": {
+            "type": "string",
+            "description": "Description."
+          },
+          "external_code": {
+            "type": "string",
+            "description": "External code, e.g. the id in your shop."
+          },
+          "vat": {
+            "type": "integer",
+            "description": "VAT rate in percent, e.g. 20.",
+            "minimum": 0,
+            "maximum": 100
+          },
+          "weight": {
+            "type": "number",
+            "description": "Weight in kilograms."
+          },
+          "volume": {
+            "type": "number",
+            "description": "Volume in cubic metres."
+          },
+          "buy_price": {
+            "type": "object",
+            "description": "Purchase price as {\"value\": 50000}, in kopecks (50000 = 500.00). A currency can be added as a meta reference."
+          },
+          "min_price": {
+            "type": "object",
+            "description": "Minimum sale price as {\"value\": 90000}, in kopecks."
+          },
+          "archived": {
+            "type": "boolean",
+            "description": "true moves the product to the archive."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Any other fields of the MoySklad object to set, as the JSON API names them, e.g. {\"externalCode\": \"A-1\", \"attributes\": [...]}. References are objects with meta (href, type, mediaType)."
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/entity/product/{product_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "code": "$code",
+          "article": "$article",
+          "description": "$description",
+          "externalCode": "$external_code",
+          "vat": "$vat",
+          "weight": "$weight",
+          "volume": "$volume",
+          "buyPrice": "$buy_price",
+          "minPrice": "$min_price",
+          "archived": "$archived",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "moysklad_list_product_folders",
+      "description": "List product groups (folders): id, name, pathName (the path of parent groups), code, description and archived. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated. Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/productfolder",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_stock_report",
+      "description": "Extended stock report per item over all stores: name, code, article, stock, reserve, inTransit and quantity (available), price (cost) and salePrice in kopecks, stockDays and the folder. Each call counts as 5 requests against the rate limit. Returns meta with nextHref and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter, conditions joined with ; where references are full hrefs, e.g. `store=https://api.moysklad.ru/api/remap/1.2/entity/store/ID` or `product=https://api.moysklad.ru/api/remap/1.2/entity/product/ID`. Other fields: search=text, stockMode=all|positiveOnly|negativeOnly|empty|nonEmpty, quantityMode, moment=YYYY-MM-DD HH:MM:SS (stock at that time), archived=true|false."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Rows per product, per variant (default) or per consignment.",
+            "enum": [
+              "product",
+              "variant",
+              "consignment"
+            ]
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `stock,desc` or `name`."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/stock/all",
+        "queryParams": {
+          "filter": "$filter",
+          "groupBy": "$group_by",
+          "order": "$order",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_stock_by_store",
+      "description": "Stock report per item and store: each row has the item meta and stockByStore with name, stock, reserve and inTransit per store. Each call counts as 5 requests against the rate limit. Returns meta with nextHref and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter, conditions joined with ; where references are full hrefs, e.g. `store=https://api.moysklad.ru/api/remap/1.2/entity/store/ID` or `product=https://api.moysklad.ru/api/remap/1.2/entity/product/ID`. Other fields: search=text, stockMode, moment=YYYY-MM-DD HH:MM:SS, archived=true|false."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Rows per product, per variant (default) or per consignment.",
+            "enum": [
+              "product",
+              "variant",
+              "consignment"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/stock/bystore",
+        "queryParams": {
+          "filter": "$filter",
+          "groupBy": "$group_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_current_stock",
+      "description": "Short stock report for frequent checks: only assortmentId (and storeId with scope bystore) with one number, in a single answer without paging. Rows with zero are left out unless include is zeroLines. Needs an administrator or a user with the right to see stock. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "scope": {
+            "type": "string",
+            "description": "all = one row per item over all stores, bystore = one row per item and store.",
+            "enum": [
+              "all",
+              "bystore"
+            ],
+            "default": "all"
+          },
+          "stock_type": {
+            "type": "string",
+            "description": "Which number: stock (physical, default), freeStock (stock minus reserve), quantity (available, with reserve and incoming), reserve or inTransit.",
+            "enum": [
+              "stock",
+              "freeStock",
+              "quantity",
+              "reserve",
+              "inTransit"
+            ]
+          },
+          "include": {
+            "type": "string",
+            "description": "zeroLines also returns rows with zero stock.",
+            "enum": [
+              "zeroLines"
+            ]
+          },
+          "changed_since": {
+            "type": "string",
+            "description": "Only items whose stock changed since this time, at most 24 hours back. The number returned is the current stock, not the change. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Limit to items or stores by id (not href), e.g. `assortmentId=ID1,ID2;storeId=ID3`."
+          }
+        },
+        "required": [
+          "scope"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/stock/{scope}/current",
+        "queryParams": {
+          "stockType": "$stock_type",
+          "include": "$include",
+          "changedSince": "$changed_since",
+          "filter": "$filter"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_list_counterparties",
+      "description": "List counterparties (customers and suppliers): id, name, code, companyType, inn, kpp, legalTitle, phone, email, actualAddress, tags, salesAmount and updated. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. state, contactpersons). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/counterparty",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_counterparty",
+      "description": "Read one counterparty with legal details (inn, kpp, legalAddress), contacts, bank accounts, tags, discounts, price type and custom fields. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterparty_id": {
+            "type": "string",
+            "description": "Counterparty id (a UUID).",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "expand": {
+            "type": "string",
+            "description": "References to replace by the objects themselves, comma-separated (e.g. accounts, contactpersons)."
+          }
+        },
+        "required": [
+          "counterparty_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/counterparty/{counterparty_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_create_counterparty",
+      "description": "Create a counterparty (customer or supplier) with a name and optionally type, tax numbers, addresses, phone, email and tags. Returns the counterparty with its id and meta.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Name of the counterparty.",
+            "minLength": 1,
+            "maxLength": 255
+          },
+          "company_type": {
+            "type": "string",
+            "description": "legal (company, default), entrepreneur (sole proprietor) or individual (private person).",
+            "enum": [
+              "legal",
+              "entrepreneur",
+              "individual"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "description": "Your own code for the counterparty."
+          },
+          "inn": {
+            "type": "string",
+            "description": "INN (tax number).",
+            "pattern": "^[0-9]{5,20}$"
+          },
+          "kpp": {
+            "type": "string",
+            "description": "KPP, for companies.",
+            "pattern": "^[0-9A-Za-z]{4,20}$"
+          },
+          "legal_title": {
+            "type": "string",
+            "description": "Full legal name."
+          },
+          "legal_address": {
+            "type": "string",
+            "description": "Legal address as one line.",
+            "maxLength": 255
+          },
+          "actual_address": {
+            "type": "string",
+            "description": "Actual (delivery) address as one line.",
+            "maxLength": 255
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "description": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Groups (tags) of the counterparty, e.g. [\"wholesale\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Any other fields of the MoySklad object to set, as the JSON API names them, e.g. {\"externalCode\": \"A-1\", \"attributes\": [...]}. References are objects with meta (href, type, mediaType)."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/entity/counterparty",
+        "bodyMapping": {
+          "name": "$name",
+          "companyType": "$company_type",
+          "code": "$code",
+          "inn": "$inn",
+          "kpp": "$kpp",
+          "legalTitle": "$legal_title",
+          "legalAddress": "$legal_address",
+          "actualAddress": "$actual_address",
+          "phone": "$phone",
+          "email": "$email",
+          "description": "$description",
+          "tags": "$tags",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "moysklad_update_counterparty",
+      "description": "Update a counterparty: only the fields given change; a given tags list replaces the old one. Returns the updated counterparty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "counterparty_id": {
+            "type": "string",
+            "description": "Counterparty id.",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "name": {
+            "type": "string",
+            "description": "New name.",
+            "maxLength": 255
+          },
+          "company_type": {
+            "type": "string",
+            "description": "legal (company, default), entrepreneur (sole proprietor) or individual (private person).",
+            "enum": [
+              "legal",
+              "entrepreneur",
+              "individual"
+            ]
+          },
+          "code": {
+            "type": "string",
+            "description": "Your own code for the counterparty."
+          },
+          "inn": {
+            "type": "string",
+            "description": "INN (tax number).",
+            "pattern": "^[0-9]{5,20}$"
+          },
+          "kpp": {
+            "type": "string",
+            "description": "KPP, for companies.",
+            "pattern": "^[0-9A-Za-z]{4,20}$"
+          },
+          "legal_title": {
+            "type": "string",
+            "description": "Full legal name."
+          },
+          "legal_address": {
+            "type": "string",
+            "description": "Legal address as one line.",
+            "maxLength": 255
+          },
+          "actual_address": {
+            "type": "string",
+            "description": "Actual (delivery) address as one line.",
+            "maxLength": 255
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "description": {
+            "type": "string",
+            "description": "Comment."
+          },
+          "tags": {
+            "type": "array",
+            "description": "Groups (tags) of the counterparty, e.g. [\"wholesale\"].",
+            "items": {
+              "type": "string"
+            }
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Any other fields of the MoySklad object to set, as the JSON API names them, e.g. {\"externalCode\": \"A-1\", \"attributes\": [...]}. References are objects with meta (href, type, mediaType)."
+          }
+        },
+        "required": [
+          "counterparty_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/entity/counterparty/{counterparty_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "companyType": "$company_type",
+          "code": "$code",
+          "inn": "$inn",
+          "kpp": "$kpp",
+          "legalTitle": "$legal_title",
+          "legalAddress": "$legal_address",
+          "actualAddress": "$actual_address",
+          "phone": "$phone",
+          "email": "$email",
+          "description": "$description",
+          "tags": "$tags",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "moysklad_list_customer_orders",
+      "description": "List customer orders: id, name (the order number), moment, sum, payedSum, shippedSum, invoicedSum and reservedSum in kopecks, applicable, agent, organization, store, state and deliveryPlannedMoment. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. agent, state, positions.assortment). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/customerorder",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_customer_order",
+      "description": "Read one customer order: number, moment, sums in kopecks, counterparty (agent), organization, store, state, shipment address, comment and custom fields. Add expand=positions.assortment for the order lines with their items. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Customer order id (a UUID).",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "expand": {
+            "type": "string",
+            "description": "References to replace by the objects themselves, comma-separated (e.g. positions.assortment, agent, state)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/customerorder/{order_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_customer_order_metadata",
+      "description": "Read the metadata of customer orders: the states (statuses) with id, name, stateType and meta, and the custom fields (attributes). The state meta is what an order update needs to change the status. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/customerorder/metadata"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_create_customer_order",
+      "description": "Create a customer order for an organization (your legal entity) and a counterparty, with order lines. Returns the order with its id, number and sum in kopecks. No payment or shipment is made. Fetch the ids from moysklad_list_organizations and moysklad_list_counterparties and the items from moysklad_list_assortment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "description": "Id of your organization (legal entity) from moysklad_list_organizations.",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "agent_id": {
+            "type": "string",
+            "description": "Id of the counterparty (customer) from moysklad_list_counterparties.",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "positions": {
+            "type": "array",
+            "description": "Order lines, e.g. [{\"quantity\": 2, \"price\": 150000, \"vat\": 20, \"assortment\": {\"meta\": {\"href\": \"https://api.moysklad.ru/api/remap/1.2/entity/product/3b1e1f15-2842-11e9-ac12-000c0000002f\", \"type\": \"product\", \"mediaType\": \"application/json\"}}}]. price is per unit in kopecks (150000 = 1500.00). The assortment type is product, variant, service or bundle; take the meta from moysklad_list_assortment.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "quantity": {
+                  "type": "number",
+                  "description": "Quantity."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Price per unit in kopecks (minor units)."
+                },
+                "discount": {
+                  "type": "number",
+                  "description": "Discount in percent."
+                },
+                "vat": {
+                  "type": "number",
+                  "description": "VAT rate in percent."
+                },
+                "reserve": {
+                  "type": "number",
+                  "description": "Quantity to reserve on the store."
+                },
+                "assortment": {
+                  "type": "object",
+                  "description": "The item, as {\"meta\": {\"href\": ..., \"type\": \"product\", \"mediaType\": \"application/json\"}}."
+                }
+              },
+              "required": [
+                "quantity",
+                "assortment"
+              ]
+            },
+            "minItems": 1,
+            "maxItems": 1000
+          },
+          "name": {
+            "type": "string",
+            "description": "Order number. Generated by MoySklad when left out.",
+            "maxLength": 255
+          },
+          "moment": {
+            "type": "string",
+            "description": "Date of the order (default now). Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "description": {
+            "type": "string",
+            "description": "Comment on the order."
+          },
+          "delivery_planned_moment": {
+            "type": "string",
+            "description": "Planned shipment date. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "store": {
+            "type": "object",
+            "description": "Store to ship from, as {\"meta\": {\"href\": \"https://api.moysklad.ru/api/remap/1.2/entity/store/ID\", \"type\": \"store\", \"mediaType\": \"application/json\"}} (meta of moysklad_list_stores). Needed to reserve stock."
+          },
+          "vat_enabled": {
+            "type": "boolean",
+            "description": "true when prices carry VAT."
+          },
+          "vat_included": {
+            "type": "boolean",
+            "description": "true when VAT is included in the prices."
+          },
+          "applicable": {
+            "type": "boolean",
+            "description": "false saves the order as a draft that does not count in reports (default true)."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Any other fields of the MoySklad object to set, as the JSON API names them, e.g. {\"externalCode\": \"A-1\", \"attributes\": [...]}. References are objects with meta (href, type, mediaType)."
+          }
+        },
+        "required": [
+          "organization_id",
+          "agent_id",
+          "positions"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/entity/customerorder",
+        "bodyMapping": {
+          "organization": {
+            "meta": {
+              "href": "https://api.moysklad.ru/api/remap/1.2/entity/organization/${organization_id}",
+              "type": "organization",
+              "mediaType": "application/json"
+            }
+          },
+          "agent": {
+            "meta": {
+              "href": "https://api.moysklad.ru/api/remap/1.2/entity/counterparty/${agent_id}",
+              "type": "counterparty",
+              "mediaType": "application/json"
+            }
+          },
+          "positions": "$positions",
+          "name": "$name",
+          "moment": "$moment",
+          "description": "$description",
+          "deliveryPlannedMoment": "$delivery_planned_moment",
+          "store": "$store",
+          "vatEnabled": "$vat_enabled",
+          "vatIncluded": "$vat_included",
+          "applicable": "$applicable",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "moysklad_update_customer_order",
+      "description": "Update a customer order: comment, planned shipment date, status, store or the draft flag. Only the fields given change. To change order lines pass positions in extra_fields; the list given replaces all lines. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Customer order id.",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "description": {
+            "type": "string",
+            "description": "Comment on the order."
+          },
+          "delivery_planned_moment": {
+            "type": "string",
+            "description": "Planned shipment date. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "state": {
+            "type": "object",
+            "description": "New status, as {\"meta\": {...}} with the meta of a state from moysklad_get_customer_order_metadata."
+          },
+          "store": {
+            "type": "object",
+            "description": "Store to ship from, as {\"meta\": {...}} with the meta of a store."
+          },
+          "applicable": {
+            "type": "boolean",
+            "description": "false turns the order into a draft, true makes it count again."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Any other fields of the MoySklad object to set, as the JSON API names them, e.g. {\"externalCode\": \"A-1\", \"attributes\": [...]}. References are objects with meta (href, type, mediaType)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/entity/customerorder/{order_id}",
+        "bodyMapping": {
+          "description": "$description",
+          "deliveryPlannedMoment": "$delivery_planned_moment",
+          "state": "$state",
+          "store": "$store",
+          "applicable": "$applicable",
+          "__merge": "$extra_fields"
+        }
+      }
+    },
+    {
+      "name": "moysklad_list_demands",
+      "description": "List demands (shipments to customers): id, name, moment, sum and payedSum in kopecks, agent, organization, store, state, the customer order they belong to and applicable. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. agent, positions.assortment, customerOrder). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/demand",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_demand",
+      "description": "Read one demand (shipment): number, moment, sum in kopecks, counterparty, store, consignee and carrier details and the linked customer order. Add expand=positions.assortment for the lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "demand_id": {
+            "type": "string",
+            "description": "Demand id (a UUID).",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "expand": {
+            "type": "string",
+            "description": "References to replace by the objects themselves, comma-separated (e.g. positions.assortment, agent)."
+          }
+        },
+        "required": [
+          "demand_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/demand/{demand_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_list_supplies",
+      "description": "List supplies (goods received from suppliers): id, name, moment, sum and payedSum in kopecks, agent (the supplier), organization, store, incomingNumber and incomingDate. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. agent, positions.assortment). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/supply",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_supply",
+      "description": "Read one supply (goods receipt): number, moment, sum in kopecks, supplier, store, the incoming document number and overhead costs. Add expand=positions.assortment for the lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supply_id": {
+            "type": "string",
+            "description": "Supply id (a UUID).",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "expand": {
+            "type": "string",
+            "description": "References to replace by the objects themselves, comma-separated (e.g. positions.assortment, agent)."
+          }
+        },
+        "required": [
+          "supply_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/supply/{supply_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_list_invoices_out",
+      "description": "List invoices issued to customers: id, name, moment, sum, payedSum and shippedSum in kopecks, agent, organization, paymentPlannedMoment and the customer order they belong to. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. agent, positions.assortment). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/invoiceout",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_invoice_out",
+      "description": "Read one invoice issued to a customer: number, moment, sum and payedSum in kopecks, counterparty, organization with its bank account and the planned payment date. Add expand=positions.assortment for the lines. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "invoice_id": {
+            "type": "string",
+            "description": "Invoice id (a UUID).",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+          },
+          "expand": {
+            "type": "string",
+            "description": "References to replace by the objects themselves, comma-separated (e.g. positions.assortment, agent)."
+          }
+        },
+        "required": [
+          "invoice_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/invoiceout/{invoice_id}",
+        "queryParams": {
+          "expand": "$expand"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_list_stores",
+      "description": "List stores (warehouses): id, name, code, address, pathName for nested stores, archived and meta. The meta is what orders and report filters reference. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated. Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/store",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_list_organizations",
+      "description": "List your organizations (legal entities): id, name, legalTitle, inn, kpp, legalAddress, companyType and meta. An order always needs one. Returns meta (size, limit, offset, nextHref when more rows follow) and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "Filter. Conditions joined with ; as field, operator and value, e.g. `name~bolt;updated>=2026-11-01 00:00:00`. Operators: = != > < >= <= ~ (contains) ~= (starts with) =~ (ends with). The same field twice with = means OR. References are filtered by their href."
+          },
+          "search": {
+            "type": "string",
+            "description": "Full-text search over the main text fields (name, code, description and others)."
+          },
+          "order": {
+            "type": "string",
+            "description": "Sort, e.g. `updated,desc` or `name,asc;moment,desc`."
+          },
+          "expand": {
+            "type": "string",
+            "description": "Replace references by the objects themselves, comma-separated (e.g. accounts). Works only with limit up to 100; with a larger limit it is ignored."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/entity/organization",
+        "queryParams": {
+          "filter": "$filter",
+          "search": "$search",
+          "order": "$order",
+          "expand": "$expand",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_profit_by_product",
+      "description": "Profit report per product, service and bundle for a period: sellQuantity, sellPrice, sellCost, sellSum, sellCostSum, returnQuantity, returnSum, profit and margin. Amounts are in kopecks. Without dates it covers the last month. Returns meta with nextHref and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "moment_from": {
+            "type": "string",
+            "description": "Start of the period. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "moment_to": {
+            "type": "string",
+            "description": "End of the period. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter, conditions joined with ; where references are full hrefs, e.g. `store=https://api.moysklad.ru/api/remap/1.2/entity/store/ID` or `product=https://api.moysklad.ru/api/remap/1.2/entity/product/ID`. Fields: product, productFolder, counterparty, organization, store, project, retailStore, supplier, salesChannel, agentTag."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/profit/byproduct",
+        "queryParams": {
+          "momentFrom": "$moment_from",
+          "momentTo": "$moment_to",
+          "filter": "$filter",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_profit_by_counterparty",
+      "description": "Profit report per customer for a period: demandsCount, demandsSum, averageReceipt, returnsCount, returnsSum, discountsSum, balance, sellCostSum, profit and margin. Amounts are in kopecks. Without dates it covers the last month. Returns meta with nextHref and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "moment_from": {
+            "type": "string",
+            "description": "Start of the period. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "moment_to": {
+            "type": "string",
+            "description": "End of the period. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter, conditions joined with ; where references are full hrefs, e.g. `store=https://api.moysklad.ru/api/remap/1.2/entity/store/ID` or `product=https://api.moysklad.ru/api/remap/1.2/entity/product/ID`. Fields: product, productFolder, counterparty, organization, store, project, retailStore, supplier, agentTag."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/profit/bycounterparty",
+        "queryParams": {
+          "momentFrom": "$moment_from",
+          "momentTo": "$moment_to",
+          "filter": "$filter",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_turnover",
+      "description": "Turnover report per item for a period: stock at the start (onPeriodStart), income, outcome and stock at the end (onPeriodEnd), each with quantity and sum in kopecks. Returns meta with nextHref and rows. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "moment_from": {
+            "type": "string",
+            "description": "Start of the period. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "moment_to": {
+            "type": "string",
+            "description": "End of the period. Format YYYY-MM-DD HH:MM:SS, Moscow time.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2} [0-9]{2}:[0-9]{2}(:[0-9]{2})?$"
+          },
+          "filter": {
+            "type": "string",
+            "description": "Filter, conditions joined with ; where references are full hrefs, e.g. `store=https://api.moysklad.ru/api/remap/1.2/entity/store/ID` or `product=https://api.moysklad.ru/api/remap/1.2/entity/product/ID`. Fields: store, product, agent, organization, project, retailStore, supplier, contract, agentTag."
+          },
+          "group_by": {
+            "type": "string",
+            "description": "Rows per product (default) or per variant.",
+            "enum": [
+              "product",
+              "variant"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Rows per page, 1 to 1000 (default 100).",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Rows to skip (default 0). Add the page size to it for the next page.",
+            "minimum": 0,
+            "default": 0
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/turnover/all",
+        "queryParams": {
+          "momentFrom": "$moment_from",
+          "momentTo": "$moment_to",
+          "filter": "$filter",
+          "groupBy": "$group_by",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "moysklad_get_dashboard",
+      "description": "Key figures for today, the last week or the last month: sales (count, amount, movementAmount), orders (count, amount, movementAmount) and money (income, outcome, balance, todayMovement, movement). Amounts are in kopecks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "period": {
+            "type": "string",
+            "description": "day, week or month.",
+            "enum": [
+              "day",
+              "week",
+              "month"
+            ],
+            "default": "day"
+          }
+        },
+        "required": [
+          "period"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/report/dashboard/{period}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

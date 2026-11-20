@@ -1,0 +1,613 @@
+{
+  "slug": "patreon",
+  "name": "Patreon",
+  "description": "Patreon API v2 for creators: the campaign with its tiers, benefits and goals, members with patron status, pledge amounts, charge dates and pledge history, posts, and the webhooks of your client. Read-only. Sign in with your own Patreon client.",
+  "aliases": [
+    "Patreon API",
+    "Patreon Creators",
+    "Patreon memberships"
+  ],
+  "region": "intl",
+  "category": "publishing",
+  "icon": "patreon",
+  "docsUrl": "https://docs.patreon.com/",
+  "appRegistrationUrl": "https://www.patreon.com/portal/registration/register-clients",
+  "prerequisites": "A Patreon creator account and a client of your own (free) registered under Clients and API Keys on patreon.com, with API version 2 and the redirect URI below. About 5 minutes.",
+  "requiredEnvVars": [
+    "PATREON_CLIENT_ID",
+    "PATREON_CLIENT_SECRET"
+  ],
+  "envVarMeta": {
+    "PATREON_CLIENT_ID": {
+      "label": "Client ID",
+      "kind": "credential",
+      "help": "patreon.com, Clients and API Keys, your client: Client ID.",
+      "link": "https://www.patreon.com/portal/registration/register-clients",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste the Client ID of your Patreon client, without spaces."
+    },
+    "PATREON_CLIENT_SECRET": {
+      "label": "Client Secret",
+      "kind": "credential",
+      "secret": true,
+      "help": "Same page: Client Secret. Not the Creator's Access Token or Refresh Token.",
+      "link": "https://www.patreon.com/portal/registration/register-clients",
+      "pattern": "^[A-Za-z0-9_-]{20,}$",
+      "patternMessage": "Paste the Client Secret of your Patreon client, without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Patreon refused the access token, or the token lacks the scope this call needs. Click Authorize with Provider again; if the Client Secret was changed, update PATREON_CLIENT_SECRET first.",
+    "403": "Patreon refused the call: this resource belongs to another creator, or the client may not read it.",
+    "404": "Patreon found no campaign, member or post with that id. Member ids are UUIDs from patreon_list_campaign_members, not user ids.",
+    "rate_limited": "Patreon allows 100 calls per minute per token. Wait for retry_after_seconds and try again; too many failed calls block the client for 30 minutes.",
+    "invalid_client": "Patreon did not accept the Client ID or Client Secret. Copy both again from Clients and API Keys on patreon.com.",
+    "invalid_grant": "Patreon refused the authorization code or the refresh token. Check that the redirect URI of the client is exactly the callback URL shown in the setup, then click Authorize with Provider again."
+  },
+  "probe": {
+    "tool": "patreon_get_identity",
+    "params": {}
+  },
+  "instructions": "## Patreon\nThis connector reads a creator account on **Patreon** through API v2 at `https://www.patreon.com/api/oauth2/v2`: the creator and campaign, membership tiers and benefits, members with their status, pledge amounts and charge history, posts, and the webhooks of the client. It is read-only.\n\n**Setup (about 5 minutes)**\n1. Signed in to Patreon as the creator, open https://www.patreon.com/portal/registration/register-clients and click **Create Client**.\n2. Fill in a name and description, choose **Client API Version 2**, and add the redirect URI `<your AnythingMCP URL>/api/mcp-oauth/callback` (on AnythingMCP Cloud: `https://cloud.anythingmcp.com/api/mcp-oauth/callback`).\n3. Copy the **Client ID** into `PATREON_CLIENT_ID` and the **Client Secret** into `PATREON_CLIENT_SECRET`.\n4. Install the connector, click **Authorize with Provider** and allow the access on Patreon with the creator account.\n\nThe sign-in asks for the scopes `identity`, `identity[email]`, `campaigns`, `campaigns.members`, `campaigns.members[email]`, `campaigns.posts` and `w:campaigns.webhook`. Access tokens last about a month and are renewed automatically with the refresh token. The client page also shows a Creator's Access Token: it is the same kind of token and expires the same way, but nothing renews it, so the connector uses the sign-in instead.\n\n**Where to start**: `patreon_get_identity` returns the creator and, under `included`, the campaign with its id. `patreon_list_campaigns` does the same from the campaign side. Every other tool takes that campaign id.\n\n**Campaign and tiers**: `patreon_list_campaigns`, `patreon_get_campaign`, `patreon_list_campaign_tiers` (tiers with their benefits).\n\n**Members**: `patreon_list_campaign_members`, `patreon_get_member` and `patreon_get_member_pledge_history`. `patron_status` is `active_patron`, `declined_patron` (last charge failed), `former_patron`, or null for a free member or follower. `currently_entitled_amount_cents` is what the member is entitled to now, `will_pay_amount_cents` the next charge, `campaign_lifetime_support_cents` everything paid so far. The API has no member filter or search: page through the list and filter yourself. A member id is a UUID and differs from the user id.\n\n**Posts**: `patreon_list_campaign_posts` and `patreon_get_post` (`content` is HTML).\n\n**Webhooks**: `patreon_list_webhooks` shows only webhooks created by this client. The connector creates and deletes none.\n\n**How answers are shaped**: Patreon speaks JSON:API. The rows are in `data` with `id`, `type` and `attributes`; related resources asked for with `include` come once each in `included`, and `relationships` of a row point at them by `type` and `id`. Only the attributes named in the `fields_...` parameters are returned: an attribute that is missing was not asked for. Every tool has sensible defaults; widen them only when needed, because large field sets on big member lists are slow.\n\n**Paging**: `meta.pagination.cursors.next` is the `page_cursor` of the next page; it is null or missing on the last page. Member pages hold up to 1,000 rows, 500 when pledge_history is included.\n\n**Amounts and dates**: amounts are integers in cents of the campaign currency (pledge events carry their own `currency_code`). Dates are ISO 8601 in UTC.\n\n**Shipping addresses**: the address of a member needs the scope `campaigns.members.address`, which is not requested by default. Add it to the scopes in the connector's OAuth settings, authorize again, and pass `address` in `include` together with `fields_address`.\n\n**Limits**: 100 calls per minute per token and 100 calls per 2 seconds per client; a 429 carries `retry_after_seconds`. More than 2,000 failed calls in 10 minutes block the client for 30 minutes.",
+  "connector": {
+    "name": "Patreon API v2",
+    "type": "REST",
+    "baseUrl": "https://www.patreon.com/api/oauth2/v2",
+    "authType": "OAUTH2",
+    "authConfig": {
+      "clientId": "{{PATREON_CLIENT_ID}}",
+      "clientSecret": "{{PATREON_CLIENT_SECRET}}",
+      "authorizationUrl": "https://www.patreon.com/oauth2/authorize",
+      "tokenUrl": "https://www.patreon.com/api/oauth2/token",
+      "tokenAuthMethod": "client_secret_post",
+      "pkce": false,
+      "scopes": "identity identity[email] campaigns campaigns.members campaigns.members[email] campaigns.posts w:campaigns.webhook"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "healthcheckPath": "/identity"
+  },
+  "tools": [
+    {
+      "name": "patreon_get_identity",
+      "description": "Read the signed-in Patreon user: full_name, email, about, image_url, url, vanity, is_creator and, under `included`, the campaign they own with its id. Start here: the campaign id is what every campaign tool needs. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "pattern": "^[a-z_.]+(,[a-z_.]+)*$",
+            "default": "campaign",
+            "description": "Related resources to add under `included`, comma-separated. Available: campaign, memberships."
+          },
+          "fields_user": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,first_name,last_name,email,is_email_verified,about,created,image_url,url,vanity,is_creator",
+            "description": "Attributes of each user to return, comma-separated. Patreon returns only what is asked for. Available: about, can_see_nsfw, created, email, first_name, full_name, hide_pledges, image_url, is_creator, is_email_verified, last_name, like_count, social_connections, thumb_url, url, vanity. `email` needs the scope identity[email]."
+          },
+          "fields_campaign": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "creation_name,currency,is_monthly,patron_count,published_at,url,vanity",
+            "description": "Attributes of each campaign to return, comma-separated. Patreon returns only what is asked for. Available: created_at, creation_name, currency, discord_server_id, google_analytics_id, has_rss, image_small_url, image_url, is_charged_immediately, is_monthly, is_nsfw, main_video_url, one_liner, patron_count, pay_per_name, pledge_url, published_at, rss_feed_title, show_earnings, summary, thanks_msg, url, vanity."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/identity",
+        "queryParams": {
+          "include": "$include",
+          "fields[user]": "$fields_user",
+          "fields[campaign]": "$fields_campaign"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_list_campaigns",
+      "description": "List the campaigns of the signed-in creator (normally one): id, creation_name, summary, currency, is_monthly, patron_count, pledge_url and url, with the tiers, the creator and the goals under `included`. Amounts are in cents of the campaign currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include": {
+            "type": "string",
+            "pattern": "^[a-z_.]+(,[a-z_.]+)*$",
+            "default": "tiers,creator,goals",
+            "description": "Related resources to add under `included`, comma-separated. Available: tiers, creator, benefits, goals."
+          },
+          "fields_campaign": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "created_at,creation_name,currency,is_charged_immediately,is_monthly,is_nsfw,one_liner,patron_count,pay_per_name,pledge_url,published_at,summary,url,vanity",
+            "description": "Attributes of each campaign to return, comma-separated. Patreon returns only what is asked for. Available: created_at, creation_name, currency, discord_server_id, google_analytics_id, has_rss, image_small_url, image_url, is_charged_immediately, is_monthly, is_nsfw, main_video_url, one_liner, patron_count, pay_per_name, pledge_url, published_at, rss_feed_title, show_earnings, summary, thanks_msg, url, vanity."
+          },
+          "fields_tier": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,amount_cents,description,patron_count,published,remaining,user_limit,requires_shipping,url",
+            "description": "Attributes of each tier to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, created_at, description, edited_at, image_url, patron_count, post_count, published, published_at, remaining, requires_shipping, title, unpublished_at, url, user_limit."
+          },
+          "fields_user": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,vanity,url",
+            "description": "Attributes of each creator to return, comma-separated. Patreon returns only what is asked for. Available: about, can_see_nsfw, created, email, first_name, full_name, hide_pledges, image_url, is_creator, is_email_verified, last_name, like_count, social_connections, thumb_url, url, vanity."
+          },
+          "fields_benefit": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,description,benefit_type,rule_type,is_published,is_ended,tiers_count",
+            "description": "Attributes of each benefit to return, comma-separated. Patreon returns only what is asked for. Available: benefit_type, created_at, deliverables_due_today_count, delivered_deliverables_count, description, is_deleted, is_ended, is_published, next_deliverable_due_date, not_delivered_deliverables_count, rule_type, tiers_count, title."
+          },
+          "fields_goal": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,description,amount_cents,completed_percentage,reached_at",
+            "description": "Attributes of each goal to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, completed_percentage, created_at, description, reached_at, title."
+          },
+          "page_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Rows per page, default 20, at most 1000."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: `meta.pagination.cursors.next` of the previous answer. Leave out for the first page."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns",
+        "queryParams": {
+          "include": "$include",
+          "fields[campaign]": "$fields_campaign",
+          "fields[tier]": "$fields_tier",
+          "fields[user]": "$fields_user",
+          "fields[benefit]": "$fields_benefit",
+          "fields[goal]": "$fields_goal",
+          "page[count]": "$page_count",
+          "page[cursor]": "$page_cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_get_campaign",
+      "description": "Read one campaign in full: its attributes plus tiers, creator, benefits and goals under `included`. Each related resource is listed with its `type` and `id`; `relationships` of the campaign say which belong to it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,64}$",
+            "description": "Patreon id of the campaign, e.g. 12345678."
+          },
+          "include": {
+            "type": "string",
+            "pattern": "^[a-z_.]+(,[a-z_.]+)*$",
+            "default": "tiers,creator,benefits,goals",
+            "description": "Related resources to add under `included`, comma-separated. Available: tiers, creator, benefits, goals."
+          },
+          "fields_campaign": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "created_at,creation_name,currency,is_charged_immediately,is_monthly,is_nsfw,one_liner,patron_count,pay_per_name,pledge_url,published_at,summary,url,vanity",
+            "description": "Attributes of each campaign to return, comma-separated. Patreon returns only what is asked for. Available: created_at, creation_name, currency, discord_server_id, google_analytics_id, has_rss, image_small_url, image_url, is_charged_immediately, is_monthly, is_nsfw, main_video_url, one_liner, patron_count, pay_per_name, pledge_url, published_at, rss_feed_title, show_earnings, summary, thanks_msg, url, vanity."
+          },
+          "fields_tier": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,amount_cents,description,patron_count,published,remaining,user_limit,requires_shipping,url",
+            "description": "Attributes of each tier to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, created_at, description, edited_at, image_url, patron_count, post_count, published, published_at, remaining, requires_shipping, title, unpublished_at, url, user_limit."
+          },
+          "fields_user": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,vanity,url",
+            "description": "Attributes of each creator to return, comma-separated. Patreon returns only what is asked for. Available: about, can_see_nsfw, created, email, first_name, full_name, hide_pledges, image_url, is_creator, is_email_verified, last_name, like_count, social_connections, thumb_url, url, vanity."
+          },
+          "fields_benefit": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,description,benefit_type,rule_type,is_published,is_ended,tiers_count",
+            "description": "Attributes of each benefit to return, comma-separated. Patreon returns only what is asked for. Available: benefit_type, created_at, deliverables_due_today_count, delivered_deliverables_count, description, is_deleted, is_ended, is_published, next_deliverable_due_date, not_delivered_deliverables_count, rule_type, tiers_count, title."
+          },
+          "fields_goal": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,description,amount_cents,completed_percentage,reached_at",
+            "description": "Attributes of each goal to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, completed_percentage, created_at, description, reached_at, title."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}",
+        "queryParams": {
+          "include": "$include",
+          "fields[campaign]": "$fields_campaign",
+          "fields[tier]": "$fields_tier",
+          "fields[user]": "$fields_user",
+          "fields[benefit]": "$fields_benefit",
+          "fields[goal]": "$fields_goal"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_list_campaign_tiers",
+      "description": "List the membership tiers of a campaign with their benefits: per tier the title, amount_cents (price per charge in the campaign currency), description, patron_count, published, remaining and user_limit, and per benefit the title, description, benefit_type and tiers_count (how many tiers carry it). Tiers and benefits come under `included`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,64}$",
+            "description": "Patreon id of the campaign, e.g. 12345678."
+          },
+          "include": {
+            "type": "string",
+            "pattern": "^[a-z_.]+(,[a-z_.]+)*$",
+            "default": "tiers,benefits",
+            "description": "Related resources to add under `included`, comma-separated. Available: tiers, benefits."
+          },
+          "fields_campaign": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "creation_name,currency,patron_count",
+            "description": "Attributes of each campaign to return, comma-separated. Patreon returns only what is asked for. Available: created_at, creation_name, currency, discord_server_id, google_analytics_id, has_rss, image_small_url, image_url, is_charged_immediately, is_monthly, is_nsfw, main_video_url, one_liner, patron_count, pay_per_name, pledge_url, published_at, rss_feed_title, show_earnings, summary, thanks_msg, url, vanity."
+          },
+          "fields_tier": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,amount_cents,description,patron_count,published,remaining,user_limit,requires_shipping,url",
+            "description": "Attributes of each tier to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, created_at, description, edited_at, image_url, patron_count, post_count, published, published_at, remaining, requires_shipping, title, unpublished_at, url, user_limit."
+          },
+          "fields_benefit": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,description,benefit_type,rule_type,is_published,is_ended,tiers_count",
+            "description": "Attributes of each benefit to return, comma-separated. Patreon returns only what is asked for. Available: benefit_type, created_at, deliverables_due_today_count, delivered_deliverables_count, description, is_deleted, is_ended, is_published, next_deliverable_due_date, not_delivered_deliverables_count, rule_type, tiers_count, title."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}",
+        "queryParams": {
+          "include": "$include",
+          "fields[campaign]": "$fields_campaign",
+          "fields[tier]": "$fields_tier",
+          "fields[benefit]": "$fields_benefit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_list_campaign_members",
+      "description": "List the members (patrons, free members and former patrons) of a campaign: full_name, email, patron_status (active_patron, declined_patron, former_patron, or null for a free member), currently_entitled_amount_cents, will_pay_amount_cents, campaign_lifetime_support_cents, last_charge_date and last_charge_status, next_charge_date, pledge_relationship_start and the creator note, with the entitled tiers and the user under `included`. Patreon cannot filter members: page through all of them (`meta.pagination.cursors.next`) and filter on patron_status yourself. `meta.pagination.total` is the member count. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,64}$",
+            "description": "Patreon id of the campaign, e.g. 12345678."
+          },
+          "include": {
+            "type": "string",
+            "pattern": "^[a-z_.]+(,[a-z_.]+)*$",
+            "default": "currently_entitled_tiers,user",
+            "description": "Related resources to add under `included`, comma-separated. Available: currently_entitled_tiers, user, address (needs the scope campaigns.members.address), pledge_history, campaign."
+          },
+          "fields_member": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,email,patron_status,pledge_relationship_start,last_charge_date,last_charge_status,next_charge_date,currently_entitled_amount_cents,will_pay_amount_cents,campaign_lifetime_support_cents,pledge_cadence,is_free_trial,is_gifted,note",
+            "description": "Attributes of each member to return, comma-separated. Patreon returns only what is asked for. Available: campaign_lifetime_support_cents, currently_entitled_amount_cents, email, full_name, is_free_trial, is_gifted, last_charge_date, last_charge_status, next_charge_date, note, patron_status, pledge_cadence, pledge_relationship_start, will_pay_amount_cents. `email` needs the scope campaigns.members[email] and can be null when the member hides it."
+          },
+          "fields_tier": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,amount_cents",
+            "description": "Attributes of each entitled tier to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, created_at, description, edited_at, image_url, patron_count, post_count, published, published_at, remaining, requires_shipping, title, unpublished_at, url, user_limit."
+          },
+          "fields_user": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,vanity,url",
+            "description": "Attributes of each member user to return, comma-separated. Patreon returns only what is asked for. Available: about, can_see_nsfw, created, email, first_name, full_name, hide_pledges, image_url, is_creator, is_email_verified, last_name, like_count, social_connections, thumb_url, url, vanity."
+          },
+          "fields_address": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "description": "Attributes of the shipping address, comma-separated, e.g. addressee,line_1,line_2,city,state,postal_code,country,phone_number. Pass it together with address in `include`; both need the scope campaigns.members.address. Left out by default. Available: addressee, city, country, created_at, line_1, line_2, phone_number, postal_code, state."
+          },
+          "fields_pledge_event": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "date,type,amount_cents,currency_code,payment_status,pledge_payment_status,tier_title",
+            "description": "Attributes of each pledge event to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, currency_code, date, payment_status, pledge_payment_status, tier_id, tier_title, type. Only returned when `include` has pledge_history."
+          },
+          "page_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 100,
+            "description": "Rows per page, default 100, at most 1000."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: `meta.pagination.cursors.next` of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/members",
+        "queryParams": {
+          "include": "$include",
+          "fields[member]": "$fields_member",
+          "fields[tier]": "$fields_tier",
+          "fields[user]": "$fields_user",
+          "fields[address]": "$fields_address",
+          "fields[pledge-event]": "$fields_pledge_event",
+          "page[count]": "$page_count",
+          "page[cursor]": "$page_cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_get_member",
+      "description": "Read one member by member id: status, amounts in cents, charge dates, note and email, with the entitled tiers and the user under `included`. The member id is a UUID from patreon_list_campaign_members, not the numeric user id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,64}$",
+            "description": "Patreon id of the member (a UUID), e.g. 03ca69c3-ebea-4b9a-8fac-e4a837873254."
+          },
+          "include": {
+            "type": "string",
+            "pattern": "^[a-z_.]+(,[a-z_.]+)*$",
+            "default": "currently_entitled_tiers,user",
+            "description": "Related resources to add under `included`, comma-separated. Available: currently_entitled_tiers, user, address (needs the scope campaigns.members.address), pledge_history, campaign."
+          },
+          "fields_member": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,email,patron_status,pledge_relationship_start,last_charge_date,last_charge_status,next_charge_date,currently_entitled_amount_cents,will_pay_amount_cents,campaign_lifetime_support_cents,pledge_cadence,is_free_trial,is_gifted,note",
+            "description": "Attributes of each member to return, comma-separated. Patreon returns only what is asked for. Available: campaign_lifetime_support_cents, currently_entitled_amount_cents, email, full_name, is_free_trial, is_gifted, last_charge_date, last_charge_status, next_charge_date, note, patron_status, pledge_cadence, pledge_relationship_start, will_pay_amount_cents. `email` needs the scope campaigns.members[email] and can be null when the member hides it."
+          },
+          "fields_tier": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,amount_cents",
+            "description": "Attributes of each entitled tier to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, created_at, description, edited_at, image_url, patron_count, post_count, published, published_at, remaining, requires_shipping, title, unpublished_at, url, user_limit."
+          },
+          "fields_user": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,vanity,url",
+            "description": "Attributes of each member user to return, comma-separated. Patreon returns only what is asked for. Available: about, can_see_nsfw, created, email, first_name, full_name, hide_pledges, image_url, is_creator, is_email_verified, last_name, like_count, social_connections, thumb_url, url, vanity."
+          },
+          "fields_address": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "description": "Attributes of the shipping address, comma-separated, e.g. addressee,line_1,line_2,city,state,postal_code,country,phone_number. Pass it together with address in `include`; both need the scope campaigns.members.address. Left out by default. Available: addressee, city, country, created_at, line_1, line_2, phone_number, postal_code, state."
+          },
+          "fields_pledge_event": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "date,type,amount_cents,currency_code,payment_status,pledge_payment_status,tier_title",
+            "description": "Attributes of each pledge event to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, currency_code, date, payment_status, pledge_payment_status, tier_id, tier_title, type. Only returned when `include` has pledge_history."
+          }
+        },
+        "required": [
+          "member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members/{member_id}",
+        "queryParams": {
+          "include": "$include",
+          "fields[member]": "$fields_member",
+          "fields[tier]": "$fields_tier",
+          "fields[user]": "$fields_user",
+          "fields[address]": "$fields_address",
+          "fields[pledge-event]": "$fields_pledge_event"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_get_member_pledge_history",
+      "description": "Read the pledge history of one member: under `included` one pledge event per action with date, type (pledge_start, pledge_upgrade, pledge_downgrade, pledge_delete, subscription), amount_cents, currency_code, payment_status (Paid, Declined, Refunded and others) and tier_title. Use it to see what a patron paid and when they changed tier. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "member_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,64}$",
+            "description": "Patreon id of the member (a UUID), e.g. 03ca69c3-ebea-4b9a-8fac-e4a837873254."
+          },
+          "include": {
+            "type": "string",
+            "pattern": "^[a-z_.]+(,[a-z_.]+)*$",
+            "default": "pledge_history,currently_entitled_tiers",
+            "description": "Related resources to add under `included`, comma-separated. Available: currently_entitled_tiers, user, address (needs the scope campaigns.members.address), pledge_history, campaign."
+          },
+          "fields_member": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "full_name,patron_status,pledge_relationship_start,campaign_lifetime_support_cents,last_charge_date,last_charge_status",
+            "description": "Attributes of each member to return, comma-separated. Patreon returns only what is asked for. Available: campaign_lifetime_support_cents, currently_entitled_amount_cents, email, full_name, is_free_trial, is_gifted, last_charge_date, last_charge_status, next_charge_date, note, patron_status, pledge_cadence, pledge_relationship_start, will_pay_amount_cents."
+          },
+          "fields_tier": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,amount_cents",
+            "description": "Attributes of each entitled tier to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, created_at, description, edited_at, image_url, patron_count, post_count, published, published_at, remaining, requires_shipping, title, unpublished_at, url, user_limit."
+          },
+          "fields_pledge_event": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "date,type,amount_cents,currency_code,payment_status,pledge_payment_status,tier_title",
+            "description": "Attributes of each pledge event to return, comma-separated. Patreon returns only what is asked for. Available: amount_cents, currency_code, date, payment_status, pledge_payment_status, tier_id, tier_title, type."
+          }
+        },
+        "required": [
+          "member_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/members/{member_id}",
+        "queryParams": {
+          "include": "$include",
+          "fields[member]": "$fields_member",
+          "fields[tier]": "$fields_tier",
+          "fields[pledge-event]": "$fields_pledge_event"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_list_campaign_posts",
+      "description": "List the posts of a campaign: id, title, published_at, url, is_paid and is_public. The post text is left out of the list; read it with patreon_get_post. Page with `meta.pagination.cursors.next`. Needs the scope campaigns.posts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "campaign_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,64}$",
+            "description": "Patreon id of the campaign, e.g. 12345678."
+          },
+          "fields_post": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,published_at,url,is_paid,is_public,embed_url",
+            "description": "Attributes of each post to return, comma-separated. Patreon returns only what is asked for. Available: app_id, app_status, content, embed_data, embed_url, is_paid, is_public, published_at, title, url. `content` is the post body as HTML and can be long."
+          },
+          "page_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 1000,
+            "default": 20,
+            "description": "Rows per page, default 20, at most 1000."
+          },
+          "page_cursor": {
+            "type": "string",
+            "description": "Cursor of the next page: `meta.pagination.cursors.next` of the previous answer. Leave out for the first page."
+          }
+        },
+        "required": [
+          "campaign_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/campaigns/{campaign_id}/posts",
+        "queryParams": {
+          "fields[post]": "$fields_post",
+          "page[count]": "$page_count",
+          "page[cursor]": "$page_cursor"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_get_post",
+      "description": "Read one post: title, content (the body as HTML), published_at, url, is_paid, is_public and embed data. Needs the scope campaigns.posts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "string",
+            "pattern": "^[0-9A-Za-z-]{1,64}$",
+            "description": "Patreon id of the post, e.g. 98765432."
+          },
+          "fields_post": {
+            "type": "string",
+            "pattern": "^[a-z0-9_]+(,[a-z0-9_]+)*$",
+            "default": "title,content,published_at,url,is_paid,is_public,embed_url,embed_data",
+            "description": "Attributes of each post to return, comma-separated. Patreon returns only what is asked for. Available: app_id, app_status, content, embed_data, embed_url, is_paid, is_public, published_at, title, url."
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/posts/{post_id}",
+        "queryParams": {
+          "fields[post]": "$fields_post"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "patreon_list_webhooks",
+      "description": "List the webhooks this Patreon client created on the campaign: id, uri, triggers (such as members:create, members:update, members:pledge:create, posts:publish), paused, num_consecutive_times_failed and last_attempted_at. Webhooks of other clients are not visible, and the signing secret is not returned. Needs the scope w:campaigns.webhook. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "fields_webhook": {
+            "type": "string",
+            "pattern": "^(last_attempted_at|num_consecutive_times_failed|paused|triggers|uri)(,(last_attempted_at|num_consecutive_times_failed|paused|triggers|uri))*$",
+            "default": "uri,triggers,paused,num_consecutive_times_failed,last_attempted_at",
+            "description": "Attributes of each webhook to return, comma-separated: last_attempted_at, num_consecutive_times_failed, paused, triggers, uri."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks",
+        "queryParams": {
+          "fields[webhook]": "$fields_webhook"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

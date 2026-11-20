@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="SendPulse connector">
+  <rect width="128" height="128" rx="24" fill="#009FC1"/>
+  <path d="M18 66h22l9-24 15 46 12-34 6 12h28" fill="none" stroke="#fff" stroke-width="9" stroke-linecap="round" stroke-linejoin="round"/>
+</svg>

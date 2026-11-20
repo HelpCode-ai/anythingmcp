@@ -1,0 +1,1868 @@
+{
+  "slug": "veeqo",
+  "name": "Veeqo",
+  "description": "Veeqo inventory and shipping software: orders from all stores, products and variants, stock levels per warehouse (read and update), allocations and shipments with tracking, purchase orders, customers and suppliers. API key.",
+  "instructions": "## Veeqo\nThis connector works with the **Veeqo API** (`https://api.veeqo.com`), the inventory and shipping software for online sellers: orders from all connected stores, products and their variants (sellables), stock per warehouse, allocations and shipments, purchase orders, customers and suppliers.\n\n**Setup (about 2 minutes)**\n1. In Veeqo open **Settings, Employees** (Users in some accounts) and open the user the AI should act as.\n2. Generate (or refresh) the **API key** of that user and copy it into `VEEQO_API_KEY`.\n\nThe key is sent in the `x-api-key` header and can do what that user may do, so a user with a limited role limits the connector too.\n\n**Where to start**: `veeqo_get_company` shows the account and its plan. `veeqo_list_orders` with status awaiting_fulfillment lists what is waiting to ship; `veeqo_get_order` shows one order with its allocations.\n\n**Orders**: `veeqo_list_orders`, `veeqo_get_order`, `veeqo_create_order`, `veeqo_update_order`, `veeqo_add_order_note`. `veeqo_cancel_order` is installed switched off. For a new order fetch the ids first: `veeqo_list_stores` (channel_id), `veeqo_list_customers` or `veeqo_create_customer`, `veeqo_list_delivery_methods` and the sellable ids from `veeqo_list_products`.\n\n**Shipping without buying labels**: allocate stock with `veeqo_create_allocation`, then record the parcel with `veeqo_create_shipment` (carrier id and tracking number); Veeqo marks the order shipped and passes the tracking number to the sales channel. `veeqo_get_tracking_events` reads the events of labels bought in Veeqo. `veeqo_delete_shipment` is installed switched off. Buying shipping labels and rates is not part of this connector.\n\n**Products and stock**: `veeqo_list_products`, `veeqo_get_product`, `veeqo_create_product`, `veeqo_update_product`. Stock belongs to a sellable (a product variant) in a warehouse: `veeqo_get_stock_entry` reads it, `veeqo_update_stock_entry` sets the physical level as an absolute number. Warehouses: `veeqo_list_warehouses`, `veeqo_get_warehouse`.\n\n**Purchasing (paid plans)**: `veeqo_list_purchase_orders`, `veeqo_get_purchase_order`, `veeqo_create_purchase_order` (a draft by default), `veeqo_list_suppliers`, `veeqo_get_supplier`, `veeqo_create_supplier`. Receiving stock against a purchase order is left to the Veeqo app, because the API adds received quantities each time it is called.\n\n**Customers**: `veeqo_list_customers`, `veeqo_get_customer`, `veeqo_create_customer`, `veeqo_update_customer`.\n\n**Ids**: an order has an id (used here) and a number (shown to people). A product has sellables; the sellable id is what order lines, stock entries and purchase order lines use. Order statuses: awaiting_payment, awaiting_stock, awaiting_fulfillment, shipped, on_hold, cancelled, refunded.\n\n**Paging and limits**: lists take `page` and `page_size` (at most 100); the total is in the `X-Total-Count` header, shown as `_headers`. Veeqo allows 5 requests per second per key with a bucket of 100, then answers 429. Times are UTC; prices are in the currency of the company.",
+  "aliases": [
+    "Veeqo API",
+    "Veeqo inventory",
+    "Amazon Veeqo"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "veeqo",
+  "docsUrl": "https://developers.veeqo.com/api/",
+  "requiredEnvVars": [
+    "VEEQO_API_KEY"
+  ],
+  "envVarMeta": {
+    "VEEQO_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Veeqo, Settings, Employees: open the user and generate or refresh the API key. The key acts with the permissions of that user.",
+      "link": "https://developers.veeqo.com/getting-started/authentication",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the API key only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Veeqo refused the request; error_messages in the answer names the reason (a missing field, an allocation already shipped, a cancelled order).",
+    "401": "Veeqo refused the API key. Generate a new key for the user under Settings, Employees and paste it again.",
+    "403": "The user behind the API key may not do this, or the Veeqo plan does not include it (stock updates, purchase orders and suppliers need a paid plan).",
+    "404": "Veeqo found nothing with that id. Orders, products, sellables, warehouses and customers each have their own ids; an order number is not an order id.",
+    "rate_limited": "Veeqo allows 5 requests per second per key (bucket of 100). Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "veeqo_get_company",
+    "params": {}
+  },
+  "prerequisites": "A Veeqo account (free sign-up) and a user whose API key you can generate under Settings, Employees. Stock updates, purchase orders and suppliers need a paid Veeqo plan. About 2 minutes.",
+  "connector": {
+    "name": "Veeqo API",
+    "type": "REST",
+    "baseUrl": "https://api.veeqo.com",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "x-api-key",
+      "apiKey": "{{VEEQO_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "veeqo_get_company",
+      "description": "Read the Veeqo company behind the API key: name, settings (currency, dimension and weight units), billing plan and the features the plan includes. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/current_company"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_list_orders",
+      "description": "List orders, newest first (highest id first): id, number, status, created_at, due_date, shipped_at, subtotal_price, total_tax, total_price, delivery_cost, customer, deliver_to address, channel (store), line_items with sellable and quantity, allocations with their shipment, and tags. Searches (query, tags, allocated_at) reach at most the first 10,000 results; split longer exports into date ranges. The total number of rows is in the X-Total-Count response header, returned as _headers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "description": "Order status.",
+            "enum": [
+              "awaiting_payment",
+              "awaiting_stock",
+              "awaiting_fulfillment",
+              "shipped",
+              "on_hold",
+              "cancelled",
+              "refunded"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Free text search (order number, customer name, email)."
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only orders created after this time. Format YYYY-MM-DD HH:MM:SS (UTC).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only orders updated after this time. Format YYYY-MM-DD HH:MM:SS (UTC).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Only orders created on or after this date. Format YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Only orders created on or before this date (the whole day is included). Format YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "channel_ids": {
+            "type": "array",
+            "description": "Only orders of these store (channel) ids.",
+            "items": {
+              "type": "integer"
+            }
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Only the orders with these ids (up to 100).",
+            "items": {
+              "type": "integer"
+            },
+            "maxItems": 100
+          },
+          "tags": {
+            "type": "string",
+            "description": "Only orders with a tag of this name."
+          },
+          "allocated_at": {
+            "type": "integer",
+            "description": "Only orders allocated at this warehouse id.",
+            "minimum": 1
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only orders with an id greater than this one.",
+            "minimum": 1
+          },
+          "order_by": {
+            "type": "string",
+            "description": "Sort field. Without it the newest (highest id) comes first.",
+            "enum": [
+              "created_at",
+              "updated_at",
+              "status"
+            ]
+          },
+          "order_direction": {
+            "type": "string",
+            "description": "Sort direction; give it whenever order_by is given.",
+            "enum": [
+              "asc",
+              "desc"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "status": "$status",
+          "query": "$query",
+          "created_at_min": "$created_at_min",
+          "updated_at_min": "$updated_at_min",
+          "created[after]": "$created_after",
+          "created[before]": "$created_before",
+          "channel_ids[]": "$channel_ids",
+          "order_ids[]": "$order_ids",
+          "tags": "$tags",
+          "allocated_at": "$allocated_at",
+          "since_id": "$since_id",
+          "order_by": "$order_by",
+          "order_direction": "$order_direction",
+          "page": "$page",
+          "page_size": "$page_size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_get_order",
+      "description": "Read one order: status, dates, prices and taxes, payment, customer with billing address, deliver_to address, delivery method, store (channel), line_items with the sellable (SKU, title, stock), allocations with warehouse, line items and shipment (carrier, tracking number), notes and tags. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Veeqo order id (id of veeqo_list_orders, not the order number).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_create_order",
+      "description": "Create an order in Veeqo for a store (channel), a customer and a delivery address. Fetch the ids first: veeqo_list_stores, veeqo_list_customers, veeqo_list_delivery_methods and the sellable ids from veeqo_list_products. Returns the new order with its id and number. No payment is taken; payment_attributes only records how the order was paid.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "integer",
+            "description": "Store (channel) id from veeqo_list_stores.",
+            "minimum": 1
+          },
+          "customer_id": {
+            "type": "integer",
+            "description": "Customer id from veeqo_list_customers.",
+            "minimum": 1
+          },
+          "deliver_to_id": {
+            "type": "integer",
+            "description": "Id of a shipping address of the customer. Give this or deliver_to_attributes.",
+            "minimum": 1
+          },
+          "deliver_to_attributes": {
+            "type": "object",
+            "description": "Delivery address, e.g. {\"first_name\": \"Sky\", \"last_name\": \"Schonhuber\", \"address1\": \"294 Queenstown Road\", \"city\": \"London\", \"zip\": \"S8 4LT\", \"country\": \"GB\", \"phone\": \"7734450718\", \"customer_id\": 516208}. country is an ISO 3166-1 alpha-2 code.",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "last_name": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company."
+              },
+              "address1": {
+                "type": "string",
+                "description": "Address line 1."
+              },
+              "address2": {
+                "type": "string",
+                "description": "Address line 2."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "state": {
+                "type": "string",
+                "description": "State or county."
+              },
+              "zip": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "country": {
+                "type": "string",
+                "description": "Country as an ISO 3166-1 alpha-2 code, e.g. GB."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number."
+              },
+              "customer_id": {
+                "type": "integer",
+                "description": "Veeqo customer id the address belongs to."
+              }
+            }
+          },
+          "delivery_method_id": {
+            "type": "integer",
+            "description": "Delivery method id from veeqo_list_delivery_methods.",
+            "minimum": 1
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Order lines, e.g. [{\"sellable_id\": 1226615, \"quantity\": 1, \"price_per_unit\": 13.99, \"tax_rate\": 0.2}]. sellable_id is the id of a product variant (sellables of veeqo_list_products).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sellable_id": {
+                  "type": "integer",
+                  "description": "Sellable (product variant) id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity.",
+                  "minimum": 1
+                },
+                "price_per_unit": {
+                  "type": "number",
+                  "description": "Price per unit in the currency of the company."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "description": "Tax rate as a fraction, e.g. 0.2 for 20 %."
+                },
+                "taxless_discount_per_unit": {
+                  "type": "number",
+                  "description": "Discount per unit before tax."
+                },
+                "additional_options": {
+                  "type": "string",
+                  "description": "Free text for additional options."
+                },
+                "remote_id": {
+                  "type": "string",
+                  "description": "Id of the line on the remote store."
+                }
+              },
+              "required": [
+                "sellable_id",
+                "quantity",
+                "price_per_unit"
+              ]
+            },
+            "minItems": 1
+          },
+          "number": {
+            "type": "string",
+            "description": "Your external order number."
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Expected delivery date as shown in Veeqo, format DD/MM/YYYY.",
+            "pattern": "^[0-9]{2}/[0-9]{2}/[0-9]{4}$"
+          },
+          "total_discounts": {
+            "type": "number",
+            "description": "Total discount for the whole order."
+          },
+          "send_notification_email": {
+            "type": "boolean",
+            "description": "true sends the order confirmation email to the customer. Default false."
+          },
+          "payment_attributes": {
+            "type": "object",
+            "description": "How the order was paid, e.g. {\"payment_type\": \"bank_transfer\", \"reference_number\": \"123456789\"}. payment_type is none, cash, credit_card, bank_transfer, paypal, paypal_express, sagepay, checkmo or online_finance."
+          }
+        },
+        "required": [
+          "channel_id",
+          "customer_id",
+          "delivery_method_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": {
+          "order": {
+            "channel_id": "$channel_id",
+            "customer_id": "$customer_id",
+            "deliver_to_id": "$deliver_to_id",
+            "deliver_to_attributes": "$deliver_to_attributes",
+            "delivery_method_id": "$delivery_method_id",
+            "line_items_attributes": "$line_items",
+            "number": "$number",
+            "due_date": "$due_date",
+            "total_discounts": "$total_discounts",
+            "send_notification_email": "$send_notification_email",
+            "payment_attributes": "$payment_attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_update_order",
+      "description": "Update an order: delivery address, delivery method, due date, discount or line items. Only the fields given change. Line items given without quantity keep theirs. Returns the updated order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Veeqo order id.",
+            "minimum": 1
+          },
+          "deliver_to_id": {
+            "type": "integer",
+            "description": "Id of another shipping address of the customer.",
+            "minimum": 1
+          },
+          "deliver_to_attributes": {
+            "type": "object",
+            "description": "Delivery address, e.g. {\"first_name\": \"Sky\", \"last_name\": \"Schonhuber\", \"address1\": \"294 Queenstown Road\", \"city\": \"London\", \"zip\": \"S8 4LT\", \"country\": \"GB\", \"phone\": \"7734450718\", \"customer_id\": 516208}. country is an ISO 3166-1 alpha-2 code.",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "last_name": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company."
+              },
+              "address1": {
+                "type": "string",
+                "description": "Address line 1."
+              },
+              "address2": {
+                "type": "string",
+                "description": "Address line 2."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "state": {
+                "type": "string",
+                "description": "State or county."
+              },
+              "zip": {
+                "type": "string",
+                "description": "Postal code."
+              },
+              "country": {
+                "type": "string",
+                "description": "Country as an ISO 3166-1 alpha-2 code, e.g. GB."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone number."
+              },
+              "customer_id": {
+                "type": "integer",
+                "description": "Veeqo customer id the address belongs to."
+              }
+            }
+          },
+          "delivery_method_id": {
+            "type": "integer",
+            "description": "Delivery method id from veeqo_list_delivery_methods.",
+            "minimum": 1
+          },
+          "due_date": {
+            "type": "string",
+            "description": "Expected delivery date, format DD/MM/YYYY.",
+            "pattern": "^[0-9]{2}/[0-9]{2}/[0-9]{4}$"
+          },
+          "total_discounts": {
+            "type": "number",
+            "description": "Total discount for the whole order."
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Order lines, e.g. [{\"sellable_id\": 1226615, \"quantity\": 1, \"price_per_unit\": 13.99, \"tax_rate\": 0.2}]. sellable_id is the id of a product variant (sellables of veeqo_list_products).",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sellable_id": {
+                  "type": "integer",
+                  "description": "Sellable (product variant) id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity.",
+                  "minimum": 1
+                },
+                "price_per_unit": {
+                  "type": "number",
+                  "description": "Price per unit in the currency of the company."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "description": "Tax rate as a fraction, e.g. 0.2 for 20 %."
+                },
+                "taxless_discount_per_unit": {
+                  "type": "number",
+                  "description": "Discount per unit before tax."
+                },
+                "additional_options": {
+                  "type": "string",
+                  "description": "Free text for additional options."
+                },
+                "remote_id": {
+                  "type": "string",
+                  "description": "Id of the line on the remote store."
+                }
+              },
+              "required": [
+                "sellable_id"
+              ]
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}",
+        "bodyMapping": {
+          "order": {
+            "deliver_to_id": "$deliver_to_id",
+            "deliver_to_attributes": "$deliver_to_attributes",
+            "delivery_method_id": "$delivery_method_id",
+            "due_date": "$due_date",
+            "total_discounts": "$total_discounts",
+            "line_items_attributes": "$line_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_add_order_note",
+      "description": "Add an internal (employee) note to an order, visible to the team in Veeqo but not to the customer. Returns the note.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Veeqo order id.",
+            "minimum": 1
+          },
+          "text": {
+            "type": "string",
+            "description": "Text of the note.",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "order_id",
+          "text"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/notes",
+        "bodyMapping": {
+          "note": {
+            "text": "$text"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_cancel_order",
+      "description": "Cancel an order, optionally with a reason and an email to the customer. The order status becomes cancelled and allocated stock is released. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Veeqo order id.",
+            "minimum": 1
+          },
+          "cancel_reason": {
+            "type": "string",
+            "description": "Reason for the cancellation."
+          },
+          "send_veeqo_email": {
+            "type": "boolean",
+            "description": "true sends the Veeqo cancellation email to the customer."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/orders/{order_id}/cancel",
+        "bodyMapping": {
+          "cancel_reason": "$cancel_reason",
+          "send_veeqo_email": "$send_veeqo_email"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "veeqo_create_allocation",
+      "description": "Allocate stock of a warehouse to an order, as the step before shipping. Returns the allocation with its id, which veeqo_create_shipment needs.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Veeqo order id.",
+            "minimum": 1
+          },
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Warehouse id from veeqo_list_warehouses.",
+            "minimum": 1
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Lines to allocate, e.g. [{\"sellable_id\": 1226615, \"quantity\": 1}].",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sellable_id": {
+                  "type": "integer",
+                  "description": "Sellable id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity.",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "sellable_id",
+                "quantity"
+              ]
+            },
+            "minItems": 1
+          },
+          "packed_completely": {
+            "type": "boolean",
+            "description": "true marks the allocation as fully packed."
+          }
+        },
+        "required": [
+          "order_id",
+          "warehouse_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/allocations",
+        "bodyMapping": {
+          "allocation": {
+            "warehouse_id": "$warehouse_id",
+            "line_items_attributes": "$line_items",
+            "packed_completely": "$packed_completely"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_create_shipment",
+      "description": "Record the shipment of one allocation of an order, which marks it as shipped and, where the store syncs tracking, sends the carrier and tracking number to the sales channel. No label is bought. Carrier ids: 1 Royal Mail, 2 FedEx, 3 Other, 4 DPD, 5 UPS, 7 USPS, 9 DHL, 12 Parcelforce, 13 TNT, 14 Yodel, 19 Canada Post, 24 DHL DE. An order with several allocations takes one call each.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "description": "Veeqo order id.",
+            "minimum": 1
+          },
+          "allocation_id": {
+            "type": "integer",
+            "description": "Allocation id (allocations of veeqo_get_order).",
+            "minimum": 1
+          },
+          "carrier_id": {
+            "type": "integer",
+            "description": "Veeqo carrier id; 3 (Other) for a carrier Veeqo does not list.",
+            "minimum": 1,
+            "default": 3
+          },
+          "tracking_number": {
+            "type": "string",
+            "description": "Tracking number of the parcel.",
+            "minLength": 1
+          },
+          "shipment_extra_attributes": {
+            "type": "object",
+            "description": "With carrier_id 3: the name of the real carrier, e.g. {\"external_carrier_name\": \"GLS\"}. Veeqo sends that name to the sales channel instead of Other."
+          },
+          "notify_customer": {
+            "type": "boolean",
+            "description": "true sends the Veeqo shipping email to the buyer. Default false.",
+            "default": false
+          },
+          "update_remote_order": {
+            "type": "boolean",
+            "description": "true forces the tracking push to the sales channel, false suppresses it. Leave out to follow the setting of the store."
+          }
+        },
+        "required": [
+          "order_id",
+          "allocation_id",
+          "carrier_id",
+          "tracking_number"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/shipments",
+        "bodyMapping": {
+          "shipment": {
+            "tracking_number_attributes": {
+              "tracking_number": "$tracking_number"
+            },
+            "carrier_id": "$carrier_id",
+            "shipment_extra_attributes": "$shipment_extra_attributes",
+            "notify_customer": "$notify_customer",
+            "update_remote_order": "$update_remote_order"
+          },
+          "allocation_id": "$allocation_id",
+          "order_id": "$order_id"
+        }
+      }
+    },
+    {
+      "name": "veeqo_delete_shipment",
+      "description": "Delete a shipment record, which sets its allocation back to not shipped. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "description": "Shipment id (shipment of an allocation in veeqo_get_order).",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/shipments/{shipment_id}"
+      },
+      "enabled": false
+    },
+    {
+      "name": "veeqo_get_tracking_events",
+      "description": "Read the tracking events of a shipment whose label was bought in Veeqo: status, description, location and time of each event. Shipments recorded without a Veeqo label have no events. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "integer",
+            "description": "Shipment id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/shipping/tracking_events/{shipment_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_list_products",
+      "description": "List products with their variants: id, title, description, brand, main image and sellables, each with id (the sellable id), sku_code, upc_code, price, cost_price, weight_grams and stock per warehouse (stock_entries with physical_stock_level, allocated_stock_level, available_stock_level and location). The total number of rows is in the X-Total-Count response header, returned as _headers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Search by product name or SKU code."
+          },
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Only products with stock in this warehouse.",
+            "minimum": 1
+          },
+          "created_at_min": {
+            "type": "string",
+            "description": "Only products created after this time. Format YYYY-MM-DD HH:MM:SS (UTC).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "updated_at_min": {
+            "type": "string",
+            "description": "Only products updated after this time. Format YYYY-MM-DD HH:MM:SS (UTC).",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}( [0-9]{2}:[0-9]{2}(:[0-9]{2})?)?$"
+          },
+          "since_id": {
+            "type": "integer",
+            "description": "Only products with an id greater than this one.",
+            "minimum": 1
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 12).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 12
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products",
+        "queryParams": {
+          "query": "$query",
+          "warehouse_id": "$warehouse_id",
+          "created_at_min": "$created_at_min",
+          "updated_at_min": "$updated_at_min",
+          "since_id": "$since_id",
+          "page": "$page",
+          "page_size": "$page_size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_get_product",
+      "description": "Read one product with all its sellables (variants): SKU, barcode, prices, weight and dimensions, stock entries per warehouse, images and the store listings linked to it. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Veeqo product id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{product_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_create_product",
+      "description": "Create a product with one or more variants (title, SKU code and price each). Returns the product with the sellable ids of its variants. Stock is set afterwards with veeqo_update_stock_entry.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "title": {
+            "type": "string",
+            "description": "Product name.",
+            "minLength": 1
+          },
+          "description": {
+            "type": "string",
+            "description": "Customer-facing description."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          },
+          "estimated_delivery": {
+            "type": "number",
+            "description": "Number of days the product takes to ship."
+          },
+          "product_variants": {
+            "type": "array",
+            "description": "Product variants, e.g. [{\"title\": \"Blue\", \"sku_code\": \"TSHIRT-BLUE\", \"price\": 19.99, \"cost_price\": 8, \"weight_grams\": 250}]. On an update, an entry with id changes that variant; one without id is matched by sku_code, then upc_code, and otherwise added.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Sellable id of an existing variant (updates only)."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Variant name."
+                },
+                "sku_code": {
+                  "type": "string",
+                  "description": "SKU code."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Sales price."
+                },
+                "cost_price": {
+                  "type": "number",
+                  "description": "Cost price."
+                },
+                "upc_code": {
+                  "type": "string",
+                  "description": "UPC or EAN barcode."
+                },
+                "weight_grams": {
+                  "type": "number",
+                  "description": "Weight in grams."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "description": "Tax rate."
+                },
+                "min_reorder_level": {
+                  "type": "number",
+                  "description": "Stock level below which the variant counts as low on stock."
+                },
+                "quantity_to_reorder": {
+                  "type": "number",
+                  "description": "Units to reorder when stock is low."
+                }
+              }
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "title",
+          "product_variants"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products",
+        "bodyMapping": {
+          "product": {
+            "title": "$title",
+            "description": "$description",
+            "notes": "$notes",
+            "estimated_delivery": "$estimated_delivery",
+            "product_variants_attributes": "$product_variants"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_update_product",
+      "description": "Update a product and its variants: title, description, notes or variant fields such as price, cost price, SKU and barcode. Only the fields given change. For about half a minute after an update, reads can still show the old values; do not send the update again because of that.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_id": {
+            "type": "integer",
+            "description": "Veeqo product id.",
+            "minimum": 1
+          },
+          "title": {
+            "type": "string",
+            "description": "Product name."
+          },
+          "description": {
+            "type": "string",
+            "description": "Customer-facing description."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Internal notes."
+          },
+          "estimated_delivery": {
+            "type": "number",
+            "description": "Number of days the product takes to ship."
+          },
+          "product_variants": {
+            "type": "array",
+            "description": "Product variants, e.g. [{\"title\": \"Blue\", \"sku_code\": \"TSHIRT-BLUE\", \"price\": 19.99, \"cost_price\": 8, \"weight_grams\": 250}]. On an update, an entry with id changes that variant; one without id is matched by sku_code, then upc_code, and otherwise added.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Sellable id of an existing variant (updates only)."
+                },
+                "title": {
+                  "type": "string",
+                  "description": "Variant name."
+                },
+                "sku_code": {
+                  "type": "string",
+                  "description": "SKU code."
+                },
+                "price": {
+                  "type": "number",
+                  "description": "Sales price."
+                },
+                "cost_price": {
+                  "type": "number",
+                  "description": "Cost price."
+                },
+                "upc_code": {
+                  "type": "string",
+                  "description": "UPC or EAN barcode."
+                },
+                "weight_grams": {
+                  "type": "number",
+                  "description": "Weight in grams."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "description": "Tax rate."
+                },
+                "min_reorder_level": {
+                  "type": "number",
+                  "description": "Stock level below which the variant counts as low on stock."
+                },
+                "quantity_to_reorder": {
+                  "type": "number",
+                  "description": "Units to reorder when stock is low."
+                }
+              }
+            },
+            "minItems": 1
+          }
+        },
+        "required": [
+          "product_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/products/{product_id}",
+        "bodyMapping": {
+          "product": {
+            "title": "$title",
+            "description": "$description",
+            "notes": "$notes",
+            "estimated_delivery": "$estimated_delivery",
+            "product_variants_attributes": "$product_variants"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_get_stock_entry",
+      "description": "Read the stock of one sellable in one warehouse: physical_stock_level, allocated_stock_level, available_stock_level, incoming_stock_level, infinite and location. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sellable_id": {
+            "type": "integer",
+            "description": "Sellable (product variant) id.",
+            "minimum": 1
+          },
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Warehouse id from veeqo_list_warehouses.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "sellable_id",
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sellables/{sellable_id}/warehouses/{warehouse_id}/stock_entry"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_update_stock_entry",
+      "description": "Set the physical stock level of one sellable in one warehouse (a new absolute number, not a change), and optionally its shelf location. Veeqo then pushes the new availability to the connected stores. Needs a paid Veeqo plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sellable_id": {
+            "type": "integer",
+            "description": "Sellable (product variant) id.",
+            "minimum": 1
+          },
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Warehouse id from veeqo_list_warehouses.",
+            "minimum": 1
+          },
+          "physical_stock_level": {
+            "type": "integer",
+            "description": "New physical stock level.",
+            "minimum": 0
+          },
+          "infinite": {
+            "type": "boolean",
+            "description": "true marks the stock as infinite (never out of stock). Default false.",
+            "default": false
+          },
+          "location": {
+            "type": "string",
+            "description": "Location of the item in the warehouse, e.g. Shelf 2B."
+          }
+        },
+        "required": [
+          "sellable_id",
+          "warehouse_id",
+          "physical_stock_level"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/sellables/{sellable_id}/warehouses/{warehouse_id}/stock_entry",
+        "bodyMapping": {
+          "stock_entry": {
+            "physical_stock_level": "$physical_stock_level",
+            "infinite": "$infinite",
+            "location": "$location"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_list_warehouses",
+      "description": "List the warehouses (locations) of the company: id, name, address, phone and whether it is the default. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          },
+          "external_id": {
+            "type": "string",
+            "description": "Only the warehouse with this external id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "external_id": "$external_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_get_warehouse",
+      "description": "Read one warehouse: name, full address, contact details and settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "warehouse_id": {
+            "type": "integer",
+            "description": "Warehouse id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "warehouse_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/warehouses/{warehouse_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_list_purchase_orders",
+      "description": "List purchase orders with supplier, destination warehouse and line items (purchase_order_product_variants with quantity, cost and received quantity). Decimal amounts are strings. The list comes from a search index, so a purchase order written a moment ago can be missing; confirm with veeqo_get_purchase_order. The total number of rows is in the X-Total-Count response header, returned as _headers. Needs a paid Veeqo plan. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "state": {
+            "type": "string",
+            "description": "Lifecycle state, or a received-status filter.",
+            "enum": [
+              "draft",
+              "active",
+              "completed",
+              "not_received",
+              "partially_received",
+              "fully_received",
+              "past_due",
+              "all"
+            ]
+          },
+          "query": {
+            "type": "string",
+            "description": "Search in supplier name, purchase order number, reference number and line item title, SKU or UPC."
+          },
+          "supplier_id": {
+            "type": "integer",
+            "description": "Only purchase orders of this supplier.",
+            "minimum": 1
+          },
+          "destination_warehouse_id": {
+            "type": "integer",
+            "description": "Only purchase orders delivered to this warehouse.",
+            "minimum": 1
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Exact purchase order reference number."
+          },
+          "created_after": {
+            "type": "string",
+            "description": "Created on or after this date. Format YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "created_before": {
+            "type": "string",
+            "description": "Created on or before this date. Format YYYY-MM-DD.",
+            "pattern": "^[0-9]{4}-[0-9]{2}-[0-9]{2}$"
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase_orders",
+        "queryParams": {
+          "state": "$state",
+          "query": "$query",
+          "supplier_id": "$supplier_id",
+          "destination_warehouse_id": "$destination_warehouse_id",
+          "reference_number": "$reference_number",
+          "created[after]": "$created_after",
+          "created[before]": "$created_before",
+          "page": "$page",
+          "page_size": "$page_size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_get_purchase_order",
+      "description": "Read one purchase order from the database: number, state, supplier, destination warehouse, expected date, currency, totals and line items with ordered and received quantities. Needs a paid Veeqo plan. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "purchase_order_id": {
+            "type": "integer",
+            "description": "Purchase order id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "purchase_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/purchase_orders/{purchase_order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_create_purchase_order",
+      "description": "Create a purchase order for a supplier and a destination warehouse, as a draft unless state says otherwise. The number is generated by Veeqo. An active purchase order creates stock entries at the warehouse and can email the supplier, so keep it a draft until it is checked. Nothing is paid. Needs a paid Veeqo plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "integer",
+            "description": "Supplier id from veeqo_list_suppliers.",
+            "minimum": 1
+          },
+          "destination_warehouse_id": {
+            "type": "integer",
+            "description": "Warehouse id the stock is delivered to.",
+            "minimum": 1
+          },
+          "line_items": {
+            "type": "array",
+            "description": "Lines, e.g. [{\"product_variant_id\": 1226617, \"quantity\": 10, \"cost\": 9.99, \"tax_rate\": 0.2}]. product_variant_id is the sellable id.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_variant_id": {
+                  "type": "integer",
+                  "description": "Sellable id."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "description": "Quantity, above 0.",
+                  "minimum": 1
+                },
+                "cost": {
+                  "type": "number",
+                  "description": "Unit cost, above 0."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "description": "Tax rate as a fraction, e.g. 0.2."
+                }
+              },
+              "required": [
+                "product_variant_id",
+                "quantity",
+                "cost",
+                "tax_rate"
+              ]
+            },
+            "minItems": 1
+          },
+          "state": {
+            "type": "string",
+            "description": "Lifecycle state: draft (default) or active.",
+            "enum": [
+              "draft",
+              "active"
+            ],
+            "default": "draft"
+          },
+          "reference_number": {
+            "type": "string",
+            "description": "Your reference number, unique per company."
+          },
+          "expected_date": {
+            "type": "string",
+            "description": "Expected delivery date, ISO 8601, e.g. 2026-12-01T00:00:00Z."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency code, e.g. GBP, EUR or USD. Veeqo defaults to GBP.",
+            "pattern": "^[A-Za-z]{3}$"
+          },
+          "note": {
+            "type": "string",
+            "description": "Note on the purchase order."
+          },
+          "shipping_and_handling": {
+            "type": "number",
+            "description": "Shipping and handling cost."
+          }
+        },
+        "required": [
+          "supplier_id",
+          "destination_warehouse_id",
+          "line_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/purchase_orders",
+        "bodyMapping": {
+          "purchase_order": {
+            "supplier_id": "$supplier_id",
+            "destination_warehouse_id": "$destination_warehouse_id",
+            "state": "$state",
+            "reference_number": "$reference_number",
+            "expected_date": "$expected_date",
+            "currency_code": "$currency_code",
+            "note": "$note",
+            "shipping_and_handling": "$shipping_and_handling",
+            "purchase_order_product_variants_attributes": "$line_items"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_list_customers",
+      "description": "List customers: id, email, phone, customer_type, full name, notes, billing address and shipping addresses. The total number of rows is in the X-Total-Count response header, returned as _headers. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "query": {
+            "type": "string",
+            "description": "Free text search (name, email, phone)."
+          },
+          "customer_type": {
+            "type": "string",
+            "description": "Only retail or only business customers.",
+            "enum": [
+              "retail",
+              "business"
+            ]
+          },
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 12).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 12
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers",
+        "queryParams": {
+          "query": "$query",
+          "customer_type": "$customer_type",
+          "page": "$page",
+          "page_size": "$page_size"
+        },
+        "exposeHeaders": [
+          "x-total-count",
+          "x-total-pages-count"
+        ]
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_get_customer",
+      "description": "Read one customer: contact details, notes, billing address, all shipping addresses with their ids, and order counts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Customer id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/customers/{customer_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_create_customer",
+      "description": "Create a customer with an email, a type (retail or business) and optionally phone, notes and a billing address. Returns the customer with its id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "customer_type": {
+            "type": "string",
+            "description": "retail or business (wholesale).",
+            "enum": [
+              "retail",
+              "business"
+            ],
+            "default": "retail"
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes about the customer, at most 255 characters.",
+            "maxLength": 255
+          },
+          "billing_address_attributes": {
+            "type": "object",
+            "description": "Billing address, e.g. {\"first_name\": \"John\", \"last_name\": \"Doe\", \"company\": \"FooBar Ltd\", \"address1\": \"221 High Street Lane\", \"city\": \"Swansea\", \"country\": \"GB\", \"zip\": \"SA1 1NW\"}.",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "last_name": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company."
+              },
+              "address1": {
+                "type": "string",
+                "description": "Address line 1."
+              },
+              "address2": {
+                "type": "string",
+                "description": "Address line 2."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country": {
+                "type": "string",
+                "description": "Country as an ISO 3166-1 alpha-2 code."
+              },
+              "zip": {
+                "type": "string",
+                "description": "Postal code."
+              }
+            }
+          }
+        },
+        "required": [
+          "email",
+          "customer_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/customers",
+        "bodyMapping": {
+          "customer": {
+            "email": "$email",
+            "customer_type": "$customer_type",
+            "phone": "$phone",
+            "mobile": "$mobile",
+            "notes": "$notes",
+            "billing_address_attributes": "$billing_address_attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_update_customer",
+      "description": "Update a customer: email, type, phone, notes or billing address. Only the fields given change.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "description": "Customer id.",
+            "minimum": 1
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "customer_type": {
+            "type": "string",
+            "description": "retail or business (wholesale).",
+            "enum": [
+              "retail",
+              "business"
+            ]
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "notes": {
+            "type": "string",
+            "description": "Notes about the customer, at most 255 characters.",
+            "maxLength": 255
+          },
+          "billing_address_attributes": {
+            "type": "object",
+            "description": "Billing address, e.g. {\"first_name\": \"John\", \"last_name\": \"Doe\", \"company\": \"FooBar Ltd\", \"address1\": \"221 High Street Lane\", \"city\": \"Swansea\", \"country\": \"GB\", \"zip\": \"SA1 1NW\"}.",
+            "properties": {
+              "first_name": {
+                "type": "string",
+                "description": "First name."
+              },
+              "last_name": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "company": {
+                "type": "string",
+                "description": "Company."
+              },
+              "address1": {
+                "type": "string",
+                "description": "Address line 1."
+              },
+              "address2": {
+                "type": "string",
+                "description": "Address line 2."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "country": {
+                "type": "string",
+                "description": "Country as an ISO 3166-1 alpha-2 code."
+              },
+              "zip": {
+                "type": "string",
+                "description": "Postal code."
+              }
+            }
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/customers/{customer_id}",
+        "bodyMapping": {
+          "customer": {
+            "email": "$email",
+            "customer_type": "$customer_type",
+            "phone": "$phone",
+            "mobile": "$mobile",
+            "notes": "$notes",
+            "billing_address_attributes": "$billing_address_attributes"
+          }
+        }
+      }
+    },
+    {
+      "name": "veeqo_list_suppliers",
+      "description": "List suppliers: id, name, address, sales and accounting contacts, currency_code and purchase order counts. Needs a paid Veeqo plan. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 12).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 12
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_get_supplier",
+      "description": "Read one supplier: name, address, contacts, currency, bank details on file and purchase order counts. Needs a paid Veeqo plan. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "supplier_id": {
+            "type": "integer",
+            "description": "Supplier id.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "supplier_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/suppliers/{supplier_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_create_supplier",
+      "description": "Create a supplier with a name and optionally address, sales contact and currency. Returns the supplier with its id. Needs a paid Veeqo plan.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "Supplier name.",
+            "minLength": 1
+          },
+          "address_line_1": {
+            "type": "string",
+            "description": "Address line 1."
+          },
+          "address_line_2": {
+            "type": "string",
+            "description": "Address line 2."
+          },
+          "city": {
+            "type": "string",
+            "description": "City."
+          },
+          "region": {
+            "type": "string",
+            "description": "Region or county."
+          },
+          "post_code": {
+            "type": "string",
+            "description": "Postal code."
+          },
+          "sales_contact_name": {
+            "type": "string",
+            "description": "Name of the sales contact."
+          },
+          "sales_contact_email": {
+            "type": "string",
+            "description": "Email of the sales contact (purchase orders are emailed there)."
+          },
+          "sales_phone_number": {
+            "type": "string",
+            "description": "Phone of the sales contact."
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Currency code in lower case as Veeqo stores it, e.g. gbp, eur or usd.",
+            "pattern": "^[A-Za-z]{3}$"
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/suppliers",
+        "bodyMapping": {
+          "name": "$name",
+          "address_line_1": "$address_line_1",
+          "address_line_2": "$address_line_2",
+          "city": "$city",
+          "region": "$region",
+          "post_code": "$post_code",
+          "sales_contact_name": "$sales_contact_name",
+          "sales_contact_email": "$sales_contact_email",
+          "sales_phone_number": "$sales_phone_number",
+          "currency_code": "$currency_code"
+        }
+      }
+    },
+    {
+      "name": "veeqo_list_stores",
+      "description": "List the stores (sales channels) connected to Veeqo: id, name, type (Shopify, Amazon, eBay, direct and others), currency and default warehouse. The id is the channel_id of an order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 12).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 12
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "veeqo_list_delivery_methods",
+      "description": "List the delivery methods of the company: id, name and cost. The id is the delivery_method_id of an order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page": {
+            "type": "integer",
+            "description": "Page number, starting at 1 (default 1).",
+            "minimum": 1,
+            "default": 1
+          },
+          "page_size": {
+            "type": "integer",
+            "description": "Rows per page, at most 100 (default 25).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/delivery_methods",
+        "queryParams": {
+          "page": "$page",
+          "page_size": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

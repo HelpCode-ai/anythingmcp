@@ -1,0 +1,724 @@
+{
+  "slug": "prodigi",
+  "name": "Prodigi",
+  "description": "Prodigi Print API v4 for print on demand: product and SKU details, quotes per shipping method, orders with status and tracking, and order actions. Creating and changing orders is installed switched off. API key, live or sandbox.",
+  "instructions": "## Prodigi\nThis connector works with the **Prodigi Print API v4** (`https://api.prodigi.com/v4.0`), the print-on-demand network for wall art, photo products, apparel and more: product lookups, quotes, orders and the changes an order still allows.\n\n**Setup (about 2 minutes)**\n1. Sign in to the Prodigi dashboard (dashboard.prodigi.com; a free account includes a sandbox account) and open **Settings, Integrations, API**.\n2. Copy the API key into `PRODIGI_API_KEY`. Live and sandbox have different keys.\n3. Choose the environment in `PRODIGI_API_URL`: **Live** produces and bills real orders, **Sandbox** accepts the same calls but fulfils and charges nothing.\n\nThe key is sent in the `X-API-Key` header. A live key on the sandbox address (or the other way round) answers 401.\n\n**Where to start**: `prodigi_get_product_details` shows what a SKU needs (attributes, print areas, sizes). `prodigi_create_quote` prices items for a country, per shipping method, without ordering. `prodigi_list_orders` and `prodigi_get_order` follow existing orders, with tracking in shipments.\n\n**Orders cost money**: `prodigi_create_order` submits a real print order and Prodigi charges the account for it, so it is installed switched off. Switch it on deliberately, ideally on the sandbox first. Pass an idempotency_key so a retried call cannot create the same order twice.\n\n**Changing an order**: only before production. `prodigi_get_order_actions` tells which changes are still available. `prodigi_cancel_order`, `prodigi_update_shipping_method` and `prodigi_update_recipient` are installed switched off, because they cancel or re-price an order; `prodigi_update_metadata` only replaces your own metadata. `prodigi_get_photobook_spine` calculates the spine width of a photobook.\n\n**Reading answers**: every answer has an `outcome` (ok, created, createdWithIssues, onHold, alreadyExists, cancelled, updated, validationFailed, entityNotFound and others) next to the data. Order ids start with `ord_`, item ids with `ori_`. Shipping methods are Budget, Standard, StandardPlus, Express and Overnight. Costs are objects with `amount` (a string) and `currency`.\n\n**Order stages**: InProgress (in fulfilment), Complete (all shipments sent), Cancelled. `status.details` shows each step (downloadAssets, printReadyAssetsPrepared, allocateProductionLocation, inProduction, shipping) and `status.issues` lists problems such as an image that could not be downloaded.\n\n**Paused orders**: with an order edit window set in the dashboard, a new order answers onHold with its id only; until the window ends it cannot be read or changed through the API (404), only in the dashboard.\n\n**Paging**: `prodigi_list_orders` returns `top` orders (at most 100) after `skip`; `hasMore` is true while more follow. Dates are UTC.",
+  "aliases": [
+    "Prodigi Print API",
+    "Pwinty",
+    "Prodigi print on demand"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "prodigi",
+  "docsUrl": "https://www.prodigi.com/print-api/docs/v4/",
+  "requiredEnvVars": [
+    "PRODIGI_API_URL",
+    "PRODIGI_API_KEY"
+  ],
+  "envVarMeta": {
+    "PRODIGI_API_URL": {
+      "label": "Environment",
+      "kind": "address",
+      "help": "Live produces, ships and bills real orders. Sandbox accepts the same calls but fulfils and charges nothing. Each has its own API key.",
+      "link": "https://www.prodigi.com/print-api/docs/v4/#environments",
+      "example": "https://api.prodigi.com/v4.0",
+      "pattern": "^https://api\\.(sandbox\\.)?prodigi\\.com/v4\\.0$",
+      "patternMessage": "Choose https://api.prodigi.com/v4.0 (live) or https://api.sandbox.prodigi.com/v4.0 (sandbox).",
+      "options": [
+        {
+          "value": "https://api.prodigi.com/v4.0",
+          "label": "Live"
+        },
+        {
+          "value": "https://api.sandbox.prodigi.com/v4.0",
+          "label": "Sandbox (nothing is produced or charged)"
+        }
+      ]
+    },
+    "PRODIGI_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Prodigi dashboard, Settings, Integrations, API: copy the API key of the environment you chose (the sandbox dashboard has its own key).",
+      "link": "https://www.prodigi.com/print-api/docs/v4/#authentication",
+      "pattern": "^\\S{16,200}$",
+      "patternMessage": "Paste the API key only, without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Prodigi could not validate the request (outcome validationFailed). The answer names the fields: a wrong order id format, a missing attribute of the SKU or malformed JSON.",
+    "401": "Prodigi refused the API key. Copy it again from the dashboard and check the environment: a sandbox key only works on Sandbox, a live key only on Live.",
+    "404": "Prodigi found no such order or SKU in this account. An order still paused in the edit window also answers 404.",
+    "rate_limited": "Prodigi is limiting requests. Wait a moment and try again."
+  },
+  "probe": {
+    "tool": "prodigi_list_orders",
+    "params": {
+      "top": 1
+    }
+  },
+  "prerequisites": "A Prodigi account (free sign-up, includes a sandbox) and its API key from the dashboard. Live orders are billed to the payment method of the account. About 2 minutes.",
+  "connector": {
+    "name": "Prodigi Print API v4",
+    "type": "REST",
+    "baseUrl": "{{PRODIGI_API_URL}}",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-API-Key",
+      "apiKey": "{{PRODIGI_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "prodigi_list_orders",
+      "description": "List orders, newest first (highest order id first): orders with id, created, merchantReference, shippingMethod, status (stage, details per step and issues), charges with their costs, shipments with carrier and tracking, recipient and items. hasMore tells whether more orders follow; raise skip by top to read on. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "top": {
+            "type": "integer",
+            "description": "Orders to return, 1 to 100 (default 10).",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 10
+          },
+          "skip": {
+            "type": "integer",
+            "description": "Orders to skip before the first one returned (default 0).",
+            "minimum": 0,
+            "default": 0
+          },
+          "created_from": {
+            "type": "string",
+            "description": "Only orders placed after this UTC date and time, ISO 8601, e.g. 2026-11-01T00:00:00Z."
+          },
+          "created_to": {
+            "type": "string",
+            "description": "Only orders placed before this UTC date and time, ISO 8601."
+          },
+          "status": {
+            "type": "string",
+            "description": "Only orders in this status.",
+            "enum": [
+              "draft",
+              "awaitingPayment",
+              "inProgress",
+              "complete",
+              "cancelled"
+            ]
+          },
+          "order_ids": {
+            "type": "array",
+            "description": "Only these Prodigi order ids, e.g. [\"ord_840797\"].",
+            "items": {
+              "type": "string",
+              "pattern": "^ord_[A-Za-z0-9]{1,30}$"
+            }
+          },
+          "merchant_references": {
+            "type": "array",
+            "description": "Only orders with these references of your own.",
+            "items": {
+              "type": "string"
+            }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders",
+        "queryParams": {
+          "top": "$top",
+          "skip": "$skip",
+          "createdFrom": "$created_from",
+          "createdTo": "$created_to",
+          "status": "$status",
+          "orderIds": "$order_ids",
+          "merchantReferences": "$merchant_references"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "prodigi_get_order",
+      "description": "Read one order: status with the stage (InProgress, Complete, Cancelled), the state of each production step and any issues, charges with item, shipping and tax costs, shipments with carrier, service, tracking number and URL, recipient, items with SKU, copies, attributes and assets, packing slip and metadata. An order still paused in the edit window answers 404. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Prodigi order id with its prefix, e.g. ord_840797.",
+            "pattern": "^ord_[A-Za-z0-9]{1,30}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "prodigi_get_order_actions",
+      "description": "Read which changes an order still allows before it is in production: cancel, changeRecipientDetails, changeShippingMethod and changeMetaData, each with isAvailable. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Prodigi order id with its prefix, e.g. ord_840797.",
+            "pattern": "^ord_[A-Za-z0-9]{1,30}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/orders/{order_id}/actions"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "prodigi_create_quote",
+      "description": "Price items for a destination country without ordering: one quote per shipping method with costSummary (items, shipping, branding, totalTax and totalCost with amount and currency), shipments with carrier, service and fulfilment location, and the cost per item. Nothing is ordered or charged. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "destination_country_code": {
+            "type": "string",
+            "description": "Two-letter ISO code of the destination country, e.g. US or DE.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "items": {
+            "type": "array",
+            "description": "Items to price, e.g. [{\"sku\": \"GLOBAL-CFPM-16X20\", \"copies\": 1, \"attributes\": {\"color\": \"black\"}, \"assets\": [{\"printArea\": \"default\"}]}]. The attributes a SKU needs come from prodigi_get_product_details.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "Prodigi SKU."
+                },
+                "copies": {
+                  "type": "integer",
+                  "description": "Number of copies.",
+                  "minimum": 1
+                },
+                "attributes": {
+                  "type": "object",
+                  "description": "Product attributes, e.g. {\"color\": \"black\"}."
+                },
+                "assets": {
+                  "type": "array",
+                  "description": "Print areas used, e.g. [{\"printArea\": \"default\"}].",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "printArea": {
+                        "type": "string",
+                        "description": "Print area name, usually default."
+                      },
+                      "pageCount": {
+                        "type": "integer",
+                        "description": "Page count, for photobooks and magazines."
+                      }
+                    },
+                    "required": [
+                      "printArea"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sku",
+                "copies",
+                "assets"
+              ]
+            },
+            "minItems": 1
+          },
+          "shipping_method": {
+            "type": "string",
+            "description": "Quote only this shipping method. Leave out for all methods.",
+            "enum": [
+              "Budget",
+              "Standard",
+              "StandardPlus",
+              "Express",
+              "Overnight"
+            ]
+          },
+          "currency_code": {
+            "type": "string",
+            "description": "Three-letter ISO currency code. Default: the currency of your Prodigi account.",
+            "pattern": "^[A-Za-z]{3}$"
+          }
+        },
+        "required": [
+          "destination_country_code",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/quotes",
+        "bodyMapping": {
+          "shippingMethod": "$shipping_method",
+          "destinationCountryCode": "$destination_country_code",
+          "currencyCode": "$currency_code",
+          "items": "$items"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "prodigi_get_product_details",
+      "description": "Look up a Prodigi SKU: description, product dimensions, the attributes it takes with their allowed values (such as frame colour or wrap), its print areas, and the variants with the countries they ship to, the print area sizes in pixels and the attribute combination of each. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Prodigi SKU, e.g. GLOBAL-CAN-10x10 or GLOBAL-CFPM-16X20.",
+            "pattern": "^[A-Za-z0-9._-]{2,80}$"
+          }
+        },
+        "required": [
+          "sku"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/products/{sku}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "prodigi_get_photobook_spine",
+      "description": "Calculate the spine width in millimetres a photobook needs for a page count and destination: success, message and spineInfo.widthMm. A calculation only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "sku": {
+            "type": "string",
+            "description": "Prodigi photobook SKU, e.g. BOOK-A4-L-HARD-M."
+          },
+          "destination_country_code": {
+            "type": "string",
+            "description": "Two-letter ISO code of the destination country.",
+            "pattern": "^[A-Za-z]{2}$"
+          },
+          "state": {
+            "type": "string",
+            "description": "State code, for destinations such as the US, e.g. CA."
+          },
+          "number_of_pages": {
+            "type": "integer",
+            "description": "Number of pages of the book.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "sku",
+          "destination_country_code",
+          "number_of_pages"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/spine",
+        "bodyMapping": {
+          "sku": "$sku",
+          "destinationCountryCode": "$destination_country_code",
+          "state": "$state",
+          "numberOfPages": "$number_of_pages"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "prodigi_create_order",
+      "description": "Submit a print order: Prodigi produces and ships it, and charges your account. On the live environment this costs money; on the sandbox nothing is produced or charged. Returns outcome (created, onHold, createdWithIssues or alreadyExists) and the order. Use prodigi_create_quote first to see the price. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipping_method": {
+            "type": "string",
+            "description": "Shipping method.",
+            "enum": [
+              "Budget",
+              "Standard",
+              "StandardPlus",
+              "Express",
+              "Overnight"
+            ]
+          },
+          "recipient": {
+            "type": "object",
+            "description": "Recipient, e.g. {\"name\": \"Mr Testy McTestface\", \"email\": \"testy@example.org\", \"phoneNumber\": \"+15551234567\", \"address\": {\"line1\": \"14 test place\", \"line2\": \"test\", \"postalOrZipCode\": \"12345\", \"countryCode\": \"US\", \"townOrCity\": \"somewhere\", \"stateOrCounty\": \"CA\"}}. Email and phone number help couriers and customs on international orders.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the recipient."
+              },
+              "email": {
+                "type": "string",
+                "description": "Email address of the recipient."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Mobile phone number of the recipient."
+              },
+              "address": {
+                "type": "object",
+                "description": "Address of the recipient.",
+                "properties": {
+                  "line1": {
+                    "type": "string",
+                    "description": "First line of the address."
+                  },
+                  "line2": {
+                    "type": "string",
+                    "description": "Second line of the address."
+                  },
+                  "postalOrZipCode": {
+                    "type": "string",
+                    "description": "Postal or zip code."
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "description": "Two-letter ISO country code."
+                  },
+                  "townOrCity": {
+                    "type": "string",
+                    "description": "Town or city."
+                  },
+                  "stateOrCounty": {
+                    "type": "string",
+                    "description": "State or county."
+                  }
+                },
+                "required": [
+                  "line1",
+                  "postalOrZipCode",
+                  "countryCode",
+                  "townOrCity"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "address"
+            ]
+          },
+          "items": {
+            "type": "array",
+            "description": "Items to print, e.g. [{\"sku\": \"GLOBAL-CFPM-16X20\", \"copies\": 1, \"sizing\": \"fillPrintArea\", \"attributes\": {\"color\": \"black\"}, \"assets\": [{\"printArea\": \"default\", \"url\": \"https://example.org/image.png\"}]}]. Each asset url must be publicly reachable.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "merchantReference": {
+                  "type": "string",
+                  "description": "Your own reference for the item."
+                },
+                "sku": {
+                  "type": "string",
+                  "description": "Prodigi SKU."
+                },
+                "copies": {
+                  "type": "integer",
+                  "description": "Number of copies.",
+                  "minimum": 1
+                },
+                "sizing": {
+                  "type": "string",
+                  "description": "How the image is fitted to the print area.",
+                  "enum": [
+                    "fillPrintArea",
+                    "fitPrintArea",
+                    "stretchToPrintArea"
+                  ]
+                },
+                "attributes": {
+                  "type": "object",
+                  "description": "Product attributes, e.g. {\"color\": \"black\"}."
+                },
+                "recipientCost": {
+                  "type": "object",
+                  "description": "Price you charged the recipient, for customs, e.g. {\"amount\": \"15.00\", \"currency\": \"USD\"}."
+                },
+                "assets": {
+                  "type": "array",
+                  "description": "Image files, e.g. [{\"printArea\": \"default\", \"url\": \"https://example.org/image.png\"}].",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "printArea": {
+                        "type": "string",
+                        "description": "Print area name, usually default."
+                      },
+                      "url": {
+                        "type": "string",
+                        "description": "Public URL of the image or PDF."
+                      },
+                      "md5Hash": {
+                        "type": "string",
+                        "description": "MD5 hash the file must match."
+                      },
+                      "pageCount": {
+                        "type": "integer",
+                        "description": "Page count, for photobooks."
+                      }
+                    },
+                    "required": [
+                      "printArea",
+                      "url"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "sku",
+                "copies",
+                "sizing",
+                "assets"
+              ]
+            },
+            "minItems": 1
+          },
+          "merchant_reference": {
+            "type": "string",
+            "description": "Your own reference for the order."
+          },
+          "idempotency_key": {
+            "type": "string",
+            "description": "A string unique to this order (a UUID is best). Prodigi returns the existing order instead of creating a second one when it sees the key again."
+          },
+          "callback_url": {
+            "type": "string",
+            "description": "URL Prodigi sends status callbacks to.",
+            "format": "uri"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "Your own keys and values, up to 2000 characters as JSON."
+          }
+        },
+        "required": [
+          "shipping_method",
+          "recipient",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders",
+        "bodyMapping": {
+          "merchantReference": "$merchant_reference",
+          "shippingMethod": "$shipping_method",
+          "idempotencyKey": "$idempotency_key",
+          "callbackUrl": "$callback_url",
+          "recipient": "$recipient",
+          "items": "$items",
+          "metadata": "$metadata"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "prodigi_cancel_order",
+      "description": "Cancel an order that is not in production yet. Returns outcome: cancelled, failedToCancel (too late) or actionNotAvailable. Check prodigi_get_order_actions first. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Prodigi order id with its prefix, e.g. ord_840797.",
+            "pattern": "^ord_[A-Za-z0-9]{1,30}$"
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/actions/cancel"
+      },
+      "enabled": false
+    },
+    {
+      "name": "prodigi_update_shipping_method",
+      "description": "Change the shipping method of an order that has not shipped, which changes what the order costs. Returns outcome: updated, partiallyUpdated, failedToUpdate or actionNotAvailable, with the result per shipment. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Prodigi order id with its prefix, e.g. ord_840797.",
+            "pattern": "^ord_[A-Za-z0-9]{1,30}$"
+          },
+          "shipping_method": {
+            "type": "string",
+            "description": "New shipping method.",
+            "enum": [
+              "Budget",
+              "Standard",
+              "StandardPlus",
+              "Express",
+              "Overnight"
+            ]
+          }
+        },
+        "required": [
+          "order_id",
+          "shipping_method"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/actions/updateShippingMethod",
+        "bodyMapping": {
+          "shippingMethod": "$shipping_method"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "prodigi_update_recipient",
+      "description": "Replace the recipient name and address of an order that has not shipped. A new destination can change the shipping cost. Returns outcome and the result per shipment. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Prodigi order id with its prefix, e.g. ord_840797.",
+            "pattern": "^ord_[A-Za-z0-9]{1,30}$"
+          },
+          "recipient": {
+            "type": "object",
+            "description": "Recipient, e.g. {\"name\": \"Mr Testy McTestface\", \"email\": \"testy@example.org\", \"phoneNumber\": \"+15551234567\", \"address\": {\"line1\": \"14 test place\", \"line2\": \"test\", \"postalOrZipCode\": \"12345\", \"countryCode\": \"US\", \"townOrCity\": \"somewhere\", \"stateOrCounty\": \"CA\"}}. Email and phone number help couriers and customs on international orders.",
+            "properties": {
+              "name": {
+                "type": "string",
+                "description": "Name of the recipient."
+              },
+              "email": {
+                "type": "string",
+                "description": "Email address of the recipient."
+              },
+              "phoneNumber": {
+                "type": "string",
+                "description": "Mobile phone number of the recipient."
+              },
+              "address": {
+                "type": "object",
+                "description": "Address of the recipient.",
+                "properties": {
+                  "line1": {
+                    "type": "string",
+                    "description": "First line of the address."
+                  },
+                  "line2": {
+                    "type": "string",
+                    "description": "Second line of the address."
+                  },
+                  "postalOrZipCode": {
+                    "type": "string",
+                    "description": "Postal or zip code."
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "description": "Two-letter ISO country code."
+                  },
+                  "townOrCity": {
+                    "type": "string",
+                    "description": "Town or city."
+                  },
+                  "stateOrCounty": {
+                    "type": "string",
+                    "description": "State or county."
+                  }
+                },
+                "required": [
+                  "line1",
+                  "postalOrZipCode",
+                  "countryCode",
+                  "townOrCity"
+                ]
+              }
+            },
+            "required": [
+              "name",
+              "address"
+            ]
+          }
+        },
+        "required": [
+          "order_id",
+          "recipient"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/actions/updateRecipient",
+        "bodyMapping": {
+          "recipient": "$recipient"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "prodigi_update_metadata",
+      "description": "Replace the metadata of an order (your own keys and values, up to 2000 characters as JSON). It does not change production, shipping or cost. Returns outcome updated and the order.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "string",
+            "description": "Prodigi order id with its prefix, e.g. ord_840797.",
+            "pattern": "^ord_[A-Za-z0-9]{1,30}$"
+          },
+          "metadata": {
+            "type": "object",
+            "description": "New metadata, replacing the old one, e.g. {\"internalRef\": \"abdef\", \"batch\": 12}."
+          }
+        },
+        "required": [
+          "order_id",
+          "metadata"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/orders/{order_id}/actions/updateMetadata",
+        "bodyMapping": {
+          "metadata": "$metadata"
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,2430 @@
+{
+  "slug": "sage-accounting-za",
+  "name": "Sage Accounting (South Africa)",
+  "description": "Sage Business Cloud Accounting, South African edition (the former Sage One): companies, customers, suppliers, items, tax invoices, quotes, supplier invoices, chart of accounts, bank transactions, customer receipts, ageing, profit and loss and balance sheet. Sign-in with your Sage login and an API key from Sage.",
+  "aliases": [
+    "Sage One",
+    "Sage One South Africa",
+    "Sage Accounting South Africa",
+    "Sage Business Cloud Accounting ZA",
+    "Sage Accounting ZA",
+    "Sage Pastel My Business Online"
+  ],
+  "region": "intl",
+  "category": "accounting",
+  "icon": "sage-accounting-za",
+  "docsUrl": "https://accounting.sageone.co.za/api/2.0.0/Help",
+  "requiredEnvVars": [
+    "SAGE_ZA_API_HOST",
+    "SAGE_ZA_USERNAME",
+    "SAGE_ZA_PASSWORD",
+    "SAGE_ZA_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "SAGE_ZA_COMPANY_ID"
+  ],
+  "envVarMeta": {
+    "SAGE_ZA_API_HOST": {
+      "label": "Sage Accounting site",
+      "kind": "address",
+      "help": "The site where you sign in to Sage Accounting. Most accounts use accounting.sageone.co.za; pick the reseller site only if that is your login page.",
+      "options": [
+        {
+          "value": "https://accounting.sageone.co.za",
+          "label": "accounting.sageone.co.za (standard)"
+        },
+        {
+          "value": "https://resellers.accounting.sageone.co.za",
+          "label": "resellers.accounting.sageone.co.za (reseller site)"
+        }
+      ]
+    },
+    "SAGE_ZA_USERNAME": {
+      "label": "Sage login e-mail",
+      "kind": "credential",
+      "help": "The e-mail address you sign in to Sage Accounting with. A dedicated user for the assistant is recommended.",
+      "link": "https://accounting.sageone.co.za/marketing/developerprogram.aspx",
+      "pattern": "^[^\\s@:]+@[^\\s@:]+\\.[^\\s@:]+$",
+      "patternMessage": "Enter the e-mail address of the Sage Accounting user, without spaces."
+    },
+    "SAGE_ZA_PASSWORD": {
+      "label": "Sage password",
+      "kind": "credential",
+      "secret": true,
+      "help": "The password of that Sage Accounting user. 20 failed sign-ins within an hour block the user for 24 hours, so check it carefully."
+    },
+    "SAGE_ZA_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "The Accounting API key Sage issued for your application (a GUID). Request it on the developer page with the form Request your API Key; it can take up to 2 working days.",
+      "link": "https://accounting.sageone.co.za/marketing/developerprogram.aspx",
+      "pattern": "^\\{?[0-9A-Fa-f]{8}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{4}-[0-9A-Fa-f]{12}\\}?$",
+      "patternMessage": "Paste the API key as Sage sent it: a GUID such as 39478ac6-ac2a-44d8-a31c-7e7e14af4de3."
+    },
+    "SAGE_ZA_COMPANY_ID": {
+      "label": "Default company ID",
+      "kind": "setting",
+      "help": "Optional. The numeric ID of the company the assistant works in, used when a call names no company. Leave empty at first and ask the assistant to list your companies.",
+      "example": "12345",
+      "pattern": "^[1-9][0-9]{0,11}$",
+      "patternMessage": "Enter the numeric company ID only, e.g. 12345."
+    }
+  },
+  "verifyHints": {
+    "401": "Sage refused the sign-in: check the e-mail address, the password and that the user can open this company. Do not retry repeatedly: 20 failed sign-ins within an hour block the user for 24 hours.",
+    "402": "The Sage Accounting subscription of this company has expired. Renew it in Sage before using the API.",
+    "403": "Sage refused the call before the sign-in was checked. Check the API key, and that SAGE_ZA_API_HOST is the site you sign in at.",
+    "404": "Sage found no such record in this company. Records belong to one company: check the company ID and the record ID.",
+    "405": "This Sage user has no access to that function. An invited user only reaches what their role allows; use the company owner or widen the role.",
+    "rate_limited": "Sage allows 100 requests per minute per company and 5,000 per day. After a 429 the address is blocked for up to an hour: stop calling and try again later."
+  },
+  "probe": {
+    "tool": "sage_accounting_za_list_companies",
+    "params": {
+      "top": 1
+    }
+  },
+  "prerequisites": "A Sage Business Cloud Accounting account of the South African edition (accounting.sageone.co.za), a user with its e-mail address and password, and an Accounting API key, which Sage issues on request through the developer page within about 2 working days.",
+  "connector": {
+    "name": "Sage Accounting API (South Africa)",
+    "type": "REST",
+    "baseUrl": "{{SAGE_ZA_API_HOST}}/api/2.0.0",
+    "authType": "BASIC_AUTH",
+    "authConfig": {
+      "username": "{{SAGE_ZA_USERNAME}}",
+      "password": "{{SAGE_ZA_PASSWORD}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "instructions": "## Sage Accounting (South Africa)\nThis connector works with the **Sage Business Cloud Accounting API of the South African edition** (the former Sage One and Sage Pastel My Business Online, version 2.0.0), used in South Africa and by Sage Accounting customers in other African and international markets served from the same platform. It covers companies, customers, suppliers, items, tax invoices, quotes, supplier invoices, the chart of accounts, bank accounts and transactions, customer receipts, ageing and the financial reports. It is **not** the global Sage Accounting API of the UK, Ireland, North America and Europe (OAuth, api.accounting.sage.com): use the Sage Business Cloud connector for those.\n\n**Setup (keys take up to 2 working days)**\n1. Request an API key on https://accounting.sageone.co.za/marketing/developerprogram.aspx (Request your API Key). Sage issues one key per application; it looks like `39478ac6-ac2a-44d8-a31c-7e7e14af4de3`. Paste it into `SAGE_ZA_API_KEY`.\n2. Pick the site you sign in at in `SAGE_ZA_API_HOST`: accounting.sageone.co.za for most accounts, or resellers.accounting.sageone.co.za when that is your login page.\n3. Enter the e-mail address and password of a Sage Accounting user in `SAGE_ZA_USERNAME` and `SAGE_ZA_PASSWORD`. The API uses HTTP Basic authentication with the same sign-in as the web application, so a dedicated user with only the access the assistant needs is recommended. An invited user only reaches the functions their role allows (other calls answer 405).\n4. Optional: put the ID of the company the assistant works in into `SAGE_ZA_COMPANY_ID`. Find it with `sage_accounting_za_list_companies`. Without it, pass `company_id` on every call.\n\n**Where to start**: `sage_accounting_za_list_companies` shows the companies of the login and their ID. Every other tool works inside one company (`company_id`, or the default of the connector).\n\n**Customers, suppliers, items**: `sage_accounting_za_list_customers`, `sage_accounting_za_get_customer`, `sage_accounting_za_list_suppliers`, `sage_accounting_za_get_supplier`, `sage_accounting_za_list_items`, `sage_accounting_za_get_item`. Create or change them with `sage_accounting_za_save_customer`, `sage_accounting_za_save_supplier` and `sage_accounting_za_save_item`.\n\n**Sales and purchase documents**: `sage_accounting_za_list_tax_invoices` and `sage_accounting_za_get_tax_invoice` (sales invoices), `sage_accounting_za_list_quotes` and `sage_accounting_za_get_quote`, `sage_accounting_za_list_supplier_invoices` and `sage_accounting_za_get_supplier_invoice`. List tools return headers only unless `include_detail` is true. Write a quote with `sage_accounting_za_save_quote` and an invoice with `sage_accounting_za_save_tax_invoice`; preview totals first with `sage_accounting_za_calculate_quote` or `sage_accounting_za_calculate_tax_invoice`. A line names an item (LineType 0) or a ledger account (LineType 1) in SelectionId, with Quantity, a unit price and a TaxTypeId. If a saved document comes back with zero totals, pass the lines exactly as the calculate tool returned them.\n\n**Ledger and banking**: `sage_accounting_za_list_accounts`, `sage_accounting_za_list_account_categories` and `sage_accounting_za_list_tax_types` describe the chart of accounts; `sage_accounting_za_save_account` adds or changes an account. `sage_accounting_za_list_bank_accounts`, `sage_accounting_za_list_bank_transactions` and `sage_accounting_za_list_customer_receipts` are read-only: this connector does not record receipts or payments and never moves money.\n\n**Reports**: `sage_accounting_za_get_customer_ageing` and `sage_accounting_za_get_supplier_ageing` (who owes what, by age), `sage_accounting_za_list_outstanding_customer_documents`, `sage_accounting_za_get_profit_and_loss`, `sage_accounting_za_get_balance_sheet` and `sage_accounting_za_get_account_balances` (movement per account, like a trial balance). These are POST calls that only read.\n\n**Saving**: a Save without `id` creates a record; with `id` it replaces that record. Sage stores the record as it is sent, so a field left out of an update can be reset: read the record first and pass what must stay in `extra_fields`. New records are active unless `active` is false. Nothing is deleted by this connector.\n\n**Filtering and paging**: list tools accept a subset of OData. `filter` and `orderby` work on numbers, booleans and dates only, never on text (search names by reading the list). Date literals are written `DateTime'2026-01-31'`; if Sage rejects that form, try the quoted date alone. Every list is capped at **100 rows**: the answer is wrapped as TotalResults, ReturnedResults and Results; raise `skip` by 100 until you have TotalResults rows.\n\n**Limits**: 100 requests per minute per company and 5,000 per day per user. Going over the minute limit blocks the IP address for an hour (HTTP 429), so keep to about one call per second and do not retry in a loop. 20 failed sign-ins within an hour block the user for 24 hours: after a 401, stop and have the credentials checked.\n\n**Fields and formats**: IDs are integers. Dates are `YYYY-MM-DD`. Amounts are decimals in the company currency unless a customer or supplier has its own currency (see Customer_CurrencyId and the exchange rate on the document). Exclusive is the amount before tax, Tax the VAT and Total the amount including tax. Errors: 400 carries the validation messages, 402 means the Sage subscription expired, 404 that the record is not in this company, 409 that a record is in use.",
+  "tools": [
+    {
+      "name": "sage_accounting_za_list_companies",
+      "description": "List the companies this Sage login can open: ID, Name, CurrencySymbol, TaxNumber, RegisteredName, CountryId, Active, IsOwner, LockProcessingDate and contact details. The ID is the company_id every other tool needs. Read-only, at most 100 per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_status": {
+            "type": "boolean",
+            "description": "true: add the subscription Status of each company."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `Active eq true`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `ID desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Company/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "includeStatus": "$include_status",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_customers",
+      "description": "List customers: ID, Name, Category, ContactName, Email, Telephone, Mobile, TaxReference, Balance, CreditLimit, postal and delivery address lines, Active, OnHold, Modified. Customers whose personal information was cleared are left out. Read-only, 100 per call; the answer carries TotalResults and ReturnedResults for paging with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_sales_rep_details": {
+            "type": "boolean",
+            "description": "true: include the sales representative of each customer."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `Active eq true and Modified gt DateTime'2026-01-01'`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `ID desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Customer/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "includeSalesRepDetails": "$include_sales_rep_details",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_customer",
+      "description": "Read one customer with every field: name, category, contact, tax reference, balance, credit limit, addresses, default tax type, price list, currency, due date method and user-defined fields. Use it before an update with sage_accounting_za_save_customer. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer ID (ID of sage_accounting_za_list_customers)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Customer/Get/{id}",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_suppliers",
+      "description": "List suppliers: ID, Name, Category, ContactName, Email, Telephone, TaxReference, Balance, CreditLimit, address lines, Active and Modified. Read-only, 100 per call, page with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `Active eq true`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `ID desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Supplier/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_supplier",
+      "description": "Read one supplier with every field: name, category, contact details, tax reference, balance, addresses, default tax type, currency and due date method. Use it before an update with sage_accounting_za_save_supplier. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Supplier ID (ID of sage_accounting_za_list_suppliers)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Supplier/Get/{id}",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_items",
+      "description": "List items (products and services): ID, Code, Description, Category, PriceExclusive, PriceInclusive, LastCost, Unit, Physical (stock item or service), tax types for sales and purchases, Active. Prices are in the company currency. Read-only, 100 per call, page with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_additional_item_prices": {
+            "type": "boolean",
+            "description": "true: include the prices of the additional price lists."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `Active eq true and Physical eq true`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `ID desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Item/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "includeAdditionalItemPrices": "$include_additional_item_prices",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_item",
+      "description": "Read one item with every field: code, description, category, selling prices, last cost, unit, tax types, reporting groups and user-defined fields. Use it before an update with sage_accounting_za_save_item. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Item ID (ID of sage_accounting_za_list_items)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Item/Get/{id}",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_tax_invoices",
+      "description": "List tax invoices (sales invoices): ID, DocumentNumber, Date, DueDate, CustomerId, CustomerName, Reference, Exclusive, Tax, Total, AmountDue, Status and Modified. Amounts are in the customer currency. Read-only, 100 per call, page with skip; lines only with include_detail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_detail": {
+            "type": "boolean",
+            "description": "true: include the document lines (larger answer)."
+          },
+          "include_customer_details": {
+            "type": "boolean",
+            "description": "true: include the full customer record on each document."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `CustomerId eq 12345 and Date ge DateTime'2026-01-01'`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `Date desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/TaxInvoice/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "includeDetail": "$include_detail",
+          "includeCustomerDetails": "$include_customer_details",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_tax_invoice",
+      "description": "Read one tax invoice with its lines: document number, dates, customer, addresses, discount, Exclusive, Tax, Total, AmountDue and per line SelectionId (item or account), LineType, Description, Quantity, UnitPriceExclusive, TaxTypeId, TaxPercentage and totals. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Tax invoice ID (ID of sage_accounting_za_list_tax_invoices)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/TaxInvoice/Get/{id}",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_quotes",
+      "description": "List quotes: ID, DocumentNumber, Date, ExpiryDate, CustomerId, CustomerName, Reference, Exclusive, Tax, Total and Status. Read-only, 100 per call, page with skip; lines only with include_detail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_detail": {
+            "type": "boolean",
+            "description": "true: include the document lines (larger answer)."
+          },
+          "include_customer_details": {
+            "type": "boolean",
+            "description": "true: include the full customer record on each document."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `CustomerId eq 12345 and Date ge DateTime'2026-01-01'`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `Date desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Quote/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "includeDetail": "$include_detail",
+          "includeCustomerDetails": "$include_customer_details",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_quote",
+      "description": "Read one quote with its lines: document number, date, expiry date, customer, discount, totals, status and per line the item or account, description, quantity, unit price and tax. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Quote ID (ID of sage_accounting_za_list_quotes)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Quote/Get/{id}",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_supplier_invoices",
+      "description": "List supplier invoices (purchase invoices): ID, DocumentNumber, Date, DueDate, SupplierId, SupplierName, Reference, Exclusive, Tax, Total, AmountDue, Paid and Status. Read-only, 100 per call, page with skip; lines only with include_detail.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_detail": {
+            "type": "boolean",
+            "description": "true: include the document lines (larger answer)."
+          },
+          "include_supplier_details": {
+            "type": "boolean",
+            "description": "true: include the full supplier record on each document."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `SupplierId eq 6789 and Date ge DateTime'2026-01-01'`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `Date desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/SupplierInvoice/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "includeDetail": "$include_detail",
+          "includeSupplierDetails": "$include_supplier_details",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_supplier_invoice",
+      "description": "Read one supplier invoice with its lines: document number, dates, supplier, reference, Exclusive, Tax, Total, AmountDue and per line the item or account, description, quantity, unit price and tax. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Supplier invoice ID (ID of sage_accounting_za_list_supplier_invoices)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/SupplierInvoice/Get/{id}",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_accounts",
+      "description": "List the ledger accounts (chart of accounts without system accounts): ID, Name, Description, Category (ID and Description), Balance, AccountType, ReportingGroupId, DefaultTaxTypeId and Active. The ID is the SelectionId of an account line on a document. Read-only, 100 per call, page with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `Active eq true`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `ID asc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/Account/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_account_categories",
+      "description": "List the account categories (Sales, Cost of Sales, Expenses, Current Assets and so on): ID, Description and Order. The ID is the category of sage_accounting_za_save_account. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `ID gt 0`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `Order asc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/AccountCategory/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_tax_types",
+      "description": "List the tax (VAT) types of the company: ID, Name, Percentage, IsDefault and Active. The ID is the TaxTypeId of document lines, items and accounts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `Active eq true`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `ID asc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/TaxType/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_bank_accounts",
+      "description": "List bank and credit card accounts: ID, Name, BankName, AccountNumber, BranchNumber, Category, Balance, Default, CurrencyId, LastTransactionDate, HasTransactionsWaitingForReview and Active. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `Active eq true`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `ID asc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BankAccount/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_bank_transactions",
+      "description": "List bank transactions of the cashbook: ID, BankAccountId, Date, Type, Payee, Description, Reference, DocumentNumber, Exclusive, Tax, Total, TaxTypeId, SelectionId (the allocated account, customer or supplier), Reconciled and Accepted. Read-only, 100 per call, page with skip. Nothing is posted or paid by this tool.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `BankAccountId eq 321 and Date ge DateTime'2026-01-01' and Date le DateTime'2026-01-31'`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `Date desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/BankTransaction/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_customer_receipts",
+      "description": "List customer receipts (payments received): ID, CustomerId, Date, DocumentNumber, Reference, Description, Total, Discount, TotalUnallocated, BankAccountId, PaymentMethod, Reconciled and Accepted. Read-only, 100 per call, page with skip. Receipts cannot be created with this connector.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "include_customer_details": {
+            "type": "boolean",
+            "description": "true: include the customer record on each receipt."
+          },
+          "include_bank_account_details": {
+            "type": "boolean",
+            "description": "true: include the bank account record on each receipt."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData $filter on numeric, boolean and date fields, e.g. `CustomerId eq 12345 and Date ge DateTime'2026-01-01'`. Operators eq, ne, gt, ge, lt, le, combined with and / or. Date literals are written DateTime'2026-01-31'. Filtering on text fields is not supported by Sage."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "OData $orderby on a numeric or date field, e.g. `Date desc`. Sorting on text fields is not supported."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 100,
+            "description": "Rows per call, at most 100 (Sage never returns more)."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging: 0, 100, 200 and so on until skip plus ReturnedResults reaches TotalResults."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/CustomerReceipt/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "includeCustomerDetails": "$include_customer_details",
+          "includeBankAccountDetails": "$include_bank_account_details",
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_customer_ageing",
+      "description": "Customer (debtors) ageing in detail: per customer the outstanding documents with date, document number, reference and the amount in each ageing period (current, 30, 60, 90 days and older) plus the total due. Read-only report, 100 rows per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Age the balances as at this date (YYYY-MM-DD)."
+          },
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this customer (ID). Leave out for all customers."
+          },
+          "ageing_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Number of ageing periods (columns) to return. The company setting decides whether a period is a month or 30 days."
+          },
+          "based_on_due_date": {
+            "type": "boolean",
+            "description": "true: age by due date instead of document date."
+          },
+          "exclude_zero_balance": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): leave out customers with a zero balance."
+          },
+          "include_active": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include active customers (default true)."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include inactive customers (default false)."
+          },
+          "from_customer": {
+            "type": "string",
+            "description": "Customer name to start the range at."
+          },
+          "to_customer": {
+            "type": "string",
+            "description": "Customer name to end the range at."
+          },
+          "use_foreign_currency": {
+            "type": "boolean",
+            "description": "true: report in the customer currency instead of the company currency."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per call, at most 100."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/CustomerAgeing/GetDetail",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "bodyMapping": {
+          "ToDate": "$to_date",
+          "CustomerId": "$customer_id",
+          "AgeingPeriod": "$ageing_period",
+          "BasedOnDueDate": "$based_on_due_date",
+          "ExcludeZeroBalance": "$exclude_zero_balance",
+          "IncludeActive": "$include_active",
+          "IncludeInactive": "$include_inactive",
+          "FromCustomer": "$from_customer",
+          "ToCustomer": "$to_customer",
+          "UseForeignCurrency": "$use_foreign_currency"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_supplier_ageing",
+      "description": "Supplier (creditors) ageing in detail: per supplier the outstanding documents with date, document number, reference and the amount in each ageing period plus the total owed. Read-only report, 100 rows per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Age the balances as at this date (YYYY-MM-DD)."
+          },
+          "supplier_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only this supplier (ID). Leave out for all suppliers."
+          },
+          "ageing_period": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 12,
+            "description": "Number of ageing periods (columns) to return. The company setting decides whether a period is a month or 30 days."
+          },
+          "based_on_due_date": {
+            "type": "boolean",
+            "description": "true: age by due date instead of document date."
+          },
+          "exclude_zero_balance": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): leave out suppliers with a zero balance."
+          },
+          "include_active": {
+            "type": "boolean",
+            "default": true,
+            "description": "Include active suppliers (default true)."
+          },
+          "include_inactive": {
+            "type": "boolean",
+            "default": false,
+            "description": "Include inactive suppliers (default false)."
+          },
+          "from_supplier": {
+            "type": "string",
+            "description": "Supplier name to start the range at."
+          },
+          "to_supplier": {
+            "type": "string",
+            "description": "Supplier name to end the range at."
+          },
+          "use_foreign_currency": {
+            "type": "boolean",
+            "description": "true: report in the supplier currency instead of the company currency."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per call, at most 100."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/SupplierAgeing/GetDetail",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "bodyMapping": {
+          "ToDate": "$to_date",
+          "SupplierId": "$supplier_id",
+          "AgeingPeriod": "$ageing_period",
+          "BasedOnDueDate": "$based_on_due_date",
+          "ExcludeZeroBalance": "$exclude_zero_balance",
+          "IncludeActive": "$include_active",
+          "IncludeInactive": "$include_inactive",
+          "FromSupplier": "$from_supplier",
+          "ToSupplier": "$to_supplier",
+          "UseForeignCurrency": "$use_foreign_currency"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_list_outstanding_customer_documents",
+      "description": "List the unpaid documents of one customer (tax invoices, and with include_paid_invoices also paid ones): document type, number, date, DueDate, ExpectedPaymentDate, total and amount outstanding. Read-only report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer ID."
+          },
+          "include_paid_invoices": {
+            "type": "boolean",
+            "description": "true: also return paid invoices."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per call, at most 100."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "customer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/OutstandingCustomerDocument/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "bodyMapping": {
+          "CustomerId": "$customer_id",
+          "IncludePaidInvoices": "$include_paid_invoices"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_profit_and_loss",
+      "description": "Profit and loss (income statement) for a date range: a tree of reporting levels (Sales, Cost of Sales, Gross Profit, Expenses, Net Profit) with Description, AccountNumber, Category, Children and Total. Total is a list: the period first, then the comparative when asked. Read-only report in the company currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the period (YYYY-MM-DD)."
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the period (YYYY-MM-DD)."
+          },
+          "comparative": {
+            "type": "boolean",
+            "description": "true: add the same period of last year."
+          },
+          "display_reporting_group_detail": {
+            "type": "boolean",
+            "description": "true: show the accounts inside each reporting group instead of the group total only."
+          },
+          "use_purchases": {
+            "type": "boolean",
+            "description": "true: show purchases instead of cost of sales."
+          },
+          "budget_id": {
+            "type": "integer",
+            "description": "Compare against this budget (overrides comparative)."
+          },
+          "show_variance": {
+            "type": "boolean",
+            "description": "true: add the variance against the budget."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ProfitAndLoss/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "FromDate": "$from_date",
+          "ToDate": "$to_date",
+          "Comparative": "$comparative",
+          "DisplayReportingGroupDetail": "$display_reporting_group_detail",
+          "UsePurchases": "$use_purchases",
+          "BudgetId": "$budget_id",
+          "ShowVariance": "$show_variance"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_balance_sheet",
+      "description": "Balance sheet as at one date: a tree of reporting levels (assets, liabilities, equity) with Description, AccountNumber, Category, Children and Total in the company currency. Read-only report.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "run_at_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of the balance sheet (YYYY-MM-DD)."
+          },
+          "display_reporting_group_detail": {
+            "type": "boolean",
+            "description": "true: show the accounts inside each reporting group instead of the group total only."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "run_at_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/BalanceSheet/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "RunAtDate": "$run_at_date",
+          "DisplayReportingGroupDetail": "$display_reporting_group_detail"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_get_account_balances",
+      "description": "Movement per ledger account over a date range, like a trial balance: account ID, Description, CategoryId, CategoryDescription, Debit, Credit and Total. Read-only report, 100 rows per call; page with skip.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the period (YYYY-MM-DD)."
+          },
+          "to_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the period (YYYY-MM-DD)."
+          },
+          "top": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "description": "Rows per call, at most 100."
+          },
+          "skip": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Rows to skip for paging."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "from_date",
+          "to_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/AccountBalance/Get",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "bodyMapping": {
+          "FromDate": "$from_date",
+          "ToDate": "$to_date"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_save_customer",
+      "description": "Create a customer, or update one when id is given. Returns the saved customer with its ID. A Save replaces the whole record: for an update read the customer first and pass the fields to keep in extra_fields. Show the user what will be saved and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "ID of the customer to update. Leave out to create a new one."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Customer name (required, at most 100 characters)."
+          },
+          "contact_name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Contact person."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address for documents and statements."
+          },
+          "telephone": {
+            "type": "string",
+            "maxLength": 30,
+            "description": "Telephone number."
+          },
+          "mobile": {
+            "type": "string",
+            "maxLength": 30,
+            "description": "Mobile number."
+          },
+          "tax_reference": {
+            "type": "string",
+            "maxLength": 30,
+            "description": "VAT or tax registration number of the customer."
+          },
+          "credit_limit": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Credit limit in the company currency."
+          },
+          "category": {
+            "type": "object",
+            "description": "Customer category as `{\"ID\": 12}`."
+          },
+          "active": {
+            "type": "boolean",
+            "default": true,
+            "description": "false to mark the customer inactive (default true)."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other Customer fields by their API name, e.g. `{\"PostalAddress01\": \"12 Long Street\", \"PostalAddress02\": \"Cape Town\", \"DeliveryAddress01\": \"Unit 4\", \"DefaultTaxTypeId\": 3, \"CurrencyId\": 1}`. For an update pass the fields of sage_accounting_za_get_customer you want to keep: a Save replaces the whole record. The named parameters of this tool win over the same field here."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Customer/Save",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "ID": "$id",
+          "Name": "$name",
+          "ContactName": "$contact_name",
+          "Email": "$email",
+          "Telephone": "$telephone",
+          "Mobile": "$mobile",
+          "TaxReference": "$tax_reference",
+          "CreditLimit": "$credit_limit",
+          "Category": "$category",
+          "Active": "$active",
+          "__merge": "$extra_fields"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      }
+    },
+    {
+      "name": "sage_accounting_za_save_supplier",
+      "description": "Create a supplier, or update one when id is given. Returns the saved supplier with its ID. A Save replaces the whole record: for an update read the supplier first and pass the fields to keep in extra_fields. Show the user what will be saved and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "ID of the supplier to update. Leave out to create a new one."
+          },
+          "name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Supplier name (required)."
+          },
+          "contact_name": {
+            "type": "string",
+            "description": "Contact person."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "telephone": {
+            "type": "string",
+            "description": "Telephone number."
+          },
+          "mobile": {
+            "type": "string",
+            "description": "Mobile number."
+          },
+          "tax_reference": {
+            "type": "string",
+            "description": "VAT or tax registration number of the supplier."
+          },
+          "category": {
+            "type": "object",
+            "description": "Supplier category as `{\"ID\": 7}`."
+          },
+          "active": {
+            "type": "boolean",
+            "default": true,
+            "description": "false to mark the supplier inactive (default true)."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other Supplier fields by their API name, e.g. `{\"PostalAddress01\": \"PO Box 55\", \"PostalAddress02\": \"Durban\", \"DefaultTaxTypeId\": 3, \"CurrencyId\": 1, \"BusinessRegistrationNumber\": \"2019/123456/07\"}`. For an update pass the fields of sage_accounting_za_get_supplier you want to keep: a Save replaces the whole record. The named parameters of this tool win over the same field here."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Supplier/Save",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "ID": "$id",
+          "Name": "$name",
+          "ContactName": "$contact_name",
+          "Email": "$email",
+          "Telephone": "$telephone",
+          "Mobile": "$mobile",
+          "TaxReference": "$tax_reference",
+          "Category": "$category",
+          "Active": "$active",
+          "__merge": "$extra_fields"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      }
+    },
+    {
+      "name": "sage_accounting_za_save_item",
+      "description": "Create an item (product or service), or update one when id is given. Returns the saved item with its ID. A Save replaces the whole record: for an update read the item first and pass the fields to keep in extra_fields. Does not change stock quantities.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "ID of the item to update. Leave out to create a new one."
+          },
+          "code": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Item code (required, unique in the company)."
+          },
+          "description": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Item description (required)."
+          },
+          "price_exclusive": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Selling price excluding tax, in the company currency."
+          },
+          "price_inclusive": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Selling price including tax."
+          },
+          "unit": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Unit of measure, e.g. each, hour, kg."
+          },
+          "physical": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: a physical stock item whose quantities are tracked. false (default): a service item."
+          },
+          "tax_type_id_sales": {
+            "type": "integer",
+            "description": "Tax type for sales (ID of sage_accounting_za_list_tax_types)."
+          },
+          "tax_type_id_purchases": {
+            "type": "integer",
+            "description": "Tax type for purchases (ID of sage_accounting_za_list_tax_types)."
+          },
+          "category": {
+            "type": "object",
+            "description": "Item category as `{\"ID\": 4}`."
+          },
+          "active": {
+            "type": "boolean",
+            "default": true,
+            "description": "false to mark the item inactive (default true)."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other Item fields by their API name, e.g. `{\"LastCost\": 80.5, \"ItemReportingGroupId_Sales\": 11, \"TextUserField1\": \"Shelf B\"}`. For an update pass the fields of sage_accounting_za_get_item you want to keep: a Save replaces the whole record. The named parameters of this tool win over the same field here."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "code",
+          "description"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Item/Save",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "ID": "$id",
+          "Code": "$code",
+          "Description": "$description",
+          "PriceExclusive": "$price_exclusive",
+          "PriceInclusive": "$price_inclusive",
+          "Unit": "$unit",
+          "Physical": "$physical",
+          "TaxTypeIdSales": "$tax_type_id_sales",
+          "TaxTypeIdPurchases": "$tax_type_id_purchases",
+          "Category": "$category",
+          "Active": "$active",
+          "__merge": "$extra_fields"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      }
+    },
+    {
+      "name": "sage_accounting_za_save_account",
+      "description": "Create a ledger account, or update one when id is given. Returns the saved account with its ID. The category decides where the account appears in the financial statements. A Save replaces the whole record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "ID of the account to update. Leave out to create a new one."
+          },
+          "name": {
+            "type": "string",
+            "description": "Account name (required)."
+          },
+          "category": {
+            "type": "object",
+            "description": "Account category as `{\"ID\": 5}` (ID of sage_accounting_za_list_account_categories). Required for a new account."
+          },
+          "description": {
+            "type": "string",
+            "description": "Longer description of the account."
+          },
+          "default_tax_type_id": {
+            "type": "integer",
+            "description": "Default tax type (ID of sage_accounting_za_list_tax_types)."
+          },
+          "reporting_group_id": {
+            "type": "integer",
+            "description": "Reporting group the account is summarised under."
+          },
+          "active": {
+            "type": "boolean",
+            "default": true,
+            "description": "false to mark the account inactive (default true)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "name"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Account/Save",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "ID": "$id",
+          "Name": "$name",
+          "Category": "$category",
+          "Description": "$description",
+          "DefaultTaxTypeId": "$default_tax_type_id",
+          "ReportingGroupId": "$reporting_group_id",
+          "Active": "$active"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      }
+    },
+    {
+      "name": "sage_accounting_za_calculate_quote",
+      "description": "Work out the totals of a quote without saving it: returns the document with Exclusive, Tax, Total and Discount per line and for the whole quote. Use it to preview a quote before sage_accounting_za_save_quote. Nothing is stored.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer ID (ID of sage_accounting_za_list_customers)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Document date (YYYY-MM-DD)."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Reference shown on the document, e.g. the customer's order number."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "Message printed on the document."
+          },
+          "inclusive": {
+            "type": "boolean",
+            "description": "true: line prices include tax. Default false (exclusive)."
+          },
+          "discount_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Discount on the whole document in percent."
+          },
+          "sales_representative_id": {
+            "type": "integer",
+            "description": "Sales representative ID."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "SelectionId": {
+                  "type": "integer",
+                  "description": "Item ID (LineType 0) or account ID (LineType 1)."
+                },
+                "LineType": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "0 = item line (default), 1 = account line."
+                },
+                "Description": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Line description."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "description": "Quantity; must be 1 on an account line."
+                },
+                "UnitPriceExclusive": {
+                  "type": "number",
+                  "description": "Unit price excluding tax."
+                },
+                "UnitPriceInclusive": {
+                  "type": "number",
+                  "description": "Unit price including tax (for documents with inclusive true)."
+                },
+                "TaxTypeId": {
+                  "type": "integer",
+                  "description": "Tax type ID of sage_accounting_za_list_tax_types."
+                },
+                "DiscountPercentage": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "Comments": {
+                  "type": "string",
+                  "description": "Comment printed under the line."
+                }
+              },
+              "required": [
+                "SelectionId",
+                "Quantity"
+              ]
+            },
+            "description": "Document lines, e.g. `[{\"SelectionId\": 501, \"LineType\": 0, \"Description\": \"Consulting\", \"Quantity\": 2, \"UnitPriceExclusive\": 950, \"TaxTypeId\": 3}]`. Lines returned by the calculate tool (with Exclusive, Tax and Total filled in) can be passed as they are."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other quote fields by their API name, e.g. `{\"PostalAddress01\": \"12 Long Street\", \"DeliveryAddress01\": \"Unit 4\", \"ExternalReference\": \"WEB-1001\"}`. For an update pass the fields of sage_accounting_za_get_quote you want to keep: a Save replaces the whole record. The named parameters of this tool win over the same field here."
+          },
+          "expiry_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the quote expires (YYYY-MM-DD)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "customer_id",
+          "date",
+          "expiry_date",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Quote/Calculate",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "CustomerId": "$customer_id",
+          "Date": "$date",
+          "ExpiryDate": "$expiry_date",
+          "Reference": "$reference",
+          "Message": "$message",
+          "Inclusive": "$inclusive",
+          "DiscountPercentage": "$discount_percentage",
+          "SalesRepresentativeId": "$sales_representative_id",
+          "Lines": "$lines",
+          "__merge": "$extra_fields"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_save_quote",
+      "description": "Create a quote for a customer, or update one when id is given. Returns the saved quote with its ID, DocumentNumber and totals. Check the totals in the answer; preview with sage_accounting_za_calculate_quote. The quote is not e-mailed. Show the user the customer, lines and totals and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "ID of the quote to update. Leave out to create a new one."
+          },
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer ID (ID of sage_accounting_za_list_customers)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Document date (YYYY-MM-DD)."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Reference shown on the document, e.g. the customer's order number."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "Message printed on the document."
+          },
+          "inclusive": {
+            "type": "boolean",
+            "description": "true: line prices include tax. Default false (exclusive)."
+          },
+          "discount_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Discount on the whole document in percent."
+          },
+          "sales_representative_id": {
+            "type": "integer",
+            "description": "Sales representative ID."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "SelectionId": {
+                  "type": "integer",
+                  "description": "Item ID (LineType 0) or account ID (LineType 1)."
+                },
+                "LineType": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "0 = item line (default), 1 = account line."
+                },
+                "Description": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Line description."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "description": "Quantity; must be 1 on an account line."
+                },
+                "UnitPriceExclusive": {
+                  "type": "number",
+                  "description": "Unit price excluding tax."
+                },
+                "UnitPriceInclusive": {
+                  "type": "number",
+                  "description": "Unit price including tax (for documents with inclusive true)."
+                },
+                "TaxTypeId": {
+                  "type": "integer",
+                  "description": "Tax type ID of sage_accounting_za_list_tax_types."
+                },
+                "DiscountPercentage": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "Comments": {
+                  "type": "string",
+                  "description": "Comment printed under the line."
+                }
+              },
+              "required": [
+                "SelectionId",
+                "Quantity"
+              ]
+            },
+            "description": "Document lines, e.g. `[{\"SelectionId\": 501, \"LineType\": 0, \"Description\": \"Consulting\", \"Quantity\": 2, \"UnitPriceExclusive\": 950, \"TaxTypeId\": 3}]`. Lines returned by the calculate tool (with Exclusive, Tax and Total filled in) can be passed as they are."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other quote fields by their API name, e.g. `{\"PostalAddress01\": \"12 Long Street\", \"DeliveryAddress01\": \"Unit 4\", \"ExternalReference\": \"WEB-1001\"}`. For an update pass the fields of sage_accounting_za_get_quote you want to keep: a Save replaces the whole record. The named parameters of this tool win over the same field here."
+          },
+          "expiry_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date the quote expires (YYYY-MM-DD)."
+          },
+          "use_system_document_number": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): Sage assigns the next document number. false: use document_number."
+          },
+          "document_number": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Your own document number, only with use_system_document_number false."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "customer_id",
+          "date",
+          "expiry_date",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/Quote/Save",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "useSystemDocumentNumber": "$use_system_document_number"
+        },
+        "bodyMapping": {
+          "ID": "$id",
+          "CustomerId": "$customer_id",
+          "Date": "$date",
+          "ExpiryDate": "$expiry_date",
+          "Reference": "$reference",
+          "Message": "$message",
+          "Inclusive": "$inclusive",
+          "DiscountPercentage": "$discount_percentage",
+          "SalesRepresentativeId": "$sales_representative_id",
+          "Lines": "$lines",
+          "__merge": "$extra_fields",
+          "DocumentNumber": "$document_number"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      }
+    },
+    {
+      "name": "sage_accounting_za_calculate_tax_invoice",
+      "description": "Work out the totals of a tax invoice without saving it: returns the document with Exclusive, Tax, Total and Discount per line and for the whole invoice. Use it to preview an invoice before sage_accounting_za_save_tax_invoice. Nothing is stored.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer ID (ID of sage_accounting_za_list_customers)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Document date (YYYY-MM-DD)."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Reference shown on the document, e.g. the customer's order number."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "Message printed on the document."
+          },
+          "inclusive": {
+            "type": "boolean",
+            "description": "true: line prices include tax. Default false (exclusive)."
+          },
+          "discount_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Discount on the whole document in percent."
+          },
+          "sales_representative_id": {
+            "type": "integer",
+            "description": "Sales representative ID."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "SelectionId": {
+                  "type": "integer",
+                  "description": "Item ID (LineType 0) or account ID (LineType 1)."
+                },
+                "LineType": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "0 = item line (default), 1 = account line."
+                },
+                "Description": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Line description."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "description": "Quantity; must be 1 on an account line."
+                },
+                "UnitPriceExclusive": {
+                  "type": "number",
+                  "description": "Unit price excluding tax."
+                },
+                "UnitPriceInclusive": {
+                  "type": "number",
+                  "description": "Unit price including tax (for documents with inclusive true)."
+                },
+                "TaxTypeId": {
+                  "type": "integer",
+                  "description": "Tax type ID of sage_accounting_za_list_tax_types."
+                },
+                "DiscountPercentage": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "Comments": {
+                  "type": "string",
+                  "description": "Comment printed under the line."
+                }
+              },
+              "required": [
+                "SelectionId",
+                "Quantity"
+              ]
+            },
+            "description": "Document lines, e.g. `[{\"SelectionId\": 501, \"LineType\": 0, \"Description\": \"Consulting\", \"Quantity\": 2, \"UnitPriceExclusive\": 950, \"TaxTypeId\": 3}]`. Lines returned by the calculate tool (with Exclusive, Tax and Total filled in) can be passed as they are."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other tax invoice fields by their API name, e.g. `{\"PostalAddress01\": \"12 Long Street\", \"DeliveryAddress01\": \"Unit 4\", \"ExternalReference\": \"WEB-1001\"}`. For an update pass the fields of sage_accounting_za_get_tax_invoice you want to keep: a Save replaces the whole record. The named parameters of this tool win over the same field here."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Payment due date (YYYY-MM-DD)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "customer_id",
+          "date",
+          "due_date",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/TaxInvoice/Calculate",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id"
+        },
+        "bodyMapping": {
+          "CustomerId": "$customer_id",
+          "Date": "$date",
+          "DueDate": "$due_date",
+          "Reference": "$reference",
+          "Message": "$message",
+          "Inclusive": "$inclusive",
+          "DiscountPercentage": "$discount_percentage",
+          "SalesRepresentativeId": "$sales_representative_id",
+          "Lines": "$lines",
+          "__merge": "$extra_fields"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "sage_accounting_za_save_tax_invoice",
+      "description": "Create a tax invoice (sales invoice) for a customer, or update one when id is given. Returns the saved invoice with its ID, DocumentNumber, totals and AmountDue. A saved tax invoice is a posted accounting document: it updates the customer balance, the ledger and stock of physical items. It is not e-mailed and no payment is taken. Preview with sage_accounting_za_calculate_tax_invoice, show the user the customer, lines and totals and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "ID of the tax invoice to update. Leave out to create a new one."
+          },
+          "customer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Customer ID (ID of sage_accounting_za_list_customers)."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Document date (YYYY-MM-DD)."
+          },
+          "reference": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Reference shown on the document, e.g. the customer's order number."
+          },
+          "message": {
+            "type": "string",
+            "maxLength": 8000,
+            "description": "Message printed on the document."
+          },
+          "inclusive": {
+            "type": "boolean",
+            "description": "true: line prices include tax. Default false (exclusive)."
+          },
+          "discount_percentage": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Discount on the whole document in percent."
+          },
+          "sales_representative_id": {
+            "type": "integer",
+            "description": "Sales representative ID."
+          },
+          "lines": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "SelectionId": {
+                  "type": "integer",
+                  "description": "Item ID (LineType 0) or account ID (LineType 1)."
+                },
+                "LineType": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "0 = item line (default), 1 = account line."
+                },
+                "Description": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Line description."
+                },
+                "Quantity": {
+                  "type": "number",
+                  "description": "Quantity; must be 1 on an account line."
+                },
+                "UnitPriceExclusive": {
+                  "type": "number",
+                  "description": "Unit price excluding tax."
+                },
+                "UnitPriceInclusive": {
+                  "type": "number",
+                  "description": "Unit price including tax (for documents with inclusive true)."
+                },
+                "TaxTypeId": {
+                  "type": "integer",
+                  "description": "Tax type ID of sage_accounting_za_list_tax_types."
+                },
+                "DiscountPercentage": {
+                  "type": "number",
+                  "description": "Line discount in percent."
+                },
+                "Comments": {
+                  "type": "string",
+                  "description": "Comment printed under the line."
+                }
+              },
+              "required": [
+                "SelectionId",
+                "Quantity"
+              ]
+            },
+            "description": "Document lines, e.g. `[{\"SelectionId\": 501, \"LineType\": 0, \"Description\": \"Consulting\", \"Quantity\": 2, \"UnitPriceExclusive\": 950, \"TaxTypeId\": 3}]`. Lines returned by the calculate tool (with Exclusive, Tax and Total filled in) can be passed as they are."
+          },
+          "extra_fields": {
+            "type": "object",
+            "description": "Other tax invoice fields by their API name, e.g. `{\"PostalAddress01\": \"12 Long Street\", \"DeliveryAddress01\": \"Unit 4\", \"ExternalReference\": \"WEB-1001\"}`. For an update pass the fields of sage_accounting_za_get_tax_invoice you want to keep: a Save replaces the whole record. The named parameters of this tool win over the same field here."
+          },
+          "due_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Payment due date (YYYY-MM-DD)."
+          },
+          "use_system_document_number": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): Sage assigns the next document number. false: use document_number."
+          },
+          "document_number": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Your own document number, only with use_system_document_number false."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Company ID (ID of sage_accounting_za_list_companies). Leave out to use the default company set on the connector."
+          }
+        },
+        "required": [
+          "customer_id",
+          "date",
+          "due_date",
+          "lines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/TaxInvoice/Save",
+        "queryParams": {
+          "apikey": "{{SAGE_ZA_API_KEY}}",
+          "CompanyId": "$company_id",
+          "useSystemDocumentNumber": "$use_system_document_number"
+        },
+        "bodyMapping": {
+          "ID": "$id",
+          "CustomerId": "$customer_id",
+          "Date": "$date",
+          "DueDate": "$due_date",
+          "Reference": "$reference",
+          "Message": "$message",
+          "Inclusive": "$inclusive",
+          "DiscountPercentage": "$discount_percentage",
+          "SalesRepresentativeId": "$sales_representative_id",
+          "Lines": "$lines",
+          "__merge": "$extra_fields",
+          "DocumentNumber": "$document_number"
+        },
+        "envDefaults": {
+          "company_id": "SAGE_ZA_COMPANY_ID"
+        }
+      }
+    }
+  ]
+}

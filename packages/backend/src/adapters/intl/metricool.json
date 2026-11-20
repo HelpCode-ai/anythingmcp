@@ -1,0 +1,1163 @@
+{
+  "slug": "metricool",
+  "name": "Metricool",
+  "description": "Metricool social media analytics and planner: brands, posts, reels and stories with metrics for Instagram, Facebook, TikTok, LinkedIn, YouTube, X and more, follower and reach time series, competitors, Meta, Google and TikTok ad campaigns, best times to post and scheduled posts. API token.",
+  "instructions": "## Metricool\nThis connector works with the **Metricool API** at `https://app.metricool.com/api`: the brands of your account, the posts, reels and stories they published with their metrics, daily metric time series (followers, reach, engagement), tracked competitors, ad campaigns of Meta, Google and TikTok, the best times to publish, and the planner with its scheduled posts.\n\n**Setup (about 3 minutes)**\n1. API access needs a Metricool **Advanced** or **Custom** plan; Free and Starter accounts have no API.\n2. In Metricool open **Account settings, API** and copy the **API access token** into `METRICOOL_USER_TOKEN`.\n3. Open any brand in Metricool and look at the address bar: `https://app.metricool.com/evolution/web?blogId=12345&userId=678901`. Put the number after `userId=` into `METRICOOL_USER_ID`.\n4. Optional: put the number after `blogId=` of the brand you mostly work with into `METRICOOL_BLOG_ID`. It is then used whenever a call names no brand.\n\nEvery call sends the token in the header `X-Mc-Auth` and the ids as the query parameters `userId` and `blogId`. The token reaches every brand of the account, including shared ones, so treat it like a password.\n\n**Where to start**: `metricool_list_brands` returns the brands with their `id` (pass it as `blog_id`), their `timezone` and the connected networks. Only networks connected to a brand return data.\n\n**Published content**: `metricool_list_posts` (Instagram, Facebook, TikTok, LinkedIn, YouTube, X, Threads, Bluesky, Pinterest), `metricool_list_reels` and `metricool_list_stories` (Instagram, Facebook), and `metricool_list_brand_posts` for all networks in one call.\n\n**Metrics over time**: `metricool_get_metric_timeline` returns one metric per call as daily values; `metricool_get_metric_total` returns it as one value for the period.\n\n**Metrics** (pass as `metric`, with `subject` where named):\n- Instagram account: delta_followers, followers_gained, followers_lost, postsCount, postsInteractions, clicks_total. Posts: count, interactions, engagement, reach, impressions, likes, comments, saves, shares. Reels: count, comments, likes, saved, shares, engagement, impressions, reach, interactions, videoviews.\n- Facebook account: pageFollows, likes, pageImpressions, pageViews, postsCount, postsInteractions, page_daily_follows_unique, page_daily_unfollows_unique. Posts: count, interactions, engagement, impressions, impressionsunique, clicks, comments, shares, reactions. Reels: count, engagement, blue_reels_play_count, post_impressions_unique. Stories: storiesCount.\n- TikTok account: followers_count, followers_delta_count, video_views, profile_views, likes, comments, shares. Videos: videos, views, comments, shares, interactions, likes, reach, engagement, averageVideoViews.\n- LinkedIn company account: followers, deltaFollowers, companyImpressions, impressionCount, clickCount, likeCount, commentCount, shareCount, postsCount. Posts: posts, clicks, likes, comments, shares, engagement, impressions, interactions.\n- YouTube: views, interactions, likes, dislikes, comments, shares. X account: followers, friends, postsCount; posts: engagement, impressions, interactions, likes, retweets, replies, quotes, profileClicks, linkClicks.\n- Threads posts: count, views, likes, replies, reposts, quotes, shares, engagement, interactions. Bluesky posts: posts_count, interactions, likes, replies, reposts, quotes. Pinterest account: followers, following; pins: impression, save, pin_click, outbound_click.\n- Google Business Profile (gmb): business_impressions_total, business_impressions_maps, business_impressions_search, website_clicks, call_clicks, business_direction_requests. TikTok Ads: impressions, cost, clicks, conversions, cpm, cpc, ctr.\n\n**Competitors**: `metricool_list_competitors`, `metricool_list_competitor_posts`, `metricool_list_instagram_competitor_posts`. Competitors are chosen in the Metricool app.\n\n**Ads**: `metricool_list_meta_ads_campaigns`, `metricool_list_google_ads_campaigns`, `metricool_list_tiktok_ads_campaigns`. The connector reads campaign figures and never changes campaigns, budgets or boosts.\n\n**Planner**: `metricool_get_best_times` for the best slots, `metricool_list_scheduled_posts` and `metricool_get_scheduled_post` to read the plan, `metricool_schedule_post` to plan a post. `metricool_delete_scheduled_post` is installed switched off. A planned post is published on the real profiles of the brand, so confirm it with the user before scheduling.\n\n**Dates and time zones**: content, ads and planner tools take local date-times without offset (`2026-10-01T00:00:00`) plus `timezone`; the two metric tools take date-times with offset (`2026-10-01T00:00:00+02:00`). Use the time zone of the brand, or the days will be cut at the wrong hour.\n\n**Answers**: lists come under `data`. Instagram story and some reach figures only exist from the day the profile was connected to Metricool; a period before that returns nothing rather than an error.\n\n**Errors**: a failed call answers `status`, `code`, `title` and `detail`. 401 or an access denied answer means the token is wrong, or the `userId` or brand id does not belong to the account of the token. An empty `data` usually means the network is not connected to that brand. Metricool publishes no rate limit: ask for a whole month in one call instead of day by day.",
+  "region": "intl",
+  "category": "social",
+  "icon": "metricool",
+  "docsUrl": "https://app.metricool.com/resources/apidocs/index.html",
+  "prerequisites": "A Metricool account on the Advanced or Custom plan (Free and Starter have no API access), with the social profiles connected to a brand. The API access token is under Account settings, API. About 3 minutes.",
+  "requiredEnvVars": [
+    "METRICOOL_USER_TOKEN",
+    "METRICOOL_USER_ID"
+  ],
+  "optionalEnvVars": [
+    "METRICOOL_BLOG_ID"
+  ],
+  "envVarMeta": {
+    "METRICOOL_USER_TOKEN": {
+      "label": "API access token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Metricool, Account settings, API: copy the API access token. Needs an Advanced or Custom plan.",
+      "link": "https://help.metricool.com/basic-guide-for-api-integration-r97af",
+      "pattern": "^\\S{10,200}$",
+      "patternMessage": "Paste the API access token without spaces."
+    },
+    "METRICOOL_USER_ID": {
+      "label": "User ID",
+      "kind": "setting",
+      "help": "The number after userId= in the address bar when a brand is open in Metricool, e.g. 678901.",
+      "link": "https://help.metricool.com/basic-guide-for-api-integration-r97af",
+      "pattern": "^[0-9]{1,15}$",
+      "patternMessage": "Enter only the digits of the user ID."
+    },
+    "METRICOOL_BLOG_ID": {
+      "label": "Default brand ID",
+      "kind": "setting",
+      "help": "Optional. The number after blogId= in the address bar of the brand you mostly work with. Used when a call names no brand.",
+      "link": "https://help.metricool.com/basic-guide-for-api-integration-r97af",
+      "pattern": "^[0-9]{1,15}$",
+      "patternMessage": "Enter only the digits of the brand ID."
+    }
+  },
+  "verifyHints": {
+    "401": "Metricool did not accept the API access token, or the user ID is not the one of this account. Copy the token again from Account settings, API, and take the user ID from the address bar (the number after userId=).",
+    "403": "Metricool denied access: the plan has no API access (Advanced or Custom is needed), or the brand does not belong to this account.",
+    "404": "Metricool found nothing at this path for that brand or post id.",
+    "rate_limited": "Metricool is throttling the calls. Wait a moment and ask for longer periods in one call."
+  },
+  "probe": {
+    "tool": "metricool_list_brands",
+    "params": {}
+  },
+  "connector": {
+    "name": "Metricool API",
+    "type": "REST",
+    "baseUrl": "https://app.metricool.com/api",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "X-Mc-Auth",
+      "apiKey": "{{METRICOOL_USER_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "metricool_list_brands",
+      "description": "List the brands of the Metricool account, own and shared: id (the brand id every other tool takes as blog_id), label, title, timezone, brandRole, isShared and networksData, which shows the social profiles and ad accounts connected to the brand. Call it first. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/settings/brands",
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_posts",
+      "description": "List the posts a brand published on one network in a period, with their metrics. Instagram: postId, type, publishedAt, url, content, likes, comments, shares, saved, reach, views, interactions and engagement. Facebook: postId, created, text, type, reactions, comments, shares, impressions, clicks, videoViews and engagement. X: tweetId, text, createdAt and total impressions, likes, retweets, replies, quotes, link clicks and engagement. TikTok, LinkedIn, YouTube, Threads, Bluesky and Pinterest return the fields of that network. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Network to read. X is called twitter.",
+            "enum": [
+              "instagram",
+              "facebook",
+              "tiktok",
+              "linkedin",
+              "youtube",
+              "twitter",
+              "threads",
+              "bluesky",
+              "pinterest"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/posts/{network}",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_reels",
+      "description": "List the reels a brand published on Instagram or Facebook in a period, with their metrics. Instagram: reelId, publishedAt, url, content, likes, comments, shares, saved, reach, views, interactions, engagement, averageWatchTime, durationSeconds and reelsSkipRate. Facebook returns its own reel fields. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "instagram or facebook.",
+            "enum": [
+              "instagram",
+              "facebook"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/reels/{network}",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_stories",
+      "description": "List the stories a brand published on Instagram or Facebook in a period, with their metrics. Instagram: postId, type, publishedAt, permalink, impressions, reach, replies, exits, tapsForward and tapsBack. Stories are only measured while they are live, so Metricool has data only from the day the profile was connected. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "instagram or facebook.",
+            "enum": [
+              "instagram",
+              "facebook"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/stories/{network}",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_brand_posts",
+      "description": "List everything a brand published in a period across all its connected networks in one call: per post id, network, networkConnection, text, link, picture, publicationDate, type (image, video, reel, story and others) and metrics. Use it for an overview or to find the best post of a month before reading one network in detail. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/brand-summary/posts",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_get_metric_timeline",
+      "description": "Read one metric of a brand as a daily time series, e.g. followers, reach, impressions or engagement of the account or of its posts. One call returns one metric: `data` holds the metric with its `values` (one point per day). This is the tool for follower growth and for trends over time. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Network of the metric. X is called twitter, Google Business Profile gmb.",
+            "enum": [
+              "instagram",
+              "facebook",
+              "tiktok",
+              "linkedin",
+              "youtube",
+              "twitter",
+              "threads",
+              "bluesky",
+              "pinterest",
+              "twitch",
+              "gmb",
+              "tiktokads"
+            ]
+          },
+          "metric": {
+            "type": "string",
+            "description": "Metric name, not case sensitive. The names per network and subject are listed in the connector instructions under Metrics, e.g. `followers` (LinkedIn account), `delta_followers` (Instagram account), `pageFollows` (Facebook account), `followers_count` (TikTok account), `reach` (Instagram posts)."
+          },
+          "subject": {
+            "type": "string",
+            "description": "What the metric is about: account, posts, reels, stories or another subject of that network. Required for Instagram (account, posts, reels, stories, competitors, collabs); for other networks pass it when the metric exists for several subjects."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Second filter some metrics need, e.g. viewed or published for YouTube. Leave out otherwise."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a date and time with offset, e.g. `2026-10-01T00:00:00+02:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a date and time with offset, e.g. `2026-10-31T23:59:59+02:00`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "metric",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/timelines",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "network": "$network",
+          "metric": "$metric",
+          "subject": "$subject",
+          "scope": "$scope",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_get_metric_total",
+      "description": "Read one metric of a brand as a single aggregated value for a period instead of daily points. Takes the same network, metric and subject names as metricool_get_metric_timeline. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Network of the metric. X is called twitter, Google Business Profile gmb.",
+            "enum": [
+              "instagram",
+              "facebook",
+              "tiktok",
+              "linkedin",
+              "youtube",
+              "twitter",
+              "threads",
+              "bluesky",
+              "pinterest",
+              "twitch",
+              "gmb",
+              "tiktokads"
+            ]
+          },
+          "metric": {
+            "type": "string",
+            "description": "Metric name, not case sensitive. The names per network and subject are listed in the connector instructions under Metrics, e.g. `followers` (LinkedIn account), `delta_followers` (Instagram account), `pageFollows` (Facebook account), `followers_count` (TikTok account), `reach` (Instagram posts)."
+          },
+          "subject": {
+            "type": "string",
+            "description": "What the metric is about: account, posts, reels, stories or another subject of that network. Required for Instagram (account, posts, reels, stories, competitors, collabs); for other networks pass it when the metric exists for several subjects."
+          },
+          "scope": {
+            "type": "string",
+            "description": "Second filter some metrics need, e.g. viewed or published for YouTube. Leave out otherwise."
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a date and time with offset, e.g. `2026-10-01T00:00:00+02:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a date and time with offset, e.g. `2026-10-31T23:59:59+02:00`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "metric",
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/aggregation",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "network": "$network",
+          "metric": "$metric",
+          "subject": "$subject",
+          "scope": "$scope",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_competitors",
+      "description": "List the competitor profiles a brand tracks on one network with their figures for a period: id, screenName, displayName, followers, following, posts, reels, likes, comments, shares, reactions, views and engagement. Competitors are added in the Metricool app; the API only reads them. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Network of the competitors. X is called twitter.",
+            "enum": [
+              "instagram",
+              "facebook",
+              "twitter",
+              "youtube",
+              "twitch",
+              "bluesky"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Required by this endpoint."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of rows to return.",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "from",
+          "to",
+          "timezone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/competitors/{network}",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_competitor_posts",
+      "description": "List the posts the tracked competitors of a brand published on Facebook, X, YouTube, Twitch or Bluesky in a period, with their public metrics, to see what works for them. For Instagram use metricool_list_instagram_competitor_posts. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Network of the competitors. X is called twitter.",
+            "enum": [
+              "facebook",
+              "twitter",
+              "youtube",
+              "twitch",
+              "bluesky"
+            ]
+          },
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Required by this endpoint."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of rows to return.",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "from",
+          "to",
+          "timezone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/competitors/{network}/posts",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_instagram_competitor_posts",
+      "description": "List the posts and reels the tracked Instagram competitors of a brand published in a period, with their public metrics (likes, comments, engagement). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Required by this endpoint."
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Maximum number of rows to return.",
+            "minimum": 1,
+            "maximum": 5000,
+            "default": 50
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "from",
+          "to",
+          "timezone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/competitors/instagram/publications",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_meta_ads_campaigns",
+      "description": "List the Meta Ads (Facebook and Instagram Ads) campaigns of a brand that ran in a period, with the figures Metricool collected for each, such as impressions, clicks and spend. Reads only; the connector cannot create or change campaigns or budgets. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/campaigns/facebookads",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_google_ads_campaigns",
+      "description": "List the Google Ads campaigns of a brand for a period: id, name, objective, status, start, stop, impressions, clicks, spent, conversions, allConversionsValue, purchaseROAS, ctr, cpm and cpc. Amounts are in the currency of the ad account. Reads only. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/campaigns/googleads",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_tiktok_ads_campaigns",
+      "description": "List the TikTok Ads campaigns of a brand for a period: providerCampaignId, name, objective, currency and the requested metrics. Reads only. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "from": {
+            "type": "string",
+            "description": "Start of the period as a local date and time without offset, e.g. `2026-10-01T00:00:00`."
+          },
+          "to": {
+            "type": "string",
+            "description": "End of the period as a local date and time without offset, e.g. `2026-10-31T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "metrics": {
+            "type": "array",
+            "description": "Metrics to return per campaign: any of impressions, cost, clicks, conversions, cpm, cpc, ctr.",
+            "items": {
+              "type": "string",
+              "enum": [
+                "impressions",
+                "cost",
+                "clicks",
+                "conversions",
+                "cpm",
+                "cpc",
+                "ctr"
+              ]
+            },
+            "default": [
+              "impressions",
+              "cost",
+              "clicks",
+              "conversions"
+            ]
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "from",
+          "to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/analytics/campaigns/tiktokads",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "from": "$from",
+          "to": "$to",
+          "timezone": "$timezone",
+          "metrics[]": "$metrics"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_get_best_times",
+      "description": "Read the best times to publish for a brand on one network, from the activity of its own audience: per `dayOfWeek` (1 Sunday to 7 Saturday) a list `bestTimesByHour` with a value per hour; the higher the value, the better the slot. Ask for at most one week. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "network": {
+            "type": "string",
+            "description": "Network to plan for. X is called twitter.",
+            "enum": [
+              "facebook",
+              "instagram",
+              "tiktok",
+              "linkedin",
+              "youtube",
+              "twitter"
+            ]
+          },
+          "start": {
+            "type": "string",
+            "description": "Start of the period, local date and time, e.g. `2026-11-23T00:00:00`."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the period, local date and time, e.g. `2026-11-29T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "network",
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/scheduler/besttimes/{network}",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "start": "$start",
+          "end": "$end",
+          "timezone": "$timezone"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_list_scheduled_posts",
+      "description": "List the posts in the planner of a brand between two dates: id, uuid, text, publicationDate (dateTime and timezone), providers (network and status: PENDING, PUBLISHING, PUBLISHED, ERROR, DRAFT), media, autoPublish, draft and the settings per network. Includes posts already published through Metricool in that range. Answer: `data`. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "start": {
+            "type": "string",
+            "description": "Start of the range, local date and time, e.g. `2026-11-01T00:00:00`."
+          },
+          "end": {
+            "type": "string",
+            "description": "End of the range, local date and time, e.g. `2026-11-30T23:59:59`."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone the period is read in, e.g. `Europe/Berlin`. Use the `timezone` of the brand from metricool_list_brands."
+          },
+          "extended_range": {
+            "type": "boolean",
+            "description": "true: widen the range by one day on each side, which avoids missing posts near midnight in another time zone. Default false."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "start",
+          "end"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/scheduler/posts",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id",
+          "start": "$start",
+          "end": "$end",
+          "timezone": "$timezone",
+          "extendedRange": "$extended_range"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_get_scheduled_post",
+      "description": "Read one post of the planner by id with everything set on it: text, publication date, networks with their status and public URL, media, first comment, and the options per network. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "integer",
+            "description": "Numeric id of the planner post from metricool_list_scheduled_posts.",
+            "minimum": 1
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v2/scheduler/posts/{post_id}",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "metricool_schedule_post",
+      "description": "Put a post into the planner of a brand for one or several networks at a date and time in the future. With auto_publish true Metricool publishes it by itself at that time; otherwise it sends a reminder. Text-only posts work on X, Facebook, LinkedIn, Threads and Bluesky; Instagram, TikTok, YouTube and Pinterest need media. X texts may have at most 280 characters and Bluesky 300. Returns the created post with its id. Publishes on the social profiles of the brand: confirm text, networks and time with the user first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "text": {
+            "type": "string",
+            "description": "Text of the post."
+          },
+          "publication_date_time": {
+            "type": "string",
+            "description": "When to publish, local date and time without offset, e.g. `2026-11-25T10:00:00`. It must be in the future."
+          },
+          "timezone": {
+            "type": "string",
+            "description": "IANA time zone of publication_date_time, e.g. `Europe/Berlin`. Use the `timezone` of the brand."
+          },
+          "providers": {
+            "type": "array",
+            "description": "Networks to publish on, one object per network, e.g. `[{\"network\": \"linkedin\"}, {\"network\": \"twitter\"}]`. The profile must be connected to the brand.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "network": {
+                  "type": "string",
+                  "description": "Network name. X is called twitter.",
+                  "enum": [
+                    "twitter",
+                    "facebook",
+                    "instagram",
+                    "linkedin",
+                    "tiktok",
+                    "youtube",
+                    "pinterest",
+                    "threads",
+                    "bluesky",
+                    "gmb"
+                  ]
+                }
+              },
+              "required": [
+                "network"
+              ]
+            },
+            "minItems": 1
+          },
+          "auto_publish": {
+            "type": "boolean",
+            "description": "true (default): Metricool publishes the post itself. false: the user gets a notification to publish it by hand.",
+            "default": true
+          },
+          "draft": {
+            "type": "boolean",
+            "description": "true: save as a draft that is not published until someone finishes it in Metricool. Default false.",
+            "default": false
+          },
+          "media": {
+            "type": "array",
+            "description": "Public, permanent URLs of the images or the video of the post. A private or expiring link is skipped and the post is planned without media.",
+            "items": {
+              "type": "string",
+              "format": "uri"
+            }
+          },
+          "first_comment_text": {
+            "type": "string",
+            "description": "Text Metricool posts as the first comment, on the networks that support it."
+          },
+          "shortener": {
+            "type": "boolean",
+            "description": "true: shorten links in the text with the Metricool shortener. Default false."
+          },
+          "twitter_data": {
+            "type": "object",
+            "description": "Options for X, e.g. `{\"tags\": []}`. Leave out when the post is not for this network."
+          },
+          "facebook_data": {
+            "type": "object",
+            "description": "Options for Facebook: `type` (POST, REEL or STORY) and, for videos, `title`. Leave out when the post is not for this network."
+          },
+          "instagram_data": {
+            "type": "object",
+            "description": "Options for Instagram: `type` (POST, REEL or STORY), `showReelOnFeed`, `collaborators`. Leave out when the post is not for this network."
+          },
+          "linkedin_data": {
+            "type": "object",
+            "description": "Options for LinkedIn: `type` (post or poll), `previewIncluded`, `documentTitle` with `publishImagesAsPDF`. Leave out when the post is not for this network."
+          },
+          "tiktok_data": {
+            "type": "object",
+            "description": "Options for TikTok: `title`, `privacyOption` (PUBLIC_TO_EVERYONE, MUTUAL_FOLLOW_FRIENDS, FOLLOWER_OF_CREATOR, SELF_ONLY), `disableComment`, `disableDuet`, `disableStitch`. Leave out when the post is not for this network."
+          },
+          "youtube_data": {
+            "type": "object",
+            "description": "Options for YouTube: `title`, `type` (video or short), `privacy` (public, unlisted, private), `madeForKids`, `tags`. Leave out when the post is not for this network."
+          },
+          "pinterest_data": {
+            "type": "object",
+            "description": "Options for Pinterest: `boardId`, `pinTitle`, `pinLink`. Leave out when the post is not for this network."
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "text",
+          "publication_date_time",
+          "timezone",
+          "providers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v2/scheduler/posts",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id"
+        },
+        "bodyMapping": {
+          "text": "$text",
+          "publicationDate": {
+            "dateTime": "$publication_date_time",
+            "timezone": "$timezone"
+          },
+          "providers": "$providers",
+          "autoPublish": "$auto_publish",
+          "draft": "$draft",
+          "media": "$media",
+          "firstCommentText": "$first_comment_text",
+          "shortener": "$shortener",
+          "twitterData": "$twitter_data",
+          "facebookData": "$facebook_data",
+          "instagramData": "$instagram_data",
+          "linkedinData": "$linkedin_data",
+          "tiktokData": "$tiktok_data",
+          "youtubeData": "$youtube_data",
+          "pinterestData": "$pinterest_data"
+        }
+      }
+    },
+    {
+      "name": "metricool_delete_scheduled_post",
+      "description": "Delete a post from the planner of a brand. If it is the first post of a thread, the whole thread is deleted. A post that was already published stays on the network. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "post_id": {
+            "type": "integer",
+            "description": "Numeric id of the planner post.",
+            "minimum": 1
+          },
+          "blog_id": {
+            "type": "integer",
+            "description": "Brand id (Metricool calls it blogId): the `id` of a brand from metricool_list_brands. Leave it out to use the default brand set on the connector.",
+            "minimum": 1
+          }
+        },
+        "required": [
+          "post_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v2/scheduler/posts/{post_id}",
+        "envDefaults": {
+          "blog_id": "METRICOOL_BLOG_ID"
+        },
+        "queryParams": {
+          "userId": "{{METRICOOL_USER_ID}}",
+          "blogId": "$blog_id"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

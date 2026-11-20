@@ -1,0 +1,5 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="ablefy connector">
+  <rect width="128" height="128" rx="24" fill="#16161D"/>
+  <path d="M58 42a24 24 0 1 0 0 48 24 24 0 0 0 0-48Zm0 15a9 9 0 1 1 0 18 9 9 0 0 1 0-18Z" fill="#fff" fill-rule="evenodd"/>
+  <rect x="78" y="42" width="16" height="48" rx="3" fill="#fff"/>
+</svg>

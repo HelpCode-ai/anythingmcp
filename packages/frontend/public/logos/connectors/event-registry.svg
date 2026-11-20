@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="Event Registry connector">
+  <rect width="128" height="128" rx="24" fill="#1C3D7A"/>
+  <path d="M34 30h38v12H48v16h20v12H48v16h24v12H34Z" fill="#fff"/><path d="M82 98V30h10c11 0 18 8 18 20 0 9-4 15-10 18l12 30H98L88 70v28Z" fill="#fff" opacity=".85"/>
+</svg>

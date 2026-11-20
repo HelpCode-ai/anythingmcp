@@ -1,0 +1,339 @@
+{
+  "slug": "microsoft-clarity",
+  "name": "Microsoft Clarity",
+  "description": "Microsoft Clarity Data Export API: the dashboard numbers of a website for the last 1 to 3 days (sessions, users, engagement time, scroll depth, dead clicks, rage clicks, quick backs, script errors), in total or by page, traffic source, device, browser, OS or country. Read-only, one API token per project, 10 requests per project per day.",
+  "instructions": "## Microsoft Clarity\nThis connector reads the **Microsoft Clarity Data Export API** (`https://www.clarity.ms/export-data/api/v1/project-live-insights`), the one public API of Clarity, Microsoft's free behaviour analytics for websites. It returns what the Clarity dashboard shows for the last 1 to 3 days: sessions, users, engagement time, scroll depth, dead clicks, rage clicks, quick backs, excessive scrolling, script errors and error clicks, in total or broken down by up to three dimensions. Read-only; one token belongs to one Clarity project.\n\n**Setup (about 2 minutes)**\n1. Open your project at https://clarity.microsoft.com and go to **Settings, Data Export**. Only a project admin sees this page.\n2. Click **Generate new API token**, give it a name of 4 to 32 characters (letters, digits, hyphen, underscore, period; no spaces) and confirm.\n3. Copy the token (a long text in three parts separated by periods) into `CLARITY_API_TOKEN`. To reach a second Clarity project, install the connector again with that project's token.\n\n**The daily limit decides how you work**: Clarity allows **10 Data Export requests per project per day**, counted for the whole project, not per token. The setup check uses one of them. Plan the calls: one total, one or two breakdowns, then answer from what you have. Never loop, never repeat a call \"to be sure\", and tell the user when a question would need several calls. An identical call within 30 minutes is answered from the cache and costs nothing. When the limit is reached Clarity answers 429 until the next day.\n\n**Where to start**: `microsoft_clarity_get_dashboard_insights` for the totals and the top pages, browsers, devices and countries in a single call. Then one breakdown that fits the question:\n- `microsoft_clarity_get_page_insights`: per page URL, to find the pages with rage clicks, dead clicks or script errors.\n- `microsoft_clarity_get_traffic_source_insights`: per Channel, Source and Medium, to compare search, ads, social and email visitors.\n- `microsoft_clarity_get_device_insights`: per Device, Browser and OS, to find a platform where the site breaks.\n- `microsoft_clarity_get_country_insights`: per country or region.\n- `microsoft_clarity_get_insights_by_dimensions`: any one to three of Browser, Device, Country/Region, OS, Source, Medium, Campaign, Channel and URL, for example Campaign with Source.\n\n**Reading the answer**: a list of blocks, each with `metricName` and `information` (rows). Every call returns all metrics; there is no metric filter. With dimensions, each row carries the dimension values next to the numbers. Counts are strings (`\"9554\"`), percentages are numbers, times are seconds and everything is in UTC. `totalBotSessionCount` is traffic Clarity recognised as bots: leave it out of visitor numbers. The frustration metrics report `sessionsCount`, the share of sessions with the signal and `subTotal` (how often it happened).\n\n**Limits**: only the last 24, 48 or 72 hours counted back from the call (`num_of_days` 1, 2 or 3), no fixed dates and no older history; at most three dimensions; at most 1,000 rows per call and no paging, so on a busy site prefer one or two dimensions. For a trend, the user has to call once a day and keep the results.\n\n**Not covered**: session recordings, heatmaps, funnels, the natural-language analytics query and the AI visibility reports. Microsoft's own Clarity MCP server reaches those through endpoints that are not a documented public API, and it is moving them from this token to a personal sign-in, so they are left out here.\n\n**Errors**: 401 means the token is missing, mistyped or expired; 403 that Clarity does not accept this token (deleted or replaced in Settings, Data Export); 400 an unknown dimension or a day count outside 1 to 3; 429 the daily limit.",
+  "aliases": [
+    "Clarity",
+    "MS Clarity",
+    "Clarity Data Export API"
+  ],
+  "region": "intl",
+  "category": "analytics",
+  "icon": "microsoft-clarity",
+  "docsUrl": "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api",
+  "requiredEnvVars": [
+    "CLARITY_API_TOKEN"
+  ],
+  "envVarMeta": {
+    "CLARITY_API_TOKEN": {
+      "label": "Data Export API token",
+      "kind": "credential",
+      "secret": true,
+      "help": "In your Clarity project: Settings, Data Export, Generate new API token (project admins only). One token reads one project. Clarity allows 10 requests per project per day, and the setup check uses one.",
+      "link": "https://learn.microsoft.com/en-us/clarity/setup-and-installation/clarity-data-export-api#obtaining-access-tokens",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}\\.[A-Za-z0-9_-]{4,}$",
+      "patternMessage": "Paste only the token from Settings, Data Export: three parts separated by periods, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "400": "Clarity rejected the request parameters: the day count must be 1, 2 or 3 and a dimension one of Browser, Device, Country/Region, OS, Source, Medium, Campaign, Channel or URL.",
+    "401": "Clarity did not accept the token: it is missing, incomplete or expired. Copy it again from your project under Settings, Data Export, or generate a new one.",
+    "403": "Clarity refused this token. It was probably deleted or replaced: a project admin can generate a new one under Settings, Data Export.",
+    "rate_limited": "This Clarity project has used its 10 Data Export requests for today; the limit counts for the whole project. The token itself may be fine: try again tomorrow."
+  },
+  "probe": {
+    "tool": "microsoft_clarity_get_dashboard_insights",
+    "params": {
+      "num_of_days": 1
+    }
+  },
+  "prerequisites": "A Microsoft Clarity project (free) with the tracking code on your site, and admin rights on the project to generate a Data Export API token under Settings, Data Export. About 2 minutes. Clarity allows 10 API requests per project per day.",
+  "connector": {
+    "name": "Microsoft Clarity Data Export API",
+    "type": "REST",
+    "baseUrl": "https://www.clarity.ms",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{CLARITY_API_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "microsoft_clarity_get_dashboard_insights",
+      "description": "Read the project's Clarity dashboard totals for the last 1 to 3 days, without any breakdown: sessions, bot sessions, users and pages per session, engagement time, scroll depth, and how many sessions had dead clicks, rage clicks, quick backs, excessive scrolling, script errors or error clicks, plus the top pages, browsers, devices, operating systems, countries, page titles and referrers. Start here for \"how is the site doing\". Returns a list of metric blocks, each with `metricName` and `information` (the rows). Traffic rows carry totalSessionCount, totalBotSessionCount, the distinct user count and pages per session; EngagementTime rows totalTime and activeTime in seconds; ScrollDepth rows averageScrollDepth in percent; DeadClickCount, RageClickCount, QuickbackClick, ExcessiveScroll, ScriptErrorCount and ErrorClickCount rows sessionsCount, the percentage of sessions with and without the signal, pagesViews and subTotal. Counts arrive as strings; times are UTC. Each call uses one of the 10 Data Export requests Clarity allows per project per day (a 429 means the day is used up); an identical call within 30 minutes is answered from the cache and costs nothing. At most 1,000 rows, no paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "num_of_days": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 1,
+            "description": "How far back the export reaches, counted from the moment of the call: 1 = last 24 hours (default), 2 = last 48 hours, 3 = last 72 hours. Clarity exports nothing older."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/export-data/api/v1/project-live-insights",
+        "queryParams": {
+          "numOfDays": "$num_of_days"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 1800
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_clarity_get_page_insights",
+      "description": "Read the Clarity metrics per page URL for the last 1 to 3 days: for every URL its sessions, engagement time, scroll depth and the frustration signals (dead clicks, rage clicks, quick backs, excessive scrolling, script errors, error clicks). Use it to find the pages where visitors struggle. Each row names its URL. Returns a list of metric blocks, each with `metricName` and `information` (the rows). Traffic rows carry totalSessionCount, totalBotSessionCount, the distinct user count and pages per session; EngagementTime rows totalTime and activeTime in seconds; ScrollDepth rows averageScrollDepth in percent; DeadClickCount, RageClickCount, QuickbackClick, ExcessiveScroll, ScriptErrorCount and ErrorClickCount rows sessionsCount, the percentage of sessions with and without the signal, pagesViews and subTotal. Counts arrive as strings; times are UTC. Each call uses one of the 10 Data Export requests Clarity allows per project per day (a 429 means the day is used up); an identical call within 30 minutes is answered from the cache and costs nothing. At most 1,000 rows, no paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "num_of_days": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 1,
+            "description": "How far back the export reaches, counted from the moment of the call: 1 = last 24 hours (default), 2 = last 48 hours, 3 = last 72 hours. Clarity exports nothing older."
+          },
+          "second_dimension": {
+            "type": "string",
+            "enum": [
+              "Browser",
+              "Device",
+              "Country/Region",
+              "OS",
+              "Source",
+              "Medium",
+              "Campaign",
+              "Channel"
+            ],
+            "description": "Optional second breakdown: every URL row is split by this dimension too. More dimensions mean more rows, and the export stops at 1,000 rows."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/export-data/api/v1/project-live-insights",
+        "queryParams": {
+          "numOfDays": "$num_of_days",
+          "dimension1": "URL",
+          "dimension2": "$second_dimension"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 1800
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_clarity_get_traffic_source_insights",
+      "description": "Read the Clarity metrics per traffic source for the last 1 to 3 days, broken down by Channel (such as OrganicSearch, Direct, Social, PaidSearch, Referral, Email), Source and Medium in one call: sessions, engagement, scroll depth and frustration signals for each combination. Use it to compare how visitors from search, ads, social or newsletters behave. Each row names its Channel, Source and Medium. Returns a list of metric blocks, each with `metricName` and `information` (the rows). Traffic rows carry totalSessionCount, totalBotSessionCount, the distinct user count and pages per session; EngagementTime rows totalTime and activeTime in seconds; ScrollDepth rows averageScrollDepth in percent; DeadClickCount, RageClickCount, QuickbackClick, ExcessiveScroll, ScriptErrorCount and ErrorClickCount rows sessionsCount, the percentage of sessions with and without the signal, pagesViews and subTotal. Counts arrive as strings; times are UTC. Each call uses one of the 10 Data Export requests Clarity allows per project per day (a 429 means the day is used up); an identical call within 30 minutes is answered from the cache and costs nothing. At most 1,000 rows, no paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "num_of_days": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 1,
+            "description": "How far back the export reaches, counted from the moment of the call: 1 = last 24 hours (default), 2 = last 48 hours, 3 = last 72 hours. Clarity exports nothing older."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/export-data/api/v1/project-live-insights",
+        "queryParams": {
+          "numOfDays": "$num_of_days",
+          "dimension1": "Channel",
+          "dimension2": "Source",
+          "dimension3": "Medium"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 1800
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_clarity_get_device_insights",
+      "description": "Read the Clarity metrics per device type (PC, Mobile, Tablet), browser and operating system for the last 1 to 3 days in one call: sessions, engagement, scroll depth and frustration signals for each combination. Use it to spot a browser or device where script errors or rage clicks pile up. Each row names its Device, Browser and OS. Returns a list of metric blocks, each with `metricName` and `information` (the rows). Traffic rows carry totalSessionCount, totalBotSessionCount, the distinct user count and pages per session; EngagementTime rows totalTime and activeTime in seconds; ScrollDepth rows averageScrollDepth in percent; DeadClickCount, RageClickCount, QuickbackClick, ExcessiveScroll, ScriptErrorCount and ErrorClickCount rows sessionsCount, the percentage of sessions with and without the signal, pagesViews and subTotal. Counts arrive as strings; times are UTC. Each call uses one of the 10 Data Export requests Clarity allows per project per day (a 429 means the day is used up); an identical call within 30 minutes is answered from the cache and costs nothing. At most 1,000 rows, no paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "num_of_days": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 1,
+            "description": "How far back the export reaches, counted from the moment of the call: 1 = last 24 hours (default), 2 = last 48 hours, 3 = last 72 hours. Clarity exports nothing older."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/export-data/api/v1/project-live-insights",
+        "queryParams": {
+          "numOfDays": "$num_of_days",
+          "dimension1": "Device",
+          "dimension2": "Browser",
+          "dimension3": "OS"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 1800
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_clarity_get_country_insights",
+      "description": "Read the Clarity metrics per visitor country or region for the last 1 to 3 days: sessions, engagement, scroll depth and frustration signals for each country, optionally split by one more dimension. Each row names its country. Returns a list of metric blocks, each with `metricName` and `information` (the rows). Traffic rows carry totalSessionCount, totalBotSessionCount, the distinct user count and pages per session; EngagementTime rows totalTime and activeTime in seconds; ScrollDepth rows averageScrollDepth in percent; DeadClickCount, RageClickCount, QuickbackClick, ExcessiveScroll, ScriptErrorCount and ErrorClickCount rows sessionsCount, the percentage of sessions with and without the signal, pagesViews and subTotal. Counts arrive as strings; times are UTC. Each call uses one of the 10 Data Export requests Clarity allows per project per day (a 429 means the day is used up); an identical call within 30 minutes is answered from the cache and costs nothing. At most 1,000 rows, no paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "num_of_days": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 1,
+            "description": "How far back the export reaches, counted from the moment of the call: 1 = last 24 hours (default), 2 = last 48 hours, 3 = last 72 hours. Clarity exports nothing older."
+          },
+          "second_dimension": {
+            "type": "string",
+            "enum": [
+              "Browser",
+              "Device",
+              "OS",
+              "Source",
+              "Medium",
+              "Campaign",
+              "Channel",
+              "URL"
+            ],
+            "description": "Optional second breakdown: every country row is split by this dimension too. More dimensions mean more rows, and the export stops at 1,000 rows."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/export-data/api/v1/project-live-insights",
+        "queryParams": {
+          "numOfDays": "$num_of_days",
+          "dimension1": "Country/Region",
+          "dimension2": "$second_dimension"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 1800
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "microsoft_clarity_get_insights_by_dimensions",
+      "description": "Read the Clarity metrics for the last 1 to 3 days broken down by one to three dimensions of your choice (Browser, Device, Country/Region, OS, Source, Medium, Campaign, Channel, URL), for a combination the other tools do not cover, such as Campaign with Source, or URL with Device and Country/Region. Each row names its value for every chosen dimension. Returns a list of metric blocks, each with `metricName` and `information` (the rows). Traffic rows carry totalSessionCount, totalBotSessionCount, the distinct user count and pages per session; EngagementTime rows totalTime and activeTime in seconds; ScrollDepth rows averageScrollDepth in percent; DeadClickCount, RageClickCount, QuickbackClick, ExcessiveScroll, ScriptErrorCount and ErrorClickCount rows sessionsCount, the percentage of sessions with and without the signal, pagesViews and subTotal. Counts arrive as strings; times are UTC. Each call uses one of the 10 Data Export requests Clarity allows per project per day (a 429 means the day is used up); an identical call within 30 minutes is answered from the cache and costs nothing. At most 1,000 rows, no paging. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "num_of_days": {
+            "type": "integer",
+            "enum": [
+              1,
+              2,
+              3
+            ],
+            "default": 1,
+            "description": "How far back the export reaches, counted from the moment of the call: 1 = last 24 hours (default), 2 = last 48 hours, 3 = last 72 hours. Clarity exports nothing older."
+          },
+          "dimension1": {
+            "type": "string",
+            "enum": [
+              "Browser",
+              "Device",
+              "Country/Region",
+              "OS",
+              "Source",
+              "Medium",
+              "Campaign",
+              "Channel",
+              "URL"
+            ],
+            "description": "First breakdown. Campaign, Source and Medium are the UTM values of the visit; Channel is the channel group Clarity derives from them; URL is the page."
+          },
+          "dimension2": {
+            "type": "string",
+            "enum": [
+              "Browser",
+              "Device",
+              "Country/Region",
+              "OS",
+              "Source",
+              "Medium",
+              "Campaign",
+              "Channel",
+              "URL"
+            ],
+            "description": "Optional second breakdown; must differ from the first."
+          },
+          "dimension3": {
+            "type": "string",
+            "enum": [
+              "Browser",
+              "Device",
+              "Country/Region",
+              "OS",
+              "Source",
+              "Medium",
+              "Campaign",
+              "Channel",
+              "URL"
+            ],
+            "description": "Optional third breakdown; must differ from the other two. Three dimensions on a busy site reach the 1,000-row cap quickly."
+          }
+        },
+        "required": [
+          "dimension1"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/export-data/api/v1/project-live-insights",
+        "queryParams": {
+          "numOfDays": "$num_of_days",
+          "dimension1": "$dimension1",
+          "dimension2": "$dimension2",
+          "dimension3": "$dimension3"
+        }
+      },
+      "responseMapping": {
+        "cacheTtl": 1800
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="finAPI connector">
+  <rect width="128" height="128" rx="24" fill="#1976B8"/>
+  <path d="M50 102V62H38V48h12v-7c0-13 8-19 21-19 5 0 9 1 12 2l-3 13c-2-1-4-1-6-1-5 0-8 2-8 7v5h15v14H66v40Z" fill="#fff"/>
+</svg>

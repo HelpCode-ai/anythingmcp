@@ -1,0 +1,876 @@
+{
+  "slug": "getcourse",
+  "name": "GetCourse",
+  "description": "GetCourse (getcourse.ru) online school platform, read-only: export users, group members, orders and payments, list groups and additional fields, and with a developer key look up one user, their orders, purchases and trainings, one order, offers and webinars. Secret API key of the account.",
+  "instructions": "## GetCourse\nThis connector reads a **GetCourse** school (getcourse.ru, a platform for selling and running online courses) through its two documented APIs on the account's own address, `https://<account>.getcourse.ru/pl/api`:\n- the **Export API** (secret key only): users, group members, orders and payments as asynchronous exports, plus the group list and the additional fields;\n- the **Tech API** (`/pl/api/v1`, secret key plus a developer key): immediate look-ups of one user, one order, offers, trainings and webinars.\n\nIt is read-only. Adding or updating users and orders (the Import API) is not included: GetCourse expects those parameters as Base64-encoded JSON in a form field, which this connector cannot build.\n\n**Setup (about 5 minutes)**\n1. API access needs a paid GetCourse plan. As the account owner or the administrator responsible for settings open **Profile**, **Account settings**, **API** and generate the **secret key**; for the Tech API give it read rights. Paste it into `GETCOURSE_API_KEY`.\n2. `GETCOURSE_HOST` is the address of the account without `https://`, for example `myschool.getcourse.ru`. If the account redirects to its own connected domain, enter that domain instead.\n3. Optional, for the Tech API tools: request a **developer key** with the form at https://getcourse.ru/issuedeveloperkey (GetCourse reviews it) and paste it into `GETCOURSE_DEVELOPER_KEY`. Without it only the Export API tools work.\n\n**Where to start**: `getcourse_list_groups` proves the key and lists the groups. With a developer key, `getcourse_get_user` by e-mail and `getcourse_list_user_deals` answer most questions about one customer at once.\n\n**Exports (two steps)**: start a job with `getcourse_start_users_export`, `getcourse_start_group_users_export`, `getcourse_start_deals_export` or `getcourse_start_payments_export` (each needs at least one filter, dates as `YYYY-MM-DD`), take `info.export_id` and read it with `getcourse_get_export`. While the file is being prepared the answer says so (success false, error_code 909): wait about 30 seconds before asking again. The result is a table: `info.fields` are the column titles in the account language and `info.items` the rows. `getcourse_list_custom_fields` explains the additional columns.\n\n**Export limits**: 100 Export API requests per 2 hours per account, status checks included, and one job at a time. Over the limit the answer is error 903. Export a whole period in one job instead of many small ones, and do not poll faster than every 30 seconds. GetCourse built the Export API for periodic analysis, not for live look-ups.\n\n**Tech API tools** (developer key): `getcourse_get_user`, `getcourse_get_user_custom_fields`, `getcourse_list_user_deals`, `getcourse_list_user_groups`, `getcourse_list_user_purchases`, `getcourse_list_user_trainings`, `getcourse_get_user_balance`, `getcourse_get_deal`, `getcourse_get_deal_custom_fields`, `getcourse_list_deal_comments`, `getcourse_list_offers`, `getcourse_get_offer`, `getcourse_list_trainings`, `getcourse_list_webinars`. A user is addressed by `user_id` or `email`. Answers carry `status`, `code`, `message` and the result under `data`; \"Нет доступа\" (403) means the developer key is missing or wrong, or the secret key lacks the right.\n\n**Words**: GetCourse calls an order a *deal* and what is sold an *offer*; a *purchase* is the access a paid order grants. Order statuses: new, payed, cancelled, in_work, payment_waiting, part_payed, waiting_for_return, not_confirmed, pending. Payment statuses: expected, accepted, returned, tobalance, frombalance, returned_to_balance. Export API errors arrive with HTTP 200 and `success` false, `error_message` (in Russian) and `error_code`; 901 means the key was refused.",
+  "aliases": [
+    "ГетКурс",
+    "getcourse.ru",
+    "GetCourse.io"
+  ],
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "getcourse",
+  "docsUrl": "https://getcourse.ru/help/api",
+  "requiredEnvVars": [
+    "GETCOURSE_HOST",
+    "GETCOURSE_API_KEY"
+  ],
+  "optionalEnvVars": [
+    "GETCOURSE_DEVELOPER_KEY"
+  ],
+  "envVarMeta": {
+    "GETCOURSE_HOST": {
+      "label": "Account address",
+      "kind": "address",
+      "help": "The address of your GetCourse account without https://, for example myschool.getcourse.ru. If the account redirects to its own connected domain, enter that domain.",
+      "example": "myschool.getcourse.ru",
+      "pattern": "^(?!https?:)[A-Za-z0-9][A-Za-z0-9.-]*\\.[A-Za-z]{2,}$",
+      "patternMessage": "Enter only the host, without https:// and without a path, e.g. myschool.getcourse.ru."
+    },
+    "GETCOURSE_API_KEY": {
+      "label": "Secret API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "Profile, Account settings, API: generate the secret key (owner or responsible administrator, paid plan). Give it read rights for the Tech API tools.",
+      "link": "https://getcourse.ru/help/api",
+      "pattern": "^\\S{16,400}$",
+      "patternMessage": "Paste the secret key without spaces."
+    },
+    "GETCOURSE_DEVELOPER_KEY": {
+      "label": "Developer key (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Only for the Tech API tools (single user, order, offers, trainings, webinars). Request it with the form at getcourse.ru/issuedeveloperkey. Leave empty to use only the exports.",
+      "link": "https://getcourse.ru/issuedeveloperkey",
+      "pattern": "^\\S{4,200}$",
+      "patternMessage": "Paste only the developer key, without spaces and without the secret key of the school."
+    }
+  },
+  "verifyHints": {
+    "401": "GetCourse refused the secret key (error 901). Generate or copy it again under Profile, Account settings, API, and check that GETCOURSE_HOST is the address of the same account (or its connected domain when the account redirects there). API access needs a paid plan.",
+    "403": "The Tech API answered \"no access\": set GETCOURSE_DEVELOPER_KEY (requested at getcourse.ru/issuedeveloperkey) and give the secret key read rights. The export tools work without a developer key.",
+    "404": "GetCourse found no user, order, offer or export with that id on this account.",
+    "rate_limited": "The Export API allows 100 requests per 2 hours per account, status checks included (error 903). Wait for the window to pass and poll an export no faster than every 30 seconds."
+  },
+  "probe": {
+    "tool": "getcourse_list_groups",
+    "params": {}
+  },
+  "prerequisites": "A GetCourse account on a paid plan and its secret API key (Profile, Account settings, API; owner or responsible administrator). For the single-record look-ups also a developer key, which GetCourse issues after reviewing the form at getcourse.ru/issuedeveloperkey. About 5 minutes without the developer key.",
+  "connector": {
+    "name": "GetCourse API",
+    "type": "REST",
+    "baseUrl": "https://{{GETCOURSE_HOST}}/pl/api",
+    "authType": "NONE",
+    "headers": {
+      "Accept": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "error_code",
+          "equals": 901,
+          "messagePath": "error_message",
+          "status": 401
+        },
+        {
+          "path": "error_code",
+          "equals": 903,
+          "messagePath": "error_message",
+          "status": 429
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "getcourse_list_groups",
+      "description": "List the user groups of the account through the Export API: id, name and last_added_at (when a user was last added, null for an empty group) under info. Use the ids for getcourse_start_group_users_export and the user_in_group filter of orders. Counts as one Export API request (100 per 2 hours). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/groups",
+        "queryParams": {
+          "key": "{{GETCOURSE_API_KEY}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_start_users_export",
+      "description": "Export users by creation date, status or e-mail: the columns are those of the user export in the account (id, e-mail, registration type, created, last activity, name, phone, birthday, country, city, UTM marks, partner and the additional fields). Starts an export job and returns info.export_id; read the rows with getcourse_get_export. Jobs run one at a time and every call counts toward the limit of 100 Export API requests per 2 hours. At least one filter is required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Users created on or after this day (YYYY-MM-DD)."
+          },
+          "created_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Users created on or before this day (YYYY-MM-DD)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "in_base"
+            ],
+            "description": "active (registered users) or in_base (contacts in the base who have not registered)."
+          },
+          "email": {
+            "type": "string",
+            "description": "One e-mail address, or several separated by commas."
+          },
+          "idgrouplist": {
+            "type": "string",
+            "enum": [
+              "id",
+              "id_date"
+            ],
+            "description": "Extra column with the user's groups: id (group ids) or id_date (group id with the date the user was added). Not a filter: combine it with at least one filter."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/users",
+        "queryParams": {
+          "key": "{{GETCOURSE_API_KEY}}",
+          "created_at[from]": "$created_from",
+          "created_at[to]": "$created_to",
+          "status": "$status",
+          "email": "$email",
+          "idgrouplist": "$idgrouplist"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_start_group_users_export",
+      "description": "Export the users of one group, with the group id and the time each user was added to it next to the usual user columns. Starts an export job and returns info.export_id; read the rows with getcourse_get_export. Jobs run one at a time and every call counts toward the limit of 100 Export API requests per 2 hours. At least one filter is required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Group id, from getcourse_list_groups."
+          },
+          "created_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Users created on or after this day (YYYY-MM-DD)."
+          },
+          "created_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Users created on or before this day (YYYY-MM-DD)."
+          },
+          "added_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Users added to the group on or after this day (YYYY-MM-DD)."
+          },
+          "added_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Users added to the group on or before this day (YYYY-MM-DD)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "active",
+              "in_base"
+            ],
+            "description": "active (registered users) or in_base (contacts in the base who have not registered)."
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/groups/{group_id}/users",
+        "queryParams": {
+          "key": "{{GETCOURSE_API_KEY}}",
+          "created_at[from]": "$created_from",
+          "created_at[to]": "$created_to",
+          "added_at[from]": "$added_from",
+          "added_at[to]": "$added_to",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_start_deals_export",
+      "description": "Export orders (GetCourse calls them deals) by creation, payment, completion or status-change date, by status or by buyer: the columns are those of the order export in the account (order id and number, user id, user, e-mail, phone, dates, title, status, cost, paid, fees, earned, currency, manager, partner, UTM marks and the additional fields). Starts an export job and returns info.export_id; read the rows with getcourse_get_export. Jobs run one at a time and every call counts toward the limit of 100 Export API requests per 2 hours. At least one filter is required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders created on or after this day (YYYY-MM-DD)."
+          },
+          "created_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders created on or before this day (YYYY-MM-DD)."
+          },
+          "payed_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders paid on or after this day (YYYY-MM-DD)."
+          },
+          "payed_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders paid on or before this day (YYYY-MM-DD)."
+          },
+          "finished_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders completed on or after this day (YYYY-MM-DD)."
+          },
+          "finished_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders completed on or before this day (YYYY-MM-DD)."
+          },
+          "status_changed_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders whose status changed on or after this day (YYYY-MM-DD)."
+          },
+          "status_changed_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Orders whose status changed on or before this day (YYYY-MM-DD)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "new",
+              "payed",
+              "cancelled",
+              "in_work",
+              "payment_waiting",
+              "part_payed",
+              "waiting_for_return",
+              "not_confirmed",
+              "pending"
+            ],
+            "description": "Order status."
+          },
+          "user_in_group": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only orders of users in this group (group id)."
+          },
+          "user_id": {
+            "type": "string",
+            "pattern": "^[0-9]+(,[0-9]+)*$",
+            "description": "Only orders of this user id, or of several ids separated by commas."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/deals",
+        "queryParams": {
+          "key": "{{GETCOURSE_API_KEY}}",
+          "created_at[from]": "$created_from",
+          "created_at[to]": "$created_to",
+          "payed_at[from]": "$payed_from",
+          "payed_at[to]": "$payed_to",
+          "finished_at[from]": "$finished_from",
+          "finished_at[to]": "$finished_to",
+          "status_changed_at[from]": "$status_changed_from",
+          "status_changed_at[to]": "$status_changed_to",
+          "status": "$status",
+          "user_in_group": "$user_in_group",
+          "user_id": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_start_payments_export",
+      "description": "Export payments by creation or status-change date or by status: the columns are those of the payment export in the account (number, user, e-mail, order, created, payment system, status, amount, fees, received, payment code and title). Starts an export job and returns info.export_id; read the rows with getcourse_get_export. Jobs run one at a time and every call counts toward the limit of 100 Export API requests per 2 hours. At least one filter is required. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "created_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Payments created on or after this day (YYYY-MM-DD)."
+          },
+          "created_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Payments created on or before this day (YYYY-MM-DD)."
+          },
+          "status_changed_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Payments whose status changed on or after this day (YYYY-MM-DD)."
+          },
+          "status_changed_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Payments whose status changed on or before this day (YYYY-MM-DD)."
+          },
+          "status": {
+            "type": "string",
+            "enum": [
+              "expected",
+              "accepted",
+              "returned",
+              "tobalance",
+              "frombalance",
+              "returned_to_balance"
+            ],
+            "description": "Payment status: expected, accepted (received), returned, tobalance (credited to the balance), frombalance (paid from the balance) or returned_to_balance."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/payments",
+        "queryParams": {
+          "key": "{{GETCOURSE_API_KEY}}",
+          "created_at[from]": "$created_from",
+          "created_at[to]": "$created_to",
+          "status_changed_at[from]": "$status_changed_from",
+          "status_changed_at[to]": "$status_changed_to",
+          "status": "$status"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_get_export",
+      "description": "Read the result of an export job: info.fields (the column titles, in the account language) and info.items (one list of values per row, in the same order). While the file is still being prepared the answer has success false with an error_message saying so (error_code 909): wait about 30 seconds and call again. An export whose filters match nothing answers that no file was created. Every call counts toward the limit of 100 Export API requests per 2 hours. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "export_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "info.export_id returned by one of the start export tools."
+          }
+        },
+        "required": [
+          "export_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/account/exports/{export_id}",
+        "queryParams": {
+          "key": "{{GETCOURSE_API_KEY}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_custom_fields",
+      "description": "List the additional fields defined in the account for users and for orders: id, type, title, required, position, params, form_id and context_type under info. Their titles are the extra columns of the exports. Read-only, although GetCourse takes this call as a POST.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/account/fields",
+        "bodyEncoding": "form-urlencoded",
+        "bodyMapping": {
+          "action": "get",
+          "key": "{{GETCOURSE_API_KEY}}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_get_user",
+      "description": "Look up one user at once by id, e-mail or phone: id, e-mail, name, phone, registration and activity dates, status and profile fields under data. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GetCourse user id. Use it when known."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's e-mail, when the id is not known."
+          },
+          "phone": {
+            "type": "string",
+            "description": "The user's phone, when neither id nor e-mail is known."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/get-fields",
+        "queryParams": {
+          "userId": "$user_id",
+          "email": "$email",
+          "phone": "$phone"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_get_user_custom_fields",
+      "description": "Read the additional (custom) field values of one user, by user id or e-mail. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GetCourse user id. Use it when known."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's e-mail, when the id is not known."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/get-custom-fields",
+        "queryParams": {
+          "userId": "$user_id",
+          "email": "$email"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_user_deals",
+      "description": "List the orders of one user, by user id or e-mail: order id, number, status, cost, dates and positions under data. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GetCourse user id. Use it when known."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's e-mail, when the id is not known."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/get-deals",
+        "queryParams": {
+          "userId": "$user_id",
+          "email": "$email"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_user_groups",
+      "description": "List the groups one user belongs to, by user id or e-mail. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GetCourse user id. Use it when known."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's e-mail, when the id is not known."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/get-groups",
+        "queryParams": {
+          "userId": "$user_id",
+          "email": "$email"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_user_purchases",
+      "description": "List the purchases (granted products with their access period and state) of one user, by user id or e-mail, optionally for one product. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GetCourse user id. Use it when known."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's e-mail, when the id is not known."
+          },
+          "product_id": {
+            "type": "string",
+            "description": "Only purchases of this product id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/get-purchases",
+        "queryParams": {
+          "userId": "$user_id",
+          "email": "$email",
+          "productId": "$product_id"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_user_trainings",
+      "description": "List the trainings (courses) one user has access to, by user id or e-mail. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GetCourse user id. Use it when known."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's e-mail, when the id is not known."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/get-trainings",
+        "queryParams": {
+          "userId": "$user_id",
+          "email": "$email"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_get_user_balance",
+      "description": "Read the balance of one user, by user id or e-mail: the money balance (normal), the bonus balance (virtual, the default) or achievement points. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "GetCourse user id. Use it when known."
+          },
+          "email": {
+            "type": "string",
+            "description": "The user's e-mail, when the id is not known."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "normal",
+              "virtual",
+              "points"
+            ],
+            "description": "Kind of balance. Default virtual."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/user/get-balance",
+        "queryParams": {
+          "userId": "$user_id",
+          "email": "$email",
+          "type": "$type"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_get_deal",
+      "description": "Read one order at once by its id: number, status, cost, paid amount, buyer, manager, dates and positions under data. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id (not the order number shown to the buyer)."
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deal/get-fields",
+        "queryParams": {
+          "dealId": "$deal_id"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_get_deal_custom_fields",
+      "description": "Read the additional (custom) field values of one order by its id. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deal/get-custom-fields",
+        "queryParams": {
+          "dealId": "$deal_id"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_deal_comments",
+      "description": "List the comments managers left on one order, by order id. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Order id."
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/deal/get-comments",
+        "queryParams": {
+          "dealId": "$deal_id"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_offers",
+      "description": "List the offers (what the school sells: title, price, currency, code and the products an offer grants) with limit and offset paging. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of offers to return."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of offers to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/offer/get-offers",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_get_offer",
+      "description": "Read one offer by its id: title, price, currency, code and the products it grants. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offer_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Offer id, from getcourse_list_offers."
+          }
+        },
+        "required": [
+          "offer_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/offer/get-offer-by-id",
+        "queryParams": {
+          "offerId": "$offer_id"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_trainings",
+      "description": "List every training (course) of the account with its id and title. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/common/get-trainings",
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "getcourse_list_webinars",
+      "description": "List the webinars of the account, live or automatic, with limit and offset paging. Tech API: needs the developer key. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "type": {
+            "type": "string",
+            "enum": [
+              "LiveWebinar",
+              "AutoWebinar"
+            ],
+            "description": "Only live webinars or only automatic webinars."
+          },
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Number of webinars to return."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Number of webinars to skip."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v1/webinar/get-all-webinars",
+        "queryParams": {
+          "type": "$type",
+          "limit": "$limit",
+          "offset": "$offset"
+        },
+        "headers": {
+          "Authorization": "Bearer ${GETCOURSE_DEVELOPER_KEY}_${GETCOURSE_API_KEY}"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}

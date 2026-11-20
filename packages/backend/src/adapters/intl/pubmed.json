@@ -1,0 +1,572 @@
+{
+  "slug": "pubmed",
+  "name": "PubMed",
+  "aliases": [
+    "NCBI",
+    "NCBI E-utilities",
+    "Entrez",
+    "MEDLINE",
+    "PubMed Central",
+    "PMC"
+  ],
+  "description": "Biomedical literature from PubMed through the NCBI E-utilities, no key needed: search 40 million citations with PubMed query syntax, read summaries, abstracts and MeSH terms, follow similar and citing articles, find full-text links, convert PMID, PMCID and DOI, and read open-access full text from PubMed Central.",
+  "instructions": "## PubMed\nThis connector reads **PubMed** and the other NCBI Entrez databases through the public **E-utilities** (`https://eutils.ncbi.nlm.nih.gov/entrez/eutils`): literature search, citation summaries, abstracts, full records with MeSH terms, similar and citing articles, full-text links, plus the PMC ID converter and open-access full text. Read-only, run by the US National Library of Medicine.\n\n**Setup**: nothing is required; it works without a key at up to 3 requests per second. For 10 requests per second, sign in at https://account.ncbi.nlm.nih.gov, open **Account settings**, create a key under **API Key Management** and set it as `NCBI_API_KEY`. The key is sent to the E-utilities only, as the `api_key` query parameter. Every call names the tool AnythingMCP to NCBI, as its usage policy asks.\n\n**Where to start**\n1. `pubmed_search` turns a query into PMIDs (ids only) and shows in `querytranslation` how PubMed read it.\n2. `pubmed_get_summaries` gives titles, authors, journal and DOI for those ids; `pubmed_fetch_abstracts` gives the abstracts as text.\n3. Go deeper per article: `pubmed_fetch_article_details` (MeSH headings, affiliations, grants, references), `pubmed_list_similar_articles`, `pubmed_list_citing_articles`, `pubmed_list_references`, `pubmed_get_full_text_links`.\n4. Full text: `pubmed_convert_ids` tells whether an article is in PubMed Central (it then has a PMCID); `pubmed_get_pmc_full_text` returns the text for open-access articles.\n\n**Other tools**: `pubmed_check_spelling` (did you mean), `pubmed_match_citations` (citation to PMID), `pubmed_get_links` (links to other databases such as gene or pmc), `pubmed_list_databases` and `pubmed_get_database_info` (field tags and link names). `pubmed_search` and `pubmed_get_summaries` take a `db` argument, so the same two steps work for `mesh`, `pmc`, `nlmcatalog`, `gene` and the rest.\n\n**Query syntax**: words are combined with AND and expanded to MeSH terms and spelling variants (automatic term mapping). Field tags go in square brackets after a term: `[ti]` title, `[tiab]` title or abstract, `[au]` author, `[ta]` journal, `[dp]` publication date, `[pt]` publication type, `[mh]` MeSH heading, `[la]` language. Boolean operators must be upper case. A date range is written `2020:2024[dp]` or passed as `mindate` and `maxdate`. Filters are ordinary terms, e.g. `free full text[sb]`, `humans[mh]`, `review[pt]`.\n\n**Reading the answers**\n- Ids are strings. A PMID identifies a PubMed citation; a PMCID (PMC plus digits) identifies a full-text article in PubMed Central; they are different numbers.\n- `pubmed_search` returns at most `retmax` ids per call (default 20) and pages with `retstart` up to the 10,000th hit; narrow the query for more.\n- `pubmed_get_summaries` puts each record under `result` keyed by its id, with the order in `result.uids`. `pubdate` is free text such as 2024 May or 2013 Jan 15.\n- A failed search answers HTTP 200 with `esearchresult.ERROR`; an empty result has `count` 0 and a warning list.\n- The link tools return `linksets`; when an article has no such links the `linksetdbs` key is simply missing.\n\n**Limits and policy**: 3 requests per second without a key, 10 with one; exceeding it answers 429. Large jobs belong on weekends or between 9 pm and 5 am US Eastern time. Abstracts are copyrighted by their publishers: quote and cite them, do not republish in bulk. NCBI's disclaimer and copyright notice apply to all data.",
+  "region": "intl",
+  "category": "data",
+  "icon": "pubmed",
+  "docsUrl": "https://www.ncbi.nlm.nih.gov/books/NBK25499/",
+  "requiredEnvVars": [],
+  "optionalEnvVars": [
+    "NCBI_API_KEY"
+  ],
+  "envVarMeta": {
+    "NCBI_API_KEY": {
+      "label": "NCBI API key (optional)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Optional. Raises the limit from 3 to 10 requests per second. Sign in at NCBI, open Account settings and create a key under API Key Management. Leave empty to work without a key.",
+      "link": "https://account.ncbi.nlm.nih.gov/settings/",
+      "pattern": "^[A-Za-z0-9]{20,64}$",
+      "patternMessage": "Paste the key exactly as NCBI shows it: letters and digits only, usually 36 characters."
+    }
+  },
+  "verifyHints": {
+    "400": {
+      "hint": "NCBI refused the request. If the answer says API key invalid, copy the key again from NCBI Account settings, API Key Management, or leave NCBI_API_KEY empty to work without one.",
+      "field": "NCBI_API_KEY"
+    },
+    "rate_limited": "NCBI allows 3 requests per second without an API key and 10 with one. Wait a second and retry, or set NCBI_API_KEY."
+  },
+  "probe": {
+    "tool": "pubmed_search",
+    "params": {
+      "term": "asthma",
+      "retmax": 1
+    }
+  },
+  "connector": {
+    "name": "NCBI E-utilities",
+    "type": "REST",
+    "baseUrl": "https://eutils.ncbi.nlm.nih.gov/entrez/eutils",
+    "authType": "NONE",
+    "headers": {
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "esearchresult.ERROR",
+          "messagePath": "esearchresult.ERROR",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "pubmed_search",
+      "description": "Search PubMed (or another Entrez database) and get the matching record ids. Returns esearchresult with count (total hits), idlist (the ids of this page), retstart, retmax and querytranslation (how PubMed understood the query, including the MeSH terms it added). Ids only: pass them to pubmed_get_summaries or pubmed_fetch_abstracts. Results are newest first unless sort is set.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "Query in PubMed syntax. Plain words are mapped to MeSH terms automatically. Field tags in square brackets narrow a word: asthma[ti] (title), smith j[au], nature[ta] (journal), 2024[dp] (publication year), review[pt] (publication type), asthma[mh] (MeSH heading), english[la]. Combine with AND, OR, NOT in capitals and parentheses, e.g. (asthma[ti] OR copd[ti]) AND randomized controlled trial[pt]. Quote exact phrases."
+          },
+          "db": {
+            "type": "string",
+            "description": "Entrez database to query. Default pubmed. Others: pmc (full-text archive), mesh (subject headings), nlmcatalog (journals), books, gene, protein, nuccore, clinvar, taxonomy; pubmed_list_databases lists all.",
+            "default": "pubmed"
+          },
+          "retmax": {
+            "type": "integer",
+            "description": "Number of ids to return, default 20, at most 10,000.",
+            "minimum": 0,
+            "maximum": 10000,
+            "default": 20
+          },
+          "retstart": {
+            "type": "integer",
+            "description": "Offset of the first id, starting at 0, for paging (PubMed serves the first 10,000 hits of a query this way).",
+            "minimum": 0
+          },
+          "sort": {
+            "type": "string",
+            "description": "Sort order for PubMed: relevance (best match), pub_date (publication date, newest first), Author, JournalName. Default: most recently added first.",
+            "enum": [
+              "relevance",
+              "pub_date",
+              "Author",
+              "JournalName"
+            ]
+          },
+          "datetype": {
+            "type": "string",
+            "description": "Which date mindate, maxdate and reldate apply to: pdat (publication date, default), edat (date added to PubMed) or mdat (last modified).",
+            "enum": [
+              "pdat",
+              "edat",
+              "mdat"
+            ]
+          },
+          "mindate": {
+            "type": "string",
+            "description": "Start of a date range, YYYY/MM/DD, YYYY/MM or YYYY. Needs maxdate."
+          },
+          "maxdate": {
+            "type": "string",
+            "description": "End of a date range, YYYY/MM/DD, YYYY/MM or YYYY. Needs mindate."
+          },
+          "reldate": {
+            "type": "integer",
+            "description": "Only records from the last N days (by datetype), e.g. 30.",
+            "minimum": 1
+          },
+          "field": {
+            "type": "string",
+            "description": "Restrict every untagged word of term to one field, e.g. title, tiab (title and abstract), author, journal, mesh."
+          }
+        },
+        "required": [
+          "term"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/esearch.fcgi",
+        "queryParams": {
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "term": "$term",
+          "db": "$db",
+          "retmax": "$retmax",
+          "retstart": "$retstart",
+          "sort": "$sort",
+          "datetype": "$datetype",
+          "mindate": "$mindate",
+          "maxdate": "$maxdate",
+          "reldate": "$reldate",
+          "field": "$field"
+        }
+      }
+    },
+    {
+      "name": "pubmed_get_summaries",
+      "description": "Get the document summaries of PubMed records: per id title, authors, source (journal abbreviation), fulljournalname, pubdate, epubdate, volume, issue, pages, lang, pubtype, articleids (pubmed, doi, pmc, pii) and pmcrefcount. No abstract: use pubmed_fetch_abstracts for the text. The answer is result.uids plus one object per id under result; an unknown id carries an error field instead.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "One PubMed ID (PMID) or several separated by commas, e.g. 23193287,31452104. Up to about 200 per call."
+          },
+          "db": {
+            "type": "string",
+            "description": "Entrez database to query. Default pubmed. Others: pmc (full-text archive), mesh (subject headings), nlmcatalog (journals), books, gene, protein, nuccore, clinvar, taxonomy; pubmed_list_databases lists all.",
+            "default": "pubmed"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/esummary.fcgi",
+        "queryParams": {
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id",
+          "db": "$db"
+        }
+      }
+    },
+    {
+      "name": "pubmed_fetch_abstracts",
+      "description": "Fetch PubMed records as plain text, ready to read: citation line, title, authors with affiliations, the full abstract, DOI, PMID and PMCID. With format medline the answer is the tagged MEDLINE format instead, which adds MeSH headings (MH), publication types (PT), grants (GR) and substances. Records without an abstract return only the citation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "One PubMed ID (PMID) or several separated by commas, e.g. 23193287,31452104. Up to about 200 per call."
+          },
+          "format": {
+            "type": "string",
+            "description": "abstract (default, readable text with the abstract) or medline (tagged fields incl. MeSH headings).",
+            "enum": [
+              "abstract",
+              "medline"
+            ],
+            "default": "abstract"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/efetch.fcgi",
+        "queryParams": {
+          "db": "pubmed",
+          "retmode": "text",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id",
+          "rettype": "$format"
+        }
+      }
+    },
+    {
+      "name": "pubmed_fetch_article_details",
+      "description": "Fetch the complete PubMed record of one or a few articles as structured data (parsed from PubMed XML): PubmedArticleSet.PubmedArticle with MedlineCitation (Article title, structured abstract sections, AuthorList with affiliations and ORCID, Journal, MeshHeadingList, ChemicalList, GrantList, PublicationTypeList, KeywordList) and PubmedData (ArticleIdList, History dates, ReferenceList). Verbose: ask for few ids, and prefer pubmed_fetch_abstracts when only the text is needed. Formatting inside titles and abstracts (italics, subscripts) can split the text into parts.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "One PubMed ID (PMID) or several separated by commas, e.g. 23193287,31452104. Up to about 200 per call."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/efetch.fcgi",
+        "queryParams": {
+          "db": "pubmed",
+          "retmode": "xml",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "pubmed_list_similar_articles",
+      "description": "List the articles PubMed computes as most similar to an article (the Similar articles list), best first with a similarity score. Returns linksets[0].linksetdbs[0].links as id and score pairs; the first entry is the article itself.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "PubMed ID (PMID) of the article, digits only, e.g. 23193287. Several separated by commas are answered as one link set per id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/elink.fcgi",
+        "queryParams": {
+          "dbfrom": "pubmed",
+          "db": "pubmed",
+          "cmd": "neighbor_score",
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "pubmed_list_citing_articles",
+      "description": "List the PubMed articles that cite an article (Cited by), as far as the citing articles are in PubMed Central or supply reference lists. Returns linksets[0].linksetdbs[0].links as a list of PMIDs; linksetdbs is missing when nothing cites it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "PubMed ID (PMID) of the article, digits only, e.g. 23193287. Several separated by commas are answered as one link set per id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/elink.fcgi",
+        "queryParams": {
+          "dbfrom": "pubmed",
+          "linkname": "pubmed_pubmed_citedin",
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "pubmed_list_references",
+      "description": "List the PubMed articles in the reference list of an article, when the publisher or PubMed Central supplied it. Returns linksets[0].linksetdbs[0].links as a list of PMIDs; linksetdbs is missing when no references are recorded.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "PubMed ID (PMID) of the article, digits only, e.g. 23193287. Several separated by commas are answered as one link set per id."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/elink.fcgi",
+        "queryParams": {
+          "dbfrom": "pubmed",
+          "linkname": "pubmed_pubmed_refs",
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id"
+        }
+      }
+    },
+    {
+      "name": "pubmed_get_full_text_links",
+      "description": "Get the links to the full text of an article: publisher site, PubMed Central and other providers, each with url, provider name, categories and attributes such as free resource or subscription/membership/fee required. Returns linksets[0].idurllist[0].objurls.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "PubMed ID (PMID) of the article, digits only, e.g. 23193287. Several separated by commas are answered as one link set per id."
+          },
+          "scope": {
+            "type": "string",
+            "description": "prlinks (default): the primary full-text provider only. llinks: every LinkOut provider.",
+            "enum": [
+              "prlinks",
+              "llinks"
+            ],
+            "default": "prlinks"
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/elink.fcgi",
+        "queryParams": {
+          "dbfrom": "pubmed",
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id",
+          "cmd": "$scope"
+        }
+      }
+    },
+    {
+      "name": "pubmed_get_links",
+      "description": "Generic Entrez link lookup between databases, for links the dedicated tools do not cover: e.g. from PubMed to pmc (the PMC id of the free full text), gene, protein, clinvar or books, or from another database back to pubmed. Returns linksets with one linksetdbs entry per link name and its list of target ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "One id of the source database, or several separated by commas."
+          },
+          "dbfrom": {
+            "type": "string",
+            "description": "Source database of the ids. Default pubmed.",
+            "default": "pubmed"
+          },
+          "db": {
+            "type": "string",
+            "description": "Target database, e.g. pmc, gene, protein, clinvar, books, pubmed. Leave out together with linkname to get every link."
+          },
+          "linkname": {
+            "type": "string",
+            "description": "One specific link, written as source_target or source_target_subset, e.g. pubmed_pmc, pubmed_pmc_refs (citing articles in PMC), pubmed_gene, gene_pubmed. pubmed_get_database_info lists the link names of a database."
+          }
+        },
+        "required": [
+          "id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/elink.fcgi",
+        "queryParams": {
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "id": "$id",
+          "dbfrom": "$dbfrom",
+          "db": "$db",
+          "linkname": "$linkname"
+        }
+      }
+    },
+    {
+      "name": "pubmed_check_spelling",
+      "description": "Get PubMed's spelling suggestion for a query, the \"Did you mean\" line. Returns eSpellResult with Query and CorrectedQuery (empty when nothing is corrected).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "term": {
+            "type": "string",
+            "description": "The query to check, e.g. asthmaa OR alergies."
+          },
+          "db": {
+            "type": "string",
+            "description": "Entrez database to query. Default pubmed. Others: pmc (full-text archive), mesh (subject headings), nlmcatalog (journals), books, gene, protein, nuccore, clinvar, taxonomy; pubmed_list_databases lists all.",
+            "default": "pubmed"
+          }
+        },
+        "required": [
+          "term"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/espell.fcgi",
+        "queryParams": {
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "term": "$term",
+          "db": "$db"
+        }
+      }
+    },
+    {
+      "name": "pubmed_match_citations",
+      "description": "Find the PMID of a known citation from its journal, year, volume, first page and author (batch citation matcher). Returns plain text: each input line echoed with the PMID appended, or NOT_FOUND, or AMBIGUOUS with candidates.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "citations": {
+            "type": "string",
+            "description": "One citation per line (separate several with a carriage return), each as journal_title|year|volume|first_page|author_name|your_key| with a trailing pipe, e.g. proc natl acad sci u s a|1991|88|3248|mann bj|Art1|. Leave unknown parts empty but keep the pipes."
+          }
+        },
+        "required": [
+          "citations"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/ecitmatch.cgi",
+        "queryParams": {
+          "db": "pubmed",
+          "retmode": "xml",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "bdata": "$citations"
+        }
+      }
+    },
+    {
+      "name": "pubmed_list_databases",
+      "description": "List the Entrez databases the E-utilities serve (pubmed, pmc, mesh, gene, protein, clinvar and about 30 more). Returns einforesult.dblist.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/einfo.fcgi",
+        "queryParams": {
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP"
+        }
+      }
+    },
+    {
+      "name": "pubmed_get_database_info",
+      "description": "Describe one Entrez database: record count, last update, the searchable fields with their tags (fieldlist: name, fullname, description) and the links to other databases (linklist: name, menu, dbto). Use it to find valid field tags for pubmed_search and link names for pubmed_get_links.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "db": {
+            "type": "string",
+            "description": "Database name, e.g. pubmed, pmc or mesh."
+          }
+        },
+        "required": [
+          "db"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/einfo.fcgi",
+        "queryParams": {
+          "retmode": "json",
+          "api_key": "${NCBI_API_KEY}",
+          "tool": "AnythingMCP",
+          "db": "$db"
+        }
+      }
+    },
+    {
+      "name": "pubmed_convert_ids",
+      "description": "Convert between PMID, PMCID and DOI for articles that are in PubMed Central (PMC ID Converter). Returns records with pmid, pmcid and doi; an article that is not in PMC comes back with status error. All ids of one call must be of the same type.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "ids": {
+            "type": "string",
+            "description": "Up to 200 ids separated by commas, all of one type: PMIDs (23193287), PMCIDs (PMC3531190) or DOIs (10.1093/nar/gks1195)."
+          },
+          "idtype": {
+            "type": "string",
+            "description": "Type of the ids when it cannot be guessed: pmid, pmcid, doi or mid.",
+            "enum": [
+              "pmid",
+              "pmcid",
+              "doi",
+              "mid"
+            ]
+          }
+        },
+        "required": [
+          "ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://pmc.ncbi.nlm.nih.gov/tools/idconv/api/v1/articles/",
+        "queryParams": {
+          "format": "json",
+          "tool": "AnythingMCP",
+          "ids": "$ids",
+          "idtype": "$idtype"
+        }
+      }
+    },
+    {
+      "name": "pubmed_get_pmc_full_text",
+      "description": "Get the full text of an open-access article from PubMed Central as JSON (BioC format): a list with one collection whose documents[0].passages each come with text, its offset and infons naming the section (TITLE, ABSTRACT, INTRO, METHODS, RESULTS, DISCUSS, REF, TABLE, FIG) and type. Only the PMC Open Access subset and author manuscripts are available; other articles answer with an error text. Long articles are large.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "article_id": {
+            "type": "string",
+            "description": "PMCID with its prefix (PMC3531190) or a PMID (23193287) of an article in the PMC Open Access subset."
+          }
+        },
+        "required": [
+          "article_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "https://www.ncbi.nlm.nih.gov/research/bionlp/RESTful/pmcoa.cgi/BioC_json/{article_id}/unicode"
+      }
+    }
+  ]
+}

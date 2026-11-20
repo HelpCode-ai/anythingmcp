@@ -1,0 +1,916 @@
+{
+  "slug": "wazzup",
+  "name": "Wazzup",
+  "description": "Wazzup (wazzup24.com), a paid gateway that connects WhatsApp, WhatsApp Business API, Telegram, Instagram, MAX, VK, Viber and Avito to a CRM: list channels, send messages and WABA templates, sync CRM users, contacts, deals and pipelines, read the unanswered counter, open the chat window and manage webhooks. API key.",
+  "instructions": "## Wazzup\nThis connector works with the **Wazzup public API v3** at `https://api.wazzup24.com/v3`. Wazzup is a paid gateway (subscription per channel) that connects messenger accounts to a CRM: WhatsApp, WhatsApp Business API (WABA), Telegram and Telegram Bot, Instagram, MAX and MAX Bot, VK, Viber and Avito. The API sends messages through the channels of the account and keeps Wazzup's copy of the CRM users, contacts, deals and pipelines, which decides who sees which chat.\n\n**Setup (about 3 minutes)**\n1. Sign in to your Wazzup account and add at least one channel under **Channels** (a paid subscription is needed for a channel to work).\n2. Open **Integration with CRM**, choose **API** and click **Connect**. Wazzup has one CRM integration per account: an account already connected to amoCRM, Bitrix24, HubSpot or Zoho has a *sidecar* API key instead, shown in the settings of that integration.\n3. Copy the API key into `WAZZUP_API_KEY`. Later it is under **Integration with CRM**, tab **Advanced**.\n\n**Where to start**: `wazzup_list_channels` gives the `channelId` and `transport` of every connected messenger account and its `state`. Then `wazzup_send_message` with that `channelId`, a `chat_type` that matches the transport, and the recipient.\n\n**Sending**: `wazzup_send_message` sends text or one file by link (never both in one call), a WABA template (`template_id` from `wazzup_list_whatsapp_templates`) or a message with buttons. For WhatsApp and Viber `chat_id` is the phone in digits only (79011112233). For Telegram and MAX use `phone` or `username` when the chat id is not known; the answer returns the `chatId` to use next time. The call is not idempotent: pass `crm_message_id` to block a repeat within 60 seconds. `wazzup_edit_message` changes the text or the file of a sent message where the messenger allows it; `wazzup_delete_message` is installed switched off.\n\n**Delivery statuses and incoming messages** are not readable on request: Wazzup posts them to a webhook address. `wazzup_get_webhooks` shows the address and subscriptions; `wazzup_set_webhooks` (switched off) replaces them, and Wazzup first sends a test POST that the address must answer with 200.\n\n**CRM sync**: Wazzup shows a chat to the user who is responsible for the contact or the deal, so these lists must match the CRM. `wazzup_list_users`, `wazzup_get_user`, `wazzup_upsert_users`; `wazzup_list_contacts`, `wazzup_get_contact`, `wazzup_upsert_contacts`; `wazzup_list_deals`, `wazzup_get_deal`, `wazzup_upsert_deals`; `wazzup_list_pipelines`, `wazzup_upsert_pipelines`. Upserts match by `id` (your CRM's id), take at most 100 entries per call and update what exists. `wazzup_delete_user`, `wazzup_delete_contact` and `wazzup_delete_deal` are installed switched off; the bulk delete routes are not included.\n\n**Unanswered and chat window**: `wazzup_get_unanswered_count` returns the unanswered chats of one CRM user over the last 7 days. `wazzup_create_chat_window_link` returns a link that opens Wazzup's chat window as that user: treat it like a sign-in link and give it only to that person.\n\n**Limits and errors**: 500 requests per 5 seconds. Errors come as JSON with `error` (a code such as `INVALID_APIKEY`, `WRONG_TRANSPORT`, `INVALID_MESSAGE_DATA`, `TOO_MANY_ENTITIES`) and `description`. A sidecar key only works for the channel list, sending, webhooks and the template list; other routes answer 403. Sending a WABA template is charged by Meta through the WABA balance of the account (`BALANCE_IS_EMPTY` when it is used up).",
+  "aliases": [
+    "Wazzup24",
+    "wazzup24.com",
+    "Ваззап"
+  ],
+  "region": "intl",
+  "category": "messaging",
+  "icon": "wazzup",
+  "docsUrl": "https://wazzup24.ru/help/api-ru/",
+  "requiredEnvVars": [
+    "WAZZUP_API_KEY"
+  ],
+  "envVarMeta": {
+    "WAZZUP_API_KEY": {
+      "label": "API key",
+      "kind": "credential",
+      "secret": true,
+      "help": "In your Wazzup account open Integration with CRM, choose API and click Connect, then copy the API key (later under the Advanced tab). With amoCRM, Bitrix24, HubSpot or Zoho connected, use the sidecar API key of that integration.",
+      "link": "https://wazzup24.ru/help/api-ru/avtorizaciya/",
+      "pattern": "^(?!Bearer\\s)\\S{16,200}$",
+      "patternMessage": "Paste only the API key, without Bearer in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "Wazzup refused the API key (INVALID_APIKEY). Copy it again from Integration with CRM, API, tab Advanced.",
+    "403": "This route is not open to the key. A sidecar key (amoCRM, Bitrix24, HubSpot, Zoho accounts) only works for the channel list, sending, webhooks and WhatsApp templates.",
+    "404": "Wazzup found no user, contact, deal or message with that id.",
+    "rate_limited": "Wazzup allows 500 requests per 5 seconds. Wait a few seconds and try again."
+  },
+  "probe": {
+    "tool": "wazzup_list_channels",
+    "params": {}
+  },
+  "prerequisites": "A Wazzup account (wazzup24.com) with a paid subscription for at least one channel, and the API integration connected under Integration with CRM. Accounts already integrated with amoCRM, Bitrix24, HubSpot or Zoho can use their sidecar API key for sending. About 3 minutes.",
+  "connector": {
+    "name": "Wazzup API v3",
+    "type": "REST",
+    "baseUrl": "https://api.wazzup24.com/v3",
+    "authType": "BEARER_TOKEN",
+    "authConfig": {
+      "token": "{{WAZZUP_API_KEY}}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "wazzup_list_channels",
+      "description": "List the messenger accounts (channels) connected to the Wazzup account: channelId (uuid), transport (whatsapp, wapi for WhatsApp Business API, tgapi for Telegram, telegram for Telegram Bot, instagram, max, maxbot, vk, avito, viber), plainId (phone, username or messenger id) and state (active, init, disabled, qridle, unauthorized, notEnoughMoney, blocked and others). Start here to get the channelId for sending. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/channels"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_send_message",
+      "description": "Send a message through one channel: text, or one file by link, or a WhatsApp Business API template, optionally with buttons. Returns messageId and chatId (HTTP 201). Text and a file cannot go in the same call. Not idempotent: a repeated call sends the message again unless crm_message_id repeats within 60 seconds. The message reaches a real customer, so confirm recipient and text with the user first. WABA templates are charged through the WABA balance.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "channel_id": {
+            "type": "string",
+            "description": "Channel to send from: channelId (uuid) from wazzup_list_channels."
+          },
+          "chat_type": {
+            "type": "string",
+            "enum": [
+              "whatsapp",
+              "whatsgroup",
+              "viber",
+              "instagram",
+              "telegram",
+              "telegroup",
+              "vk",
+              "avito",
+              "max",
+              "maxgroup"
+            ],
+            "description": "Kind of chat. It must match the transport of the channel: whatsapp or whatsgroup for WhatsApp and WABA channels, telegram or telegroup for Telegram channels, max or maxgroup for MAX, and so on."
+          },
+          "chat_id": {
+            "type": "string",
+            "description": "Recipient id in the messenger. WhatsApp and Viber: the phone in digits only with country code (79011112233). Instagram: the account name without @. Groups, Telegram, MAX, VK and Avito: the chatId Wazzup reported for the chat. Optional for Telegram and MAX when phone or username is given."
+          },
+          "text": {
+            "type": "string",
+            "description": "Message text. Required unless content_uri or template_id is given. Limits: WhatsApp 10000 characters, Telegram and MAX 4096, WABA 1024, Instagram, VK and Avito 1000."
+          },
+          "content_uri": {
+            "type": "string",
+            "format": "uri",
+            "description": "Direct link to a file to send instead of text. It must download without redirects; Wazzup fetches it at once."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Telegram and MAX number channels only: the contact's phone in digits with country code, when chat_id is not known."
+          },
+          "username": {
+            "type": "string",
+            "description": "Telegram only: the contact's username without @, when chat_id is not known."
+          },
+          "ref_message_id": {
+            "type": "string",
+            "description": "messageId of a message to quote."
+          },
+          "crm_user_id": {
+            "type": "string",
+            "description": "Id of the CRM user (as synced with wazzup_upsert_users) shown as the sender in the Wazzup chat window. Ignored with a sidecar key."
+          },
+          "crm_message_id": {
+            "type": "string",
+            "description": "Your own unique id for this message. A second call with the same id within 60 seconds is refused with REPEATED_CRM_MESSAGE_ID instead of sending twice."
+          },
+          "clear_unanswered": {
+            "type": "boolean",
+            "description": "false keeps the unanswered counter of the chat (for automatic replies). By default an outgoing message resets it."
+          },
+          "template_id": {
+            "type": "string",
+            "description": "WABA template code (templateGuid from wazzup_list_whatsapp_templates), to start a conversation on a WhatsApp Business API channel."
+          },
+          "template_values": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Values for the variables of the WABA template, in order."
+          },
+          "buttons_object": {
+            "type": "object",
+            "description": "Buttons, as Wazzup documents buttonsObject. WABA interactive message: buttons as a list of objects with text (up to 20 characters) and type \"text\", optionally payload. Telegram Bot: replyMarkup \"inline\" or \"reply\" and buttons as rows (a list of lists) of objects with text and url or callbackData. MAX Bot: rows of objects with type (callback, link, message), text and payload or url."
+          }
+        },
+        "required": [
+          "channel_id",
+          "chat_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/message",
+        "bodyMapping": {
+          "channelId": "$channel_id",
+          "chatType": "$chat_type",
+          "chatId": "$chat_id",
+          "text": "$text",
+          "contentUri": "$content_uri",
+          "phone": "$phone",
+          "username": "$username",
+          "refMessageId": "$ref_message_id",
+          "crmUserId": "$crm_user_id",
+          "crmMessageId": "$crm_message_id",
+          "clearUnanswered": "$clear_unanswered",
+          "templateId": "$template_id",
+          "templateValues": "$template_values",
+          "buttonsObject": "$buttons_object"
+        }
+      }
+    },
+    {
+      "name": "wazzup_edit_message",
+      "description": "Change the text or the attached file of a message already sent through Wazzup (one of the two, not both). Works where the messenger allows editing, for example WhatsApp text and Telegram Bot messages, for a limited time after sending. Returns the edited message's ids.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "messageId (uuid) returned by wazzup_send_message."
+          },
+          "text": {
+            "type": "string",
+            "description": "New text. Required unless content_uri is given."
+          },
+          "content_uri": {
+            "type": "string",
+            "format": "uri",
+            "description": "Direct link to the file that replaces the attachment. Required unless text is given."
+          },
+          "crm_user_id": {
+            "type": "string",
+            "description": "Id of the CRM user who edits the message."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/message/{message_id}",
+        "bodyMapping": {
+          "text": "$text",
+          "contentUri": "$content_uri",
+          "crmUserId": "$crm_user_id"
+        }
+      }
+    },
+    {
+      "name": "wazzup_delete_message",
+      "description": "Delete a sent message for both sides in the messenger, where the channel supports it (Telegram Bot, MAX Bot). The Wazzup chat window keeps it marked as deleted. Cannot be undone. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "message_id": {
+            "type": "string",
+            "description": "messageId (uuid) of the message to delete."
+          }
+        },
+        "required": [
+          "message_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/message/{message_id}"
+      }
+    },
+    {
+      "name": "wazzup_list_whatsapp_templates",
+      "description": "List the WhatsApp Business API (WABA) message templates of the account: templateGuid (the code for template_id when sending), title, name, category, language, moderation status and rejected reason, channels it belongs to, components (HEADER, BODY, FOOTER, BUTTONS with text and example values) and templateCode. Read-only, 100 per page by default.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "limit": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 100,
+            "description": "Templates per page. Default 100."
+          },
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of templates to skip. Default 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/templates/whatsapp",
+        "queryParams": {
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_list_users",
+      "description": "List the CRM users (employees) known to Wazzup, sorted by name: id (the CRM's user id) and name. These ids are used as responsible user for contacts and deals, as crm_user_id when sending and for the unanswered counter. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_get_user",
+      "description": "Read one CRM user known to Wazzup: id, name and phone (international format, used to invite the user to the mobile app). Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user's id in the CRM, as listed by wazzup_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/users/{user_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_upsert_users",
+      "description": "Add or update CRM users in Wazzup, matched by id: a new id is added, an existing one is updated. At most 100 users per call and 1000 users per account. Two users cannot share a phone number (DUPLICATE_PHONE_NUMBER). Answers 200 with an empty body.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "users": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Users to add or update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The user's id in the CRM, up to 64 characters."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "The user's name, up to 150 characters."
+                },
+                "phone": {
+                  "type": "string",
+                  "description": "Phone in international format, digits only (79261234567). Only needed to add the user to the mobile app."
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "users"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/users",
+        "bodyMapping": {
+          "__raw": "$users"
+        }
+      }
+    },
+    {
+      "name": "wazzup_delete_user",
+      "description": "Remove one CRM user from Wazzup. The user loses access to the chats in Wazzup. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user's id in the CRM."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/users/{user_id}"
+      }
+    },
+    {
+      "name": "wazzup_list_contacts",
+      "description": "List the contacts synced to Wazzup, sorted by id ascending: count (total) and data with id (the CRM's contact id), responsibleUserId, name, contactData (chatType and chatId per messenger, username, phone) and uri (link to the contact in the CRM). Read-only, 100 per page: raise offset by 100 until data is empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of contacts to skip. Default 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts",
+        "queryParams": {
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_get_contact",
+      "description": "Read one contact synced to Wazzup: id, responsibleUserId, name, contactData (chatType, chatId, username, phone) and uri. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact's id in the CRM."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/contacts/{contact_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_upsert_contacts",
+      "description": "Add or update contacts in Wazzup, matched by id. The responsible user decides who sees the chat with this contact in Wazzup. At most 100 contacts per call; invalid entries answer INVALID_CONTACTS_DATA with the index and the fields at fault.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contacts": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Contacts to add or update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The contact's id in the CRM, up to 64 characters."
+                },
+                "responsibleUserId": {
+                  "type": "string",
+                  "description": "Id of the responsible CRM user (from wazzup_list_users), up to 64 characters."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Contact name, up to 200 characters."
+                },
+                "contactData": {
+                  "type": "array",
+                  "description": "The contact's messenger addresses.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "chatType": {
+                        "type": "string",
+                        "enum": [
+                          "whatsapp",
+                          "whatsgroup",
+                          "viber",
+                          "instagram",
+                          "telegram",
+                          "telegroup",
+                          "vk",
+                          "avito",
+                          "max",
+                          "maxgroup"
+                        ],
+                        "description": "Kind of chat."
+                      },
+                      "chatId": {
+                        "type": "string",
+                        "description": "Id in the messenger: phone in digits for WhatsApp and Viber, account name without @ for Instagram, the reported chatId for the others."
+                      },
+                      "username": {
+                        "type": "string",
+                        "description": "Telegram only: username without @."
+                      },
+                      "phone": {
+                        "type": "string",
+                        "description": "Telegram and MAX only: phone in digits with country code."
+                      }
+                    },
+                    "required": [
+                      "chatType",
+                      "chatId"
+                    ]
+                  }
+                },
+                "uri": {
+                  "type": "string",
+                  "description": "Link to the contact in the CRM, up to 200 characters."
+                }
+              },
+              "required": [
+                "id",
+                "responsibleUserId",
+                "name",
+                "contactData"
+              ]
+            }
+          }
+        },
+        "required": [
+          "contacts"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/contacts",
+        "bodyMapping": {
+          "__raw": "$contacts"
+        }
+      }
+    },
+    {
+      "name": "wazzup_delete_contact",
+      "description": "Remove one contact from Wazzup's copy of the CRM. A chat with this contact stays in the general chat list. Answers 404 when the contact does not exist. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "contact_id": {
+            "type": "string",
+            "description": "The contact's id in the CRM."
+          }
+        },
+        "required": [
+          "contact_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/contacts/{contact_id}"
+      }
+    },
+    {
+      "name": "wazzup_list_deals",
+      "description": "List the deals synced to Wazzup: count and data with id (the CRM's deal id), responsibleUserId, name, contacts (ids of the linked contacts) and uri (link to the deal in the CRM). Read-only, 100 per page: raise offset by 100 until data is empty.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "offset": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Number of deals to skip. Default 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals",
+        "queryParams": {
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_get_deal",
+      "description": "Read one deal synced to Wazzup: id, responsibleUserId, name, uri, contacts (ids of the linked contacts) and closed. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "string",
+            "description": "The deal's id in the CRM."
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/deals/{deal_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_upsert_deals",
+      "description": "Add or update deals in Wazzup, matched by id. A deal links contacts to a responsible user, who then sees their chats, and appears in the Deals list of the chat window with its link. At most 100 deals per call.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deals": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 100,
+            "description": "Deals to add or update.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "The deal's id in the CRM, up to 100 characters."
+                },
+                "responsibleUserId": {
+                  "type": "string",
+                  "description": "Id of the responsible CRM user (from wazzup_list_users)."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Deal name, up to 200 characters."
+                },
+                "uri": {
+                  "type": "string",
+                  "description": "Link to the deal in the CRM, up to 200 characters."
+                },
+                "contacts": {
+                  "type": "array",
+                  "items": {
+                    "type": "string"
+                  },
+                  "description": "Ids of the contacts linked to the deal (at most 10)."
+                },
+                "closed": {
+                  "type": "boolean",
+                  "description": "true for a closed deal."
+                }
+              },
+              "required": [
+                "id",
+                "responsibleUserId",
+                "name",
+                "uri",
+                "contacts",
+                "closed"
+              ]
+            }
+          }
+        },
+        "required": [
+          "deals"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/deals",
+        "bodyMapping": {
+          "__raw": "$deals"
+        }
+      }
+    },
+    {
+      "name": "wazzup_delete_deal",
+      "description": "Remove one deal from Wazzup's copy of the CRM. Answers 404 when the deal does not exist. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "deal_id": {
+            "type": "string",
+            "description": "The deal's id in the CRM."
+          }
+        },
+        "required": [
+          "deal_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/deals/{deal_id}"
+      }
+    },
+    {
+      "name": "wazzup_list_pipelines",
+      "description": "List the sales pipelines uploaded to Wazzup with their stages (id and name each). Wazzup uses them to choose where a deal for a new customer is created. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/pipelines"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_upsert_pipelines",
+      "description": "Upload or update the CRM's sales pipelines and their stages in Wazzup, so that the account settings can pick the pipeline and stage for deals of new customers. Leave stages out for a pipeline without stages; an empty stages list is refused.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "pipelines": {
+            "type": "array",
+            "minItems": 1,
+            "description": "Pipelines to upload.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "string",
+                  "description": "Pipeline id in the CRM, up to 100 characters."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Pipeline name shown in the Wazzup settings, up to 100 characters."
+                },
+                "stages": {
+                  "type": "array",
+                  "description": "Stages of the pipeline.",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "id": {
+                        "type": "string",
+                        "description": "Stage id, up to 100 characters."
+                      },
+                      "name": {
+                        "type": "string",
+                        "description": "Stage name, up to 100 characters."
+                      }
+                    },
+                    "required": [
+                      "id",
+                      "name"
+                    ]
+                  }
+                }
+              },
+              "required": [
+                "id",
+                "name"
+              ]
+            }
+          }
+        },
+        "required": [
+          "pipelines"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/pipelines",
+        "bodyMapping": {
+          "__raw": "$pipelines"
+        }
+      }
+    },
+    {
+      "name": "wazzup_get_unanswered_count",
+      "description": "Read how many chats wait for an answer from one CRM user over the last 7 days: counterV2 (number), type (red for chats the user is responsible for, grey for chats the user only supervises) and lastMsgDateTime. The count is 0 for a user without a role in the Wazzup integration settings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "The user's id in the CRM, from wazzup_list_users."
+          }
+        },
+        "required": [
+          "user_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/unanswered/{user_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_create_chat_window_link",
+      "description": "Create a link that opens Wazzup's chat window (iframe) as one CRM user: all chats of that user (scope global) or only the chats listed in filter (scope card, for example the contacts of one deal). Returns url, which carries an access token: give it only to that user. Writes nothing except that a chat in filter unknown to Wazzup is created when opened.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "user_id": {
+            "type": "string",
+            "description": "Id of the CRM user who opens the window, from wazzup_list_users."
+          },
+          "user_name": {
+            "type": "string",
+            "description": "Name to show for the user. Defaults to the name stored for user_id."
+          },
+          "scope": {
+            "type": "string",
+            "enum": [
+              "global",
+              "card"
+            ],
+            "default": "global",
+            "description": "global: every chat the user may see. card: only the chats in filter."
+          },
+          "filter": {
+            "type": "array",
+            "description": "Chats to show. Required when scope is card.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "chatType": {
+                  "type": "string",
+                  "description": "Kind of chat: whatsapp, whatsgroup, viber, instagram, telegram, telegroup, vk, avito, max or maxgroup."
+                },
+                "chatId": {
+                  "type": "string",
+                  "description": "Id in the messenger (phone in digits for WhatsApp and Viber)."
+                },
+                "name": {
+                  "type": "string",
+                  "description": "Contact name, used when the chat does not exist yet."
+                }
+              },
+              "required": [
+                "chatType",
+                "chatId"
+              ]
+            }
+          },
+          "active_chat": {
+            "type": "object",
+            "description": "Chat to open first, as an object with channelId, chatType and chatId.",
+            "properties": {
+              "channelId": {
+                "type": "string",
+                "description": "Channel of the chat."
+              },
+              "chatType": {
+                "type": "string",
+                "description": "Kind of chat."
+              },
+              "chatId": {
+                "type": "string",
+                "description": "Id in the messenger."
+              }
+            }
+          }
+        },
+        "required": [
+          "user_id",
+          "scope"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/iframe",
+        "bodyMapping": {
+          "user": {
+            "id": "$user_id",
+            "name": "$user_name"
+          },
+          "scope": "$scope",
+          "filter": "$filter",
+          "activeChat": "$active_chat"
+        }
+      }
+    },
+    {
+      "name": "wazzup_get_webhooks",
+      "description": "Read the webhook settings of the integration: webhooksUri (the address Wazzup posts to) and subscriptions (messagesAndStatuses, contactsAndDealsCreation and others). Incoming messages and delivery statuses only reach that address; they cannot be read through the API. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/webhooks"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "wazzup_set_webhooks",
+      "description": "Set the address Wazzup posts events to and which events it sends. It replaces the current address, so an existing integration stops receiving messages. Wazzup first sends a test POST to the address, which must answer 200, otherwise the call fails with testPostNotPassed. Installed switched off.",
+      "enabled": false,
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "webhooks_uri": {
+            "type": "string",
+            "format": "uri",
+            "description": "Address that receives the webhooks, up to 200 characters. A query string is allowed."
+          },
+          "messages_and_statuses": {
+            "type": "boolean",
+            "description": "true to receive new messages and status changes of outgoing messages."
+          },
+          "contacts_and_deals_creation": {
+            "type": "boolean",
+            "description": "true to receive requests to create a contact or a deal."
+          },
+          "channels_updates": {
+            "type": "boolean",
+            "description": "true to receive channel status changes."
+          },
+          "template_status": {
+            "type": "boolean",
+            "description": "true to receive moderation status changes of WABA templates."
+          }
+        },
+        "required": [
+          "webhooks_uri"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PATCH",
+        "path": "/webhooks",
+        "bodyMapping": {
+          "webhooksUri": "$webhooks_uri",
+          "subscriptions": {
+            "messagesAndStatuses": "$messages_and_statuses",
+            "contactsAndDealsCreation": "$contacts_and_deals_creation",
+            "channelsUpdates": "$channels_updates",
+            "templateStatus": "$template_status"
+          }
+        }
+      }
+    }
+  ]
+}

@@ -1,0 +1,4 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="MAX Messenger connector">
+  <rect width="128" height="128" rx="24" fill="#6D3BF5"/>
+  <path d="M26 96V32h14l24 34 24-34h14v64H88V56L64 90 40 56v40Z" fill="#fff"/>
+</svg>
