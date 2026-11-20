@@ -120,6 +120,14 @@ describe('McpOAuthCallbackController — provider redirect', () => {
     expect(updateAuthConfigMerge).not.toHaveBeenCalled();
   });
 
+  it('does not rate limit the notifications (Mercado Libre retries every 429)', () => {
+    // @SkipThrottle() stores THROTTLER:SKIP + the bucket name on the handler.
+    const skip = (handler: unknown) => Reflect.getMetadata('THROTTLER:SKIPdefault', handler as object);
+    expect(skip(McpOAuthCallbackController.prototype.acknowledgeNotification)).toBe(true);
+    // The browser redirect keeps the global limit.
+    expect(skip(McpOAuthCallbackController.prototype.oauthCallback)).toBeUndefined();
+  });
+
   it('forwards code and state to the dashboard and exchanges nothing itself', async () => {
     const { controller, mcpOAuthService, updateAuthConfigMerge } = makeController();
     const res = makeRes();

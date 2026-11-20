@@ -19,7 +19,7 @@ import {
 } from '@nestjs/common';
 import { AuthGuard } from '@nestjs/passport';
 import { ApiTags, ApiOperation, ApiExcludeEndpoint } from '@nestjs/swagger';
-import { Throttle } from '@nestjs/throttler';
+import { SkipThrottle, Throttle } from '@nestjs/throttler';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { randomBytes, timingSafeEqual } from 'crypto';
@@ -121,8 +121,14 @@ export class McpOAuthCallbackController {
    * the redirect URI, and retries every one that is not answered 200. They
    * are acknowledged here and dropped: nothing reads them, and nothing in the
    * body is trusted or stored.
+   *
+   * Not rate limited: Mercado Libre sends them from a few addresses, in
+   * bursts (1,101 in one minute on 2026-11-19), and answers a 429 with more
+   * retries. The handler does no work, so the global 100-per-minute cap only
+   * multiplied the traffic.
    */
   @Post('api/mcp-oauth/callback')
+  @SkipThrottle()
   @HttpCode(200)
   @ApiExcludeEndpoint()
   acknowledgeNotification(): Record<string, never> {

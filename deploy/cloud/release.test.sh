@@ -13,7 +13,8 @@
 #      failed request (see the Caddyfile's header) — and a slow request that
 #      was in flight on the old containers when Caddy switched completes;
 #   1. a healthy release swaps blue → green with zero failed requests and no
-#      Caddy reload, and the new backend's registry catch-up is called;
+#      Caddy reload, waits for a cron run in progress before it stops the old
+#      colour, and the new backend's registry catch-up is called;
 #   2. a broken image never serves a request: zero failed requests, the old
 #      colour still serving, no container of the new one left behind;
 #   3. a broken compose change (the 2026-09-24 case: an env var the image
@@ -335,8 +336,16 @@ docker tag "${IMAGE}:r3" "${IMAGE}:latest"
 # A saved log past the retention, to be deleted by this release.
 gzip -c </dev/null > "$LOGS/${PROJECT}-backend-20200101T000000Z.log.gz"
 touch -t 202001010000 "$LOGS/${PROJECT}-backend-20200101T000000Z.log.gz"
-load_start; code=$(release); sleep 1; load_stop
+# A cron run in progress when the old colour is retired: a stand-in
+# systemctl reports the unit active for its first two checks.
+mkdir -p "$WORK/bin"
+printf '#!/bin/sh\nn=$(cat "%s" 2>/dev/null || echo 0)\necho $((n + 1)) > "%s"\n[ "$n" -lt 2 ]\n' \
+  "$WORK/cron-checks" "$WORK/cron-checks" > "$WORK/bin/systemctl"
+chmod +x "$WORK/bin/systemctl"
+load_start; code=$(release PATH="$WORK/bin:$PATH" CRON_UNITS=fake-cron.service CRON_POLL=1); sleep 1; load_stop
 [ "$code" = 0 ] || fail "healthy release exited $code"
+grep -q "waiting for fake-cron.service to finish" "$WORK/release.log" || fail "healthy release: did not wait for the running cron"
+[ "$(cat "$WORK/cron-checks")" = 3 ] || fail "healthy release: cron checked $(cat "$WORK/cron-checks") times, expected 3"
 [ "$(serving)" = r3 ] && [ "$(serving_backend)" = r3 ] || fail "healthy release: site serves '$(serving)'/'$(serving_backend)'"
 [ "$(live_service)" = backend-green ] || fail "healthy release: live is '$(live_service)'"
 [ "$(load_failed)" = 0 ] || fail "healthy release: $(load_failed) failed requests"
