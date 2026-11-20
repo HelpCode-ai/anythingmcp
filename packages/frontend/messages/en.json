@@ -3668,6 +3668,33 @@
       "openFailed": "This page has expired.",
       "openFailedHint": "Go back to the chat and connect again, or sign in to the dashboard and set up the folder there.",
       "openWizard": "Set up the folder in the dashboard"
+    },
+    "reach": {
+      "title": {
+        "private": "This address only works inside your network",
+        "quickconnect": "QuickConnect links do not work here",
+        "unreachable": "AnythingMCP Cloud could not reach the server"
+      },
+      "intro": {
+        "private": "AnythingMCP Cloud runs on the internet, so it cannot open addresses like 192.168.x.x or nas.local. Give the NAS an address that is reachable from the internet:",
+        "quickconnect": "Synology QuickConnect only relays Synology's own apps, not SFTP or WebDAV. Give the NAS an address that is reachable from the internet:",
+        "unreachable": "If the NAS is in your home or office network, the router keeps AnythingMCP Cloud out. Give the NAS an address that is reachable from the internet:"
+      },
+      "synology": {
+        "title": "Synology: WebDAV over HTTPS with a free synology.me address",
+        "steps": "Control Panel → External Access → DDNS: add a name like yourname.synology.me and turn on the free Let's Encrypt certificate. Package Center: install WebDAV Server and turn on HTTPS (port 5006). On your router, forward TCP port 5006 to the NAS. Here choose WebDAV and enter https://yourname.synology.me:5006."
+      },
+      "tunnel": {
+        "title": "Without opening a router port: a tunnel",
+        "steps": "Cloudflare Tunnel (with your own domain on Cloudflare) or Tailscale Funnel publishes the NAS's WebDAV server under an https:// address. Choose WebDAV here and enter that address."
+      },
+      "other": {
+        "title": "QNAP, Fritz!Box and other NAS",
+        "steps": "Turn on WebDAV over HTTPS (or SFTP), give the NAS a dynamic DNS name (myQNAPcloud, MyFRITZ! or similar) and forward that port on the router."
+      },
+      "firewall": "To keep everyone else out, allow only {count, plural, one {this address} other {these addresses}} in the NAS or router firewall:",
+      "selfHosted": "Prefer not to open the NAS to the internet? A self-hosted AnythingMCP inside your network reaches it directly.",
+      "useWebdav": "Switch to WebDAV"
     }
   },
   "fileShare": {

@@ -3668,6 +3668,33 @@
       "openFailed": "Diese Seite ist abgelaufen.",
       "openFailedHint": "Gehen Sie zurück in den Chat und verbinden Sie erneut, oder melden Sie sich im Dashboard an und richten Sie den Ordner dort ein.",
       "openWizard": "Ordner im Dashboard einrichten"
+    },
+    "reach": {
+      "title": {
+        "private": "Diese Adresse funktioniert nur in Ihrem Netzwerk",
+        "quickconnect": "QuickConnect-Links funktionieren hier nicht",
+        "unreachable": "AnythingMCP Cloud hat den Server nicht erreicht"
+      },
+      "intro": {
+        "private": "AnythingMCP Cloud läuft im Internet und kann Adressen wie 192.168.x.x oder nas.local nicht öffnen. Geben Sie dem NAS eine Adresse, die aus dem Internet erreichbar ist:",
+        "quickconnect": "Synology QuickConnect leitet nur Synologys eigene Apps weiter, nicht SFTP oder WebDAV. Geben Sie dem NAS eine Adresse, die aus dem Internet erreichbar ist:",
+        "unreachable": "Steht das NAS in Ihrem Heim- oder Büronetz, lässt der Router AnythingMCP Cloud nicht herein. Geben Sie dem NAS eine Adresse, die aus dem Internet erreichbar ist:"
+      },
+      "synology": {
+        "title": "Synology: WebDAV über HTTPS mit einer kostenlosen synology.me-Adresse",
+        "steps": "Systemsteuerung → Externer Zugriff → DDNS: einen Namen wie ihrname.synology.me hinzufügen und das kostenlose Let's-Encrypt-Zertifikat aktivieren. Paket-Zentrum: WebDAV Server installieren und HTTPS einschalten (Port 5006). Im Router TCP-Port 5006 an das NAS weiterleiten. Hier WebDAV wählen und https://ihrname.synology.me:5006 eintragen."
+      },
+      "tunnel": {
+        "title": "Ohne Portfreigabe im Router: ein Tunnel",
+        "steps": "Cloudflare Tunnel (mit eigener Domain bei Cloudflare) oder Tailscale Funnel veröffentlicht den WebDAV-Server des NAS unter einer https://-Adresse. Hier WebDAV wählen und diese Adresse eintragen."
+      },
+      "other": {
+        "title": "QNAP, Fritz!Box und andere NAS",
+        "steps": "WebDAV über HTTPS (oder SFTP) einschalten, dem NAS einen DynDNS-Namen geben (myQNAPcloud, MyFRITZ! o. ä.) und diesen Port im Router freigeben."
+      },
+      "firewall": "Damit sonst niemand hineinkommt, in der Firewall von NAS oder Router nur {count, plural, one {diese Adresse} other {diese Adressen}} zulassen:",
+      "selfHosted": "Das NAS lieber nicht ins Internet stellen? Ein selbst gehostetes AnythingMCP in Ihrem Netzwerk erreicht es direkt.",
+      "useWebdav": "Zu WebDAV wechseln"
     }
   },
   "fileShare": {

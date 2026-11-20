@@ -10,6 +10,7 @@ import { Card } from '@/components/ui/card';
 import { useAuth } from '@/lib/auth-context';
 import {
   ApiError,
+  connectors,
   fileSearch,
   license,
   mcpServers,
@@ -23,6 +24,8 @@ import {
 } from '@/lib/api';
 import { cn } from '@/lib/utils';
 import { FILE_SEARCH_ENTRY_POINTS, fileCountBucket, isFileSearchSlug } from '@/lib/file-search-catalog';
+import { isPrivateHost, isQuickConnect } from '@/lib/private-host';
+import { NasReachabilityHelp, type NasReachabilityReason } from '@/components/file-search/nas-reachability-help';
 import {
   BudgetBar,
   FolderTree,
@@ -285,6 +288,16 @@ function Wizard() {
     void loadCaps();
   }, [loadCaps]);
 
+  // Cloud: the addresses it connects from, for the NAS firewall tip.
+  const [egressIps, setEgressIps] = useState<string[]>([]);
+  useEffect(() => {
+    if (!token || !caps?.cloud) return;
+    connectors
+      .proxyAvailability(token)
+      .then((r) => setEgressIps(Array.isArray(r.egressIps) ? r.egressIps : []))
+      .catch(() => undefined);
+  }, [token, caps?.cloud]);
+
   useEffect(() => {
     if (!token) return;
     mcpServers
@@ -420,6 +433,35 @@ function Wizard() {
   };
 
   const needsFingerprint = !!testResult?.fingerprint && testResult.errorKind === 'fingerprint_unconfirmed';
+
+  // Cloud: a NAS address that only works inside the user's network, as typed
+  // (step 1), or a test that could not get through to the server (step 2).
+  const typedAddress = form.protocol === 'webdav' ? form.url : form.host;
+  const addressReason: NasReachabilityReason | null =
+    !caps?.cloud || form.protocol === 'local' || form.protocol === 's3'
+      ? null
+      : isQuickConnect(typedAddress)
+        ? 'quickconnect'
+        : isPrivateHost(typedAddress)
+          ? 'private'
+          : null;
+  const testReason: NasReachabilityReason | null =
+    !caps?.cloud || !testResult || testResult.ok
+      ? null
+      : addressReason ??
+        (testResult.errorKind === 'private_address'
+          ? 'private'
+          : testResult.errorKind === 'unreachable' || testResult.errorKind === 'timeout'
+            ? 'unreachable'
+            : null);
+  const switchToWebdav =
+    form.protocol !== 'webdav' && caps?.protocols.includes('webdav')
+      ? () => {
+          setForm((f) => ({ ...f, protocol: 'webdav', port: '', hostKeySha256: '', tlsFingerprintSha256: '' }));
+          setTestResult(null);
+          setStep(1);
+        }
+      : undefined;
   const testPassed = !!testResult?.ok && !needsFingerprint;
 
   const saveDraft = async () => {
@@ -882,6 +924,8 @@ function Wizard() {
                   )}
                 </div>
 
+                {addressReason && <NasReachabilityHelp reason={addressReason} ips={egressIps} onUseWebdav={switchToWebdav} />}
+
                 <div className="flex flex-col-reverse gap-2 border-t border-[var(--border)] pt-4 sm:flex-row sm:justify-end">
                   <Link href="/connectors/new" className="inline-flex h-9 items-center justify-center rounded-[9px] px-3.5 text-[13px] text-[var(--text-2)] hover:text-[var(--text)]">
                     {t('cancel')}
@@ -929,6 +973,7 @@ function Wizard() {
                         </Button>
                       </div>
                     )}
+                    {testReason && <NasReachabilityHelp reason={testReason} ips={egressIps} onUseWebdav={switchToWebdav} />}
                   </div>
                 )}
                 <div className="flex flex-col-reverse gap-2 border-t border-[var(--border)] pt-4 sm:flex-row sm:justify-between">
