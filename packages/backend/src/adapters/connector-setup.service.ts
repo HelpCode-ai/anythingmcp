@@ -132,7 +132,12 @@ export function installRefusalReason(body: unknown): string {
   if (/is a secret and is never taken|looks like a password, API key or token/.test(text)) return 'secret_in_chat';
   if (/must be one of:|does not look right/.test(text)) return 'invalid_setting';
   if (/connectors an hour can be installed/.test(text)) return 'too_many_installs';
-  if (typeof b.upgradeUrl === 'string' || /limit reached|no active licence|trial/i.test(text)) return 'plan_limit';
+  // No licence to add to (LicenseGuardService.checkLicenseActive): the admin's
+  // answer carries an upgradeUrl too, so these come before plan_limit.
+  if (/trial has ended/i.test(text)) return 'trial_ended';
+  if (/no active licen[cs]e|licen[cs]e is not active|licen[cs]e has expired/i.test(text)) return 'no_licence';
+  // The plan's connector cap (checkCanCreateConnector), on a trial or a paid plan.
+  if (typeof b.upgradeUrl === 'string' || /limit reached|your plan includes/i.test(text)) return 'plan_limit';
   return 'other';
 }
 

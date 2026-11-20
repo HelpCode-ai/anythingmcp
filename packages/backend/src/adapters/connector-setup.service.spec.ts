@@ -4,6 +4,7 @@ import { describeAdapterEnvVars } from './env-var-meta';
 import { encrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from './catalog';
 import { outboundRequest } from '../common/outbound-http';
+import { TrialEndedException } from '../license/license-guard.service';
 
 // The chat install asks an Odoo address about itself: no real request here.
 jest.mock('../common/outbound-http', () => ({ outboundRequest: jest.fn().mockRejectedValue(new Error('offline')) }));
@@ -408,6 +409,22 @@ describe('ConnectorSetupService — install', () => {
     expect(failed()).toHaveLength(0);
   });
 
+  // An ended trial is answered like a cap (with the licence page as
+  // upgradeUrl for an admin) but is no plan limit: it gets its own code.
+  it('records an install refused by an ended trial as trial_ended, not plan_limit', async () => {
+    const { service, ctx, licenseGuard, productEvents } = build({ role: 'ADMIN' });
+    licenseGuard.checkCanCreateConnector.mockRejectedValueOnce(new TrialEndedException(new Date('2026-11-01T00:00:00Z')));
+    licenseGuard.getUsage.mockResolvedValueOnce({ plan: null, connectors: { current: 0, max: null } });
+    const out = await service.install(ctx, { adapter: 'openplz' });
+    expect(out.isError).toBe(true);
+    expect(typeof (out.body as any).upgradeUrl).toBe('string');
+    const kinds = productEvents.log.mock.calls
+      .map(([e]: any) => e)
+      .filter((e: any) => e.event === 'setup_install_failed')
+      .map((e: any) => e.metadata.kind);
+    expect(kinds).toEqual(['trial_ended']);
+  });
+
   it('reads the reason of a refusal from the answer the assistant got', () => {
     expect(installRefusalReason({ error: "No catalog connector 'x'. Use setup_find_connectors to get its id." })).toBe('unknown_app');
     expect(installRefusalReason({ error: 'SFTP is a File Search connector and is set up in the File Search wizard, not from the chat.', setupUrl: 'https://x' })).toBe('file_search_wizard');
@@ -418,6 +435,12 @@ describe('ConnectorSetupService — install', () => {
     expect(installRefusalReason({ error: "'Shop address' does not look right." })).toBe('invalid_setting');
     expect(installRefusalReason({ error: 'At most 10 connectors an hour can be installed from a chat.' })).toBe('too_many_installs');
     expect(installRefusalReason({ error: 'Trial limit reached (2 connectors).', upgradeUrl: 'https://x/start-trial' })).toBe('plan_limit');
+    expect(installRefusalReason({ error: 'Your plan includes 5 active connectors. Pause one under Connectors to add this one, or upgrade the plan.' })).toBe('plan_limit');
+    expect(installRefusalReason({ error: new TrialEndedException(null).message, upgradeUrl: 'https://x/settings/license' })).toBe('trial_ended');
+    expect(installRefusalReason({ error: new TrialEndedException(null).message })).toBe('trial_ended');
+    expect(installRefusalReason({ error: 'This workspace has no active license. Ask a workspace administrator to activate one.', upgradeUrl: 'https://x/settings/license' })).toBe('no_licence');
+    expect(installRefusalReason({ error: "This workspace's license is not active. Ask a workspace administrator to renew it." })).toBe('no_licence');
+    expect(installRefusalReason({ error: "This workspace's license has expired. Ask a workspace administrator to renew it." })).toBe('no_licence');
     expect(installRefusalReason({ error: 'Something else went wrong.' })).toBe('other');
     expect(installRefusalReason(undefined)).toBe('other');
   });

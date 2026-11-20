@@ -192,4 +192,33 @@ describe('ConnectorsService.executeConnectorCall placeholders', () => {
       expect(sent()).not.toHaveProperty('campaign_name');
     });
   });
+
+  // As on a real MCP call: a Telegram send with no chat and no default chat
+  // is refused instead of reaching Telegram with an empty chat_id.
+  describe('required env defaults', () => {
+    const telegram = (defaultChat: string) =>
+      ({
+        ...substack({ TELEGRAM_DEFAULT_CHAT_ID: defaultChat }),
+        baseUrl: 'https://api.telegram.org/botTOKEN',
+        config: { adapterSlug: 'telegram-bot' },
+      }) as any;
+    const mapping = {
+      method: 'POST',
+      path: '/sendMessage',
+      envDefaults: { chat_id: 'TELEGRAM_DEFAULT_CHAT_ID' },
+      bodyMapping: { chat_id: '$chat_id', text: '$text' },
+    } as any;
+
+    it('refuses a send with no chat and no default chat', async () => {
+      await expect(
+        service.executeConnectorCall(telegram(''), mapping, { text: 'hi' }, 'telegram_bot_send_message'),
+      ).rejects.toThrow(/TELEGRAM_DEFAULT_CHAT_ID is empty\), so no request was sent to Telegram/);
+      expect(restEngine.execute).not.toHaveBeenCalled();
+    });
+
+    it('sends to the default chat when one is set', async () => {
+      await service.executeConnectorCall(telegram('4242'), mapping, { text: 'hi' }, 'telegram_bot_send_message');
+      expect(restEngine.execute.mock.calls[0][2]).toMatchObject({ chat_id: '4242', text: 'hi' });
+    });
+  });
 });

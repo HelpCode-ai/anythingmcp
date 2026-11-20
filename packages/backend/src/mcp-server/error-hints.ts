@@ -380,11 +380,21 @@ const TELEGRAM_CHAT_HINT =
   'the user has sent the bot a message; @usernames only work for public channels. ' +
   'Ask the user to do that instead of trying other ids.';
 
-const TELEGRAM_NO_CHAT_HINT =
-  'The call named no chat and this connector has no default chat ' +
-  '(TELEGRAM_DEFAULT_CHAT_ID is empty), so Telegram got an empty chat_id. Pass chat_id: ' +
+const TELEGRAM_NO_CHAT_ADVICE =
+  'Pass chat_id: ' +
   'ask the user to press Start in the bot\'s chat, read the id with telegram_bot_get_updates, ' +
   'and tell them they can save it as the default chat in the connector\'s settings.';
+
+const TELEGRAM_NO_CHAT_HINT =
+  'The call named no chat and this connector has no default chat ' +
+  '(TELEGRAM_DEFAULT_CHAT_ID is empty), so Telegram got an empty chat_id. ' +
+  TELEGRAM_NO_CHAT_ADVICE;
+
+/** The same advice, for the call refused before it is sent (required-env-defaults.ts). */
+export const TELEGRAM_NO_CHAT_REFUSAL =
+  'The call named no chat and this connector has no default chat ' +
+  '(TELEGRAM_DEFAULT_CHAT_ID is empty), so no request was sent to Telegram. ' +
+  TELEGRAM_NO_CHAT_ADVICE;
 
 const OUTLOOK_SEARCH_SKIP_HINT =
   'Microsoft Graph does not page a search with skip. Call again with the same search and ' +

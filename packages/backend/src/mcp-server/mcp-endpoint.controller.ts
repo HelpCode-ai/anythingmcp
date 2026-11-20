@@ -68,6 +68,7 @@ import {
   sharedEndpointMode,
   sharedToolsetInstructions,
 } from './shared-toolset';
+import { isPlaceholderServerId, placeholderServerIdMessage } from './placeholder-server-id';
 import {
   CHATGPT_APP_INSTRUCTIONS,
   registerChatgptAppToolset,
@@ -1361,9 +1362,14 @@ export class McpEndpointController {
     // 1. Resolve the MCP server
     const mcpServerConfig = await this.mcpServersService.findById(serverId);
     if (!mcpServerConfig) {
+      // The guide's `YOUR_SERVER_ID` pasted as is: same 404, but say what to
+      // put there instead. Only reached when no server has this id.
+      const message = isPlaceholderServerId(serverId)
+        ? placeholderServerIdMessage(trimSlash(process.env.SERVER_URL) || this.requestBaseUrl(req))
+        : 'MCP server not found';
       return res.status(404).json({
         jsonrpc: '2.0',
-        error: { code: -32001, message: 'MCP server not found' },
+        error: { code: -32001, message },
         id: null,
       });
     }

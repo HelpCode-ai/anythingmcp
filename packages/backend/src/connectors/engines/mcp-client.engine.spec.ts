@@ -1,6 +1,8 @@
 import {
+  MAX_TOOL_LIST_PAGES,
   McpClientEngine,
   assertNotThisServer,
+  explainToolListPageCap,
   explainMcpConnectError,
   isUnauthorized,
 } from './mcp-client.engine';
@@ -339,22 +341,42 @@ describe('McpClientEngine endpoint resolution', () => {
   });
 
   describe('tools/list pagination', () => {
-    it('follows nextCursor until the server stops sending one', async () => {
-      client.listTools
-        .mockResolvedValueOnce({ tools: [{ name: 'a', inputSchema: {} }], nextCursor: 'p2' })
-        .mockResolvedValueOnce({ tools: [{ name: 'b', inputSchema: {} }], nextCursor: 'p3' })
-        .mockResolvedValueOnce({ tools: [{ name: 'c', inputSchema: {} }] });
+    it('lets the SDK walk every page with our page cap (issue #1791)', async () => {
+      client.listTools.mockResolvedValueOnce({
+        tools: [
+          { name: 'a', inputSchema: {} },
+          { name: 'b', inputSchema: {} },
+        ],
+      });
 
       const tools = await engine.listTools(config('https://mcp.atlassian.com/v2/mcp'));
 
-      expect(tools.map((t) => t.name)).toEqual(['a', 'b', 'c']);
-      expect(client.listTools.mock.calls).toEqual([[undefined], [{ cursor: 'p2' }], [{ cursor: 'p3' }]]);
+      expect(tools.map((t) => t.name)).toEqual(['a', 'b']);
+      // No cursor: the SDK aggregates all pages itself (client >= 2.4).
+      expect(client.listTools.mock.calls).toEqual([[]]);
+      expect(MockedClient.mock.calls[0][1]).toEqual({ listMaxPages: MAX_TOOL_LIST_PAGES });
+      expect(MAX_TOOL_LIST_PAGES).toBe(50);
     });
 
-    it('stops at a ceiling when a server never stops paginating', async () => {
-      client.listTools.mockResolvedValue({ tools: [{ name: 'x', inputSchema: {} }], nextCursor: 'again' });
-      const tools = await engine.listTools(config('https://mcp.example.com/mcp'));
-      expect(tools).toHaveLength(50);
+    it('explains a server that lists more pages than the cap', async () => {
+      client.listTools.mockRejectedValueOnce(
+        Object.assign(new Error('tools/list: exceeded listMaxPages (50); server pagination did not terminate'), {
+          code: 'LIST_PAGINATION_EXCEEDED',
+        }),
+      );
+
+      await expect(engine.listTools(config('https://mcp.example.com/mcp'))).rejects.toThrow(
+        /more than 50 pages, so discovery stopped/,
+      );
+      expect(client.close).toHaveBeenCalled();
+    });
+
+    it('passes other discovery errors through unchanged', async () => {
+      const boom = new Error('upstream 502');
+      client.listTools.mockRejectedValueOnce(boom);
+      await expect(engine.listTools(config('https://mcp.example.com/mcp'))).rejects.toBe(boom);
+      expect(explainToolListPageCap(boom)).toBe(boom);
+      expect(explainToolListPageCap(undefined)).toBeUndefined();
     });
   });
 
