@@ -115,7 +115,9 @@ FROM node:${NODE_VERSION} AS runner
 # runtime (start.sh calls the Prisma CLI through node). Removing them takes
 # npm's own bundled dependencies, and the CVEs scanners report against them,
 # out of the image.
-RUN apk add --no-cache wget && \
+# `apk upgrade` pulls Alpine security fixes published after the Node base
+# image was built (OpenSSL libssl3/libcrypto3 3.5.9-r1, for example).
+RUN apk upgrade --no-cache && apk add --no-cache wget && \
     rm -rf /usr/local/lib/node_modules/npm /usr/local/lib/node_modules/corepack \
            /usr/local/bin/npm /usr/local/bin/npx /usr/local/bin/corepack
 WORKDIR /app
