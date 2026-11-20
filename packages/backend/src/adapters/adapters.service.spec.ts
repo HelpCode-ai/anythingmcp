@@ -1006,6 +1006,85 @@ describe('AdaptersService.verifyCredentials with an optional variable left empty
   });
 });
 
+describe('AdaptersService install — an optional variable left out (#1774)', () => {
+  // An import by API (or from a chat) that sent the credentials but not the
+  // optional MSSQL_DOMAIN stored nothing for it: the connector stayed "Still
+  // empty: MSSQL_DOMAIN" and its tools were not listed on MCP.
+  const sqlLogin = {
+    MSSQL_HOST: 'db.example.com',
+    MSSQL_PORT: '1433',
+    MSSQL_DATABASE: 'erp',
+    MSSQL_USER: 'reader',
+    MSSQL_PASSWORD: 'pw',
+  };
+  function build() {
+    const prisma = {
+      connector: {
+        create: jest.fn().mockResolvedValue({ id: 'c1' }),
+        findUnique: jest.fn().mockResolvedValue(null),
+      },
+      mcpTool: {
+        create: jest.fn().mockResolvedValue({}),
+        createMany: jest.fn(async ({ data }: any) => ({ count: data.length })),
+      },
+    };
+    const service = new AdaptersService(
+      prisma as any,
+      { reloadConnectorTools: jest.fn().mockResolvedValue(undefined) } as any,
+      { get: (k: string) => (k === 'ENCRYPTION_KEY' ? 'a'.repeat(48) : undefined) } as any,
+      {} as any,
+    );
+    return { service, prisma };
+  }
+  /** The setup status the stored connector gets, from the real check. */
+  function setupStatus(data: any) {
+    const { computeSetupState } = jest.requireActual('../connectors/connector-setup-status.util');
+    return computeSetupState({
+      authType: data.authType,
+      authConfig: data.authConfig,
+      baseUrl: data.baseUrl,
+      headers: data.headers,
+      envVars: data.envVars,
+      config: data.config,
+      toolMappings: [],
+    });
+  }
+
+  it('stores an omitted MSSQL_DOMAIN empty, and the connector is ready', async () => {
+    const { service, prisma } = build();
+
+    await service.importAdapter('mssql', 'u1', 'org1', sqlLogin);
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.envVars).toEqual({ ...sqlLogin, MSSQL_DOMAIN: '' });
+    expect(setupStatus(data)).toEqual({ status: 'ready', missing: [] });
+  });
+
+  it('keeps an optional value the caller sent', async () => {
+    const { service, prisma } = build();
+
+    await service.importAdapter('mssql', 'u1', 'org1', { ...sqlLogin, MSSQL_DOMAIN: 'CORP' });
+
+    const { data } = prisma.connector.create.mock.calls[0][0];
+    expect(data.envVars).toEqual({ ...sqlLogin, MSSQL_DOMAIN: 'CORP' });
+    expect(setupStatus(data)).toEqual({ status: 'ready', missing: [] });
+  });
+
+  it('stores nothing new for an import without credentials', async () => {
+    const { service, prisma } = build();
+
+    // The address is still to come (as a chat install leaves it); without
+    // that option the import refuses, before and after this change.
+    await service.importAdapter('mssql', 'u1', 'org1', undefined, { addressMayWait: true });
+    await service.importAdapter('mssql', 'u1', 'org1', {}, { addressMayWait: true });
+
+    expect(prisma.connector.create).toHaveBeenCalledTimes(2);
+    for (const [{ data }] of prisma.connector.create.mock.calls) {
+      expect(data.envVars).toBeNull();
+    }
+  });
+});
+
 describe('AdaptersService unlisted adapters', () => {
   const { getAdapter } = jest.requireActual('./catalog');
 
