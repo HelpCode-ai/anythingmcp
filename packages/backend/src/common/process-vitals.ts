@@ -77,6 +77,19 @@ export const INITIAL_HEAP_STATE: HeapState = Object.freeze({
  */
 export const SNAPSHOT_HEADROOM_FRACTION = 0.85;
 
+/**
+ * How much memory a heap snapshot takes while it is built, as a multiple of
+ * the used heap. "About one heap" was not enough: on 2026-11-21 a snapshot
+ * of a 2.4 GB heap with 2.7 GB RSS grew the process to 5.9 GB and the kernel
+ * killed it in its 6 GB cgroup (1.32 x the heap). 1.5 keeps a margin.
+ */
+export const SNAPSHOT_COST_FACTOR = 1.5;
+
+/** The memory a snapshot of this heap is expected to need, in bytes. */
+export function snapshotCost(heapUsed: number): number {
+  return heapUsed * SNAPSHOT_COST_FACTOR;
+}
+
 export function heapPercent(sample: HeapSample): number {
   if (!(sample.heapLimit > 0)) return 0;
   return (sample.heapUsed / sample.heapLimit) * 100;
@@ -127,7 +140,7 @@ export function evaluateHeap(
   if (policy.snapshotPercent > 0 && percent >= policy.snapshotPercent && !next.snapshotTaken) {
     next.snapshotTaken = true;
     const roomKnown = sample.rss !== undefined && sample.rssLimit !== undefined && sample.rssLimit > 0;
-    const fits = !roomKnown || sample.rss! + sample.heapUsed <= sample.rssLimit! * SNAPSHOT_HEADROOM_FRACTION;
+    const fits = !roomKnown || sample.rss! + snapshotCost(sample.heapUsed) <= sample.rssLimit! * SNAPSHOT_HEADROOM_FRACTION;
     actions.push(fits ? 'snapshot' : 'snapshot-skipped');
   }
 

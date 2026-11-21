@@ -8,6 +8,7 @@ import {
   readHeapPolicy,
   readHealthHeapPercent,
   readVitalsIntervalSec,
+  snapshotCost,
 } from './process-vitals';
 import { ProcessVitalsService } from './process-vitals.service';
 
@@ -79,6 +80,19 @@ describe('evaluateHeap', () => {
     r = evaluateHeap(night(61), policy, r.state);
     expect(r.actions).not.toContain('snapshot-skipped');
     expect(r.actions).not.toContain('snapshot');
+  });
+
+  it('refuses the snapshot that killed the process on 2026-11-21', () => {
+    // heap 2.4 GB, rss 2.7 GB, cgroup 6 GB: "one heap more" (5.1 GB) looked
+    // like it fit under 6 x 0.85, but the snapshot took 1.32 x the heap and
+    // the kernel killed the process at 5.9 GB.
+    const r = evaluateHeap(
+      { heapUsed: 2.405 * GB, heapLimit: 4.094 * GB, rss: 2.699 * GB, rssLimit: 6 * GB },
+      { ...policy, snapshotPercent: 52 },
+      INITIAL_HEAP_STATE,
+    );
+    expect(r.actions).toEqual(['snapshot-skipped']);
+    expect(snapshotCost(2 * GB)).toBe(3 * GB);
   });
 
   it('allows the snapshot when the room is there', () => {
