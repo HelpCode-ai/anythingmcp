@@ -208,6 +208,12 @@ describe('evolution-api adapter: static contract', () => {
     for (const entry of perInstance) expect(entry.endpointMapping.path.endsWith('/{{EVOLUTION_INSTANCE}}')).toBe(true);
   });
 
+  it('is unlisted and points to the official WhatsApp connector', () => {
+    expect((a as { unlisted?: boolean }).unlisted).toBe(true);
+    expect(a.instructions).toMatch(/taken out of the store/);
+    expect(a.instructions).toMatch(/whatsapp-business/);
+  });
+
   it('says it is an unofficial gateway and names the official connector', () => {
     expect(a.instructions).toMatch(/Unofficial gateway/);
     expect(a.instructions).toContain('WhatsApp Business Cloud API');

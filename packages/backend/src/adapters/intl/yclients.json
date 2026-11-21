@@ -1,0 +1,2242 @@
+{
+  "slug": "yclients",
+  "name": "YCLIENTS",
+  "description": "YCLIENTS (Altegio outside the CIS) booking and CRM for salons, clinics and studios: branches, services, staff, schedules and free slots, appointments (list, create, change), clients and their visit history, products and stock, cash registers and financial transactions (read), reviews and analytics. Partner token plus user token.",
+  "instructions": "## YCLIENTS\nThis connector works with the **YCLIENTS REST API** (v1 paths, answer format 2.0), the booking and CRM system for salons, clinics, studios and other service businesses. The same API runs under the brand **Altegio** outside Russia and the CIS: choose the service in `YCLIENTS_API_HOST`. It reads branches, services, staff, schedules and free slots, appointments, clients with their visit history, products and stock, cash registers, financial transactions, reviews and analytics, and it can create and change appointments and client cards.\n\n**Setup (about 10 minutes)**\n1. Partner token: register as a developer in the integrations marketplace (YCLIENTS: https://yclients.com/appstore/developers, Altegio: https://app.alteg.io/appstore/developers). The token is shown under **Account settings**. Paste it into `YCLIENTS_PARTNER_TOKEN`.\n2. User token: it stands for one user and carries exactly that user's access rights to branches. Request it once with the user's login and password: `POST /api/v1/auth` on the API host, header `Authorization: Bearer PARTNER_TOKEN`, JSON body with `login` (phone or e-mail) and `password`; the answer holds `user_token`. A user with two-factor sign-in gets a code and sends it in a second call. An application of the marketplace can use the token of its system user instead (developer account, application, API access). Paste the token into `YCLIENTS_USER_TOKEN`.\n3. Pick the service in `YCLIENTS_API_HOST`: YCLIENTS (either of its two addresses, they reach the same service) or Altegio.\n\nThe connector sends both tokens in one header, `Authorization: Bearer PARTNER_TOKEN, User USER_TOKEN`. Changing the user's password issues a new user token: request it again.\n\n**Where to start**: `yclients_list_companies` returns the branches the user manages; every other tool needs the `company_id` from there. `yclients_get_company` shows one branch with its time zone.\n\n**Catalogue and staff**: `yclients_list_service_categories`, `yclients_list_services`, `yclients_get_service`, `yclients_list_staff`, `yclients_get_staff`.\n\n**Free time**: the booking view clients see is `yclients_list_bookable_services`, `yclients_list_bookable_staff`, `yclients_list_bookable_dates` and `yclients_list_bookable_times` (staff id 0 means any staff member). The internal view is `yclients_get_staff_schedule` (working slots and busy intervals over a date range) and `yclients_list_journal_seances` (the journal grid of one day).\n\n**Appointments**: `yclients_list_records` (always with a date range), `yclients_get_record`, `yclients_create_record` and `yclients_update_record`. An update is a full replacement: send staff_id, services, client, datetime and seance_length every time. `attendance` is the visit status: 0 waiting, 2 confirmed, 1 came, -1 did not show up. `yclients_delete_record` is installed switched off; mark a no-show with attendance -1 instead of deleting.\n\n**Clients**: `yclients_search_clients` (quick search by name, phone or e-mail, or filters), `yclients_get_client`, `yclients_create_client`, `yclients_update_client` (send name and phone every time) and `yclients_search_client_visits` for the visit and purchase history. `yclients_delete_client` is installed switched off.\n\n**Visits and money (read-only)**: `yclients_get_visit`, `yclients_get_visit_details` (payments and receipt of a visit), `yclients_list_accounts`, `yclients_list_transactions`. The connector books no payments and creates no financial transactions.\n\n**Products**: `yclients_list_goods`, `yclients_get_good`, `yclients_list_storages`, `yclients_list_goods_transactions`.\n\n**Analytics and reviews**: `yclients_get_analytics_overall`, `yclients_get_analytics_chart`, `yclients_list_comments`.\n\n**Formats**: every answer has `success`, `data` and `meta`; a refusal carries the reason in `meta.message`. Dates are `YYYY-MM-DD`, date-times ISO 8601 with the offset of the branch (`2026-12-01T14:30:00+03:00`). Durations are in **seconds** (`seance_length` 3600 is one hour). Prices and amounts are in the currency of the branch. Phones are digits with the country code and no plus sign. Lists page with `page` from 1 and `count` (clients: `page_size`).\n\n**Limits and errors**: 200 requests per minute and 5 per second per address. 401 means a token is missing or wrong; 403 means the user of the token has no right to this branch or section (rights are set per user in the branch settings); 404 means the id does not exist in this branch; 422 lists the invalid fields in `meta.errors`.\n\n**Not covered**: group events, memberships, gift cards and loyalty cards, payroll, SMS and e-mail campaigns, stock documents, payments and fiscal receipts.",
+  "aliases": [
+    "Altegio",
+    "YClients CRM",
+    "Уайклаентс",
+    "alteg.io"
+  ],
+  "region": "intl",
+  "category": "scheduling",
+  "icon": "yclients",
+  "docsUrl": "https://developers.yclients.com/ru/",
+  "requiredEnvVars": [
+    "YCLIENTS_API_HOST",
+    "YCLIENTS_PARTNER_TOKEN",
+    "YCLIENTS_USER_TOKEN"
+  ],
+  "envVarMeta": {
+    "YCLIENTS_API_HOST": {
+      "label": "Service",
+      "kind": "address",
+      "help": "YCLIENTS for accounts at yclients.com or yclients.ru (both addresses reach the same service; the documentation names api.yclients.ru), Altegio for accounts at alteg.io. Tokens of YCLIENTS do not work on Altegio and the other way round.",
+      "options": [
+        {
+          "value": "https://api.yclients.com",
+          "label": "YCLIENTS (api.yclients.com)"
+        },
+        {
+          "value": "https://api.yclients.ru",
+          "label": "YCLIENTS (api.yclients.ru)"
+        },
+        {
+          "value": "https://api.alteg.io",
+          "label": "Altegio (api.alteg.io)"
+        }
+      ]
+    },
+    "YCLIENTS_PARTNER_TOKEN": {
+      "label": "Partner token",
+      "kind": "credential",
+      "secret": true,
+      "help": "Register as a developer in the integrations marketplace of YCLIENTS or Altegio; the partner token is shown under Account settings of the developer account.",
+      "link": "https://yclients.com/appstore/developers",
+      "pattern": "^(?!Bearer\\s)[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste only the partner token (letters and digits), without Bearer in front and without spaces."
+    },
+    "YCLIENTS_USER_TOKEN": {
+      "label": "User token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The user_token returned by POST /api/v1/auth for the login and password of a user with access to your branches, or the system user token of your marketplace application. It changes when the user changes the password.",
+      "link": "https://developers.yclients.com/ru/#tag/Avtorizaciya",
+      "pattern": "^(?!User\\s)[A-Za-z0-9_-]{16,128}$",
+      "patternMessage": "Paste only the user token (letters and digits), without User in front and without spaces."
+    }
+  },
+  "verifyHints": {
+    "401": "The API did not accept the tokens. Check that YCLIENTS_PARTNER_TOKEN is the partner token of your developer account, that YCLIENTS_USER_TOKEN is a current user token (it changes with the user password), and that YCLIENTS_API_HOST is the service the account belongs to: YCLIENTS tokens do not work on Altegio and the other way round.",
+    "403": "The user behind YCLIENTS_USER_TOKEN has no access to this branch or section. Give the user the right in the branch settings (Settings, Users), or use the token of a user who manages the branch.",
+    "404": "Nothing with that id exists in this branch. Check company_id with yclients_list_companies and the record, client or product id.",
+    "422": "The API refused the data. meta.errors names the invalid fields; an appointment update needs staff_id, services, client, datetime and seance_length every time.",
+    "rate_limited": "The API allows 200 requests per minute and 5 per second per address. Wait a minute and try again."
+  },
+  "probe": {
+    "tool": "yclients_list_companies",
+    "params": {
+      "my": 1,
+      "count": 1
+    }
+  },
+  "prerequisites": "A YCLIENTS or Altegio account with a user who manages the branches, and a developer account in the integrations marketplace for the partner token (free registration). The user token is requested once with that user's login and password. About 10 minutes.",
+  "connector": {
+    "name": "YCLIENTS REST API",
+    "type": "REST",
+    "baseUrl": "{{YCLIENTS_API_HOST}}/api/v1",
+    "authType": "API_KEY",
+    "authConfig": {
+      "headerName": "Authorization",
+      "apiKey": "Bearer {{YCLIENTS_PARTNER_TOKEN}}, User {{YCLIENTS_USER_TOKEN}}"
+    },
+    "headers": {
+      "Accept": "application/vnd.yclients.v2+json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "tools": [
+    {
+      "name": "yclients_list_companies",
+      "description": "List branches (companies): id, title, country, city, timezone_name, address, phone, site, schedule and active_staff_count. By default only the branches the user of the token manages; start here to get the company_id every other tool needs. With my 0 it searches the public directory of all companies, which is large: filter it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "my": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 (default): only branches the user of the token can manage. 0: the public directory."
+          },
+          "id": {
+            "type": "integer",
+            "description": "Only the branch with this id."
+          },
+          "group_id": {
+            "type": "integer",
+            "description": "Only branches of this chain (network) id."
+          },
+          "active": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: only branches with an active licence and open booking."
+          },
+          "city_id": {
+            "type": "integer",
+            "description": "Only branches in this city id."
+          },
+          "show_groups": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: add the chains each branch belongs to."
+          },
+          "show_bookforms": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: add the online booking widgets of each branch (id, title, url)."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "description": "Branches per page."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          }
+        },
+        "required": []
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/companies",
+        "queryParams": {
+          "my": "$my",
+          "id": "$id",
+          "group_id": "$group_id",
+          "active": "$active",
+          "city_id": "$city_id",
+          "show_groups": "$show_groups",
+          "showBookforms": "$show_bookforms",
+          "count": "$count",
+          "page": "$page"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_company",
+      "description": "Read one branch: id, title, country, city, timezone_name, address, coordinates, phone, site, social links, schedule, active_staff_count, main_group_id and, with show_bookforms, its online booking widgets. Times of this branch are in its timezone_name.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "my": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 1,
+            "description": "1 (default): include the extra data and access rights shown to a managing user."
+          },
+          "show_groups": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: add the chains the branch belongs to."
+          },
+          "show_bookforms": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: add the online booking widgets (id, title, url)."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}",
+        "queryParams": {
+          "my": "$my",
+          "show_groups": "$show_groups",
+          "showBookforms": "$show_bookforms"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_service_categories",
+      "description": "List the service categories of a branch: id, title, api_id, weight (sort order, heavier first) and the staff ids offering them. meta.total_count holds the number of categories.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only categories this staff member offers."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/service_categories",
+        "queryParams": {
+          "staff_id": "$staff_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_services",
+      "description": "List the services of a branch: id, title, category_id, price_min, price_max (in the branch currency), discount, comment, weight, active, api_id and staff (each with id and seance_length in seconds). Not paged: all services come in one answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only services this staff member offers."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Only services of this category."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/services",
+        "queryParams": {
+          "staff_id": "$staff_id",
+          "category_id": "$category_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_service",
+      "description": "Read one service: id, title, category_id, price_min, price_max, discount, comment, active, api_id and the staff who offer it with their seance_length in seconds.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "service_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Service id from yclients_list_services."
+          }
+        },
+        "required": [
+          "company_id",
+          "service_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/services/{service_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_staff",
+      "description": "List the staff of a branch: id, name, specialization, position (id, title), rating, votes_count, user_id, hidden, fired, status and avatar. Fired and hidden staff are included: check those flags before booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/staff"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_staff",
+      "description": "Read one staff member: id, name, specialization, position, rating, votes_count, information (HTML), user_id, hidden, fired and avatar.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Staff id from yclients_list_staff."
+          }
+        },
+        "required": [
+          "company_id",
+          "staff_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/staff/{staff_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_staff_schedule",
+      "description": "Read the working schedule of staff for a date range: per staff member and date the working slots (from, to as HH:MM) and, when asked, busy_intervals (appointments and group events with entity_type, entity_id, from, to) and off_day_type. meta.count holds the number of rows.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day, YYYY-MM-DD."
+          },
+          "staff_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only these staff ids. Leave out for all staff."
+          },
+          "include": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "busy_intervals",
+                "off_day_type"
+              ]
+            },
+            "description": "Extra data per day: busy_intervals (booked time) and off_day_type (kind of day off)."
+          }
+        },
+        "required": [
+          "company_id",
+          "start_date",
+          "end_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/staff/schedule",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "staff_ids[]": "$staff_ids",
+          "include[]": "$include"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_bookable_services",
+      "description": "List what clients can book online at a branch: categories (id, title) and services (id, title, category_id, price_min, price_max, discount, active, and seance_length in seconds when staff_id is given). Needs only the partner token; it shows the public booking view.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only services this staff member offers; 0 or left out for any."
+          },
+          "datetime": {
+            "type": "string",
+            "description": "Only services bookable at this time, ISO 8601, e.g. 2026-12-01T14:30."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Services already chosen: only services that can be added to them."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/book_services/{company_id}",
+        "queryParams": {
+          "staff_id": "$staff_id",
+          "datetime": "$datetime",
+          "service_ids[]": "$service_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_bookable_staff",
+      "description": "List the staff clients can book online: id, name, specialization, position, bookable (has free slots), rating, votes_count, avatar and seance_date (the next day with free slots).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Service ids from yclients_list_services: only slots where all of these services can be booked."
+          },
+          "datetime": {
+            "type": "string",
+            "description": "Only staff with a slot at this time, ISO 8601, e.g. 2026-12-01T14:30."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/book_staff/{company_id}",
+        "queryParams": {
+          "service_ids[]": "$service_ids",
+          "datetime": "$datetime"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_bookable_dates",
+      "description": "List the days with free online booking slots: booking_dates and working_dates (YYYY-MM-DD lists) plus booking_days and working_days grouped by month number. Use it to find a free day before asking for times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Service ids from yclients_list_services: only slots where all of these services can be booked."
+          },
+          "staff_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only days this staff member has free slots; 0 or left out for any."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "Any day of the month to look at, YYYY-MM-DD."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "Start of a search range, YYYY-MM-DD. Use together with date_to; the pair wins over date."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "End of the search range, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/book_dates/{company_id}",
+        "queryParams": {
+          "service_ids[]": "$service_ids",
+          "staff_id": "$staff_id",
+          "date": "$date",
+          "date_from": "$date_from",
+          "date_to": "$date_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_bookable_times",
+      "description": "List the free slots of one day as clients see them: time (HH:MM), seance_length in seconds and datetime in ISO 8601 with the branch offset. Pass that datetime unchanged to yclients_create_record.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Staff id, or 0 for any staff member."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "The day to look at, YYYY-MM-DD."
+          },
+          "service_ids": {
+            "type": "array",
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Service ids from yclients_list_services: only slots where all of these services can be booked."
+          }
+        },
+        "required": [
+          "company_id",
+          "staff_id",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/book_times/{company_id}/{staff_id}/{date}",
+        "queryParams": {
+          "service_ids[]": "$service_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_journal_seances",
+      "description": "List the journal grid of one staff member for one day: every time step (HH:MM) with is_free true or false. Unlike the bookable times it shows the internal journal, including time closed for online booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Staff id from yclients_list_staff."
+          },
+          "date": {
+            "type": "string",
+            "format": "date",
+            "description": "The day to look at, YYYY-MM-DD."
+          }
+        },
+        "required": [
+          "company_id",
+          "staff_id",
+          "date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/timetable/seances/{company_id}/{staff_id}/{date}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_records",
+      "description": "List appointments (records) of a branch: id, company_id, staff_id, services (id, title, cost, discount, first_cost, amount), staff, client (id, name, phone, email), datetime, create_date, seance_length (seconds), comment, attendance, confirmed, visit_id, paid_full, online and deleted. Filter by visit date, creation date or change time; meta holds the page and total_count. Without dates the API returns all appointments page by page, so always pass a range.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Visits on or after this day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Visits on or before this day, YYYY-MM-DD."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only appointments with this staff member."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only appointments of this client."
+          },
+          "created_user_id": {
+            "type": "integer",
+            "description": "Only appointments created by this user."
+          },
+          "c_start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or after this day, YYYY-MM-DD."
+          },
+          "c_end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Created on or before this day, YYYY-MM-DD."
+          },
+          "changed_after": {
+            "type": "string",
+            "description": "Created or changed at or after this time, ISO 8601, e.g. 2026-11-01T00:00:00."
+          },
+          "changed_before": {
+            "type": "string",
+            "description": "Created or changed at or before this time, ISO 8601."
+          },
+          "include_finance_transactions": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: add the payments of each appointment."
+          },
+          "with_deleted": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: include deleted appointments (deleted is true on them)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 50,
+            "description": "Appointments per page. Default 50."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/records/{company_id}",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "staff_id": "$staff_id",
+          "client_id": "$client_id",
+          "created_user_id": "$created_user_id",
+          "c_start_date": "$c_start_date",
+          "c_end_date": "$c_end_date",
+          "changed_after": "$changed_after",
+          "changed_before": "$changed_before",
+          "include_finance_transactions": "$include_finance_transactions",
+          "with_deleted": "$with_deleted",
+          "page": "$page",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_record",
+      "description": "Read one appointment: id, company_id, staff_id, services (id, title, cost, discount, first_cost, amount), staff, client (id, name, phone, email), datetime, create_date, seance_length (seconds), comment, attendance, confirmed, visit_id, paid_full, online and deleted, plus documents and, when asked, its payments and consumables.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "record_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Appointment id from yclients_list_records."
+          },
+          "include_finance_transactions": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: add the payments of the appointment."
+          },
+          "include_consumables": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: add the consumables written off for it."
+          }
+        },
+        "required": [
+          "company_id",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/record/{company_id}/{record_id}",
+        "queryParams": {
+          "include_finance_transactions": "$include_finance_transactions",
+          "include_consumables": "$include_consumables"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_create_record",
+      "description": "Create an appointment for a client with one staff member: it appears in the journal at once and blocks that time. Returns the saved appointment with its id. The client gets the notifications the branch has configured, and an SMS only when send_sms is true. Confirm staff, services, client and time with the user first; take the time from yclients_list_bookable_times.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "staff_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Staff member who performs the services, from yclients_list_staff."
+          },
+          "services": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Service id from yclients_list_services."
+                },
+                "first_cost": {
+                  "type": "number",
+                  "description": "List price of the service."
+                },
+                "discount": {
+                  "type": "number",
+                  "description": "Discount in percent."
+                },
+                "cost": {
+                  "type": "number",
+                  "description": "Price after the discount."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Services of the appointment, each with id and optionally first_cost, discount (percent) and cost."
+          },
+          "client": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "description": "Existing client id: name, phone and e-mail are then taken from the client card."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone with country code, digits only, e.g. 79161234567."
+              },
+              "name": {
+                "type": "string",
+                "description": "Client name."
+              },
+              "email": {
+                "type": "string",
+                "description": "Client e-mail."
+              }
+            },
+            "description": "The client: either id of an existing client (yclients_search_clients), or phone and name. A new phone number creates a client card."
+          },
+          "datetime": {
+            "type": "string",
+            "description": "Start of the appointment in ISO 8601 with the branch offset, e.g. 2026-12-01T14:30:00+03:00. Take it from yclients_list_bookable_times."
+          },
+          "seance_length": {
+            "type": "integer",
+            "minimum": 300,
+            "description": "Duration in seconds, e.g. 3600 for one hour."
+          },
+          "save_if_busy": {
+            "type": "boolean",
+            "default": false,
+            "description": "false (default): refuse when the time is taken or outside working hours. true: save anyway, which can double-book the staff member."
+          },
+          "send_sms": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: send the client an SMS with the appointment details, charged to the SMS balance of the branch. Default false."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the appointment, visible to staff."
+          },
+          "sms_remain_hours": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Hours before the visit to send an SMS reminder; 0 for none."
+          },
+          "email_remain_hours": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Hours before the visit to send an e-mail reminder; 0 for none."
+          },
+          "attendance": {
+            "type": "integer",
+            "enum": [
+              -1,
+              0,
+              1,
+              2
+            ],
+            "description": "Visit status: 0 waiting for the client (default), 2 client confirmed, 1 client came and services were provided, -1 client did not show up."
+          },
+          "api_id": {
+            "type": "string",
+            "description": "Id of the appointment in your own system."
+          },
+          "custom_color": {
+            "type": "string",
+            "description": "Colour of the appointment in the journal, hex without the hash sign, e.g. f44336."
+          },
+          "record_labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of appointment categories (labels)."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Values of the additional appointment fields of the branch, keyed by field code."
+          }
+        },
+        "required": [
+          "company_id",
+          "staff_id",
+          "services",
+          "client",
+          "datetime",
+          "seance_length"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/records/{company_id}",
+        "bodyMapping": {
+          "staff_id": "$staff_id",
+          "services": "$services",
+          "client": "$client",
+          "datetime": "$datetime",
+          "seance_length": "$seance_length",
+          "save_if_busy": "$save_if_busy",
+          "send_sms": "$send_sms",
+          "comment": "$comment",
+          "sms_remain_hours": "$sms_remain_hours",
+          "email_remain_hours": "$email_remain_hours",
+          "attendance": "$attendance",
+          "api_id": "$api_id",
+          "custom_color": "$custom_color",
+          "record_labels": "$record_labels",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "yclients_update_record",
+      "description": "Change an appointment: move it, change staff, services, comment or the visit status (attendance). This is a full update, not a partial one: read the appointment with yclients_get_record first and send staff_id, services, client, datetime and seance_length again, changed or not, or the API answers 422.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "record_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Appointment id from yclients_list_records."
+          },
+          "staff_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Staff member who performs the services, from yclients_list_staff."
+          },
+          "services": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "id": {
+                  "type": "integer",
+                  "description": "Service id from yclients_list_services."
+                },
+                "first_cost": {
+                  "type": "number",
+                  "description": "List price of the service."
+                },
+                "discount": {
+                  "type": "number",
+                  "description": "Discount in percent."
+                },
+                "cost": {
+                  "type": "number",
+                  "description": "Price after the discount."
+                }
+              },
+              "required": [
+                "id"
+              ]
+            },
+            "description": "Services of the appointment, each with id and optionally first_cost, discount (percent) and cost."
+          },
+          "client": {
+            "type": "object",
+            "properties": {
+              "id": {
+                "type": "integer",
+                "description": "Existing client id: name, phone and e-mail are then taken from the client card."
+              },
+              "phone": {
+                "type": "string",
+                "description": "Phone with country code, digits only, e.g. 79161234567."
+              },
+              "name": {
+                "type": "string",
+                "description": "Client name."
+              },
+              "email": {
+                "type": "string",
+                "description": "Client e-mail."
+              }
+            },
+            "description": "The client: either id of an existing client (yclients_search_clients), or phone and name. A new phone number creates a client card."
+          },
+          "datetime": {
+            "type": "string",
+            "description": "Start of the appointment in ISO 8601 with the branch offset, e.g. 2026-12-01T14:30:00+03:00. Take it from yclients_list_bookable_times."
+          },
+          "seance_length": {
+            "type": "integer",
+            "minimum": 300,
+            "description": "Duration in seconds, e.g. 3600 for one hour."
+          },
+          "save_if_busy": {
+            "type": "boolean",
+            "default": false,
+            "description": "false (default): refuse when the time is taken or outside working hours. true: save anyway, which can double-book the staff member."
+          },
+          "send_sms": {
+            "type": "boolean",
+            "default": false,
+            "description": "true: send the client an SMS with the appointment details, charged to the SMS balance of the branch. Default false."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the appointment, visible to staff."
+          },
+          "sms_remain_hours": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Hours before the visit to send an SMS reminder; 0 for none."
+          },
+          "email_remain_hours": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Hours before the visit to send an e-mail reminder; 0 for none."
+          },
+          "attendance": {
+            "type": "integer",
+            "enum": [
+              -1,
+              0,
+              1,
+              2
+            ],
+            "description": "Visit status: 0 waiting for the client (default), 2 client confirmed, 1 client came and services were provided, -1 client did not show up."
+          },
+          "api_id": {
+            "type": "string",
+            "description": "Id of the appointment in your own system."
+          },
+          "custom_color": {
+            "type": "string",
+            "description": "Colour of the appointment in the journal, hex without the hash sign, e.g. f44336."
+          },
+          "record_labels": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Ids of appointment categories (labels)."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Values of the additional appointment fields of the branch, keyed by field code."
+          }
+        },
+        "required": [
+          "company_id",
+          "record_id",
+          "staff_id",
+          "services",
+          "client",
+          "datetime",
+          "seance_length"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/record/{company_id}/{record_id}",
+        "bodyMapping": {
+          "staff_id": "$staff_id",
+          "services": "$services",
+          "client": "$client",
+          "datetime": "$datetime",
+          "seance_length": "$seance_length",
+          "save_if_busy": "$save_if_busy",
+          "send_sms": "$send_sms",
+          "comment": "$comment",
+          "sms_remain_hours": "$sms_remain_hours",
+          "email_remain_hours": "$email_remain_hours",
+          "attendance": "$attendance",
+          "api_id": "$api_id",
+          "custom_color": "$custom_color",
+          "record_labels": "$record_labels",
+          "custom_fields": "$custom_fields"
+        }
+      }
+    },
+    {
+      "name": "yclients_delete_record",
+      "enabled": false,
+      "description": "Delete an appointment from the journal. The slot becomes free again and the client is not asked; it cannot be restored through the API. To keep the history, set attendance to -1 with yclients_update_record instead. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "record_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Appointment id from yclients_list_records."
+          }
+        },
+        "required": [
+          "company_id",
+          "record_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/record/{company_id}/{record_id}"
+      }
+    },
+    {
+      "name": "yclients_search_clients",
+      "description": "Search and list the client base of a branch. Each row holds only the fields asked for in fields; meta.total_count is the number of matches. Find a person with a quick_search filter on name, phone or e-mail. It does not return categories, birth date or custom fields: read those with yclients_get_client.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "filters": {
+            "type": "array",
+            "items": {
+              "type": "object"
+            },
+            "description": "Search conditions, each with type and state. Quick search by name, phone or e-mail: `[{\"type\":\"quick_search\",\"state\":{\"value\":\"Anna\"}}]`. By ids: `[{\"type\":\"id\",\"state\":{\"value\":[1,2]}}]`. By money spent: `[{\"type\":\"sold_amount\",\"state\":{\"from\":0,\"to\":5000}}]`. Other types: gender, importance, category, birthday (from and to dates), record (staff, service, created range) and client. Leave out to list everyone."
+          },
+          "operation": {
+            "type": "string",
+            "enum": [
+              "AND",
+              "OR"
+            ],
+            "description": "How several filters combine: AND (default) or OR."
+          },
+          "fields": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "id",
+                "name",
+                "phone",
+                "email",
+                "discount",
+                "first_visit_date",
+                "last_visit_date",
+                "sold_amount",
+                "visits_count"
+              ]
+            },
+            "default": [
+              "id",
+              "name",
+              "phone",
+              "email",
+              "visits_count",
+              "last_visit_date",
+              "sold_amount"
+            ],
+            "description": "Fields of each row. Default: id, name, phone, email, visits_count, last_visit_date and sold_amount. Without this list the API returns only ids."
+          },
+          "order_by": {
+            "type": "string",
+            "enum": [
+              "id",
+              "name",
+              "phone",
+              "email",
+              "discount",
+              "first_visit_date",
+              "last_visit_date",
+              "sold_amount",
+              "visits_count"
+            ],
+            "description": "Field to sort by."
+          },
+          "order_by_direction": {
+            "type": "string",
+            "enum": [
+              "ASC",
+              "DESC"
+            ],
+            "description": "ASC or DESC."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 25,
+            "description": "Rows per page, at most 200. Default 25."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/company/{company_id}/clients/search",
+        "bodyMapping": {
+          "page": "$page",
+          "page_size": "$page_size",
+          "fields": "$fields",
+          "order_by": "$order_by",
+          "order_by_direction": "$order_by_direction",
+          "operation": "$operation",
+          "filters": "$filters"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_client",
+      "description": "Read one client card: id, name, surname, patronymic, phone, email, categories, sex_id, discount, importance_id, card, birth_date, comment, sms_check, sms_not, spent, paid, balance, visits, last_change_date and custom_fields. spent, paid and balance are in the branch currency.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "client_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Client id from yclients_search_clients."
+          }
+        },
+        "required": [
+          "company_id",
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/client/{company_id}/{client_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_create_client",
+      "description": "Add a client card to a branch. Returns the saved client with its id. A phone number that already exists in the branch is refused, so search with yclients_search_clients first.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone with country code, digits only, e.g. 79161234567."
+          },
+          "surname": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "patronymic": {
+            "type": "string",
+            "description": "Middle name (patronymic)."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "sex_id": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "1 male, 2 female, 0 unknown."
+          },
+          "importance_id": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Importance class: 0 none, 1 bronze, 2 silver, 3 gold."
+          },
+          "discount": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Personal discount in percent."
+          },
+          "card": {
+            "type": "string",
+            "description": "Number of the client card."
+          },
+          "birth_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth, YYYY-MM-DD."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the client card."
+          },
+          "sms_check": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: congratulate on the birthday by SMS; 0: do not."
+          },
+          "sms_not": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: exclude the client from SMS campaigns; 0: include."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Values of the additional client fields of the branch, keyed by field code."
+          },
+          "categories": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ids of the client categories to set. Replaces the current list."
+          }
+        },
+        "required": [
+          "company_id",
+          "name",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/clients/{company_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "phone": "$phone",
+          "surname": "$surname",
+          "patronymic": "$patronymic",
+          "email": "$email",
+          "sex_id": "$sex_id",
+          "importance_id": "$importance_id",
+          "discount": "$discount",
+          "card": "$card",
+          "birth_date": "$birth_date",
+          "comment": "$comment",
+          "sms_check": "$sms_check",
+          "sms_not": "$sms_not",
+          "custom_fields": "$custom_fields",
+          "categories": "$categories"
+        }
+      }
+    },
+    {
+      "name": "yclients_update_client",
+      "description": "Change a client card. Name and phone are always required; fields left out can be reset by the API, so read the card with yclients_get_client first and send every value you want to keep.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "client_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Client id from yclients_search_clients."
+          },
+          "name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone with country code, digits only, e.g. 79161234567."
+          },
+          "surname": {
+            "type": "string",
+            "description": "Last name."
+          },
+          "patronymic": {
+            "type": "string",
+            "description": "Middle name (patronymic)."
+          },
+          "email": {
+            "type": "string",
+            "description": "E-mail address."
+          },
+          "sex_id": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "1 male, 2 female, 0 unknown."
+          },
+          "importance_id": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2,
+              3
+            ],
+            "description": "Importance class: 0 none, 1 bronze, 2 silver, 3 gold."
+          },
+          "discount": {
+            "type": "number",
+            "minimum": 0,
+            "maximum": 100,
+            "description": "Personal discount in percent."
+          },
+          "card": {
+            "type": "string",
+            "description": "Number of the client card."
+          },
+          "birth_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Date of birth, YYYY-MM-DD."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Comment on the client card."
+          },
+          "sms_check": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: congratulate on the birthday by SMS; 0: do not."
+          },
+          "sms_not": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: exclude the client from SMS campaigns; 0: include."
+          },
+          "custom_fields": {
+            "type": "object",
+            "description": "Values of the additional client fields of the branch, keyed by field code."
+          },
+          "labels": {
+            "type": "array",
+            "items": {
+              "type": "integer"
+            },
+            "description": "Ids of the client categories to set. Replaces the current list."
+          }
+        },
+        "required": [
+          "company_id",
+          "client_id",
+          "name",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/client/{company_id}/{client_id}",
+        "bodyMapping": {
+          "name": "$name",
+          "phone": "$phone",
+          "surname": "$surname",
+          "patronymic": "$patronymic",
+          "email": "$email",
+          "sex_id": "$sex_id",
+          "importance_id": "$importance_id",
+          "discount": "$discount",
+          "card": "$card",
+          "birth_date": "$birth_date",
+          "comment": "$comment",
+          "sms_check": "$sms_check",
+          "sms_not": "$sms_not",
+          "custom_fields": "$custom_fields",
+          "labels": "$labels"
+        }
+      }
+    },
+    {
+      "name": "yclients_delete_client",
+      "enabled": false,
+      "description": "Delete a client card from a branch. The card and its contact data are removed and cannot be restored through the API. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "client_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Client id from yclients_search_clients."
+          }
+        },
+        "required": [
+          "company_id",
+          "client_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/client/{company_id}/{client_id}"
+      }
+    },
+    {
+      "name": "yclients_search_client_visits",
+      "description": "Read the visit history of one client, newest first: records (id, date, visit_id, attendance, services, staff, company, comment) and goods_transactions (product sales with goods and staff), 25 per page. Identify the client by client_id or client_phone. For the next page call again with the from and to values of meta.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "client_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Client id. Give this or client_phone."
+          },
+          "client_phone": {
+            "type": "string",
+            "description": "Client phone, digits only with country code. Give this or client_id."
+          },
+          "from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the period, YYYY-MM-DD. Leave out for no lower limit."
+          },
+          "to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the period, YYYY-MM-DD. Leave out for no upper limit."
+          },
+          "payment_statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "not_paid",
+                "paid_not_full",
+                "paid_full",
+                "paid_over"
+              ]
+            },
+            "default": [],
+            "description": "Only visits with these payment states: not_paid, paid_not_full, paid_full, paid_over. Empty (default) for all."
+          },
+          "attendance": {
+            "type": "integer",
+            "enum": [
+              -1,
+              0,
+              1,
+              2
+            ],
+            "description": "Only visits with this status: -1 did not come, 0 waiting, 1 came, 2 confirmed. Leave out for all."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/company/{company_id}/clients/visits/search",
+        "bodyTemplate": "{\"client_id\": ${client_id}, \"client_phone\": ${client_phone}, \"from\": ${from}, \"to\": ${to}, \"payment_statuses\": ${payment_statuses}, \"attendance\": ${attendance}}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_visit",
+      "description": "Read one visit: attendance, datetime, comment and its records (appointments) with services, staff, client and goods_transactions. A visit groups the appointments of one client on one day; its id is visit_id on an appointment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "visit_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Visit id: visit_id of an appointment."
+          }
+        },
+        "required": [
+          "visit_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/visits/{visit_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_visit_details",
+      "description": "Read the money side of one visit: payment_transactions, loyalty_transactions, kkm_transaction_details_container (fiscal receipts), items (services and goods with cost and discount) and the paid and to-pay totals in the branch currency. Read-only; it books no payment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "record_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Appointment id of the visit."
+          },
+          "visit_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Visit id: visit_id of that appointment."
+          }
+        },
+        "required": [
+          "company_id",
+          "record_id",
+          "visit_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/visit/details/{company_id}/{record_id}/{visit_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_goods",
+      "description": "List or search the products (goods) of a branch: good_id, title, label, cost and actual_cost (sale and purchase price in the branch currency), unit_short_title, barcode, article, critical_amount, actual_amounts (stock per storage_id) and last_change_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "term": {
+            "type": "string",
+            "description": "Part of the name, the article number or the barcode."
+          },
+          "category_id": {
+            "type": "integer",
+            "description": "Only products of this category."
+          },
+          "changed_after": {
+            "type": "string",
+            "description": "Created or changed at or after this time, ISO 8601 with offset, e.g. 2026-11-01T12:00:00+0300."
+          },
+          "changed_before": {
+            "type": "string",
+            "description": "Created or changed at or before this time, ISO 8601 with offset."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 100,
+            "default": 25,
+            "description": "Products per page. Default 25."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/goods/{company_id}",
+        "queryParams": {
+          "term": "$term",
+          "category_id": "$category_id",
+          "changed_after": "$changed_after",
+          "changed_before": "$changed_before",
+          "page": "$page",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_good",
+      "description": "Read one product: good_id, title, cost, actual_cost, unit, barcode, article, critical_amount, desired_amount and actual_amounts (stock per storage_id).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "good_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Product id (good_id) from yclients_list_goods."
+          }
+        },
+        "required": [
+          "company_id",
+          "good_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/goods/{company_id}/{good_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_storages",
+      "description": "List the storages (warehouses) of a branch: id, title, for_service (1: consumables are written off here), for_sale (1: default storage for product sales) and comment.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storages/{company_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_goods_transactions",
+      "description": "List stock movements of a branch: id, document_id, type, amount (negative for a write-off or sale), good (id, title), storage, unit, cost and cost_per_unit, master, supplier, client, create_date and last_change_date.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the period, YYYY-MM-DD."
+          },
+          "document_id": {
+            "type": "integer",
+            "description": "Only movements of this stock document."
+          },
+          "changed_after": {
+            "type": "string",
+            "description": "Created or changed at or after this time, ISO 8601, e.g. 2026-11-01T00:00:00."
+          },
+          "changed_before": {
+            "type": "string",
+            "description": "Created or changed at or before this time, ISO 8601."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 20,
+            "description": "Movements per page. Default 20."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/storages/transactions/{company_id}",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "document_id": "$document_id",
+          "changed_after": "$changed_after",
+          "changed_before": "$changed_before",
+          "page": "$page",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_accounts",
+      "description": "List the cash registers and accounts of a branch: id, title, type (0 cash, 1 cashless) and comment. Their ids filter yclients_list_transactions.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/accounts/{company_id}"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_transactions",
+      "description": "List financial transactions of a branch, read-only: id, document_id, date, amount (in the branch currency, negative for an expense), comment, expense (payment item id and title), account, client, master, supplier, record_id, visit_id and sold_item_type. Pass a date range: the list is large.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the period, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the period, YYYY-MM-DD."
+          },
+          "account_id": {
+            "type": "integer",
+            "description": "Only this cash register or account, from yclients_list_accounts."
+          },
+          "client_id": {
+            "type": "integer",
+            "description": "Only transactions of this client."
+          },
+          "master_id": {
+            "type": "integer",
+            "description": "Only transactions of this staff member."
+          },
+          "supplier_id": {
+            "type": "integer",
+            "description": "Only transactions with this supplier."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Only transactions entered by this user."
+          },
+          "document_id": {
+            "type": "integer",
+            "description": "Only transactions of this document."
+          },
+          "real_money": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: only real money, without bonus and loyalty movements."
+          },
+          "deleted": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1: only deleted transactions; 0: only existing ones."
+          },
+          "balance_is": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 any amount, 1 only income (positive), 2 only expense (negative)."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "default": 50,
+            "description": "Transactions per page. Default 50."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/transactions/{company_id}",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "account_id": "$account_id",
+          "client_id": "$client_id",
+          "master_id": "$master_id",
+          "supplier_id": "$supplier_id",
+          "user_id": "$user_id",
+          "document_id": "$document_id",
+          "real_money": "$real_money",
+          "deleted": "$deleted",
+          "balance_is": "$balance_is",
+          "page": "$page",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_analytics_overall",
+      "description": "Read the key figures of a branch for a period, each compared with the previous period of the same length: income_total_stats, income_services_stats, income_goods_stats and income_average_stats (current_sum, previous_sum, change_percent, currency), fullness_stats (occupancy in percent), record_stats (completed, pending and cancelled appointments) and client_stats (new, returning and lost clients).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the period, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the period, included, YYYY-MM-DD."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only the work of this staff member."
+          },
+          "position_id": {
+            "type": "integer",
+            "description": "Only staff with this position id."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Only the work of this user (administrator)."
+          }
+        },
+        "required": [
+          "company_id",
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/analytics/overall/",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "staff_id": "$staff_id",
+          "position_id": "$position_id",
+          "user_id": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_get_analytics_chart",
+      "description": "Read one analytics series of a branch for a period. income_daily, records_daily and fullness_daily return series with a label and data as pairs of day start (Unix milliseconds, UTC) and value; record_source and record_status return a list of label and data (number of appointments per booking source or visit status).",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "chart": {
+            "type": "string",
+            "enum": [
+              "income_daily",
+              "records_daily",
+              "fullness_daily",
+              "record_source",
+              "record_status"
+            ],
+            "description": "income_daily (revenue per day), records_daily (appointments per day), fullness_daily (occupancy per day), record_source (appointments by source) or record_status (appointments by visit status)."
+          },
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "date_from": {
+            "type": "string",
+            "format": "date",
+            "description": "First day of the period, YYYY-MM-DD."
+          },
+          "date_to": {
+            "type": "string",
+            "format": "date",
+            "description": "Last day of the period, included, YYYY-MM-DD."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only the work of this staff member."
+          },
+          "position_id": {
+            "type": "integer",
+            "description": "Only staff with this position id."
+          },
+          "user_id": {
+            "type": "integer",
+            "description": "Only the work of this user (administrator)."
+          }
+        },
+        "required": [
+          "company_id",
+          "chart",
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/company/{company_id}/analytics/overall/charts/{chart}/",
+        "queryParams": {
+          "date_from": "$date_from",
+          "date_to": "$date_to",
+          "staff_id": "$staff_id",
+          "position_id": "$position_id",
+          "user_id": "$user_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "yclients_list_comments",
+      "description": "List the reviews clients left for a branch or its staff: id, type (1 about a staff member, 0 about the branch), master_id, text, date, rating (1 to 5), user_name and record_id.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "company_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Branch (company) id from yclients_list_companies. Altegio calls it the location id."
+          },
+          "start_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Reviews from this day, YYYY-MM-DD."
+          },
+          "end_date": {
+            "type": "string",
+            "format": "date",
+            "description": "Reviews up to this day, YYYY-MM-DD."
+          },
+          "staff_id": {
+            "type": "integer",
+            "description": "Only reviews about this staff member."
+          },
+          "rating": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 5,
+            "description": "Only reviews with this rating."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 1,
+            "description": "Page number, starting at 1."
+          },
+          "count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 300,
+            "description": "Reviews per page."
+          }
+        },
+        "required": [
+          "company_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/comments/{company_id}/",
+        "queryParams": {
+          "start_date": "$start_date",
+          "end_date": "$end_date",
+          "staff_id": "$staff_id",
+          "rating": "$rating",
+          "page": "$page",
+          "count": "$count"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    }
+  ]
+}
