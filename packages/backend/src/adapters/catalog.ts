@@ -132,6 +132,7 @@ import * as amocrm from './intl/amocrm.json';
 import * as amplitude from './intl/amplitude.json';
 import * as apiFootball from './intl/api-football.json';
 import * as apify from './intl/apify.json';
+import * as apiko from './intl/apiko.json';
 import * as apollo from './intl/apollo.json';
 import * as appstleSubscriptions from './intl/appstle-subscriptions.json';
 import * as appwrite from './intl/appwrite.json';
@@ -1408,6 +1409,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   amplitude as unknown as AdapterDefinition,
   apiFootball as unknown as AdapterDefinition,
   apify as unknown as AdapterDefinition,
+  apiko as unknown as AdapterDefinition,
   apollo as unknown as AdapterDefinition,
   appstleSubscriptions as unknown as AdapterDefinition,
   appwrite as unknown as AdapterDefinition,
