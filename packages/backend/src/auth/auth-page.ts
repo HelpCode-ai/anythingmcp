@@ -54,12 +54,15 @@ export function knownClientFor(redirectHost: string): KnownClient {
 
 /**
  * The AI client named on the sign-up link from this page, for the directory
- * badges (see directoryBadgesFor). Muse is not recognised by host yet (no Muse
- * client has registered with us), so a client called "Muse" or one on Meta's
- * domains counts too. Only a badge depends on it, so a self-declared name is
- * enough.
+ * badges (see directoryBadgesFor) and for counting sign-ups per client. Muse
+ * is not recognised by host yet (no Muse client has registered with us), so a
+ * client called "Muse" or one on Meta's domains counts too. Raycast registers
+ * itself through DCR and signs in through its own app, so its name, its
+ * `raycast://` redirect scheme or a raycast.com redirect host identify it.
+ * Only a badge and the sign-up link's `client` parameter depend on this, never
+ * an authorization decision, so a self-declared name is enough.
  */
-export type SignupClient = 'claude' | 'chatgpt' | 'muse' | 'other';
+export type SignupClient = 'claude' | 'chatgpt' | 'muse' | 'raycast' | 'other';
 
 /** Meta's domains, where Muse's redirect is expected (none seen in production yet). */
 const MUSE_DOMAINS = ['muse.ai', 'meta.ai', 'meta.com'];
@@ -70,12 +73,25 @@ export function isMuseHost(redirectHost: string): boolean {
   return MUSE_DOMAINS.some((d) => hostMatches(host, d));
 }
 
-export function signupClientFor(clientName: string, redirectHost: string): SignupClient {
+/**
+ * Whether this authorization comes from Raycast: a client named "Raycast",
+ * a `raycast://` redirect URI, or a redirect to raycast.com (Raycast's
+ * https OAuth redirect, https://raycast.com/redirect?packageName=…).
+ */
+export function isRaycastClient(clientName: string, redirectHost: string, redirectUri = ''): boolean {
+  if (/\braycast\b/i.test(clientName || '')) return true;
+  if (/^raycast:/i.test((redirectUri || '').trim())) return true;
+  const host = (redirectHost || '').toLowerCase().replace(/:\d+$/, '');
+  return hostMatches(host, 'raycast.com');
+}
+
+export function signupClientFor(clientName: string, redirectHost: string, redirectUri = ''): SignupClient {
   const known = knownClientFor(redirectHost);
   if (known) return known;
   if (isMuseHost(redirectHost) || /\bmuse\b/i.test(clientName || '')) {
     return 'muse';
   }
+  if (isRaycastClient(clientName, redirectHost, redirectUri)) return 'raycast';
   return 'other';
 }
 
@@ -86,7 +102,7 @@ export type DirectoryListing = 'claude' | 'chatgpt';
  * Which directory listings are shown to someone connecting this client. One
  * assistant's listing is never shown to another assistant's users: Claude
  * sees the Claude Directory, ChatGPT the ChatGPT Plugin Directory, Meta's
- * Muse neither. Every other client sees both.
+ * Muse neither. Every other client, Raycast included, sees both.
  */
 export function directoryBadgesFor(client: SignupClient): DirectoryListing[] {
   switch (client) {

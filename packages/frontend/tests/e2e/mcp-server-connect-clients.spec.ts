@@ -1,4 +1,5 @@
 import { expect, test, type Page } from '@playwright/test';
+import { RAYCAST_DEEPLINK_ENABLED, raycastInstallLink } from '../../src/lib/mcp-install-links';
 
 /**
  * The Quick Connect modals on an MCP server page. On AnythingMCP Cloud the
@@ -165,6 +166,36 @@ test.describe('MCP server Quick Connect', () => {
       await expect(modal).toContainText('X-API-Key');
     });
   }
+});
+
+test.describe('MCP server Quick Connect: Raycast', () => {
+  for (const mode of ['cloud', 'self-hosted'] as const) {
+    test(`Raycast shows the Install MCP Server steps and this server's URL (${mode})`, async ({ page }) => {
+      await openServerPage(page, mode);
+      await openClient(page, 'Raycast');
+
+      const steps = page.getByTestId('raycast-steps');
+      await expect(steps).toContainText('Install MCP Server');
+      await expect(steps).toContainText('Transport: HTTP');
+      await expect(steps).toContainText('@search');
+      await expect(steps.locator('code', { hasText: /\/mcp\/s1$/ })).toBeVisible();
+      await expect(steps.getByRole('button', { name: 'Copy' })).toBeVisible();
+      await expect(steps).toContainText('Raycast Pro');
+      await expect(steps).toContainText('Authorization: Bearer mcp_');
+      // The deeplink is unverified for HTTP servers: no raycast:// link while it is off.
+      await expect(page.locator('a[href^="raycast://"]')).toHaveCount(RAYCAST_DEEPLINK_ENABLED ? 1 : 0);
+      await expect(page.getByTestId('claude-directory')).toHaveCount(0);
+    });
+  }
+
+  test('the Raycast deeplink carries the HTTP config as percent-encoded JSON', () => {
+    const url = 'https://cloud.anythingmcp.com/mcp/s1';
+    const link = raycastInstallLink('search', url);
+    expect(link.startsWith('raycast://mcp/install?')).toBe(true);
+    const query = link.slice('raycast://mcp/install?'.length);
+    expect(query).not.toMatch(/[{}":/ ]/);
+    expect(JSON.parse(decodeURIComponent(query))).toEqual({ name: 'search', type: 'http', url });
+  });
 });
 
 test.describe('MCP server Share card', () => {

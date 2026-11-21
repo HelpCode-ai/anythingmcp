@@ -27,6 +27,8 @@ import {
   installBadgesHtml,
   installBadgesMarkdown,
   isLocalOnlyUrl,
+  RAYCAST_DEEPLINK_ENABLED,
+  raycastInstallLink,
 } from '@/lib/mcp-install-links';
 
 export default function McpServerDetailPage() {
@@ -388,6 +390,7 @@ export default function McpServerDetailPage() {
     { id: 'chatgpt', name: 'ChatGPT', init: 'GP', tone: 'emerald' },
     { id: 'muse', name: 'Meta Muse', init: 'Mu', tone: 'info' },
     { id: 'gemini', name: 'Gemini CLI', init: 'Ge', tone: 'pink' },
+    { id: 'raycast', name: 'Raycast', init: 'Ra', tone: 'danger' },
     { id: 'windsurf', name: 'Windsurf', init: 'Wi', tone: 'success' },
     { id: 'inspector', name: 'MCP Inspector', init: 'In', tone: 'neutral' },
   ];
@@ -680,6 +683,26 @@ Auth: OAuth`;
           </div>
         );
       }
+      case 'raycast':
+        // Raycast AI adds a remote server by URL (transport HTTP) and signs
+        // in with OAuth (dynamic client registration). The install deeplink
+        // is unverified for HTTP servers, so it stays behind a flag and the
+        // copy-the-URL steps are what ships.
+        return (
+          <div className="space-y-4" data-testid="raycast-steps">
+            <p className="text-[13px] leading-[1.55] text-[var(--text-2)]">
+              {t.rich('modal.raycastStep1', rich)}<br />
+              {t.rich('modal.raycastStep2', { ...rich, name: slug })}<br />
+              {t.rich('modal.raycastStep3', rich)}<br />
+              {t.rich('modal.raycastStep4', { ...rich, name: slug })}
+            </p>
+            {endpointRow('modal-raycast-url')}
+            {RAYCAST_DEEPLINK_ENABLED && linkAction(raycastInstallLink(slug, endpointUrl), t('modal.openRaycast'))}
+            <p className="text-xs leading-[1.55] text-[var(--text-3)]">
+              {t.rich('modal.raycastNote', richXs)}
+            </p>
+          </div>
+        );
       case 'windsurf':
         return (
           <div className="space-y-4">
