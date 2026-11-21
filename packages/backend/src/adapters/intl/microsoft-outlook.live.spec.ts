@@ -171,6 +171,33 @@ describe('microsoft-outlook adapter — static spec conformance', () => {
     expect(params).not.toHaveProperty('$skip');
   });
 
+  it('pages a keyword search inside a folder with $skiptoken, never $skip', async () => {
+    mockedAxios.mockResolvedValue({ data: { value: [] } });
+    await newEngine().execute(connectorConfig(), tool('outlook_list_messages').endpointMapping, {
+      folder_id: 'inbox',
+      search: '"invoice"',
+      top: 25,
+      skip_token: 'MSZZVlhKcU1',
+    });
+    expect(sent().url).toBe('https://graph.microsoft.com/v1.0/me/mailFolders/inbox/messages');
+    const params = sent().params;
+    expect(params.$search).toBe('"invoice"');
+    expect(params.$skiptoken).toBe('MSZZVlhKcU1');
+    expect(params).not.toHaveProperty('$skip');
+  });
+
+  it('tells the model to page a search with skip_token wherever search and skip meet', () => {
+    for (const t of a.tools) {
+      const q = t.endpointMapping.queryParams ?? {};
+      if (!('$search' in q && '$skip' in q)) continue;
+      expect(`${t.name}:${q.$skiptoken}`).toBe(`${t.name}:$skip_token`);
+      const props = t.parameters.properties as Record<string, { description: string }>;
+      expect(props.skip.description).toMatch(/refuses skip together with search: use skip_token/);
+      expect(props.search.description).toMatch(/skip_token/);
+      expect(props.skip_token.description).toMatch(/Do not send skip with it/);
+    }
+  });
+
   it('lists messages with a fixed $select and Graph query options', async () => {
     mockedAxios.mockResolvedValue({ data: { value: [] } });
     await newEngine().execute(connectorConfig(), tool('outlook_list_messages').endpointMapping, {
