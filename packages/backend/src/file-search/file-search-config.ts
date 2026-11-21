@@ -163,7 +163,11 @@ export function parseFileSearchConfig(raw: unknown, opts: ParseOptions): FileSea
   }
 
   // sftp / ftp / ftps / ftps-implicit
-  const host = (c.host ?? '').trim().replace(/^[a-z]+:\/\//i, '').replace(/\/.*$/, '');
+  // The host is what comes before the first '/'. A value with a line break in
+  // it is never a host name: it is refused whole (`/^.*$/` fails on any line
+  // terminator), as before, rather than cut at the first '/'.
+  const rawHost = (c.host ?? '').trim().replace(/^[a-z]+:\/\//i, '');
+  const host = /^.*$/.test(rawHost) ? rawHost.split('/')[0] : '';
   if (!host || !HOST_RE.test(host)) throw new FileSearchConfigError('Enter the server name or IP address.', 'host');
   out.host = host.toLowerCase();
   out.port = c.port ?? DEFAULT_PORTS[protocol] ?? undefined;
