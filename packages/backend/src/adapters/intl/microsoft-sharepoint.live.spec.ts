@@ -16,8 +16,9 @@ import { getAdapter, listAdapters } from '../catalog';
  *      path while server-relative site paths keep their slashes, list items
  *      read with `expand=fields` and written as a `fields` object (create) or
  *      the bare field map (update), the Microsoft Search request body, the cap
- *      on page content, and which tools install switched off (deletes,
- *      sharing link, invite).
+ *      on page content, file content read as text or as an attached file
+ *      (optionally converted to PDF), the Sites.Selected setup, and which
+ *      tools install switched off (deletes, sharing link, invite).
  *
  *   2. Live: skipped unless MS_GRAPH_ACCESS_TOKEN is set (a delegated Graph
  *      token of a Microsoft 365 work account with Sites.ReadWrite.All and
@@ -129,10 +130,21 @@ describe('microsoft-sharepoint adapter: static spec conformance', () => {
     expect(a.instructions).toMatch(/read-only setup[^\n]*Sites\.Read\.All Files\.Read\.All/);
   });
 
-  it('probes with the root site, which needs no arguments', () => {
+  it('probes with the root site, which needs no arguments, and tests the connection with /me', () => {
     expect(a.probe.tool).toBe('sharepoint_get_root_site');
     expect(tool('sharepoint_get_root_site').parameters.required).toBeUndefined();
-    expect(a.connector.healthcheckPath).toBe('/sites/root');
+    // /me answers under every scope set; /sites/root is refused under
+    // Sites.Selected unless the root site was granted to the app.
+    expect(a.connector.healthcheckPath).toBe('/me');
+  });
+
+  it('documents the Sites.Selected setup with its own app, the site grant and the tools to disable', () => {
+    expect(a.instructions).toContain('**Restrict the AI to selected sites (Sites.Selected)**');
+    expect(a.instructions).toContain('`offline_access User.Read Sites.Selected`');
+    expect(a.instructions).toContain('POST https://graph.microsoft.com/v1.0/sites/{siteId}/permissions');
+    expect(a.instructions).toContain('Grant-PnPEntraIDAppSitePermission');
+    expect(a.instructions).toMatch(/Disable `sharepoint_get_root_site`, `sharepoint_search_sites` and `sharepoint_search`/);
+    expect(a.instructions).not.toMatch(/does not download file content/);
   });
 
   it('prefixes every tool with sharepoint_ and shares no tool name with another adapter', () => {
@@ -170,6 +182,7 @@ describe('microsoft-sharepoint adapter: static spec conformance', () => {
     const readOnly = a.tools.filter((t) => annotationsOf(t).readOnlyHint === true).map((t) => t.name);
     expect(readOnly.sort()).toEqual([
       'sharepoint_get_drive_item',
+      'sharepoint_get_file_content',
       'sharepoint_get_list_item',
       'sharepoint_get_page',
       'sharepoint_get_root_site',
@@ -214,6 +227,7 @@ describe('microsoft-sharepoint adapter: static spec conformance', () => {
     ['sharepoint_list_folder', { drive_id: 'b!abc', item_id: '01AB' }, 'GET', '/drives/b!abc/items/01AB/children'],
     ['sharepoint_search_drive', { drive_id: 'b!abc', query: 'q 1' }, 'GET', "/drives/b!abc/root/search(q='q%201')"],
     ['sharepoint_get_drive_item', { drive_id: 'b!abc', item_id: '01AB' }, 'GET', '/drives/b!abc/items/01AB'],
+    ['sharepoint_get_file_content', { drive_id: 'b!abc', item_id: '01AB' }, 'GET', '/drives/b!abc/items/01AB/content'],
     ['sharepoint_search', { query: 'budget' }, 'POST', '/search/query'],
     ['sharepoint_list_lists', { site_id: SITE }, 'GET', `/sites/${SITE_ENC}/lists`],
     ['sharepoint_list_columns', { site_id: SITE, list_id: 'L1' }, 'GET', `/sites/${SITE_ENC}/lists/L1/columns`],
@@ -305,9 +319,44 @@ describe('microsoft-sharepoint adapter: static spec conformance', () => {
       ).value;
       expect(out).toEqual({ id: '1' });
     }
+    // The one GET on /content is the read tool; every other /content path uploads.
     for (const t of a.tools) {
-      if (/\/content$/.test(t.endpointMapping.path)) expect(t.endpointMapping.method).toBe('PUT');
+      if (/\/content$/.test(t.endpointMapping.path)) {
+        expect(`${t.name}:${t.endpointMapping.method}`).toBe(
+          t.name === 'sharepoint_get_file_content' ? `${t.name}:GET` : `${t.name}:PUT`,
+        );
+      }
     }
+  });
+
+  it('reads file content as text up to 200 KB or as an attached file up to 10 MB, PDF conversion on request', async () => {
+    const t = tool('sharepoint_get_file_content');
+    expect(t.endpointMapping).toEqual({
+      method: 'GET',
+      path: '/drives/{drive_id}/items/{item_id}/content',
+      encodePathParams: true,
+      queryParams: { format: '$format' },
+    });
+    expect(t.parameters.required).toEqual(['drive_id', 'item_id']);
+    expect(t.parameters.properties!.format.enum).toEqual(['pdf']);
+    expect(t.parameters.properties!.format.default).toBeUndefined();
+    expect(t.responseMapping).toEqual({ transform: { expression: '@', maxBytes: 200000 }, binary: { maxBytes: 10485760 } });
+    expect(validateTransform(t.responseMapping!.transform)).toBeNull();
+    expect(annotationsOf(t).readOnlyHint).toBe(true);
+    expect(t.enabled).toBeUndefined();
+    expect(t.description).toMatch(/2 MB/);
+
+    mockedAxios.mockResolvedValue({ data: 'hello' });
+    await call('sharepoint_get_file_content', { drive_id: 'b!abc', item_id: '01AB' });
+    expect(sent().params ?? {}).toEqual({});
+    mockedAxios.mockClear();
+    await call('sharepoint_get_file_content', { drive_id: 'b!abc', item_id: '01AB', format: 'pdf' });
+    expect(sent().url).toBe(`${BASE}/drives/b!abc/items/01AB/content`);
+    expect(sent().params).toEqual({ format: 'pdf' });
+
+    // A long text file is cut rather than handed over whole.
+    expect(applyResponseTransform('x'.repeat(300_000), t.responseMapping).truncated).toBe(true);
+    expect(applyResponseTransform('short text', t.responseMapping).value).toBe('short text');
   });
 });
 
