@@ -1,5 +1,5 @@
 import { BadRequestException } from '@nestjs/common';
-import { AdaptersService } from './adapters.service';
+import { AdaptersService, trimTrailingDotsAndSpace } from './adapters.service';
 import { outboundRequest } from '../common/outbound-http';
 
 // The pre-sign-in check of the app keys (Etsy) goes out through this; no
@@ -1524,5 +1524,28 @@ describe('AdaptersService check — a server that only accepts approved IPs', ()
     const info = build(jest.fn()).describe('emag-marketplace');
     expect(info.egressIps).toEqual(['104.248.242.235']);
     expect(info.requiresIpAllowlist).toBe(true);
+  });
+});
+
+describe('trimTrailingDotsAndSpace', () => {
+  it.each([
+    ['Request failed with status code 500', 'Request failed with status code 500'],
+    ['Upstream error. ', 'Upstream error'],
+    ['Timed out...\n\t', 'Timed out'],
+    ['v1.2 is gone .\u00a0', 'v1.2 is gone'],
+    ['  keep leading', '  keep leading'],
+    ['. . .', ''],
+    ['', ''],
+  ])('%j becomes %j', (value, expected) => {
+    expect(trimTrailingDotsAndSpace(value)).toBe(expected);
+    expect(trimTrailingDotsAndSpace(value)).toBe(value.replace(/[.\s]+$/, ''));
+  });
+
+  it('answers a message with a long run of spaces at once', () => {
+    const message = `a${' '.repeat(50_000)}x`;
+    const started = Date.now();
+    expect(trimTrailingDotsAndSpace(message)).toBe(message);
+    expect(trimTrailingDotsAndSpace(`${message}${' .'.repeat(25_000)}`)).toBe(message);
+    expect(Date.now() - started).toBeLessThan(200);
   });
 });

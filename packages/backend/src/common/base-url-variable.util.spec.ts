@@ -67,6 +67,31 @@ describe('checkBaseUrlValue', () => {
   });
 });
 
+describe('checkBaseUrlValue e-mail check', () => {
+  it.each(['a@b.c', 'a@b..c', 'a@.b.c', 'a@b.c.', 'me@acme.weclapp.com'])(
+    'calls %j an e-mail address',
+    (value) => {
+      expect(checkBaseUrlValue(value)).toEqual({
+        ok: false,
+        reason: 'it looks like an e-mail address, not a web address',
+      });
+    },
+  );
+
+  it.each(['a@b', 'a@b.', 'a@.b', 'a@..'])('does not call %j an e-mail address', (value) => {
+    const check = checkBaseUrlValue(value);
+    expect(check.ok).toBe(false);
+    expect((check as { reason: string }).reason).not.toMatch(/e-mail/);
+  });
+
+  it('answers a long a@a.a.a… value at once', () => {
+    const started = Date.now();
+    const check = checkBaseUrlValue(`a@${'a.'.repeat(25_000)}@`);
+    expect(Date.now() - started).toBeLessThan(200);
+    expect(check.ok).toBe(false);
+  });
+});
+
 describe('normalizeBaseUrlVariable', () => {
   it('returns the normalised value', () => {
     expect(normalizeBaseUrlVariable('SUBSTACK_PUBLICATION_URL', 'yourname.substack.com')).toBe(
