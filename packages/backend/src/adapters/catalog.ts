@@ -327,6 +327,7 @@ import * as genapi from './intl/genapi.json';
 import * as georgianRailway from './intl/georgian-railway.json';
 import * as getcourse from './intl/getcourse.json';
 import * as getresponse from './intl/getresponse.json';
+import * as getyoutubetranscript from './intl/getyoutubetranscript.json';
 import * as ghost from './intl/ghost.json';
 import * as gitbook from './intl/gitbook.json';
 import * as gitea from './intl/gitea.json';
@@ -1603,6 +1604,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   georgianRailway as unknown as AdapterDefinition,
   getcourse as unknown as AdapterDefinition,
   getresponse as unknown as AdapterDefinition,
+  getyoutubetranscript as unknown as AdapterDefinition,
   ghost as unknown as AdapterDefinition,
   gitbook as unknown as AdapterDefinition,
   gitea as unknown as AdapterDefinition,
