@@ -138,7 +138,8 @@
           },
           "page_limit": {
             "type": "integer",
-            "description": "Contacts per page, at most 500 (default 20)."
+            "description": "Contacts per page, at most 500 (default 20).",
+            "default": 20
           },
           "search_after": {
             "type": "array",
