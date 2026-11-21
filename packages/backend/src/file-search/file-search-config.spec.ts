@@ -61,3 +61,30 @@ describe('trimSlashes and usesVirtualHostedBuckets', () => {
     expect(usesVirtualHostedBuckets('https://evil.example/amazonaws.com')).toBe(false);
   });
 });
+
+describe('parseFileSearchConfig host', () => {
+  const base = { cloud: false, localRoots: ['/mnt/share'] };
+  const parseHost = (host: string) => parseFileSearchConfig({ protocol: 'sftp', host, username: 'u' }, base).host;
+
+  it.each([
+    ['sftp://files.example.com/Preise/2026', 'files.example.com'],
+    ['files.example.com/', 'files.example.com'],
+    ['  NAS.example.com/a/b  ', 'nas.example.com'],
+    ['10.0.0.5', '10.0.0.5'],
+  ])('takes the host from %j', (value, expected) => {
+    expect(parseHost(value)).toBe(expected);
+  });
+
+  it.each(['files.example.com\n/x', 'files/example\ncom', 'a\r\nb/c', '/files.example.com'])(
+    'refuses %j',
+    (value) => {
+      expect(() => parseHost(value)).toThrow(/server name or IP address/);
+    },
+  );
+
+  it('handles a host of slashes up to the 253-character limit', () => {
+    // The schema caps the host at 253 characters, so no timing bound here.
+    expect(() => parseHost(`a${'/'.repeat(250)}\nb`)).toThrow(/server name or IP address/);
+    expect(parseHost(`a${'/'.repeat(251)}b`)).toBe('a');
+  });
+});

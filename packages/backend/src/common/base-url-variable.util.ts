@@ -27,7 +27,11 @@ const HTTP_SCHEME = /^https?:\/\//i;
 const BARE_HOST = /^[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)+(?::\d{1,5})?(?:[/?#]\S*)?$/;
 // A single-label name such as `nextcloud:8080` or `localhost`.
 const SINGLE_LABEL = /^[A-Za-z0-9-]+(?::\d{1,5})?(?:[/?#]\S*)?$/;
-const EMAIL = /^[^\s@/]+@[^\s@/]+\.[^\s@/]+$/;
+// local@domain, where the domain has a dot that is neither its first nor its
+// last character. The domain's first character is matched on its own and the
+// run up to the next dot excludes the dot, so a long `a@a.a.a.a…` value is
+// matched in one pass instead of trying every dot as the separator.
+const EMAIL = /^[^\s@/]+@[^\s@/][^\s@/.]*\.[^\s@/]+$/;
 
 const GENERIC_EXAMPLE = 'https://example.com';
 

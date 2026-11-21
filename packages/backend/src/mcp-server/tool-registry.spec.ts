@@ -223,6 +223,11 @@ describe('ToolRegistry', () => {
       // 200k tools in 20k connectors, about the Cloud registry's shape. A
       // reload used to scan and re-index all of them: 100 reloads took
       // seconds. Through the connector index they take milliseconds.
+      //
+      // A wall-clock bound flaked on busy CI runners, so the test checks the
+      // property itself: no reload iterates a registry-wide map (by id, by
+      // name, by organization, the order map) or the shared buckets the
+      // connector's tools sit in (20k tools per name, one organization's).
       jest.spyOn((registry as any).logger, 'debug').mockImplementation(() => undefined);
       for (let c = 0; c < 20_000; c++) {
         for (let i = 0; i < 10; i++) {
@@ -232,14 +237,32 @@ describe('ToolRegistry', () => {
         }
       }
       const mine = registry.getToolsForConnectors(['c42']);
+      const internals = registry as any;
+      const watched: Map<unknown, unknown>[] = [
+        internals.toolsById,
+        internals.toolsByName,
+        internals.toolsByOrg,
+        internals.order,
+        internals.toolsByOrg.get('o42'),
+        ...mine.map((tool) => internals.toolsByName.get(tool.name)),
+      ];
+      const walks: string[] = [];
+      for (const map of watched) {
+        for (const method of ['keys', 'values', 'entries', 'forEach', Symbol.iterator] as const) {
+          const original = (map as any)[method];
+          (map as any)[method] = function (this: Map<unknown, unknown>, ...args: unknown[]) {
+            walks.push(String(method));
+            return original.apply(this, args);
+          };
+        }
+      }
       const started = Date.now();
       for (let n = 0; n < 100; n++) {
         registry.unregisterConnectorTools('c42');
         mine.forEach((tool) => registry.registerTool(tool));
       }
-      const elapsed = Date.now() - started;
-      if (process.env.REGISTRY_BENCH) console.log(`100 reloads: ${elapsed} ms`);
-      expect(elapsed).toBeLessThan(250);
+      if (process.env.REGISTRY_BENCH) console.log(`100 reloads: ${Date.now() - started} ms`);
+      expect(walks).toEqual([]);
       expect(registry.getToolCount()).toBe(200_000);
       expect(registry.countByName('tool_3')).toBe(20_000);
     });

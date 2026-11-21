@@ -1,4 +1,10 @@
+import axios from 'axios';
 import * as adapter from './gohighlevel.json';
+import { RestEngine } from '../../connectors/engines/rest.engine';
+import { OAuth2TokenService } from '../../connectors/engines/oauth2-token.service';
+import { LoginTokenService } from '../../connectors/engines/login-token.service';
+import { applySchemaDefaults } from '../../common/schema-defaults.util';
+import { interpolateConnectorConfig, interpolateDeep } from '../../common/env-interpolation.util';
 
 /**
  * HighLevel API v2 (marketplace.gohighlevel.com/docs, OpenAPI at github.com/GoHighLevel/highlevel-api-docs):
@@ -7,6 +13,18 @@ import * as adapter from './gohighlevel.json';
  * Live part (reads only: location, users, pipelines, calendars):
  *   GOHIGHLEVEL_API_TOKEN=... GOHIGHLEVEL_LOCATION_ID=... RUN_GOHIGHLEVEL_LIVE=1 npx jest src/adapters/intl/gohighlevel
  */
+
+jest.mock('axios', () => {
+  const actual = jest.requireActual('axios');
+  const mocked = jest.fn();
+  return {
+    __esModule: true,
+    // Keep every real static (getUri, getAdapter...), mock only the call itself.
+    default: Object.assign(mocked, actual.default, { __actual: actual.default }),
+    AxiosError: actual.AxiosError,
+  };
+});
+const mockedAxios = axios as unknown as jest.Mock;
 
 type Tool = {
   name: string;
@@ -53,6 +71,30 @@ const used = (t: Tool) => {
 };
 const PREFIX = 'gohighlevel_';
 
+// Runs a tool the way DynamicMcpTools.executeTool does: {{VAR}} interpolated,
+// the schema defaults filled in for arguments the caller left out, then the
+// REST engine builds the request (axios is mocked, nothing leaves the test).
+const ENV_VALUES = { GOHIGHLEVEL_API_TOKEN: 'pit-test-token', GOHIGHLEVEL_LOCATION_ID: 've9EPM428h8vShlRW1KT' };
+const execute = (name: string, params: Record<string, unknown>) => {
+  const t = tool(name);
+  const { config, endpointMapping } = interpolateConnectorConfig(
+    { baseUrl: a.connector.baseUrl, headers: a.connector.headers },
+    t.endpointMapping as Parameters<typeof interpolateConnectorConfig>[1],
+    ENV_VALUES,
+  );
+  return new RestEngine({} as OAuth2TokenService, {} as LoginTokenService).execute(
+    {
+      baseUrl: config.baseUrl,
+      authType: a.connector.authType,
+      authConfig: interpolateDeep({ ...a.connector.authConfig }, ENV_VALUES),
+      headers: config.headers,
+    },
+    endpointMapping,
+    applySchemaDefaults(t.parameters, params),
+  );
+};
+const sent = () => mockedAxios.mock.calls[0][0];
+
 describe('gohighlevel adapter: static spec conformance', () => {
 
   const LOC = '{{GOHIGHLEVEL_LOCATION_ID}}';
@@ -86,6 +128,23 @@ describe('gohighlevel adapter: static spec conformance', () => {
     expect(tool('gohighlevel_list_social_posts').endpointMapping.path).toBe(`/social-media-posting/${LOC}/posts/list`);
     for (const n of ['gohighlevel_list_users', 'gohighlevel_list_workflows', 'gohighlevel_list_pipelines', 'gohighlevel_list_calendars', 'gohighlevel_list_forms', 'gohighlevel_list_form_submissions'])
       expect((tool(n).endpointMapping.queryParams as Record<string, unknown>).locationId).toBe(LOC);
+  });
+
+  describe('contact search page size', () => {
+    beforeEach(() => mockedAxios.mockReset().mockResolvedValue({ data: { contacts: [], total: 0 } }));
+
+    // HighLevel answers 422 "pageLimit must be a number" when the body has no pageLimit.
+    it('sends pageLimit 20 when the caller leaves page_limit out', async () => {
+      expect(tool('gohighlevel_search_contacts').parameters?.properties?.page_limit?.default).toBe(20);
+      await execute('gohighlevel_search_contacts', { query: 'anna' });
+      expect(sent()).toMatchObject({ method: 'POST', url: 'https://services.leadconnectorhq.com/contacts/search' });
+      expect(sent().data).toEqual({ locationId: ENV_VALUES.GOHIGHLEVEL_LOCATION_ID, query: 'anna', pageLimit: 20 });
+    });
+
+    it('keeps the page_limit the caller gives', async () => {
+      await execute('gohighlevel_search_contacts', { page_limit: 100, page: 2 });
+      expect(sent().data).toEqual({ locationId: ENV_VALUES.GOHIGHLEVEL_LOCATION_ID, page: 2, pageLimit: 100 });
+    });
   });
 
   it('maps contacts, workflows, messages, opportunities, appointments and invoices', () => {
