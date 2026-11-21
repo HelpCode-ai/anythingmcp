@@ -74,6 +74,12 @@ import { ArgumentPatternError, catalogPatternViolations } from './catalog-patter
 import { missingRequiredDefault } from './required-env-defaults';
 import { odooNoDatabaseAdvice } from '../adapters/odoo-database-hint';
 import { UserCredentialsService } from '../connectors/user-credentials.service';
+import { effectiveVariables, userVariableNames } from '../connectors/user-credential.util';
+import {
+  unreferencedUserVariables,
+  userVariableEligibilityProblem,
+  userVariablePlacementProblem,
+} from '../connectors/user-variable-switch.util';
 import { ToolRateLimitService } from './tool-rate-limit.service';
 import { connectorErrorWhen, connectorLargeIntegers } from '../connectors/error-when.util';
 import {
@@ -587,7 +593,69 @@ export class DynamicMcpTools {
     let lookupOdooFields: ((model: string) => Promise<OdooField[] | undefined>) | undefined;
 
     try {
-      const envVars = tool.connectorConfig.envVars || {};
+      // A connector whose users enter their own values of some variables
+      // (config.userVariables): the caller's values replace the connector's
+      // for this call, here, before anything is resolved from them. Throws,
+      // with nothing sent, when the caller has not entered them. Every other
+      // connector resolves from its own variables, as before.
+      const userVariables = perUser ? userVariableNames(tool.connectorConfig.config) : [];
+      let ownVariables: { userVars: Record<string, string>; credentialKey: string } | undefined;
+      if (userVariables.length > 0) {
+        if (!this.userCredentials) {
+          throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
+        }
+        // The connector must still use each of them as `{{NAME}}`. A field
+        // overwritten with a value since the switch would send that one
+        // value for every user, so such a call is not sent at all.
+        const unused = unreferencedUserVariables(
+          userVariables,
+          tool.connectorConfig,
+          this.toolRegistry.getToolsForConnectors?.([tool.connectorId]).map((t) => t.endpointMapping) ?? [
+            tool.endpointMapping,
+          ],
+        );
+        if (unused.length > 0) {
+          throw new Error(
+            `The connector "${(tool.connectorName ?? tool.name).slice(0, 80)}" asks every user for their own ` +
+              `${unused.join(', ')}, but no longer uses ${unused.length === 1 ? 'it' : 'them'}. No request was ` +
+              'sent to the API. A workspace administrator has to put the variable back where the credential ' +
+              'goes, or switch the connector back to a shared sign-in.',
+          );
+        }
+        // Nor may one of them have moved to where it would choose the server
+        // (the address, a setting, the start of this tool's path).
+        const misplaced =
+          userVariableEligibilityProblem({
+            type: tool.connectorType,
+            authType: String(tool.connectorConfig.authType),
+            authConfig: tool.connectorConfig.authConfig,
+            config: tool.connectorConfig.config,
+          }) ?? userVariablePlacementProblem(userVariables, tool.connectorConfig, [tool.endpointMapping]);
+        if (misplaced) {
+          throw new Error(
+            `${misplaced} No request was sent to the API. A workspace administrator has to change the connector, ` +
+              'or switch it back to a shared sign-in.',
+          );
+        }
+        ownVariables = await this.userCredentials.variablesForCall({
+          connectorId: tool.connectorId,
+          connectorName: tool.connectorName ?? tool.name,
+          organizationId: tool.organizationId,
+          userId: context?.userId,
+          userVariables,
+        });
+        // The user's own secrets are masked like the connector's.
+        secretValues.push(
+          ...connectorSecretValues({
+            envVars: ownVariables.userVars,
+            config: tool.connectorConfig.config,
+            headers: tool.connectorConfig.headers,
+          }),
+        );
+      }
+      const envVars = ownVariables
+        ? effectiveVariables(tool.connectorConfig.envVars, userVariables, ownVariables.userVars)
+        : tool.connectorConfig.envVars || {};
 
       // Reserved {{amcp.*}} caller-context vars are merged AFTER the
       // workspace's own env vars, so a connector variable can never shadow
@@ -654,8 +722,8 @@ export class DynamicMcpTools {
       // Per-user credentials: the caller's own sign-in, keyed on its own in
       // the engines (token cache, refresh lock, refused memo). Throws, with
       // nothing sent, when there is no caller, licence or sign-in.
-      let credentialKey: string | undefined;
-      if (perUser) {
+      let credentialKey: string | undefined = ownVariables?.credentialKey;
+      if (perUser && !ownVariables) {
         if (!this.userCredentials) {
           throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
         }

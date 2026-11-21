@@ -12,6 +12,7 @@ import {
 import { ConfigService } from '@nestjs/config';
 import { PrismaService } from '../common/prisma.service';
 import { Connector, ConnectorType, AuthType } from '../generated/prisma/client';
+import { randomUUID } from 'crypto';
 import type { Prisma } from '../generated/prisma/client';
 import { RestEngine } from './engines/rest.engine';
 import { isLoginRequestError } from './engines/login-token.service';
@@ -26,7 +27,20 @@ import { GraphqlEngine } from './engines/graphql.engine';
 import { DatabaseEngine, assertSafeSqlIdentifierVars } from './engines/database.engine';
 import { McpClientEngine } from './engines/mcp-client.engine';
 import { UserCredentialError, UserCredentialsService } from './user-credentials.service';
-import { withoutUserTokens } from './user-credential.util';
+import {
+  USER_VARIABLES_CONFIG_KEY,
+  effectiveVariables,
+  userVariableNames,
+  withoutUserTokens,
+} from './user-credential.util';
+import { userCredentialKey } from '../common/credential-key.util';
+import {
+  planUserVariableSwitch,
+  unreferencedUserVariables,
+  userVariableEligibilityProblem,
+  userVariablePlacementProblem,
+} from './user-variable-switch.util';
+import { getAdapter } from '../adapters/catalog';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { FilesWorkerClient } from '../file-search/files-worker.client';
 import { localRootsFromEnv, parseFileSearchConfig, pickSecrets } from '../file-search/file-search-config';
@@ -89,6 +103,16 @@ function idsForLog(ids: string[], max = 20): string {
   if (ids.length === 0) return '';
   const more = ids.length > max ? `, and ${ids.length - max} more` : '';
   return ` (${ids.slice(0, max).join(', ')}${more})`;
+}
+
+/** A connector's fields as a switch to per-user variables would store them (previewUserVariableSwitch). */
+export interface UserVariableSwitchPreview {
+  credentialScope: 'USER';
+  config: Prisma.JsonValue;
+  envVars: Prisma.JsonValue;
+  authConfig?: string;
+  baseUrl?: string;
+  headers?: Prisma.JsonValue;
 }
 
 @Injectable()
@@ -644,24 +668,106 @@ export class ConnectorsService implements OnApplicationBootstrap {
    * user's own sign-in is removed: nothing uses it any more, and the
    * connector needs one authorization of its own again.
    */
-  async setCredentialScope(id: string, scope: 'SHARED' | 'USER'): Promise<Connector> {
-    const connector = await this.findByIdInternal(id);
-    if (connector.credentialScope === scope) return connector;
-    let authConfig = connector.authConfig;
-    if (scope === 'USER' && authConfig) {
-      const client = withoutUserTokens(JSON.parse(decrypt(authConfig, this.encryptionKey)));
-      authConfig = encrypt(JSON.stringify(client), this.encryptionKey);
+  /**
+   * What a switch of the credential scope writes. Nothing is stored here.
+   * With `wanted` (per-user variables) it empties the connector's own values
+   * of them and makes sure they are stored nowhere else, and throws when that
+   * cannot be guaranteed (user-variable-switch.util).
+   */
+  private scopeChange(
+    connector: Connector,
+    scope: 'SHARED' | 'USER',
+    wanted: string[],
+  ): Prisma.ConnectorUpdateInput {
+    // Read only on the way to per-user. Back to shared must work whatever is
+    // stored (an auth config that cannot be decrypted, a lapsed licence).
+    let client: Record<string, unknown> | null =
+      scope === 'USER' && connector.authConfig
+        ? withoutUserTokens(JSON.parse(decrypt(connector.authConfig, this.encryptionKey)))
+        : null;
+    const data: Prisma.ConnectorUpdateInput = { credentialScope: scope };
+    const config =
+      connector.config && typeof connector.config === 'object' && !Array.isArray(connector.config)
+        ? { ...(connector.config as Record<string, unknown>) }
+        : {};
+    if (wanted.length > 0) {
+      const slug = config.adapterSlug;
+      const planned = planUserVariableSwitch({
+        names: wanted,
+        authType: connector.authType,
+        envVars: (connector.envVars as Record<string, string> | null) ?? {},
+        authConfig: client,
+        baseUrl: connector.baseUrl,
+        headers: (connector.headers as Record<string, string> | null) ?? null,
+        config,
+        toolMappings: ((connector as { tools?: Array<{ endpointMapping: unknown }> }).tools ?? []).map(
+          (tool) => tool.endpointMapping,
+        ),
+        adapter: typeof slug === 'string' ? getAdapter(slug) : null,
+      });
+      if ('error' in planned) throw new BadRequestException(planned.error);
+      if (planned.plan.authConfig) client = planned.plan.authConfig;
+      if (planned.plan.baseUrl !== undefined) data.baseUrl = planned.plan.baseUrl;
+      if (planned.plan.headers) data.headers = planned.plan.headers;
+      data.envVars = planned.plan.envVars;
+      config[USER_VARIABLES_CONFIG_KEY] = wanted;
+      data.config = config as Prisma.InputJsonValue;
+    } else if (USER_VARIABLES_CONFIG_KEY in config) {
+      delete config[USER_VARIABLES_CONFIG_KEY];
+      data.config = config as Prisma.InputJsonValue;
     }
-    const updated = await this.prisma.connector.update({
-      where: { id },
-      data: { credentialScope: scope, authConfig },
-    });
+    if (scope === 'USER' && client) data.authConfig = encrypt(JSON.stringify(client), this.encryptionKey);
+    return data;
+  }
+
+  /**
+   * The connector as a switch to per-user variables would store it, without
+   * storing it: for testing the connection in that state first
+   * (testConnection `as`). Throws what the switch itself would refuse.
+   */
+  async previewUserVariableSwitch(id: string, userVariables: readonly string[]): Promise<UserVariableSwitchPreview> {
+    const connector = await this.findByIdInternal(id);
+    const data = this.scopeChange(connector, 'USER', [...userVariables]);
+    return {
+      credentialScope: 'USER',
+      config: data.config as Prisma.JsonValue,
+      envVars: data.envVars as Prisma.JsonValue,
+      ...(typeof data.authConfig === 'string' ? { authConfig: data.authConfig } : {}),
+      ...(typeof data.baseUrl === 'string' ? { baseUrl: data.baseUrl } : {}),
+      ...(data.headers !== undefined ? { headers: data.headers as Prisma.JsonValue } : {}),
+    };
+  }
+
+  async setCredentialScope(
+    id: string,
+    scope: 'SHARED' | 'USER',
+    /**
+     * `userVariables`: the variables each user enters for themselves, for a
+     * connector that is not a browser OAuth2 one. The connector's own values
+     * of them are emptied in the same write, for the reason its tokens are:
+     * a call must never carry them for someone who has not entered their own.
+     * The caller has checked the names (ConnectorsController).
+     */
+    options: { userVariables?: readonly string[] } = {},
+  ): Promise<Connector> {
+    const connector = await this.findByIdInternal(id);
+    const wanted = scope === 'USER' ? [...(options.userVariables ?? [])] : [];
+    const current = userVariableNames(connector.config);
+    const sameVariables = wanted.length === current.length && wanted.every((name) => current.includes(name));
+    if (connector.credentialScope === scope && sameVariables) return connector;
+
+    const data = this.scopeChange(connector, scope, wanted);
+    const updated = await this.prisma.connector.update({ where: { id }, data });
     this.oauth2TokenService?.forget(id);
     await this.authStatus?.clear(id);
     if (scope === 'SHARED') {
       await this.userCredentials?.removeAll(id, connector.organizationId);
     }
-    this.logger.log(`Connector ${id}: credentials are now ${scope === 'USER' ? 'per user' : 'shared'}`);
+    this.logger.log(
+      `Connector ${id}: credentials are now ${
+        scope === 'USER' ? `per user${wanted.length > 0 ? ` (${wanted.length} variables)` : ''}` : 'shared'
+      }`,
+    );
     return updated;
   }
 
@@ -734,8 +840,21 @@ export class ConnectorsService implements OnApplicationBootstrap {
 
   async testConnection(
     id: string,
-    /** Who tests: a connector with per-user credentials is tested with that user's own sign-in. */
-    options: { userId?: string } = {},
+    /**
+     * Who tests: a connector with per-user credentials is tested with that
+     * user's own sign-in. `userVariables` tests values the user has typed and
+     * not saved yet (a connector with per-user variables), instead of the
+     * stored ones.
+     */
+    options: {
+      userId?: string;
+      userVariables?: Record<string, string>;
+      /**
+       * Test the connector as it would be stored after a change that is not
+       * written yet (previewUserVariableSwitch), instead of as it is.
+       */
+      as?: UserVariableSwitchPreview;
+    } = {},
   ): Promise<{
     ok: boolean;
     message: string;
@@ -761,7 +880,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
     httpStatus?: number;
     suggestedFix?: { action: string; hostname?: string; url?: string };
   }> {
-    const connector = await this.findById(id);
+    const stored = await this.findById(id);
+    const connector = options.as ? { ...stored, ...options.as } : stored;
 
     // File Search: the worker connects and lists the folder; this process never does.
     if ((connector.type as string) === 'FILE_SEARCH') {
@@ -788,16 +908,63 @@ export class ConnectorsService implements OnApplicationBootstrap {
       }
     }
 
+    // The key of a test with values not stored yet; what engines cached under it is dropped afterwards.
+    let oneOffKey: string | undefined;
     try {
       // Same substitution the tool path does, so Test connection exercises the
       // credentials the workspace actually has rather than the placeholders the
       // adapter shipped with.
-      const envVars = (connector.envVars as Record<string, string> | null) || {};
+      let envVars = (connector.envVars as Record<string, string> | null) || {};
+      let credentialKey = connector.id;
+      // Per-user variables (config.userVariables): the tester's own values,
+      // or the ones just typed, in place of the connector's. Never the
+      // connector's own value of such a variable.
+      const userVariables = connector.credentialScope === 'USER' ? userVariableNames(connector.config) : [];
+      if (userVariables.length > 0) {
+        if (!this.userCredentials) {
+          return { ok: false, kind: 'auth_failed', message: 'Per-user sign-in is not available on this server.' };
+        }
+        // A user's value never decides where the test connects to, and
+        // never reaches a sign-in that is not one for per-user values.
+        const storedAuthConfig = connector.authConfig
+          ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
+          : undefined;
+        const misplaced =
+          userVariableEligibilityProblem({
+            type: connector.type,
+            authType: connector.authType,
+            authConfig: storedAuthConfig,
+            config: connector.config,
+            webhookEnabled: connector.webhookEnabled,
+          }) ?? userVariablePlacementProblem(userVariables, { ...connector, authConfig: storedAuthConfig });
+        if (misplaced) return { ok: false, kind: 'error', message: misplaced };
+        if (options.userVariables) {
+          envVars = effectiveVariables(envVars, userVariables, options.userVariables);
+          // A key of its own: nothing an engine cached for the values the
+          // user had before may answer for the new ones.
+          credentialKey = `${userCredentialKey(connector.id, options.userId ?? 'unsaved')}:check:${randomUUID()}`;
+          oneOffKey = credentialKey;
+        } else {
+          try {
+            const own = await this.userCredentials.variablesForCall({
+              connectorId: connector.id,
+              connectorName: connector.name,
+              organizationId: connector.organizationId,
+              userId: options.userId,
+              userVariables,
+            });
+            envVars = effectiveVariables(envVars, userVariables, own.userVars);
+            credentialKey = own.credentialKey;
+          } catch (err: any) {
+            if (err instanceof UserCredentialError) return { ok: false, kind: 'auth_failed', message: err.message };
+            throw err;
+          }
+        }
+      }
       let storedAuth: Record<string, unknown> | undefined = connector.authConfig
         ? interpolateDeep(JSON.parse(decrypt(connector.authConfig, this.encryptionKey)), envVars)
         : undefined;
-      let credentialKey = connector.id;
-      if (connector.credentialScope === 'USER') {
+      if (connector.credentialScope === 'USER' && userVariables.length === 0) {
         if (!this.userCredentials) {
           return { ok: false, kind: 'auth_failed', message: 'Per-user sign-in is not available on this server.' };
         }
@@ -822,8 +989,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
         interpolateDeep((connector.headers as Record<string, string>) || undefined, envVars),
         connector.config,
       );
-      // Masked in the engines' log lines.
-      const logSecrets = connectorSecretValues(connector);
+      // Masked in the engines' log lines (a user's own values included).
+      const logSecrets = connectorSecretValues({ ...connector, envVars });
 
       // A connector whose credentials were never filled in would otherwise send
       // "{{MY_TOKEN}}" upstream and report the vendor's complaint about it,
@@ -969,6 +1136,11 @@ export class ConnectorsService implements OnApplicationBootstrap {
       return { ok: true, kind: 'ok', message: 'Connection successful' };
     } catch (error: any) {
       return this.classifyTestError(error, connector.healthcheckPath || '/');
+    } finally {
+      if (oneOffKey) {
+        this.odataEngine?.forget(oneOffKey);
+        this.oauth2TokenService?.forget(oneOffKey);
+      }
     }
   }
 
@@ -1263,8 +1435,62 @@ export class ConnectorsService implements OnApplicationBootstrap {
      */
     options: { useProxy?: boolean; userId?: string } = {},
   ): Promise<unknown> {
+    // Per-user variables (config.userVariables): the caller's own values in
+    // place of the connector's, as on a call through MCP (DynamicMcpTools),
+    // and nothing sent when the caller has none or the connector no longer
+    // refers to the variable.
+    const userVariables = connector.credentialScope === 'USER' ? userVariableNames(connector.config) : [];
+    let ownVariables: { userVars: Record<string, string>; credentialKey: string } | undefined;
+    if (userVariables.length > 0) {
+      if (!this.userCredentials) {
+        throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
+      }
+      const asStored = {
+        baseUrl: connector.baseUrl,
+        headers: connector.headers,
+        authConfig: connector.authConfig ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey)) : undefined,
+        config: connector.config,
+      };
+      const unused = unreferencedUserVariables(
+        userVariables,
+        asStored,
+        [
+          endpointMapping,
+          ...((connector as { tools?: Array<{ endpointMapping: unknown }> }).tools ?? []).map((t) => t.endpointMapping),
+        ],
+      );
+      if (unused.length > 0) {
+        throw new Error(
+          `The connector "${connector.name.slice(0, 80)}" asks every user for their own ${unused.join(', ')}, ` +
+            'but no longer uses it. No request was sent to the API. Put the variable back where the credential ' +
+            'goes, or switch the connector back to a shared sign-in.',
+        );
+      }
+      const misplaced =
+        userVariableEligibilityProblem({
+          type: connector.type,
+          authType: connector.authType,
+          authConfig: asStored.authConfig,
+          config: connector.config,
+          webhookEnabled: connector.webhookEnabled,
+        }) ?? userVariablePlacementProblem(userVariables, asStored, [endpointMapping]);
+      if (misplaced) {
+        throw new Error(
+          `${misplaced} No request was sent to the API. Change the connector, or switch it back to a shared sign-in.`,
+        );
+      }
+      ownVariables = await this.userCredentials.variablesForCall({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        organizationId: connector.organizationId,
+        userId: options.userId,
+        userVariables,
+      });
+    }
     // Inject env vars as parameter defaults
-    const envVars = connector.envVars as Record<string, string> | undefined;
+    const envVars = ownVariables
+      ? effectiveVariables(connector.envVars as Record<string, string> | null, userVariables, ownVariables.userVars)
+      : (connector.envVars as Record<string, string> | undefined);
     // A remote MCP server gets them as tool arguments: only the names its
     // schema lists, as on a real call (DynamicMcpTools).
     const injected =
@@ -1311,8 +1537,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
           resolveVars,
         )
       : undefined;
-    let credentialKey: string | undefined;
-    if (connector.credentialScope === 'USER') {
+    let credentialKey: string | undefined = ownVariables?.credentialKey;
+    if (connector.credentialScope === 'USER' && !ownVariables) {
       if (!this.userCredentials) {
         throw new Error('Per-user sign-in is not available on this server. No request was sent to the API.');
       }
@@ -1392,7 +1618,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
       connectorId: credentialKey ?? connector.id,
       errorWhen: connectorErrorWhen(connector.config),
       largeIntegers: connectorLargeIntegers(connector.config),
-      logSecrets: connectorSecretValues(connector),
+      // The caller's own values included, when the connector asks for them.
+      logSecrets: connectorSecretValues({ ...connector, envVars }),
       // Lets the test run take an uploaded file (amcp-file:) of this workspace.
       organizationId: connector.organizationId,
       ...(options.useProxy && process.env.CONNECTOR_PROXY_URL

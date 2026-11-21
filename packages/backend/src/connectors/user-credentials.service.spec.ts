@@ -139,3 +139,68 @@ describe('UserCredentialsService storage', () => {
     expect(oauth2Tokens.forget).toHaveBeenCalledWith('c1:user:u2');
   });
 });
+
+describe('UserCredentialsService — per-user variables', () => {
+  const NAMES = ['ACME_API_KEY', 'ACME_USER'];
+  const input = (userId?: string) => ({
+    connectorId: 'c1',
+    connectorName: 'Acme',
+    organizationId: 'org1',
+    userId,
+    userVariables: NAMES,
+  });
+
+  it("returns the caller's own values under a key of their own", async () => {
+    const { svc } = setup({
+      rows: [
+        row('u1', { userVars: { ACME_API_KEY: 'u1-key', ACME_USER: 'u1@example.test' } }),
+        row('u2', { userVars: { ACME_API_KEY: 'u2-key', ACME_USER: 'u2@example.test' } }),
+      ],
+    });
+    await expect(svc.variablesForCall(input('u2'))).resolves.toEqual({
+      userVars: { ACME_API_KEY: 'u2-key', ACME_USER: 'u2@example.test' },
+      credentialKey: 'c1:user:u2',
+    });
+  });
+
+  it('refuses a user who has entered nothing, or not every variable, before anything is sent', async () => {
+    const { svc } = setup({ rows: [row('u1', { userVars: { ACME_API_KEY: 'u1-key' } })] });
+    await expect(svc.variablesForCall(input('u2'))).rejects.toMatchObject({ code: 'not_connected' });
+    await expect(svc.variablesForCall(input('u1'))).rejects.toMatchObject({ code: 'not_connected' });
+    await expect(svc.variablesForCall(input('u1'))).rejects.toBeInstanceOf(UserCredentialError);
+  });
+
+  it('refuses a call without a user and a workspace without the licence', async () => {
+    const withUser = setup({ rows: [row('u1', { userVars: { ACME_API_KEY: 'k', ACME_USER: 'u' } })] });
+    await expect(withUser.svc.variablesForCall(input(undefined))).rejects.toMatchObject({ code: 'no_user' });
+    const unlicensed = setup({ enterprise: false, rows: [row('u1', { userVars: { ACME_API_KEY: 'k', ACME_USER: 'u' } })] });
+    await expect(unlicensed.svc.variablesForCall(input('u1'))).rejects.toMatchObject({ code: 'not_licensed' });
+  });
+
+  it('stores the values encrypted and forgets what the engines cached for that user', async () => {
+    const { svc, userConnectorCredential, oauth2Tokens } = setup();
+    await svc.storeVariables({ id: 'c1', organizationId: 'org1' }, 'u1', { ACME_API_KEY: 'u1-key', ACME_USER: 'u1' });
+    const args = (userConnectorCredential.upsert.mock.calls as any[])[0][0];
+    expect(args.where).toEqual({ connectorId_userId: { connectorId: 'c1', userId: 'u1' } });
+    expect(args.create.authConfig).not.toContain('u1-key');
+    const stored = JSON.parse(decrypt(args.create.authConfig, KEY));
+    expect(stored.userVars).toEqual({ ACME_API_KEY: 'u1-key', ACME_USER: 'u1' });
+    expect(typeof stored.authorizedAt).toBe('string');
+    expect(args.update.authStatus).toBeNull();
+    expect(oauth2Tokens.forget).toHaveBeenCalledWith('c1:user:u1');
+  });
+
+  it('reports a user as connected only with every variable, and never returns a value', async () => {
+    const { svc } = setup({
+      rows: [
+        row('u1', { userVars: { ACME_API_KEY: 'u1-key', ACME_USER: 'u1' }, authorizedAt: '2026-11-17T09:00:00.000Z' }),
+        row('u2', { userVars: { ACME_API_KEY: 'u2-key' } }),
+      ],
+    });
+    const full = await svc.status('c1', 'org1', 'u1', NAMES);
+    expect(full).toMatchObject({ connected: true, authorizedAt: '2026-11-17T09:00:00.000Z' });
+    expect(JSON.stringify(full)).not.toContain('u1-key');
+    await expect(svc.status('c1', 'org1', 'u2', NAMES)).resolves.toEqual({ connected: false, missingVariables: ['ACME_USER'] });
+    await expect(svc.status('c1', 'org1', 'u3', NAMES)).resolves.toEqual({ connected: false, missingVariables: NAMES });
+  });
+});
