@@ -1,4 +1,4 @@
-import { Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
+import { ForbiddenException, Injectable, Logger, OnModuleDestroy, Optional } from '@nestjs/common';
 import { boundPayload, boundText } from './bound-payload';
 
 /** Bytes of a call's input / output kept in tool_invocations, and error chars. */
@@ -24,6 +24,9 @@ const INVOCATION_REPEAT_WINDOW_MS = envInt('INVOCATION_REPEAT_WINDOW_SECONDS', 6
  */
 const INVOCATION_FULL_PAYLOADS_PER_HOUR = envInt('INVOCATION_FULL_PAYLOADS_PER_HOUR', 1000);
 const INVOCATION_LOG_VOLUME_EXCERPT_BYTES = 512;
+/** Rows one audit export may hold; the file then says it was cut short. */
+export const AUDIT_EXPORT_MAX_ROWS = envInt('AUDIT_EXPORT_MAX_ROWS', 100_000);
+const AUDIT_EXPORT_BATCH_SIZE = 1000;
 const REPEAT_KEYS_MAX = 10_000;
 import { PrismaService } from '../common/prisma.service';
 import { findUserByEmail, normalizeEmail } from '../common/email.util';
@@ -38,6 +41,28 @@ import {
   ToolPerformanceQueryDto,
 } from './tool-performance-query.dto';
 import { ToolPerformanceRow, toolPerformanceQuery } from './tool-performance.query';
+import type { ExportableInvocation } from './audit-export.format';
+
+/** Filters of the Audit Log list (`GET /api/audit/invocations`) and its export. */
+export interface InvocationFilters {
+  toolId?: string;
+  status?: InvocationStatus;
+  search?: string;
+  connectorId?: string;
+  mcpServerId?: string;
+  organizationId?: string;
+  /**
+   * Restricted member visibility: only calls made by this user, and only
+   * the MCP servers this user owns are named (`mcpServer` and
+   * `mcpServerId` are null on a call made through another member's
+   * server; filtering by such a server matches nothing). Absent on the
+   * open path; when present (even empty) it is always applied, so a bad
+   * value matches nothing instead of everything.
+   */
+  onlyUserId?: string;
+  from?: Date;
+  to?: Date;
+}
 
 @Injectable()
 export class AuditService implements OnModuleDestroy {
@@ -354,45 +379,123 @@ export class AuditService implements OnModuleDestroy {
     return { tool: { connector: { organizationId } } };
   }
 
-  async getRecentInvocations(
-    limit = 100,
-    offset = 0,
-    filters?: {
-      toolId?: string;
-      status?: InvocationStatus;
-      search?: string;
-      connectorId?: string;
-      mcpServerId?: string;
-      organizationId?: string;
-      /**
-       * Restricted member visibility: only calls made by this user, and only
-       * the MCP servers this user owns are named (`mcpServer` and
-       * `mcpServerId` are null on a call made through another member's
-       * server; filtering by such a server matches nothing). Absent on the
-       * open path; when present (even empty) it is always applied, so a bad
-       * value matches nothing instead of everything.
-       */
-      onlyUserId?: string;
-    },
-  ) {
-    const restricted = filters?.onlyUserId !== undefined;
-    const where: any = { ...this.orgScope(filters?.organizationId) };
-    if (restricted) where.userId = filters!.onlyUserId;
-    if (filters?.toolId) where.toolId = filters.toolId;
-    if (filters?.status) where.status = filters.status;
-    if (filters?.mcpServerId) {
+  /**
+   * The `where` of the Audit Log list, shared with the export so a download
+   * holds exactly the rows the page shows. `from` is inclusive, `to` exclusive.
+   */
+  invocationWhere(filters: InvocationFilters = {}): Prisma.ToolInvocationWhereInput {
+    const restricted = filters.onlyUserId !== undefined;
+    const where: any = { ...this.orgScope(filters.organizationId) };
+    if (restricted) where.userId = filters.onlyUserId;
+    if (filters.toolId) where.toolId = filters.toolId;
+    if (filters.status) where.status = filters.status;
+    if (filters.mcpServerId) {
       where.mcpServerId = filters.mcpServerId;
-      if (restricted) where.mcpServer = { userId: filters!.onlyUserId };
+      if (restricted) where.mcpServer = { userId: filters.onlyUserId };
     }
-    if (filters?.search) {
+    if (filters.search) {
       where.tool = { ...where.tool, name: { contains: filters.search, mode: 'insensitive' } };
     }
-    if (filters?.connectorId) {
+    if (filters.connectorId) {
       where.tool = { ...where.tool, connectorId: filters.connectorId };
     }
+    if (filters.from || filters.to) {
+      where.createdAt = {
+        ...(filters.from ? { gte: filters.from } : {}),
+        ...(filters.to ? { lt: filters.to } : {}),
+      };
+    }
+    return where;
+  }
 
+  /**
+   * Read the rows of an audit export in batches and hand each one to
+   * `onBatch` (return `false` from it to stop, e.g. when the client left).
+   *
+   * Pages with a keyset cursor on (createdAt desc, id desc) instead of one
+   * findMany: a Cloud organisation can have hundreds of thousands of rows, and
+   * holding them all would put the shared backend's heap at risk. Rows newer
+   * than the first batch are not included. Stops after `maxRows`; one extra
+   * row is read so `truncated` is only set when rows were really left out.
+   */
+  async exportInvocations(
+    filters: InvocationFilters,
+    {
+      payloads,
+      maxRows = AUDIT_EXPORT_MAX_ROWS,
+      batchSize = AUDIT_EXPORT_BATCH_SIZE,
+    }: { payloads: boolean; maxRows?: number; batchSize?: number },
+    onBatch: (rows: ExportableInvocation[]) => Promise<boolean | void>,
+  ): Promise<{ rowCount: number; truncated: boolean; aborted: boolean }> {
+    // orgScope() means "every row" without an organization; an export never may.
+    if (!filters.organizationId) {
+      throw new ForbiddenException('Exporting the audit log needs an organization');
+    }
+    const restricted = filters.onlyUserId !== undefined;
+    const where = this.invocationWhere(filters);
+    const select = {
+      id: true,
+      createdAt: true,
+      status: true,
+      durationMs: true,
+      repeatCount: true,
+      error: true,
+      clientInfo: true,
+      ...(payloads ? { input: true, output: true } : {}),
+      tool: { select: { name: true, connector: { select: { name: true, type: true } } } },
+      user: { select: { email: true } },
+      // The owner only to decide below whether the server may be named, as in the list.
+      mcpServer: { select: { name: true, ...(restricted ? { userId: true } : {}) } },
+    } satisfies Prisma.ToolInvocationSelect;
+
+    let cursor: { createdAt: Date; id: string } | null = null;
+    let rowCount = 0;
+    for (;;) {
+      const room = maxRows - rowCount;
+      const take = Math.min(batchSize, room + 1);
+      const rows = (await this.prisma.toolInvocation.findMany({
+        where: cursor
+          ? {
+              AND: [
+                where,
+                {
+                  OR: [
+                    { createdAt: { lt: cursor.createdAt } },
+                    { createdAt: cursor.createdAt, id: { lt: cursor.id } },
+                  ],
+                },
+              ],
+            }
+          : where,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+        take,
+        select,
+      })) as unknown as ExportableInvocation[];
+      if (restricted) {
+        for (const row of rows as any[]) {
+          const own = !!row.mcpServer && row.mcpServer.userId === filters.onlyUserId;
+          row.mcpServer = own ? { name: row.mcpServer.name } : null;
+          // Not even the name the call recorded in clientInfo.
+          if (!own) row.serverHidden = true;
+        }
+      }
+
+      const batch = rows.length > room ? rows.slice(0, room) : rows;
+      if (batch.length > 0) {
+        rowCount += batch.length;
+        if ((await onBatch(batch)) === false) return { rowCount, truncated: false, aborted: true };
+      }
+      if (rows.length > room) return { rowCount, truncated: true, aborted: false };
+      if (rows.length < take) return { rowCount, truncated: false, aborted: false };
+      const last = rows[rows.length - 1];
+      cursor = { createdAt: last.createdAt, id: last.id };
+    }
+  }
+
+  async getRecentInvocations(limit = 100, offset = 0, filters?: InvocationFilters) {
+    const restricted = filters?.onlyUserId !== undefined;
     const rows = await this.prisma.toolInvocation.findMany({
-      where,
+      where: this.invocationWhere(filters),
       take: limit,
       skip: offset,
       orderBy: { createdAt: 'desc' },

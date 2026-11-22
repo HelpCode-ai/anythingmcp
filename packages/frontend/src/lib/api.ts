@@ -115,6 +115,26 @@ async function downloadExport(
   };
 }
 
+/**
+ * Fetch a file as a Blob, with the file name the server suggests. Unlike
+ * `downloadExport`, nothing is decoded, so a CSV keeps its UTF-8 BOM.
+ */
+async function downloadBlob(path: string, token: string): Promise<{ blob: Blob; filename: string | null }> {
+  const response = await fetch(`${API_BASE}${path}`, {
+    headers: { Authorization: `Bearer ${token}` },
+  });
+  if (!response.ok) {
+    const errorBody = await response.json().catch(() => ({ message: response.statusText }));
+    if (response.status === 401) window.dispatchEvent(new Event(AUTH_EXPIRED_EVENT));
+    throw new ApiError(errorBody.message || `API error: ${response.status}`, response.status, errorBody);
+  }
+  const disposition = response.headers.get('Content-Disposition') || '';
+  return {
+    blob: await response.blob(),
+    filename: /filename="([^"]+)"/.exec(disposition)?.[1] ?? null,
+  };
+}
+
 // Auth
 export const auth = {
   login: (email: string, password: string) =>
@@ -1317,19 +1337,36 @@ export const tools = {
 };
 
 // Audit
+/** Filters of the Audit Log list, also used by its export. */
+export interface AuditFilters {
+  toolId?: string;
+  status?: string;
+  search?: string;
+  connectorId?: string;
+  mcpServerId?: string;
+  /** ISO date or date-time, inclusive. */
+  from?: string;
+  /** ISO date or date-time, exclusive. */
+  to?: string;
+}
+
+function auditQuery(params: Record<string, string | number | boolean | undefined>): string {
+  const query = new URLSearchParams();
+  for (const [key, value] of Object.entries(params)) {
+    if (value !== undefined && value !== '') query.set(key, String(value));
+  }
+  const qs = query.toString();
+  return qs ? `?${qs}` : '';
+}
+
 export const audit = {
-  invocations: (token: string, params?: { limit?: number; offset?: number; toolId?: string; status?: string; search?: string; connectorId?: string; mcpServerId?: string }) => {
-    const query = new URLSearchParams();
-    if (params?.limit) query.set('limit', String(params.limit));
-    if (params?.offset) query.set('offset', String(params.offset));
-    if (params?.toolId) query.set('toolId', params.toolId);
-    if (params?.status) query.set('status', params.status);
-    if (params?.search) query.set('search', params.search);
-    if (params?.connectorId) query.set('connectorId', params.connectorId);
-    if (params?.mcpServerId) query.set('mcpServerId', params.mcpServerId);
-    const qs = query.toString();
-    return request<any[]>(`/api/audit/invocations${qs ? `?${qs}` : ''}`, { token });
-  },
+  invocations: (token: string, params?: AuditFilters & { limit?: number; offset?: number }) =>
+    request<any[]>(`/api/audit/invocations${auditQuery({ ...params })}`, { token }),
+  /** Admins only. The file is read as a blob so the CSV's BOM survives. */
+  exportInvocations: (
+    token: string,
+    params: AuditFilters & { format: 'csv' | 'json'; payloads?: boolean },
+  ) => downloadBlob(`/api/audit/invocations/export${auditQuery({ ...params })}`, token),
   stats: (token: string) =>
     request<{ invocations24h: number; errors24h: number; invocations7d: number; totalInvocations: number }>('/api/audit/stats', { token }),
   analytics: (token: string, days = 7) =>

@@ -1,9 +1,10 @@
 'use client';
 
-import { Fragment, useEffect, useState, useCallback } from 'react';
+import { Fragment, useEffect, useMemo, useState, useCallback } from 'react';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
-import { audit, connectors as connectorsApi, mcpServers, server } from '@/lib/api';
+import { audit, connectors as connectorsApi, mcpServers, server, type AuditFilters } from '@/lib/api';
+import { ActionMenu } from '@/components/ui/action-menu';
 import { AppSelect } from '@/components/ui/select';
 import { AppShell } from '@/components/app-shell';
 import { Card } from '@/components/ui/card';
@@ -90,16 +91,30 @@ function UserCell({ log }: { log: any }) {
   );
 }
 
+/** Midnight of a local `YYYY-MM-DD` day, `addDays` later, as an ISO instant. */
+function localDayStart(day: string, addDays = 0): string {
+  const [y, m, d] = day.split('-').map(Number);
+  return new Date(y, m - 1, d + addDays).toISOString();
+}
+
+const todayLocal = () => new Date().toLocaleDateString('en-CA'); // YYYY-MM-DD
+
+const dateInputClass =
+  'h-[34px] rounded-[9px] border border-[var(--border)] bg-[var(--surface)] px-2.5 text-[12.5px] text-[var(--text-2)] outline-none';
+
 export default function LogsPage() {
-  const { token } = useAuth();
+  const { token, user } = useAuth();
   const t = useTranslations('auditLog');
   const { restrictedForMe } = useMemberVisibility();
+  const isAdmin = user?.role === 'ADMIN';
   const [logs, setLogs] = useState<any[]>([]);
   const [loading, setLoading] = useState(true);
   const [statusFilter, setStatusFilter] = useState<string>('');
   const [search, setSearch] = useState('');
   const [connectorFilter, setConnectorFilter] = useState<string>('');
   const [mcpServerFilter, setMcpServerFilter] = useState<string>('');
+  const [fromDate, setFromDate] = useState('');
+  const [toDate, setToDate] = useState('');
   const [connectors, setConnectors] = useState<any[]>([]);
   const [servers, setServers] = useState<any[]>([]);
   const [expandedId, setExpandedId] = useState<string | null>(null);
@@ -108,11 +123,16 @@ export default function LogsPage() {
   const [authMode, setAuthMode] = useState<string | null>(null);
   const [copiedId, setCopiedId] = useState<string | null>(null);
   const [copyErrorId, setCopyErrorId] = useState<string | null>(null);
+  const [isCloud, setIsCloud] = useState(false);
+  const [includePayloads, setIncludePayloads] = useState(false);
+  const [exporting, setExporting] = useState(false);
+  const [exportNote, setExportNote] = useState<{ tone: 'warn' | 'error'; text: string } | null>(null);
 
   // Load server info to determine MCP auth mode (legacy, both, oauth2)
   useEffect(() => {
     server.info().then((info) => {
       if (info?.mcpAuthMode) setAuthMode(info.mcpAuthMode);
+      setIsCloud(info?.deploymentMode === 'cloud');
     }).catch(() => {});
   }, []);
 
@@ -165,7 +185,7 @@ export default function LogsPage() {
   // Reset page when filters change
   useEffect(() => {
     setPage(0);
-  }, [statusFilter, debouncedSearch, connectorFilter, mcpServerFilter]);
+  }, [statusFilter, debouncedSearch, connectorFilter, mcpServerFilter, fromDate, toDate]);
 
   // Load connectors and MCP servers for filter dropdowns
   useEffect(() => {
@@ -174,6 +194,20 @@ export default function LogsPage() {
     mcpServers.list(token).then(setServers).catch(() => {});
   }, [token]);
 
+  // One filter set for the list and the export, so a download holds what the
+  // page shows. The To day is included: the API's `to` is exclusive.
+  const activeFilters = useMemo<AuditFilters>(
+    () => ({
+      ...(statusFilter ? { status: statusFilter } : {}),
+      ...(debouncedSearch ? { search: debouncedSearch } : {}),
+      ...(connectorFilter ? { connectorId: connectorFilter } : {}),
+      ...(mcpServerFilter ? { mcpServerId: mcpServerFilter } : {}),
+      ...(fromDate ? { from: localDayStart(fromDate) } : {}),
+      ...(toDate ? { to: localDayStart(toDate, 1) } : {}),
+    }),
+    [statusFilter, debouncedSearch, connectorFilter, mcpServerFilter, fromDate, toDate],
+  );
+
   const fetchLogs = useCallback(() => {
     if (!token) return;
     setLoading(true);
@@ -181,10 +215,7 @@ export default function LogsPage() {
       .invocations(token, {
         limit: PAGE_SIZE,
         offset: page * PAGE_SIZE,
-        ...(statusFilter ? { status: statusFilter } : {}),
-        ...(debouncedSearch ? { search: debouncedSearch } : {}),
-        ...(connectorFilter ? { connectorId: connectorFilter } : {}),
-        ...(mcpServerFilter ? { mcpServerId: mcpServerFilter } : {}),
+        ...activeFilters,
       })
       .then((data) => {
         setLogs(data);
@@ -192,7 +223,43 @@ export default function LogsPage() {
       })
       .catch(() => {})
       .finally(() => setLoading(false));
-  }, [token, page, statusFilter, debouncedSearch, connectorFilter, mcpServerFilter]);
+  }, [token, page, activeFilters]);
+
+  const handleExport = async (format: 'csv' | 'json') => {
+    if (!token) return;
+    setExporting(true);
+    setExportNote(null);
+    try {
+      const { blob } = await audit.exportInvocations(token, {
+        ...activeFilters,
+        format,
+        payloads: includePayloads,
+      });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      // Named after the days picked here; the server only sees UTC instants.
+      a.download = `anythingmcp-audit-${fromDate || 'all'}-${toDate || todayLocal()}.${format}`;
+      a.click();
+      // Revoke later: some browsers start the download after click() returns.
+      setTimeout(() => URL.revokeObjectURL(url), 5000);
+      // A capped export says so in its last line (CSV) or last field (JSON).
+      const tail = await blob.slice(-200).text();
+      if (tail.includes('# truncated') || tail.includes('"truncated":true')) {
+        setExportNote({
+          tone: 'warn',
+          text: t('export.truncated'),
+        });
+      }
+    } catch (err: any) {
+      setExportNote({
+        tone: 'error',
+        text: t('export.failed', { message: err?.message || t('export.unknownError') }),
+      });
+    } finally {
+      setExporting(false);
+    }
+  };
 
   // Load logs
   useEffect(() => {
@@ -233,15 +300,19 @@ export default function LogsPage() {
     { value: 'TIMEOUT', label: t('filters.timeouts') },
   ];
 
-  const hasFilters = !!(statusFilter || debouncedSearch || connectorFilter || mcpServerFilter);
+  const hasFilters = !!(
+    statusFilter || debouncedSearch || connectorFilter || mcpServerFilter || fromDate || toDate
+  );
   const clearFilters = () => {
     setStatusFilter('');
     setSearch('');
     setConnectorFilter('');
     setMcpServerFilter('');
+    setFromDate('');
+    setToDate('');
   };
 
-  const exportButton = (
+  const refreshButton = (
     <Button
       variant="secondary"
       size="md"
@@ -261,11 +332,59 @@ export default function LogsPage() {
     </Button>
   );
 
+  const downloadIcon = (
+    <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true">
+      <path d="M12 3v12m0 0-4-4m4 4 4-4M4 17v2a2 2 0 0 0 2 2h12a2 2 0 0 0 2-2v-2" />
+    </svg>
+  );
+
+  // Bulk download is for admins; everyone else keeps reading the page as before.
+  const headerActions = (
+    <div className="flex items-center gap-2">
+      {refreshButton}
+      {isAdmin && (
+        <ActionMenu
+          label={t('export.label')}
+          disabled={exporting}
+          trigger={
+            <>
+              {downloadIcon}
+              {exporting ? t('export.exporting') : t('export.button')}
+            </>
+          }
+          items={[
+            { label: t('export.csv'), icon: downloadIcon, onSelect: () => handleExport('csv') },
+            { label: t('export.json'), icon: downloadIcon, onSelect: () => handleExport('json') },
+            {
+              label: t('export.payloads'),
+              checked: includePayloads,
+              onSelect: () => setIncludePayloads((v) => !v),
+            },
+          ]}
+        />
+      )}
+      {isAdmin && isCloud && (
+        <span
+          tabIndex={0}
+          role="note"
+          title={t('export.cloudRetention')}
+          aria-label={t('export.cloudRetention')}
+          className="flex h-5 w-5 cursor-help items-center justify-center rounded-full text-[var(--text-3)] outline-none hover:text-[var(--text)] focus-visible:text-[var(--text)]"
+        >
+          <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" aria-hidden="true">
+            <circle cx="12" cy="12" r="9" />
+            <path d="M12 11v5M12 8h.01" />
+          </svg>
+        </span>
+      )}
+    </div>
+  );
+
   return (
     <AppShell
       title={t('title')}
       subtitle={t('subtitle')}
-      actions={exportButton}
+      actions={headerActions}
     >
       {restrictedForMe && (
         <p role="note" className="mb-3 text-xs text-[var(--text-3)]">{t('ownCallsOnly')}</p>
@@ -329,7 +448,40 @@ export default function LogsPage() {
           ]}
         />
 
+        {/* Date range: drives the list and the export */}
+        <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-3)]">
+          {t('filters.from')}
+          <input
+            type="date"
+            value={fromDate}
+            max={toDate || undefined}
+            onChange={(e) => setFromDate(e.target.value)}
+            className={dateInputClass}
+          />
+        </label>
+        <label className="flex items-center gap-1.5 text-[12px] text-[var(--text-3)]">
+          {t('filters.to')}
+          <input
+            type="date"
+            value={toDate}
+            min={fromDate || undefined}
+            onChange={(e) => setToDate(e.target.value)}
+            className={dateInputClass}
+          />
+        </label>
       </div>
+
+      {exportNote && (
+        <p
+          role={exportNote.tone === 'error' ? 'alert' : 'status'}
+          className={cn(
+            'mb-4 text-[12.5px]',
+            exportNote.tone === 'error' ? 'text-[var(--danger)]' : 'text-[var(--text-2)]'
+          )}
+        >
+          {exportNote.text}
+        </p>
+      )}
 
       {/* Table card */}
       <Card className="overflow-hidden">

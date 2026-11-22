@@ -405,7 +405,21 @@
       "timeouts": "Timeouts",
       "searchPlaceholder": "Search by tool or connector…",
       "allConnectors": "All connectors",
-      "allServers": "All MCP servers"
+      "allServers": "All MCP servers",
+      "from": "From",
+      "to": "To"
+    },
+    "export": {
+      "label": "Export the filtered audit log",
+      "button": "Export",
+      "exporting": "Exporting…",
+      "csv": "Download CSV",
+      "json": "Download JSON",
+      "payloads": "Include input and output",
+      "cloudRetention": "On Cloud, only what is still stored can be exported: by default, calls older than 90 days are deleted and inputs and outputs older than 14 days are shortened to an excerpt.",
+      "truncated": "The export stopped at the row limit. Narrow the date range to get the rest.",
+      "failed": "Export failed: {message}",
+      "unknownError": "unknown error"
     },
     "columns": {
       "time": "Time",
