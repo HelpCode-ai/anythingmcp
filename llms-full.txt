@@ -7067,8 +7067,8 @@ workspace until an admin switches it.
 
 | Area | Open | Restricted, member |
 |---|---|---|
-| Audit log (`GET /api/audit/invocations`) | Every call of the workspace, with the caller and the full input and output | Only the calls the member made. Calls without a user (for example a static key) are hidden. A call made through an MCP server the member does not own keeps its content, but `mcpServer` and `mcpServerId` are null; `mcpServerId=` of such a server matches nothing. The page says "You see your own calls. Workspace admins see all calls." |
-| Analytics, stats, tool performance (`/api/audit/stats`, `/analytics`, `/breakdowns`, `/tool-performance`) | Workspace-wide numbers, including calls per user and per server | The same numbers, counted over the member's own calls only. The "by user" panel is hidden; the API's `byUser` holds only the member's own row. Only the member's own servers are named: `byServer` counts calls through any other server in one row with `id: null` ("Other server or none"), and tool performance reports them with `mcpServerId: null`. |
+| Audit log (`GET /api/audit/invocations`) | Every call of the workspace, with the caller and the full input and output | Only the calls the member made. Calls without a user (for example a static key) are hidden. A call made through an MCP server the member does not own keeps its content, but `mcpServer` and `mcpServerId` are null; `mcpServerId=` of such a server matches nothing. The page says "You see your own calls. Workspace admins see all calls." The error text of a failed call (`error`) on a connector the member reads in the reduced view is replaced: see [error text of a call](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#error-text-of-a-call>). |
+| Analytics, stats, tool performance (`/api/audit/stats`, `/analytics`, `/breakdowns`, `/tool-performance`) | Workspace-wide numbers, including calls per user and per server | The same numbers, counted over the member's own calls only. The "by user" panel is hidden; the API's `byUser` holds only the member's own row. Only the member's own servers are named: `byServer` counts calls through any other server in one row with `id: null` ("Other server or none"), and tool performance reports them with `mcpServerId: null`. `lastError` of tool performance follows the same rule as the audit log's `error`. |
 | Connectors (`GET /api/connectors`, `/health-check`) | Every connector with all of its tools and settings | Connectors that hold at least one tool the member's roles allow, plus, for an EDITOR, the connectors they own. A connector an EDITOR owns comes back in full. One they do not own comes back in the [reduced view](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#what-a-member-sees-of-a-shared-connector>), with only the allowed tools. |
 | Connector and tool detail (`/api/connectors/:id`, its per-user sign-in, tools) | Any connector of the workspace | 404 for a connector the member cannot see, with the same body as an unknown id. A member cannot tell "hidden" from "does not exist". A connector they can see but do not own comes back in the reduced view. On a connector they own, `mcpServers` lists only the servers they own. |
 | Connector settings (`/api/connectors/:id/oauth-config`) | Any connector of the workspace | Only for a connector the member owns; 404 for the others, visible or not. |
@@ -7164,6 +7164,12 @@ page is not drawn first and none of its requests is sent.
 On **Settings → Organization** a restricted member sees the workspace name,
 their role and their workspaces, not the feature switches.
 
+Two pages are refused by what they are asked for, not by their address: the
+page of an MCP server that is not the member's (`/mcp-server/<id>`) sends them
+back to their own list, and a File Search hand-off that cannot be opened
+(`/setup/file-search`) sends a member who may not set up a connector to their
+connectors, both with the same note.
+
 Admins see every page in both modes. In an Open workspace nothing changes for
 anyone: every entry is listed, and a page for admins shows its "Access Denied"
 panel to a member, as before.
@@ -7172,11 +7178,14 @@ The rules live in one place, `packages/frontend/src/lib/member-access.ts`. The
 navigation is a convenience, not the access control: the API refuses what a
 member may not read whatever the dashboard shows.
 
-So that a restricted member never sees an admin's navigation for a moment
-while the page loads, the dashboard keeps a cookie `amcp_nav` with what it last
-knew about the browser's member (`open` or `restricted`). The server renders
-the first HTML from it; without it, it renders the narrow navigation until the
-real answer is loaded. The cookie decides only what is drawn.
+So that a restricted member does not see an admin's navigation for a moment
+on every page load, the dashboard sets a cookie `amcp_nav=restricted` in the
+browser of a restricted member, and the server renders their first HTML from
+it: the narrow navigation, and nothing of a page that is not theirs. Nobody
+else gets the cookie, and without it the server renders what it always did.
+On their very first load in a browser a restricted member therefore sees the
+whole navigation until their answer has loaded, a moment later. The cookie
+decides only what is drawn.
 
 ### One browser, two accounts
 
@@ -7212,9 +7221,31 @@ Restricted mode hides identities and content, not every number:
   `GET /api/mcp-servers/:id/activity` and the list's `usage` return the
   server's two numbers (calls in the last 30 days, time of the last call),
   counted over all callers.
-- **The member's own calls**, with their full input and output. They made
+- **The member's own calls**, with their full input and output (for the text
+  of an error see [error text of a call](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#error-text-of-a-call>)). They made
   those calls, including through a server they do not own (that server is not
   named).
+
+### Error text of a call
+
+The error stored with a failed call often says where the connector connects:
+"Host not found: 'erp.corp.example' could not be resolved", a response body
+quoting the request URL, a database error naming host, database and user. A
+restricted member reads a connector they do not own in the reduced view,
+without its address, so the audit log (`error`) and tool performance
+(`lastError`) do not hand that text back either. For a call on such a
+connector they get the HTTP status, when the call ended with one, and a fixed
+sentence:
+
+```
+HTTP 404. The call failed. Its details are kept for the connector's owner and the workspace admins.
+```
+
+An EDITOR keeps the full text for the connectors they own; admins, and
+everyone in an Open workspace, keep it for every call. `input` and `output`
+of the member's own calls are unchanged. The member's AI client still receives
+the full error when the call fails, as before: the model needs it to correct
+the call.
 
 ## How a restricted member connects their AI client
 
@@ -7267,7 +7298,8 @@ of its tools. So set up the roles first, then switch the mode:
    Member visibility**, and save with the button of that card. Choosing
    Restricted alone changes nothing: the card shows the mode that is active
    ("Active now: Open"), says "Not saved yet" while the choice differs from
-   it, and the browser asks before the page is left with an unsaved choice.
+   it, and the page asks before it is left with an unsaved choice (the
+   browser on a reload or a closed tab, the dashboard on one of its links).
 
 If no role in the workspace has a tool list yet, roles narrow nothing: every
 member may call every tool, so in restricted mode a member, with or without a
@@ -7343,8 +7375,8 @@ Check, in this order:
    last column lists them.
 3. **Whether they are an Editor who owns connectors.** An Editor always sees
    the connectors they created. Make them a Viewer if they should not manage
-   connectors. An admin sees the owner of each connector on its card and on
-   its page ("Owner: …").
+   connectors. In a workspace with more than one active member, an admin sees
+   the owner of each connector on its card and on its page ("Owner: …").
 4. **The mode of the workspace they are in**: signed in as the member,
    `GET /api/settings/member-visibility` answers
    `{"mode":"restricted","restrictedForMe":true}`. The mode is per workspace.
