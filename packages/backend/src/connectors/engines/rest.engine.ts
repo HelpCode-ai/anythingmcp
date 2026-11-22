@@ -427,6 +427,13 @@ export class RestEngine {
         // the prototype; the unsafe names are dropped as well.
         Object.assign(mappedQuery, safeEntries(new URLSearchParams(raw)));
       }
+      // OData `$skip=0` skips nothing, so leaving it out never changes the
+      // result. Microsoft Graph refuses any `$skip` next to `$search`
+      // ("SearchWithSkip"), and clients that always send `skip: 0` made every
+      // keyword search fail.
+      if (mappedQuery['$skip'] === 0 || mappedQuery['$skip'] === '0') {
+        delete mappedQuery['$skip'];
+      }
       axiosConfig.params = {
         ...(axiosConfig.params as Record<string, unknown> | undefined),
         ...mappedQuery,
