@@ -5,12 +5,14 @@ import { getAdapter, listAdapters } from '../adapters/catalog';
 import {
   CHATGPT_EXTRA_TOOL_NAMES,
   GENERATIVE_MEDIA_ADAPTERS,
+  GENERATIVE_MEDIA_DOMAINS,
   GENERATIVE_MEDIA_TOOLS,
   SHARED_TOOL_NAMES,
   SHARED_TOOLSET_INSTRUCTIONS,
   SharedToolsetDeps,
   SharedToolsetProfile,
   excludedOnSharedEndpoint,
+  handMadeGenerationKind,
   sharedEndpointAccess,
   assistantForRedirectUris,
   profileForRedirectUris,
@@ -415,6 +417,129 @@ describe('shared /mcp tool set', () => {
       const tools = (getAdapter(slug)?.tools ?? []).map((t) => t.name);
       for (const name of names) expect(tools).toContain(name);
     }
+  });
+
+  it('withholds a connector made by hand that calls a generation service, like the catalog one', async () => {
+    const handMade = (name: string, connectorId: string, baseUrl: string, type = 'REST') =>
+      tool({
+        name,
+        connectorId,
+        connectorType: type,
+        endpointMapping: { method: 'POST', path: '/x' },
+        connectorConfig: { baseUrl, authType: 'BEARER_TOKEN' },
+      });
+    const VIDEO = handMade('my_text_to_video', 'c-video', 'https://api.higgsfield.ai');
+    const VIDEO_STATUS = tool({
+      name: 'my_request_status',
+      connectorId: 'c-video',
+      connectorConfig: { baseUrl: 'https://api.higgsfield.ai', authType: 'BEARER_TOKEN' },
+    });
+    const SONG = handMade('create_song', 'c-song', 'https://api.suno.com/mcp', 'MCP');
+    const MODEL = handMade('post_fal_ai_recraft_v3_text_to_image', 'c-fal', 'https://USER:{{KEY}}@queue.fal.run/v1');
+    // A hand-made copy of a general AI connector: only the tool that carries
+    // the catalog generation tool's name is withheld.
+    const IMAGE = handMade('openai_generate_image', 'c-ai', 'https://api.openai.com/v1');
+    const ANSWER = handMade('openai_create_response', 'c-ai', 'https://api.openai.com/v1');
+    // Neither a generation host nor a generation tool name.
+    const LOOKALIKE = handMade('crm_generate_report', 'c-other', 'https://notsuno.com.example.org');
+
+    expect(handMadeGenerationKind(VIDEO)).toBe('connector');
+    expect(handMadeGenerationKind(VIDEO_STATUS)).toBe('connector');
+    expect(handMadeGenerationKind(SONG)).toBe('connector');
+    expect(handMadeGenerationKind(MODEL)).toBe('connector');
+    expect(handMadeGenerationKind(IMAGE)).toBe('tool');
+    expect(handMadeGenerationKind(ANSWER)).toBeNull();
+    expect(handMadeGenerationKind(LOOKALIKE)).toBeNull();
+    expect(handMadeGenerationKind(CRM_READ)).toBeNull();
+    // A catalog connector is judged by its adapter, never by its host or names.
+    expect(
+      handMadeGenerationKind(
+        tool({
+          name: 'openai_generate_image',
+          connectorId: 'c-x',
+          connectorConfig: { baseUrl: 'https://api.suno.com', authType: 'NONE', config: { adapterSlug: 'crm' } },
+        }),
+      ),
+    ).toBeNull();
+    for (const t of [VIDEO, VIDEO_STATUS, SONG, MODEL, IMAGE]) {
+      expect(excludedOnSharedEndpoint(t, 'default')).toBe(true);
+      expect(excludedOnSharedEndpoint(t, 'chatgpt')).toBe(false);
+    }
+    for (const t of [ANSWER, LOOKALIKE]) expect(excludedOnSharedEndpoint(t, 'default')).toBe(false);
+
+    const scope = [CRM_READ, VIDEO, VIDEO_STATUS, SONG, MODEL, IMAGE, ANSWER, LOOKALIKE];
+    const { client, deps } = await connect(scope);
+    const names = (await call(client, 'anythingmcp_search_tools', {})).body.tools.map((t: any) => t.name);
+    expect(names.sort()).toEqual(['crm_find_customer', 'crm_generate_report', 'openai_create_response']);
+    const found = await call(client, 'anythingmcp_search_tools', { query: 'text to video image song' });
+    for (const t of found.body.tools ?? []) {
+      expect(['crm_find_customer', 'crm_generate_report', 'openai_create_response']).toContain(t.name);
+    }
+
+    const described = await call(client, 'anythingmcp_describe_tool', { tool: 'my_text_to_video' });
+    expect(described.isError).toBe(true);
+    expect(described.body.error).toMatch(/image, video or audio generation connector/);
+    expect(described.body.error).toMatch(/own server URL/);
+    const video = await call(client, 'anythingmcp_run_write_tool', { tool: 'my_text_to_video', arguments: {} });
+    expect(video.isError).toBe(true);
+    expect(video.body.error).toMatch(/image, video or audio generation connector/);
+    const status = await call(client, 'anythingmcp_run_read_tool', { tool: 'my_request_status', arguments: {} });
+    expect(status.isError).toBe(true);
+    const song = await call(client, 'anythingmcp_run_write_tool', { tool: 'create_song', arguments: {} });
+    expect(song.isError).toBe(true);
+    const image = await call(client, 'anythingmcp_run_write_tool', { tool: 'openai_generate_image', arguments: {} });
+    expect(image.isError).toBe(true);
+    expect(image.body.error).toMatch(/generates images, video or audio/);
+    expect(deps.execute).not.toHaveBeenCalled();
+
+    const list = await call(client, 'anythingmcp_list_connectors');
+    expect(list.body.connectors.map((c: any) => c.id).sort()).toEqual(['c-ai', 'c-crm', 'c-other']);
+    expect(list.body.notServedHere.sort()).toEqual(['c-fal', 'c-song', 'c-video']);
+    expect(list.body.generationToolsNotServedHere).toEqual(['c-ai']);
+
+    // The ChatGPT profile serves generation, made by hand or not.
+    const chatgpt = await connect(scope, makeDeps(), 'chatgpt');
+    const chatgptNames = (await call(chatgpt.client, 'anythingmcp_search_tools', {})).body.tools.map((t: any) => t.name);
+    expect(chatgptNames).toEqual(expect.arrayContaining(['my_text_to_video', 'create_song', 'openai_generate_image']));
+  });
+
+  it('knows the domain of every catalog generation connector', () => {
+    for (const slug of GENERATIVE_MEDIA_ADAPTERS) {
+      const baseUrl = getAdapter(slug)?.connector?.baseUrl ?? '';
+      const host = new URL(baseUrl).hostname.toLowerCase();
+      expect(GENERATIVE_MEDIA_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))).toBe(true);
+    }
+  });
+
+  // A new adapter with a tool named like these has to be decided on: withheld
+  // through GENERATIVE_MEDIA_ADAPTERS or GENERATIVE_MEDIA_TOOLS, or added here
+  // with the reason why it does not generate media with an AI model.
+  it('has a decision for every catalog tool named like media generation', () => {
+    const NOT_GENERATION: Record<string, string> = {
+      figma_render_images: 'exports existing design nodes as files',
+      google_slides_create_image: 'places an existing image on a slide',
+      instagram_create_media_container: 'publishes an existing image or video',
+      instagram_login_create_media_container: 'publishes an existing image or video',
+      kittl_list_ai_workflow_presets: 'lists presets, generates nothing',
+      ringcentral_create_video_meeting: 'creates a meeting room',
+      shopware_6_admin_create_media: 'creates an empty media library entry',
+      shopware_6_admin_create_media_folder: 'creates a media library folder',
+    };
+    const looksLikeGeneration =
+      /(generate|edit|create|make|render)_?(an?_)?(ai_)?(image|picture|video|audio|speech|music|song|media|avatar|voice)|text_to_(speech|image|video|audio|music)|_to_video|speak_text|upscale|infographic|ai_workflow|inpaint|outpaint|dubbing|_tts(_|$)/i;
+    const undecided: string[] = [];
+    for (const adapter of listAdapters()) {
+      for (const t of getAdapter(adapter.slug)?.tools ?? []) {
+        if (!looksLikeGeneration.test(t.name) || t.name in NOT_GENERATION) continue;
+        const registered = tool({
+          name: t.name,
+          connectorId: 'c',
+          connectorConfig: { baseUrl: '', authType: 'NONE', config: { adapterSlug: adapter.slug } },
+        });
+        if (!excludedOnSharedEndpoint(registered, 'default')) undecided.push(t.name);
+      }
+    }
+    expect(undecided).toEqual([]);
   });
 
   it('keeps kg_how_to_obtain listed and says so when the graph is off', async () => {

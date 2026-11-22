@@ -737,6 +737,42 @@ describe('McpEndpointController — same tool name in several connectors', () =>
     ]);
   });
 
+  it('keeps image, video and audio generation on a server\'s own URL', async () => {
+    const generation = (name: string, connectorId: string, connectorConfig: Record<string, unknown>) => ({
+      id: `${connectorId}:${name}`,
+      connectorId,
+      connectorName: connectorId,
+      name,
+      description: name,
+      parameters: { type: 'object', properties: { prompt: { type: 'string' } } },
+      connectorType: 'REST',
+      connectorConfig,
+      endpointMapping: { method: 'POST', path: '/x' },
+    });
+    const { entries, registered, toolExecutor } = plan([
+      generation('gemini_generate_image', 'c1', {
+        baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+        config: { adapterSlug: 'gemini' },
+      }),
+      generation('elevenlabs_create_speech', 'c2', {
+        baseUrl: 'https://api.elevenlabs.io',
+        config: { adapterSlug: 'elevenlabs' },
+      }),
+      generation('my_text_to_video', 'c3', { baseUrl: 'https://api.higgsfield.ai' }),
+    ]);
+    expect(entries.map((e: any) => e.name)).toEqual([
+      'gemini_generate_image',
+      'elevenlabs_create_speech',
+      'my_text_to_video',
+    ]);
+    await registered.get('gemini_generate_image')!.handler({ prompt: 'a red door' });
+    expect(toolExecutor.executeTool).toHaveBeenCalledWith(
+      'gemini_generate_image',
+      { prompt: 'a red door' },
+      expect.objectContaining({ connectorIds: ['c1'], mcpServerId: 'srv-A' }),
+    );
+  });
+
   it('routes each copy to its own connector', async () => {
     const { registered, toolExecutor } = plan([
       dbTool('c1', 'Shop MySQL'),

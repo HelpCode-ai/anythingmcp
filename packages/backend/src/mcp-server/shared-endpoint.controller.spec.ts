@@ -51,6 +51,26 @@ const keyForServerA = {
   mcpServerId: 'srv-A1',
 };
 
+// Image, video and audio generation in org-B: a catalog tool, and a connector
+// made by hand that calls a generation service.
+const GENERATION = [
+  tool('t-b1', 'crm_find_customer', 'org-B', 'conn-B1'),
+  {
+    ...tool('t-b2', 'gemini_generate_image', 'org-B', 'conn-B2'),
+    connectorConfig: {
+      baseUrl: 'https://generativelanguage.googleapis.com/v1beta',
+      authType: 'API_KEY',
+      config: { adapterSlug: 'gemini' },
+    },
+    endpointMapping: { method: 'POST', path: '/models/x:generateContent' },
+  },
+  {
+    ...tool('t-b3', 'my_text_to_video', 'org-B', 'conn-B3'),
+    connectorConfig: { baseUrl: 'https://api.higgsfield.ai', authType: 'BEARER_TOKEN' },
+    endpointMapping: { method: 'POST', path: '/video' },
+  },
+] as RegisteredTool[];
+
 // Redirect URIs as the two assistants register them in production.
 const REDIRECTS: Record<string, string[]> = {
   'client-claude': ['https://claude.ai/api/mcp/auth_callback'],
@@ -224,6 +244,33 @@ describe('shared /mcp in fixed mode', () => {
     expect(client.getInstructions()).toBe(sharedToolsetInstructions('chatgpt'));
   });
 
+  it('keeps image, video and audio generation off every connection but ChatGPT\'s', async () => {
+    for (const user of [
+      { ...orgB, azp: 'client-claude' },
+      { ...orgB, azp: 'client-unregistered' },
+      { ...orgB, authMethod: 'api_key', mcpServerId: undefined },
+    ]) {
+      const { executor, connect } = build({ tools: GENERATION });
+      const client = await connect(user);
+      const search = await call(client, 'anythingmcp_search_tools', {});
+      expect(search.body.tools.map((t: any) => t.name)).toEqual(['crm_find_customer']);
+      for (const name of ['gemini_generate_image', 'my_text_to_video']) {
+        const described = await call(client, 'anythingmcp_describe_tool', { tool: name });
+        expect(described.isError).toBe(true);
+        const ran = await call(client, 'anythingmcp_run_write_tool', { tool: name, arguments: {} });
+        expect(ran.isError).toBe(true);
+        expect(ran.body.error).toMatch(/not served on this shared connection; use the connector's own server URL/);
+        const read = await call(client, 'anythingmcp_run_read_tool', { tool: name, arguments: {} });
+        expect(read.isError).toBe(true);
+      }
+      expect(executor.executeTool).not.toHaveBeenCalled();
+    }
+
+    const chatgpt = await build({ tools: GENERATION }).connect({ ...orgB, azp: 'client-chatgpt' });
+    const names = (await call(chatgpt, 'anythingmcp_search_tools', {})).body.tools.map((t: any) => t.name);
+    expect(names.sort()).toEqual(['crm_find_customer', 'gemini_generate_image', 'my_text_to_video']);
+  });
+
   it('falls back to the reviewed set for an unknown client or an API key', async () => {
     for (const user of [
       { ...orgB, azp: 'client-unregistered' },
@@ -364,6 +411,25 @@ describe('shared /mcp in direct mode', () => {
     const listed = res.json.mock.calls[0][0].result.tools.map((t: any) => t.name);
     expect(listed).toEqual(['crm_find_customer']);
     expect((controller as any).serveStateless).not.toHaveBeenCalled();
+  });
+
+  it('keeps listing image, video and audio generation tools (self-hosted default)', async () => {
+    process.env.MCP_SHARED_ENDPOINT_TOOLS = 'direct';
+    const { controller } = build({ tools: GENERATION });
+    const res: any = { status: jest.fn().mockReturnThis(), json: jest.fn() };
+    const prev = process.env.MCP_STREAMABLE_JSON_RESPONSE;
+    process.env.MCP_STREAMABLE_JSON_RESPONSE = 'true';
+    try {
+      await controller.handleGlobalPost(
+        { user: { sub: 'u-b', organizationId: 'org-B' }, body: { method: 'tools/list', id: 1 } } as any,
+        res,
+      );
+    } finally {
+      if (prev === undefined) delete process.env.MCP_STREAMABLE_JSON_RESPONSE;
+      else process.env.MCP_STREAMABLE_JSON_RESPONSE = prev;
+    }
+    const listed = res.json.mock.calls[0][0].result.tools.map((t: any) => t.name).sort();
+    expect(listed).toEqual(['crm_find_customer', 'gemini_generate_image', 'my_text_to_video']);
   });
 
   it('lists only its server\'s tools to a key created for a server, and refuses the others', async () => {
