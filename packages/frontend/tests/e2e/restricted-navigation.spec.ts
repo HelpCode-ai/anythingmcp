@@ -430,6 +430,36 @@ test.describe('the server-rendered page', () => {
   });
 });
 
+/**
+ * The server renders from the hint cookie and the browser takes over with the
+ * same value, before it knows who is signed in: the two must draw the same
+ * page, or React reports a hydration mismatch and redraws it.
+ */
+test.describe('hydration', () => {
+  for (const [name, setup, path] of [
+    ['a restricted viewer with the hint', { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER] }, '/connectors'],
+    ['a restricted viewer with the hint, on a refused page', { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER] }, '/settings/users'],
+    ['a restricted viewer on her first visit', { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER], firstVisit: true }, '/connectors'],
+    ['an admin', { role: 'ADMIN', mode: 'restricted', roles: [], members: [] }, '/settings/users'],
+    ['a member of an open workspace', { role: 'EDITOR', mode: 'open' }, '/connectors/store'],
+  ] as Array<[string, Setup, string]>) {
+    test(`${name}: the browser takes over what the server drew`, async ({ page }) => {
+      const problems: string[] = [];
+      page.on('console', (message) => {
+        if (/hydrat|did not match|didn't match/i.test(message.text())) problems.push(message.text().slice(0, 200));
+      });
+      page.on('pageerror', (error) => {
+        if (/hydrat/i.test(error.message)) problems.push(error.message.slice(0, 200));
+      });
+      await fakeSession(page, setup);
+      await page.goto(path);
+      await expect(page.getByTestId('app-nav')).toBeVisible();
+      await page.waitForTimeout(500);
+      expect(problems).toEqual([]);
+    });
+  }
+});
+
 test.describe('restricted EDITOR', () => {
   test('keeps what creates connectors and servers, loses the pages about other members\' work', async ({ page }) => {
     await fakeSession(page, { role: 'EDITOR', mode: 'restricted', servers: [] });
