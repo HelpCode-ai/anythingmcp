@@ -230,6 +230,13 @@ export function fileSearchWizardPathFor(optionId: string, serverIds: readonly st
 }
 
 /**
+ * A bcrypt hash (cost 12, as AuthService.hashPassword) of a random value that
+ * was thrown away: no password matches it and no account uses it. See
+ * LoginController.spendPasswordCheck.
+ */
+const NO_ACCOUNT_PASSWORD_HASH = '$2b$12$IiJXBx6uVaTbVBrwh5VRKe7P./mbaxLHXjX7kyOgJwdFSnENFxHSi';
+
+/**
  * What a post of the sign-in form asks for. `password` is every post that can
  * reach the password check in handleLogin: "Sign in & allow", and anything
  * this function does not recognise. `button` is a post that handleLogin
@@ -654,8 +661,9 @@ export class LoginController {
 
     if (!user) {
       this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
+      await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
+        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
       );
     }
 
@@ -673,8 +681,9 @@ export class LoginController {
     // Nullable for IdP-provisioned users — never hand null to bcrypt.
     if (!user.passwordHash) {
       this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
+      await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
+        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
       );
     }
 
@@ -687,7 +696,7 @@ export class LoginController {
     if (!passwordValid) {
       this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
+        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
       );
     }
 
@@ -708,6 +717,39 @@ export class LoginController {
     this.logger.log(`Successful login for user: ${maskEmail(email)}`);
 
     return this.completeSignIn(req, res, user);
+  }
+
+  /**
+   * The one answer to an e-mail and password that did not sign in, whatever
+   * the reason: no account with that address, an account that has no
+   * password (made with a provider button, or by an identity provider), or a
+   * wrong password. The text never depends on the address, so it cannot be
+   * used to find out which addresses have an account or how they were made.
+   * Where provider buttons exist it says what the two usual cases do next:
+   * 58 people typed an address that had no account and 9 a password for an
+   * account made with a provider (16 to 21 November 2026).
+   */
+  private signInFailedMessage(): string {
+    const providers = this.socialProviders().map((p) => p.name);
+    if (providers.length === 0) return 'Invalid email or password';
+    const list =
+      providers.length === 1
+        ? providers[0]
+        : `${providers.slice(0, -1).join(', ')} or ${providers[providers.length - 1]}`;
+    return `That email and password do not match. If you signed up with ${list}, use that button instead. New here? Create an account first.`;
+  }
+
+  /**
+   * One password check against a hash no password matches, for a sign-in
+   * that has no hash to check (no such account, or an account without a
+   * password). The refusal then takes as long as a wrong password does.
+   */
+  private async spendPasswordCheck(password: string): Promise<void> {
+    try {
+      await this.authService.comparePassword(String(password), NO_ACCOUNT_PASSWORD_HASH);
+    } catch {
+      // Only the time matters; the sign-in is refused either way.
+    }
   }
 
   /** "Continue with Google / Microsoft / GitHub" from a CSRF-checked form of this flow. */
