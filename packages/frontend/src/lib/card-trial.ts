@@ -1,6 +1,5 @@
 import type { PlanFit, PlanFits } from './api';
 import { storage } from './storage';
-import { safeRedirect } from './safe-redirect';
 import { startTrialPath } from './checkout-source';
 
 /**
@@ -457,22 +456,34 @@ export function formatTrialEnd(
 const AUTH_RETURN_KEY = 'amcp_card_trial_return';
 export const AUTH_RETURN_TTL_MS = 30 * 60 * 1000;
 
-export function isAuthorizationPath(path: string | null | undefined): path is string {
-  if (typeof path !== 'string' || safeRedirect(path, '') !== path) return false;
-  // `/callback` finishes an authorization that was approved and paused on the
-  // backend's "One more step" page (its sign-in cookie lasts as long as the
-  // authorization): coming back there connects the client at once.
-  return path.startsWith('/auth/') || path === '/callback';
+/**
+ * The only places the card-trial detour may return to: the consent page and,
+ * after approving, `/callback`, which finishes an authorization paused on the
+ * backend's "One more step" page (its sign-in cookie lasts as long as the
+ * authorization). A fixed list: the value followed is always one of these
+ * constants, never the string that came in.
+ */
+export const AUTHORIZATION_RETURN_PATHS = ['/auth/login', '/callback'] as const;
+export type AuthorizationReturnPath = (typeof AUTHORIZATION_RETURN_PATHS)[number];
+
+/** The fixed return path `path` names, or null. */
+export function authorizationReturnPath(path: string | null | undefined): AuthorizationReturnPath | null {
+  return AUTHORIZATION_RETURN_PATHS.find((p) => p === path) ?? null;
+}
+
+export function isAuthorizationPath(path: string | null | undefined): path is AuthorizationReturnPath {
+  return authorizationReturnPath(path) !== null;
 }
 
 /** A backend page (not a Next route): needs a full navigation. */
 export function isBackendAuthorizationPath(path: string): boolean {
-  return path.startsWith('/auth/') || path === '/callback';
+  return isAuthorizationPath(path);
 }
 
 export function saveAuthorizationReturn(path: string, now: number = Date.now()): void {
-  if (!isAuthorizationPath(path)) return;
-  storage.set(AUTH_RETURN_KEY, JSON.stringify({ path, savedAt: now }));
+  const fixed = authorizationReturnPath(path);
+  if (!fixed) return;
+  storage.set(AUTH_RETURN_KEY, JSON.stringify({ path: fixed, savedAt: now }));
 }
 
 /** The consent page to go back to, or null when none is waiting (or it expired). */
@@ -482,13 +493,9 @@ export function readAuthorizationReturn(now: number = Date.now()): string | null
   try {
     const data = JSON.parse(raw);
     const savedAt = Number(data?.savedAt);
-    if (
-      isAuthorizationPath(data?.path) &&
-      Number.isFinite(savedAt) &&
-      savedAt <= now &&
-      now - savedAt <= AUTH_RETURN_TTL_MS
-    ) {
-      return data.path;
+    const fixed = authorizationReturnPath(data?.path);
+    if (fixed && Number.isFinite(savedAt) && savedAt <= now && now - savedAt <= AUTH_RETURN_TTL_MS) {
+      return fixed;
     }
   } catch {
     /* fall through */

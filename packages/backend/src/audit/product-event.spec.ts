@@ -443,7 +443,7 @@ describe('ProductEventService — the authorization attempt events', () => {
   };
 
   it('keeps the button, the sign-in method, the account, the language and the page arm', async () => {
-    const attempt = { client: 'Claude', device: 'desktop', attempt: 'mws7ha5r', connectedArm: 'next_step' };
+    const attempt = { client: 'Claude', device: 'desktop', attempt: 'mws7ha5r', connectedArm: 'next_step', signinArm: 'buttons_first' };
     expect(
       await stored([
         { event: 'authorize_page_viewed', metadata: { ...attempt, lang: 'de' } },
@@ -468,6 +468,9 @@ describe('ProductEventService — the authorization attempt events', () => {
     for (const method of ['google', 'microsoft', 'github', 'sso', 'password', 'session', 'email_code']) {
       expect(await stored([{ event: 'authorization_signed_in', metadata: { method } }])).toEqual([{ method }]);
     }
+    for (const signinArm of ['control', 'buttons_first']) {
+      expect(await stored([{ event: 'authorize_page_viewed', metadata: { signinArm } }])).toEqual([{ signinArm }]);
+    }
     for (const lang of ['en', 'de', 'it', 'es', 'zh', 'ja', 'ru', 'other']) {
       expect(await stored([{ event: 'authorize_page_viewed', metadata: { lang } }])).toEqual([{ lang }]);
     }
@@ -483,6 +486,7 @@ describe('ProductEventService — the authorization attempt events', () => {
             account: 'max@example.com',
             lang: 'fr-FR',
             connectedArm: 'treatment',
+            signinArm: 'treatment',
           },
         },
       ]),

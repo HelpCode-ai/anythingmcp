@@ -417,6 +417,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `TELEGRAM_MANAGER_WEBHOOK_SECRET` | With the token | A secret of your own, 16 to 256 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (for example `openssl rand -hex 32`). Telegram sends it back with every update of the manager bot, to `<SERVER_URL>/api/telegram/manager-webhook`; a call without it is refused |
 | `TELEGRAM_MANAGED_BOT_ORG_IDS` | No | Comma-separated organization ids the one-tap Telegram bot is offered to. Empty (default): every organization. Set it to try the feature on one workspace first: every other organization sees the page as before |
 | `AUTHORIZE_CONNECTED_PAGE_TEST` | No | Cloud only: the page shown after approving an AI client into an empty workspace (see [Authorization page tests](#authorization-page-tests)). Unset: `next_step` for everyone. `split`: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `next_step`: that arm for everyone. Ignored on a self-hosted instance, which always shows the page as before |
+| `AUTHORIZE_SIGNIN_PAGE_TEST` | No | Cloud only: the split test of the sign-in page inside an authorization (see [Sign-in page test](#sign-in-page-test)). Unset: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `buttons_first`: that arm for everyone. Ignored on a self-hosted instance |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 | `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](#license-verification); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
@@ -506,6 +507,17 @@ The events of one attempt carry the same `attempt` value, the `device` (`mobile`
 `post_approve_continue_clicked` and the `create_account` button are reported by the page with `navigator.sendBeacon` to `POST /auth/beacon`, which never delays the click. That route writes one event, only for the pending authorization of the browser that names its own attempt, and always answers 204.
 
 To read the test, compare the arms on attempts that have an `empty_workspace_prompt`: the share with an `authorization_code_issued` in the same attempt (the person came back to the client), and the share of those codes followed by an `authorization_code_exchanged` of the same user (the client really connected).
+
+### Sign-in page test
+
+The sign-in page inside an authorization runs as a second split test, independent of the first (another hash of the same session), set with `AUTHORIZE_SIGNIN_PAGE_TEST`:
+
+| Arm | What the person sees |
+|-----|----------------------|
+| `control` | The page as before, in English |
+| `buttons_first` | The page in the browser's language (`en`, `de`, `it`, `es`, `zh`, `ja`, `ru`; English otherwise), one line on what the person gets, the Google / Microsoft / GitHub buttons right under the heading on every screen, the consent box after the buttons (a short form of its destination warning stays above them), and "Create an account with email" as a link under the form instead of the sign-up box |
+
+Unset: an equal split. `off`: the page as before, no arm recorded. `control` or `buttons_first`: that arm for everyone. The arm is recorded on the same events as `signinArm`. To read it, compare the arms on attempts with an `authorize_page_viewed`: the share with any `authorize_action` (the person did something), and the share with an `authorization_code_issued` (the person came back to the client).
 
 ## External Services
 

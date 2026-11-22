@@ -132,7 +132,7 @@ export class PrismaOAuthStore implements IOAuthStore {
           metadata:
             boundEventMetadata({
               ...(client?.clientName ? { client: client.clientName.slice(0, 80) } : {}),
-              ...(context ? { device: context.device, attempt, connectedArm: context.connectedArm } : {}),
+              ...(context ? { device: context.device, attempt, connectedArm: context.connectedArm, signinArm: context.signinArm } : {}),
             }) ?? {},
         },
       });

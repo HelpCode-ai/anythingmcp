@@ -97,6 +97,28 @@ export function connectedPageArm(
 }
 
 /**
+ * The sign-in page inside an authorization (plan items A3 and A4):
+ * - `control`: the page as before (English, sign-up box and consent box
+ *   above the buttons on a computer);
+ * - `buttons_first`: in the browser's language (one of the seven), one line
+ *   on what the person gets, the provider buttons right under the heading on
+ *   every screen, the consent box after them, and "create an account with
+ *   email" as a link instead of the sign-up box.
+ */
+export const SIGNIN_PAGE_ARMS = ['control', 'buttons_first'] as const;
+export type SignInPageArm = (typeof SIGNIN_PAGE_ARMS)[number];
+
+/** `AUTHORIZE_SIGNIN_PAGE_TEST`: unset for the equal split, 'off', or one arm for everyone. */
+export const SIGNIN_PAGE_TEST_ENV = 'AUTHORIZE_SIGNIN_PAGE_TEST';
+
+export function signInPageArm(
+  sessionId: string | null | undefined,
+  opts: { cloud: boolean; setting?: string | null },
+): SignInPageArm | null {
+  return testArm('authorize-signin-page-v1', SIGNIN_PAGE_ARMS, sessionId, opts);
+}
+
+/**
  * The seven languages of the trial pages, as a bucket for the events: the
  * first language of the browser that is one of them, 'other' for any other
  * language, undefined when the browser names none.
@@ -148,6 +170,7 @@ export interface AuthorizationAttemptContext {
   /** Resolves to the attempt key, or undefined when the session is gone. Never rejects. */
   attempt: Promise<string | undefined>;
   connectedArm?: ConnectedPageArm;
+  signinArm?: SignInPageArm;
 }
 
 export const authorizationAttemptContext = new AsyncLocalStorage<AuthorizationAttemptContext>();

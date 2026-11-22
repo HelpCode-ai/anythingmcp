@@ -244,9 +244,12 @@ export function renderAuthPage(opts: {
   trust: TrustRowOptions;
   /** Page-specific CSS, appended to the shared rules. */
   extraStyles?: string;
+  /** The page's language (`<html lang>`); English when absent. */
+  lang?: string;
 }): string {
+  const lang = opts.lang && /^[a-z]{2}$/.test(opts.lang) ? opts.lang : 'en';
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
