@@ -2386,6 +2386,15 @@ The Loom catalog preset connects AnythingMCP to your own
 [MCP bridge](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/mcp-bridge.md>). It uses Streamable HTTP and discovers the tools
 and schemas that your server publishes through `tools/list`.
 
+## Install Loom first
+
+Follow the [Loom quickstart](<https://clickhouse.github.io/loom/getting-started/quickstart/>)
+to install and start your own server before adding this connector. The default
+single-user setup listens on loopback; it does not provision a public HTTPS
+endpoint. Configure authenticated access and the network route described below
+before connecting AnythingMCP. The quickstart's development model is not a real
+inference provider; configure model access separately when your workflow needs it.
+
 ## Setup
 
 1. In Loom, open **Settings > Tokens > New token**. Create a dedicated token
