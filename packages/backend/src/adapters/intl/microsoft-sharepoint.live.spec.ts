@@ -133,8 +133,8 @@ describe('microsoft-sharepoint adapter: static spec conformance', () => {
   it('probes with the root site, which needs no arguments, and tests the connection with /me', () => {
     expect(a.probe.tool).toBe('sharepoint_get_root_site');
     expect(tool('sharepoint_get_root_site').parameters.required).toBeUndefined();
-    // /me answers under every scope set; /sites/root is refused under
-    // Sites.Selected unless the root site was granted to the app.
+    // /me answers under every scope set. /sites/root also answers under
+    // Sites.Selected (site name and address only), so the probe works there too.
     expect(a.connector.healthcheckPath).toBe('/me');
   });
 
@@ -143,7 +143,12 @@ describe('microsoft-sharepoint adapter: static spec conformance', () => {
     expect(a.instructions).toContain('`offline_access User.Read Sites.Selected`');
     expect(a.instructions).toContain('POST https://graph.microsoft.com/v1.0/sites/{siteId}/permissions');
     expect(a.instructions).toContain('Grant-PnPEntraIDAppSitePermission');
-    expect(a.instructions).toMatch(/Disable `sharepoint_get_root_site`, `sharepoint_search_sites` and `sharepoint_search`/);
+    expect(a.instructions).toMatch(/Disable `sharepoint_search` and `sharepoint_search_sites`/);
+    // Checked against a real tenant: Microsoft Search ignores Sites.Selected and
+    // returns names and snippets from sites without a grant, so the guide must
+    // say that disabling sharepoint_search is required, not that it fails.
+    expect(a.instructions).toMatch(/Disabling `sharepoint_search` is required[^\n]*does not apply `Sites\.Selected`/);
+    expect(a.instructions).not.toMatch(/sharepoint_search`: they fail under/);
     expect(a.instructions).not.toMatch(/does not download file content/);
   });
 
