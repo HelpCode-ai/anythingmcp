@@ -32,16 +32,17 @@ describe('authorization attempt', () => {
 
   describe('the arm of a page test', () => {
     const CLOUD = { cloud: true };
+    const SPLIT = { cloud: true, setting: 'split' };
 
     it('is always the same for one pending authorization', () => {
-      const first = connectedPageArm('session-1', CLOUD);
-      for (let i = 0; i < 20; i++) expect(connectedPageArm('session-1', CLOUD)).toBe(first);
+      const first = connectedPageArm('session-1', SPLIT);
+      for (let i = 0; i < 20; i++) expect(connectedPageArm('session-1', SPLIT)).toBe(first);
       expect(CONNECTED_PAGE_ARMS).toContain(first);
     });
 
-    it('splits pending authorizations into equal parts', () => {
+    it("splits pending authorizations into equal parts with 'split'", () => {
       const counts: Record<string, number> = { control: 0, next_step: 0 };
-      for (let i = 0; i < 4000; i++) counts[connectedPageArm(`session-${i}`, CLOUD) as string] += 1;
+      for (let i = 0; i < 4000; i++) counts[connectedPageArm(`session-${i}`, SPLIT) as string] += 1;
       expect(counts.control + counts.next_step).toBe(4000);
       // 50 % each; 4,000 draws stay within a few points of it.
       expect(counts.control).toBeGreaterThan(1800);
@@ -83,10 +84,11 @@ describe('authorization attempt', () => {
       }
     });
 
-    it('reads any other setting as unset', () => {
+    it('gives everyone next_step when unset, and reads any other setting as unset', () => {
       for (const setting of ['', 'yes', 'on', 'variant', undefined, null]) {
-        expect(connectedPageArm('session-1', { cloud: true, setting })).toBe(connectedPageArm('session-1', CLOUD));
+        for (let i = 0; i < 50; i++) expect(connectedPageArm(`session-${i}`, { cloud: true, setting })).toBe('next_step');
       }
+      expect(connectedPageArm('session-1', CLOUD)).toBe('next_step');
     });
   });
 

@@ -43,7 +43,12 @@ export function attemptKey(expiresAt: number | null | undefined): string | undef
 export const CONNECTED_PAGE_ARMS = ['control', 'next_step'] as const;
 export type ConnectedPageArm = (typeof CONNECTED_PAGE_ARMS)[number];
 
-/** `AUTHORIZE_CONNECTED_PAGE_TEST`: 'off', one arm for everyone, or unset for the split. */
+/**
+ * `AUTHORIZE_CONNECTED_PAGE_TEST`: unset gives everyone `next_step` (the page
+ * no longer says the client is connected before Continue); 'split' runs the
+ * equal split; 'control' or 'next_step' gives everyone that arm; 'off' shows
+ * the page as before and records no arm.
+ */
 export const CONNECTED_PAGE_TEST_ENV = 'AUTHORIZE_CONNECTED_PAGE_TEST';
 
 /**
@@ -79,7 +84,16 @@ export function connectedPageArm(
   sessionId: string | null | undefined,
   opts: { cloud: boolean; setting?: string | null },
 ): ConnectedPageArm | null {
-  return testArm('authorize-connected-page-v1', CONNECTED_PAGE_ARMS, sessionId, opts);
+  const setting = (opts.setting ?? '').trim().toLowerCase();
+  // The equal split only when asked for. "Claude is connected" before the
+  // client is connected contradicts the page the person sees next, so the
+  // default is the heading that says what is still to do (2026-11-22).
+  if (setting === 'split') return testArm('authorize-connected-page-v1', CONNECTED_PAGE_ARMS, sessionId, { cloud: opts.cloud });
+  const known = setting === 'off' || CONNECTED_PAGE_ARMS.some((arm) => arm === setting);
+  return testArm('authorize-connected-page-v1', CONNECTED_PAGE_ARMS, sessionId, {
+    cloud: opts.cloud,
+    setting: known ? setting : 'next_step',
+  });
 }
 
 /**

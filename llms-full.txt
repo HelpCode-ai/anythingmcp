@@ -694,7 +694,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `TELEGRAM_MANAGER_BOT_TOKEN` | No | The token of a Telegram "manager bot" of this server (a bot with **Bot Management Mode** enabled in @BotFather). With it and `TELEGRAM_MANAGER_WEBHOOK_SECRET`, a user who picks Telegram on the page after approving an AI client creates their own bot with one tap in Telegram instead of a chat with @BotFather and a pasted token; see [One-tap Telegram bot](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#one-tap-telegram-bot>). Default: off, the page is as before |
 | `TELEGRAM_MANAGER_WEBHOOK_SECRET` | With the token | A secret of your own, 16 to 256 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (for example `openssl rand -hex 32`). Telegram sends it back with every update of the manager bot, to `<SERVER_URL>/api/telegram/manager-webhook`; a call without it is refused |
 | `TELEGRAM_MANAGED_BOT_ORG_IDS` | No | Comma-separated organization ids the one-tap Telegram bot is offered to. Empty (default): every organization. Set it to try the feature on one workspace first: every other organization sees the page as before |
-| `AUTHORIZE_CONNECTED_PAGE_TEST` | No | Cloud only: the split test of the page shown after approving an AI client into an empty workspace (see [Authorization page tests](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authorization-page-tests>)). Unset: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `next_step`: that arm for everyone. Ignored on a self-hosted instance, which always shows the page as before |
+| `AUTHORIZE_CONNECTED_PAGE_TEST` | No | Cloud only: the page shown after approving an AI client into an empty workspace (see [Authorization page tests](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authorization-page-tests>)). Unset: `next_step` for everyone. `split`: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `next_step`: that arm for everyone. Ignored on a self-hosted instance, which always shows the page as before |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 | `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#license-verification>); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
@@ -759,7 +759,7 @@ What to know:
 
 Cloud only. A self-hosted instance always shows the pages as before and records no arm.
 
-The page shown after approving an AI client into an empty workspace says "Claude is connected" although the client is connected only after **Continue**: no authorization code exists yet. On Cloud that page runs as a split test, set with `AUTHORIZE_CONNECTED_PAGE_TEST`:
+The page shown after approving an AI client into an empty workspace says "Claude is connected" although the client is connected only after **Continue**: no authorization code exists yet. On Cloud everyone sees the `next_step` arm by default; `AUTHORIZE_CONNECTED_PAGE_TEST=split` runs the two as a split test:
 
 | Arm | What the person sees |
 |-----|----------------------|
