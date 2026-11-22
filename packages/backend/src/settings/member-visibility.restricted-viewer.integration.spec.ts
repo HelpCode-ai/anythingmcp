@@ -7,6 +7,7 @@ import { PrismaPg } from '@prisma/adapter-pg';
 import { PrismaClient } from '../generated/prisma/client';
 import { AuditController } from '../audit/audit.controller';
 import { AuditService } from '../audit/audit.service';
+import { MEMBER_CALL_ERROR } from '../audit/member-call-error';
 import { SecurityEventService } from '../audit/security-event.service';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { PrismaService } from '../common/prisma.service';
@@ -176,6 +177,8 @@ const ADDRESS = 'erp-db.internal.example.invalid';
       });
     await invoke(ids.VIEWER, ids.c1a, ids.srvViewer, 30);
     await invoke(ids.VIEWER, ids.c1a, ids.srvTeam, 20);
+    // A call of the viewer that failed: its stored error names the address.
+    await invoke(ids.VIEWER, ids.c1b, ids.srvViewer, 15, 'ERROR');
     await invoke(ids.ADMIN, ids.c1a, ids.srvTeam, 10, 'ERROR');
     await invoke(ids.OTHER, ids.c1b, ids.srvOther, 5);
 
@@ -293,7 +296,7 @@ const ADDRESS = 'erp-db.internal.example.invalid';
     expect(list.body).toHaveLength(1);
     expect(list.body[0]).toMatchObject({ id: ids.srvViewer, name: 'Default (Vera)', _count: { connectors: 1 } });
     expect(list.body[0].connectors).toEqual([{ connector: { name: 'Connector 1' } }]);
-    expect(list.body[0].usage.calls30d).toBe(1);
+    expect(list.body[0].usage.calls30d).toBe(2);
 
     const detail = await get('VIEWER', `/api/mcp-servers/${ids.srvViewer}`);
     expect(detail.status).toBe(200);
@@ -361,32 +364,39 @@ const ADDRESS = 'erp-db.internal.example.invalid';
 
   it('sees their own calls, with only their own server named, in every audit view', async () => {
     const inv = await get('VIEWER', '/api/audit/invocations');
-    expect(inv.body).toHaveLength(2);
+    expect(inv.body).toHaveLength(3);
     expect(inv.body.every((r: any) => r.user.id === ids.VIEWER)).toBe(true);
-    expect(inv.body.map((r: any) => r.mcpServer?.name ?? null).sort()).toEqual(['Default (Vera)', null].sort());
+    expect(inv.body.map((r: any) => r.mcpServer?.name ?? null).sort()).toEqual(
+      ['Default (Vera)', 'Default (Vera)', null].sort(),
+    );
+    // Their own failed call: that it failed, not the text naming the address
+    // of a connector they read in the reduced view.
+    expect(inv.body.filter((r: any) => r.status === 'ERROR').map((r: any) => r.error)).toEqual([MEMBER_CALL_ERROR]);
+    expect(inv.body.every((r: any) => !('userId' in r.tool.connector))).toBe(true);
     expect((await get('VIEWER', `/api/audit/invocations?mcpServerId=${ids.srvTeam}`)).body).toEqual([]);
 
     const breakdowns = await get('VIEWER', '/api/audit/breakdowns');
     expect(breakdowns.body.byServer.sort((a: any, b: any) => String(a.id).localeCompare(String(b.id)))).toEqual(
       [
-        { id: ids.srvViewer, label: 'Default (Vera)', count: 1, errors: 0 },
+        { id: ids.srvViewer, label: 'Default (Vera)', count: 2, errors: 1 },
         { id: null, label: 'Other server or none', count: 1, errors: 0 },
       ].sort((a, b) => String(a.id).localeCompare(String(b.id))),
     );
-    expect(breakdowns.body.byUser).toEqual([{ id: ids.VIEWER, label: 'Vera', count: 1 + 1, errors: 0 }]);
+    expect(breakdowns.body.byUser).toEqual([{ id: ids.VIEWER, label: 'Vera', count: 2 + 1, errors: 1 }]);
 
     const perf = await get('VIEWER', '/api/audit/tool-performance?hours=24');
     expect(perf.body.items.map((i: any) => [i.mcpServerId, i.mcpServerName, i.calls]).sort()).toEqual(
       [
         [ids.srvViewer, 'Default (Vera)', 1],
+        [ids.srvViewer, 'Default (Vera)', 1],
         [null, null, 1],
       ].sort(),
     );
-    expect(perf.body.items.every((i: any) => i.lastError === null)).toBe(true);
+    expect(perf.body.items.map((i: any) => i.lastError).sort()).toEqual([MEMBER_CALL_ERROR, null, null].sort());
     const filtered = await get('VIEWER', `/api/audit/tool-performance?mcpServerId=${ids.srvTeam}`);
     expect(filtered.body.items).toEqual([]);
 
-    expect((await get('VIEWER', '/api/audit/stats')).body.invocations24h).toBe(2);
+    expect((await get('VIEWER', '/api/audit/stats')).body.invocations24h).toBe(3);
   });
 
   it('never read an address, another member\'s server, its endpoint or a hidden connector', () => {

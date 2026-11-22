@@ -11,6 +11,7 @@ import { SiteSettingsService } from '../settings/site-settings.service';
 import { MemberVisibilityService } from '../settings/member-visibility.service';
 import { AuditController } from './audit.controller';
 import { AuditService } from './audit.service';
+import { MEMBER_CALL_ERROR } from './member-call-error';
 
 /**
  * Member visibility on every audit read route, end to end: HTTP, controller,
@@ -298,7 +299,7 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
       expect(adminRows.some((r: any) => r.mcpServer?.name === 'Sales')).toBe(true);
     });
 
-    it('tool performance holds only the caller’s calls, and their own last error', async () => {
+    it('tool performance holds only the caller’s calls, and of their last error only that it failed', async () => {
       const { body } = await get('VIEWER', 'tool-performance?hours=24');
       // The call through the admin's server joins the calls without a server.
       expect(body.items).toHaveLength(1);
@@ -308,9 +309,14 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
         mcpServerName: null,
         calls: 3,
         errors: 2,
-        // The other member's newer TIMEOUT on the same tool stays hidden.
-        lastError: 'viewer error',
+        // The other member's newer TIMEOUT on the same tool stays hidden, and
+        // the text of the viewer's own error is not shown for a connector
+        // they do not own: it can name the address the reduced view withholds.
+        lastError: MEMBER_CALL_ERROR,
       });
+      // The admin reads the workspace's latest error in full, as before.
+      const admin = await get('ADMIN', 'tool-performance?hours=24');
+      expect(admin.body.items.map((i: any) => i.lastError)).toContain('other member error');
 
       const filtered = await get('VIEWER', `tool-performance?connectorId=${ids.connector}&mcpServerId=${ids.server}`);
       expect(filtered.body.items).toHaveLength(0);
