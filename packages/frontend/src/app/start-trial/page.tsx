@@ -19,9 +19,12 @@ import {
   formatTrialEnd,
   planById,
   fitFor,
+  isAuthorizationPath,
+  isBackendAuthorizationPath,
   readAuthorizationReturn,
   readPlanIntent,
   readPromoCode,
+  saveAuthorizationReturn,
   selectionForFit,
   takeAuthorizationReturn,
   trialRunning,
@@ -118,7 +121,7 @@ function StartTrialContent() {
   const leave = useCallback(
     (fallback: string) => {
       const target = takeAuthorizationReturn(fallback);
-      if (target.startsWith('/auth/')) window.location.assign(target);
+      if (isBackendAuthorizationPath(target)) window.location.assign(target);
       else router.replace(target);
     },
     [router],
@@ -149,6 +152,10 @@ function StartTrialContent() {
         const pageKind = cardTrial && trialKind !== 'none' ? trialKind : 'ending';
         setKind(pageKind);
         setFreeTrialEnd(lic.expiresAt ?? null);
+        // Opened from the page after approving an AI client
+        // (`?return=/callback`): every way out finishes that authorization.
+        const returnTo = new URLSearchParams(window.location.search).get('return');
+        if (isAuthorizationPath(returnTo)) saveAuthorizationReturn(returnTo);
         setAuthorizationReturn(readAuthorizationReturn());
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         const intent = readPlanIntent();

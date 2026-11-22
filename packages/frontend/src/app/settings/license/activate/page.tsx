@@ -10,7 +10,7 @@ import { buttonVariants } from '@/components/ui/button';
 import { Card } from '@/components/ui/card';
 import { cn } from '@/lib/utils';
 import { sessionStore } from '@/lib/storage';
-import { takeAuthorizationReturn } from '@/lib/card-trial';
+import { isBackendAuthorizationPath, takeAuthorizationReturn } from '@/lib/card-trial';
 
 const KEY_RE = /^AMCP-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}-[A-F0-9]{4}$/;
 const PENDING_KEY = 'amcp_pending_license_key';
@@ -92,7 +92,7 @@ function LicenseActivateInner() {
         // Started the card trial while connecting an AI client: finish that
         // authorization (it waits 30 minutes) instead of opening settings.
         const next = takeAuthorizationReturn('/settings/license');
-        setRedirectLabel(next.startsWith('/auth/') ? t('backToClient') : t('redirecting'));
+        setRedirectLabel(isBackendAuthorizationPath(next) ? t('backToClient') : t('redirecting'));
         // A full load rather than a client-side route change: the app shell
         // (trial banner, licence wall) read the licence before activation and
         // would keep showing the trial until the next reload.

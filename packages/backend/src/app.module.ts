@@ -39,6 +39,7 @@ import {
 } from './auth/authorize-pkce.middleware';
 import { ResourceIndicatorMiddleware } from './auth/resource-indicator.middleware';
 import { AuthorizationIssuerMiddleware } from './auth/authorization-issuer.middleware';
+import { AuthorizationAttemptMiddleware } from './auth/authorization-attempt.middleware';
 import { IdentityProvidersModule } from './identity-providers/identity-providers.module';
 import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
@@ -252,6 +253,9 @@ export class AppModule implements NestModule {
       // `authorization_response_iss_parameter_supported` in the metadata.
       consumer.apply(ResourceIndicatorMiddleware).forRoutes('authorize');
       consumer.apply(AuthorizationIssuerMiddleware).forRoutes('callback');
+      // Statistics only: lets the `authorization_code_issued` event carry the
+      // device and the page arm of the attempt (authorization-attempt.ts).
+      consumer.apply(AuthorizationAttemptMiddleware).forRoutes('callback');
     }
 
     // Apply legacy auth middleware for MCP endpoint. In 'both' it passes every
