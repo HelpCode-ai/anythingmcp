@@ -14,7 +14,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { resolveDashboardSessionUser, type SessionUser } from './dashboard-session.util';
@@ -229,6 +229,31 @@ export function fileSearchWizardPathFor(optionId: string, serverIds: readonly st
 }
 
 /**
+ * What ties the sign-in form's CSRF token to the pending authorization: a
+ * digest of the `oauth_session` cookie the authorize endpoint set. Null
+ * outside a pending authorization.
+ */
+function loginCsrfBinding(req: Request): string | null {
+  const sessionId = req.cookies?.oauth_session;
+  if (typeof sessionId !== 'string' || !sessionId) return null;
+  return createHash('sha256').update(sessionId).digest('base64url').slice(0, 22);
+}
+
+/**
+ * The `login_csrf` cookie: `<token>.<binding>` when it was issued inside a
+ * pending authorization, the bare token otherwise (and for cookies issued
+ * before the binding existed; they live ten minutes). Tokens are base64url,
+ * so the last dot is the separator.
+ */
+function parseLoginCsrf(cookie: unknown): { token: string; binding: string | null } | null {
+  if (typeof cookie !== 'string' || !cookie) return null;
+  const dot = cookie.lastIndexOf('.');
+  const token = dot === -1 ? cookie : cookie.slice(0, dot);
+  if (!token) return null;
+  return { token, binding: dot === -1 ? null : cookie.slice(dot + 1) };
+}
+
+/**
  * Whether the request comes from a phone or tablet browser, by its user agent.
  * Used only to decide whether Continue may open a second tab.
  */
@@ -385,18 +410,10 @@ export class LoginController {
         .catch(() => undefined);
     }
 
-    // Issue a CSRF token bound to this render (double-submit, HMAC-signed
-    // cookie + matching hidden field). Prevents login CSRF / silent
-    // credential submission from a cross-site context.
-    const csrfToken = randomBytes(32).toString('base64url');
-    const isSecure = this.isSecureRequest(req);
-    res.cookie('login_csrf', csrfToken, {
-      httpOnly: true,
-      secure: isSecure,
-      maxAge: 10 * 60 * 1000, // 10 minutes — long enough to fill the form
-      sameSite: isSecure ? 'none' : 'lax',
-      signed: true,
-    });
+    // Issue the form's CSRF token (double-submit, HMAC-signed cookie +
+    // matching hidden field). Prevents login CSRF / silent credential
+    // submission from a cross-site context.
+    const csrfToken = this.issueLoginCsrf(req, res);
 
     // Already signed in to the dashboard in this browser? Then the consent
     // screen only needs an explicit "Approve", not the password again. Only
@@ -543,7 +560,8 @@ export class LoginController {
           providerId,
           oauthSessionId,
         );
-        res.clearCookie('login_csrf');
+        // The form's token stays valid (see issueLoginCsrf): the back button
+        // from the provider's page shows this form again, as it was.
         return res.redirect(authorizationUrl);
       } catch (error: any) {
         this.logger.warn(`MCP SSO start failed: ${error?.reason ?? error}`);
@@ -658,7 +676,8 @@ export class LoginController {
         oauthSessionId: req.cookies?.oauth_session,
       });
       setSocialBindCookie(req, res, bindingToken);
-      res.clearCookie('login_csrf');
+      // The form's token stays valid (see issueLoginCsrf): the back button
+      // from the provider's page shows this form again, as it was.
       return res.redirect(authorizationUrl);
     } catch (error: any) {
       this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
@@ -2131,8 +2150,52 @@ export class LoginController {
     }
   }
 
+  /**
+   * The sign-in form's CSRF token for this render: a signed, httpOnly
+   * `login_csrf` cookie that the form's hidden field has to match.
+   *
+   * Inside a pending authorization the cookie also carries a digest of that
+   * authorization, and the same token is handed out again for as long as the
+   * browser holds both unchanged. A reload, a second click, or the back
+   * button from a provider's page then posts a form that still matches;
+   * before, each of them ended in "Your session expired" (46 a day in
+   * November 2026, three quarters within a minute of loading the page). The
+   * token is never good for another pending authorization, and the consent
+   * decision still ends it (completeSignIn).
+   */
+  private issueLoginCsrf(req: Request, res: Response): string {
+    const binding = loginCsrfBinding(req);
+    const current = binding
+      ? parseLoginCsrf((req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.login_csrf)
+      : null;
+    const token =
+      current && current.binding === binding ? current.token : randomBytes(32).toString('base64url');
+    const isSecure = this.isSecureRequest(req);
+    res.cookie('login_csrf', binding ? `${token}.${binding}` : token, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: 10 * 60 * 1000, // 10 minutes — long enough to fill the form
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    return token;
+  }
+
+  /**
+   * Double submit for the sign-in form: the token in the signed `login_csrf`
+   * cookie must equal `formToken`, and a cookie issued inside a pending
+   * authorization only counts while that authorization is the browser's.
+   */
   private verifyCsrf(req: Request, formToken: unknown): boolean {
-    return this.verifySignedToken(req, 'login_csrf', formToken);
+    const current = parseLoginCsrf(
+      (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.login_csrf,
+    );
+    if (!current || typeof formToken !== 'string') return false;
+    if (current.binding !== null && current.binding !== loginCsrfBinding(req)) return false;
+    const a = Buffer.from(current.token);
+    const b = Buffer.from(formToken);
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
   }
 
   /** Double submit: the signed cookie `cookieName` must equal `formToken`. */
