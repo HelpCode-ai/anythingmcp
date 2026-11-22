@@ -1017,6 +1017,143 @@
       }
     },
     {
+      "name": "ebay_sell_create_inventory_location",
+      "description": "Create an inventory location (warehouse or store) for the seller (Inventory API createInventoryLocation). eBay needs at least one location before an offer can be published: without one, publishing fails with error 25002 \"No <Item.Country> exists\". Pass the new key as merchantLocationKey on ebay_sell_create_offer / ebay_sell_update_offer. Answers 204 on success; check it with ebay_sell_get_inventory_location.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantLocationKey": {
+            "type": "string",
+            "description": "Seller-defined key for the new location, up to 36 characters (letters, digits, - and _), e.g. main-warehouse. It cannot be changed later."
+          },
+          "body": {
+            "type": "object",
+            "description": "The full location record (request body). Required: `location.address` with `country` (two-letter code, e.g. US) and either `postalCode` or `city` + `stateOrProvince`; a WAREHOUSE needs at least that, a STORE needs the full street address (`addressLine1`, `city`, `stateOrProvince`, `postalCode`, `country`). Optional: `name`, `locationTypes` ([\"WAREHOUSE\"] default, or [\"STORE\"]), `merchantLocationStatus` (\"ENABLED\" default or \"DISABLED\"), `phone`, `locationInstructions`, `locationWebUrl`, `operatingHours`, `timeZoneId`. Example: {\"location\": {\"address\": {\"addressLine1\": \"123 Main St\", \"city\": \"Los Angeles\", \"stateOrProvince\": \"CA\", \"postalCode\": \"90001\", \"country\": \"US\"}}, \"locationTypes\": [\"WAREHOUSE\"], \"name\": \"Main warehouse\", \"merchantLocationStatus\": \"ENABLED\"}."
+          }
+        },
+        "required": [
+          "merchantLocationKey",
+          "body"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/location/{merchantLocationKey}",
+        "bodyMapping": {
+          "__raw": "$body"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_get_inventory_location",
+      "description": "Read one inventory location by its merchantLocationKey (Inventory API getInventoryLocation): name, address, location types, status, phone, operating hours.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantLocationKey": {
+            "type": "string",
+            "description": "Key of the location, as listed by ebay_sell_list_inventory_locations."
+          }
+        },
+        "required": [
+          "merchantLocationKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sell/inventory/v1/location/{merchantLocationKey}"
+      }
+    },
+    {
+      "name": "ebay_sell_update_inventory_location",
+      "description": "Update the details of an existing inventory location (Inventory API updateInventoryLocation, update_location_details). Send only the fields to change, e.g. `name`, `phone`, `locationInstructions`, `locationWebUrl`, `operatingHours`, `specialHours`, `timeZoneId`, `locationAdditionalInformation`; for a warehouse you can also send `location.address`. The merchantLocationKey itself cannot change. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantLocationKey": {
+            "type": "string",
+            "description": "Key of the location to update."
+          },
+          "details": {
+            "type": "object",
+            "description": "Fields to update, e.g. {\"name\": \"LA warehouse\", \"phone\": \"+1 213 555 0100\"}."
+          }
+        },
+        "required": [
+          "merchantLocationKey",
+          "details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/location/{merchantLocationKey}/update_location_details",
+        "bodyMapping": {
+          "__raw": "$details"
+        }
+      }
+    },
+    {
+      "name": "ebay_sell_enable_inventory_location",
+      "description": "Enable a disabled inventory location (Inventory API enableInventoryLocation), so offers can use it again. Answers 200 with an empty body on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantLocationKey": {
+            "type": "string",
+            "description": "Key of the location to enable."
+          }
+        },
+        "required": [
+          "merchantLocationKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/location/{merchantLocationKey}/enable"
+      }
+    },
+    {
+      "name": "ebay_sell_disable_inventory_location",
+      "description": "Disable an inventory location (Inventory API disableInventoryLocation). Offers that point to it keep their listings, but the location can no longer be used for new offers or stock updates until it is enabled again. Answers 200 with an empty body on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantLocationKey": {
+            "type": "string",
+            "description": "Key of the location to disable."
+          }
+        },
+        "required": [
+          "merchantLocationKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sell/inventory/v1/location/{merchantLocationKey}/disable"
+      }
+    },
+    {
+      "name": "ebay_sell_delete_inventory_location",
+      "description": "Delete an inventory location (Inventory API deleteInventoryLocation). Fails while offers or stock still reference it. Cannot be undone. Answers 204 on success.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "merchantLocationKey": {
+            "type": "string",
+            "description": "Key of the location to delete."
+          }
+        },
+        "required": [
+          "merchantLocationKey"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/sell/inventory/v1/location/{merchantLocationKey}"
+      },
+      "enabled": false
+    },
+    {
       "name": "ebay_sell_search_items",
       "description": "Search live eBay listings on the connector's marketplace (Browse API item_summary/search), e.g. to check competing prices or find a listing. Returns item summaries with itemId, title, price, condition, seller, image and itemWebUrl, plus total and next for paging. Needs a keyword (`q`), a category, an ePID or a GTIN.",
       "parameters": {

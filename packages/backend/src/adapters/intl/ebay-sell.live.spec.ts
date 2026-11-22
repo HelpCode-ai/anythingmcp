@@ -19,6 +19,7 @@ const a = adapter as unknown as {
     name: string;
     enabled?: boolean;
     annotations?: { readOnlyHint?: boolean };
+    parameters: { required?: string[] };
     endpointMapping: Record<string, unknown>;
   }>;
 };
@@ -203,6 +204,45 @@ describe('ebay-sell adapter — inventory, browse, marketing and taxonomy', () =
     for (const t of a.tools) {
       if (t.endpointMapping.method === 'DELETE') expect(t.enabled).toBe(false);
     }
+  });
+});
+
+describe('ebay-sell adapter — inventory locations', () => {
+  const tool = (name: string) => {
+    const t = a.tools.find((x) => x.name === name);
+    if (!t) throw new Error(`missing tool ${name}`);
+    return t;
+  };
+  const route = (name: string) =>
+    `${String(tool(name).endpointMapping.method)} ${String(tool(name).endpointMapping.path)}`;
+
+  it('creates, reads, updates, enables and disables a location by merchantLocationKey', () => {
+    // Publishing an offer fails with 25002 "No <Item.Country> exists" until the
+    // seller has a location, so the connector must be able to create one.
+    expect(route('ebay_sell_create_inventory_location')).toBe('POST /sell/inventory/v1/location/{merchantLocationKey}');
+    expect(tool('ebay_sell_create_inventory_location').endpointMapping.bodyMapping).toEqual({ __raw: '$body' });
+    expect(route('ebay_sell_get_inventory_location')).toBe('GET /sell/inventory/v1/location/{merchantLocationKey}');
+    expect(route('ebay_sell_update_inventory_location')).toBe(
+      'POST /sell/inventory/v1/location/{merchantLocationKey}/update_location_details',
+    );
+    expect(tool('ebay_sell_update_inventory_location').endpointMapping.bodyMapping).toEqual({ __raw: '$details' });
+    expect(route('ebay_sell_enable_inventory_location')).toBe('POST /sell/inventory/v1/location/{merchantLocationKey}/enable');
+    expect(route('ebay_sell_disable_inventory_location')).toBe('POST /sell/inventory/v1/location/{merchantLocationKey}/disable');
+    for (const name of [
+      'ebay_sell_create_inventory_location',
+      'ebay_sell_get_inventory_location',
+      'ebay_sell_update_inventory_location',
+      'ebay_sell_enable_inventory_location',
+      'ebay_sell_disable_inventory_location',
+    ]) {
+      expect(tool(name).parameters.required).toContain('merchantLocationKey');
+      expect(tool(name).enabled).not.toBe(false);
+    }
+  });
+
+  it('ships location deletion switched off', () => {
+    expect(route('ebay_sell_delete_inventory_location')).toBe('DELETE /sell/inventory/v1/location/{merchantLocationKey}');
+    expect(tool('ebay_sell_delete_inventory_location').enabled).toBe(false);
   });
 });
 
