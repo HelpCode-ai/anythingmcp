@@ -433,3 +433,67 @@ describe('ProductEventService — the Claude setup discoverability events', () =
     expect(stored()).toEqual([]);
   });
 });
+
+describe('ProductEventService — the authorization attempt events', () => {
+  const stored = async (events: Array<{ event: string; metadata: Record<string, unknown> }>) => {
+    const create = jest.fn().mockResolvedValue({});
+    const service = new ProductEventService({ productEvent: { create } } as any);
+    for (const e of events) await service.log(e as any);
+    return create.mock.calls.map(([{ data }]) => data.metadata);
+  };
+
+  it('keeps the button, the sign-in method, the account, the language and the page arm', async () => {
+    const attempt = { client: 'Claude', device: 'desktop', attempt: 'mws7ha5r', connectedArm: 'next_step' };
+    expect(
+      await stored([
+        { event: 'authorize_page_viewed', metadata: { ...attempt, lang: 'de' } },
+        { event: 'authorize_action', metadata: { ...attempt, button: 'google' } },
+        { event: 'authorization_signed_in', metadata: { ...attempt, method: 'google', account: 'new' } },
+        { event: 'post_approve_continue_clicked', metadata: { ...attempt, button: 'auto_continue' } },
+        { event: 'authorization_code_issued', metadata: attempt },
+      ]),
+    ).toEqual([
+      { ...attempt, lang: 'de' },
+      { ...attempt, button: 'google' },
+      { ...attempt, method: 'google', account: 'new' },
+      { ...attempt, button: 'auto_continue' },
+      attempt,
+    ]);
+  });
+
+  it('keeps every value the pages send, and drops any other', async () => {
+    for (const button of ['google', 'microsoft', 'github', 'sso', 'password', 'session', 'cancel', 'create_account', 'continue', 'auto_continue']) {
+      expect(await stored([{ event: 'authorize_action', metadata: { button } }])).toEqual([{ button }]);
+    }
+    for (const method of ['google', 'microsoft', 'github', 'sso', 'password', 'session', 'email_code']) {
+      expect(await stored([{ event: 'authorization_signed_in', metadata: { method } }])).toEqual([{ method }]);
+    }
+    for (const lang of ['en', 'de', 'it', 'es', 'zh', 'ja', 'ru', 'other']) {
+      expect(await stored([{ event: 'authorize_page_viewed', metadata: { lang } }])).toEqual([{ lang }]);
+    }
+    // An address typed into a field, a made-up arm, a language tag: none is stored.
+    expect(
+      await stored([
+        {
+          event: 'authorize_action',
+          metadata: {
+            client: 'Claude',
+            button: 'max@example.com',
+            method: 'magic',
+            account: 'max@example.com',
+            lang: 'fr-FR',
+            connectedArm: 'treatment',
+          },
+        },
+      ]),
+    ).toEqual([{ client: 'Claude' }]);
+  });
+
+  it('refuses all of them from a page: only the server writes them', async () => {
+    const { controller, req, stored: written } = build();
+    for (const event of ['authorize_action', 'authorization_signed_in', 'post_approve_continue_clicked', 'authorization_code_issued']) {
+      await controller.record(req as any, { event, metadata: { button: 'continue' } } as any);
+    }
+    expect(written()).toEqual([]);
+  });
+});

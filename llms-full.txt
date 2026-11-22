@@ -694,6 +694,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `TELEGRAM_MANAGER_BOT_TOKEN` | No | The token of a Telegram "manager bot" of this server (a bot with **Bot Management Mode** enabled in @BotFather). With it and `TELEGRAM_MANAGER_WEBHOOK_SECRET`, a user who picks Telegram on the page after approving an AI client creates their own bot with one tap in Telegram instead of a chat with @BotFather and a pasted token; see [One-tap Telegram bot](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#one-tap-telegram-bot>). Default: off, the page is as before |
 | `TELEGRAM_MANAGER_WEBHOOK_SECRET` | With the token | A secret of your own, 16 to 256 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (for example `openssl rand -hex 32`). Telegram sends it back with every update of the manager bot, to `<SERVER_URL>/api/telegram/manager-webhook`; a call without it is refused |
 | `TELEGRAM_MANAGED_BOT_ORG_IDS` | No | Comma-separated organization ids the one-tap Telegram bot is offered to. Empty (default): every organization. Set it to try the feature on one workspace first: every other organization sees the page as before |
+| `AUTHORIZE_CONNECTED_PAGE_TEST` | No | Cloud only: the split test of the page shown after approving an AI client into an empty workspace (see [Authorization page tests](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authorization-page-tests>)). Unset: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `next_step`: that arm for everyone. Ignored on a self-hosted instance, which always shows the page as before |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 | `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#license-verification>); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
@@ -741,6 +742,8 @@ The AI client is not connected yet at that moment: its authorization is finished
 - **The welcome message** the new bot sends its creator says the same: go back to the page and tap "Continue to Claude" (the client's name as the page shows it).
 - **A second message** follows when the AI client really is connected: on the first `tools/list` that the user's client sends to the shared `/mcp` endpoint within 30 minutes of the bot being connected, the bot writes "Claude is now connected to AnythingMCP. Ask it: "Send me a test message on Telegram."". For Claude the message has a button that opens a new chat with that request typed in (`https://claude.ai/new?q=…`); for any other client it is the same sentence without a link. It is sent once per connector, only for a bot created in one tap by the user whose client it is, and only when the welcome could be delivered (the creator pressed **Start** in the bot's chat: a bot cannot write to someone who has not). It never delays or fails the MCP request: the endpoint only notes the request, and the check (one database read per workspace every five seconds at most, none while the feature is off) and the message happen in the background.
 
+On Cloud, half of the pending authorizations see another version of this page (the `next_step` arm of the [authorization page test](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authorization-page-tests>)): once the bot is connected and Start was pressed, the page counts down five seconds ("Telegram is connected. Going back to Claude in 5 s…") and then follows the Continue link itself, in the same tab, only while the tab is visible. **Stay on this page** stops the countdown.
+
 What to know:
 
 - **One manager bot per server.** A bot has one webhook: a second server started with the same token takes it over, and the first one stops receiving updates.
@@ -751,6 +754,36 @@ What to know:
 - **Cloud and self-hosted.** The settings are read in both modes. The page that offers the button (shown after approving an AI client, to a workspace with no connectors) exists on Cloud only today, so a self-hosted instance sees no change yet: no setup is ever started there, so the manager bot has nothing to link and the second message has nobody to go to. Redis is not needed for any of it.
 - **Outbound calls.** `api.telegram.org`, with the manager bot's token (start-up, once per created bot, and one answer per `/start` in its chat) and with the user's new bot's token (the welcome message and the "assistant is connected" message).
 - **Events.** `telegram_bot_link_offered`, `telegram_bot_link_opened`, `telegram_bot_connected` (`kind: claim` when the bot was linked by its creator's Start), `telegram_bot_unmatched`, `telegram_bot_claim_offered`, `telegram_bot_claim` (`status`: `linked`, `waiting` or `refused`), `telegram_bot_client_notice` (`status`: `sent` or `failed`) and `telegram_bot_token_pasted`, in `product_events`. None holds a Telegram id, a username or a code.
+
+## Authorization page tests
+
+Cloud only. A self-hosted instance always shows the pages as before and records no arm.
+
+The page shown after approving an AI client into an empty workspace says "Claude is connected" although the client is connected only after **Continue**: no authorization code exists yet. On Cloud that page runs as a split test, set with `AUTHORIZE_CONNECTED_PAGE_TEST`:
+
+| Arm | What the person sees |
+|-----|----------------------|
+| `control` | The page as before: "Claude is connected" |
+| `next_step` | "One more step: go back to Claude", with the sentence that the client is connected once Continue is pressed. The picker, the example request and the Continue link are the same. After the one-tap Telegram bot is connected the page goes on by itself (see [After the bot is connected](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#after-the-bot-is-connected>)) |
+
+The arm is chosen per pending authorization (a hash of its session, never stored) and stays the same through reloads, the round trip to Google and the sign-up detour. A new connection attempt from the AI client can get the other arm.
+
+The events of one attempt carry the same `attempt` value, the `device` (`mobile` or `desktop`) and the arm as `connectedArm`:
+
+| Event | Written when | Extra fields |
+|-------|--------------|--------------|
+| `authorize_page_viewed` | the sign-in page is opened inside an authorization | `lang`: the browser's first language if it is one of `en`, `de`, `it`, `es`, `zh`, `ja`, `ru`, else `other` |
+| `authorize_action` | a button of the sign-in page is used | `button`: `google`, `microsoft`, `github`, `sso`, `password`, `session`, `cancel`, `create_account` |
+| `authorization_signed_in` | the identity is settled and access allowed | `method`: the provider, `password`, `session`, `email_code`; `account`: `new` (created in the last 30 minutes) or `existing` |
+| `empty_workspace_prompt` | the page of the test is shown | |
+| `post_approve_app_picked` | an app is picked on it | |
+| `post_approve_continue_clicked` | Continue is pressed on it | `button`: `continue`, or `auto_continue` when the page went on by itself |
+| `authorization_code_issued` | the code is handed to the client's redirect | |
+| `authorization_code_exchanged` | the client presents the code | `client` only: no browser is present |
+
+`post_approve_continue_clicked` and the `create_account` button are reported by the page with `navigator.sendBeacon` to `POST /auth/beacon`, which never delays the click. That route writes one event, only for the pending authorization of the browser that names its own attempt, and always answers 204.
+
+To read the test, compare the arms on attempts that have an `empty_workspace_prompt`: the share with an `authorization_code_issued` in the same attempt (the person came back to the client), and the share of those codes followed by an `authorization_code_exchanged` of the same user (the client really connected).
 
 ## External Services
 

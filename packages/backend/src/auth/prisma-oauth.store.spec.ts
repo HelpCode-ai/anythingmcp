@@ -1,4 +1,5 @@
 import { PrismaOAuthStore } from './prisma-oauth.store';
+import { authorizationAttemptContext, type AuthorizationAttemptContext } from './authorization-attempt';
 
 /**
  * The two events that say whether an authorization was handed back to the AI
@@ -49,6 +50,57 @@ describe('PrismaOAuthStore: authorization code events', () => {
     await flush();
     expect(prisma.productEvent.create).toHaveBeenCalledWith({
       data: { event: 'authorization_code_issued', userId: 'u1', organizationId: 'org-1', metadata: { client: 'Claude' } },
+    });
+  });
+
+  // What /callback knows about the attempt reaches the event through the
+  // AsyncLocalStorage of AuthorizationAttemptMiddleware, and through the event
+  // store's allow-list.
+  describe('with the attempt of the callback', () => {
+    const inCallback = (context: Partial<AuthorizationAttemptContext>, run: () => Promise<unknown>) =>
+      authorizationAttemptContext.run(
+        { device: 'desktop', attempt: Promise.resolve('mws7ha5r'), ...context } as AuthorizationAttemptContext,
+        run,
+      );
+
+    it('says on which device, in which attempt and in which page arm the code was issued', async () => {
+      const { prisma, store } = build();
+      await inCallback({ device: 'mobile', connectedArm: 'next_step' }, () => store.storeAuthCode(CODE as any));
+      await flush();
+      expect(prisma.productEvent.create).toHaveBeenCalledWith({
+        data: {
+          event: 'authorization_code_issued',
+          userId: 'u1',
+          organizationId: 'org-1',
+          metadata: { client: 'Claude', device: 'mobile', attempt: 'mws7ha5r', connectedArm: 'next_step' },
+        },
+      });
+    });
+
+    it('keeps only values the event store allows', async () => {
+      const { prisma, store } = build();
+      await inCallback(
+        { device: 'tablet' as any, attempt: Promise.resolve('NOT A KEY'), connectedArm: 'made-up' as any },
+        () => store.storeAuthCode(CODE as any),
+      );
+      await flush();
+      expect(prisma.productEvent.create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude' });
+    });
+
+    it('records the code without an attempt when the pending authorization could not be read', async () => {
+      const { prisma, store } = build();
+      await inCallback({ attempt: Promise.reject(new Error('db down')) }, () => store.storeAuthCode(CODE as any));
+      await flush();
+      expect(prisma.productEvent.create.mock.calls[0][0].data.metadata).toEqual({ client: 'Claude', device: 'desktop' });
+    });
+
+    it('says nothing of it on the exchange: no browser is present there', async () => {
+      const { prisma, store } = build();
+      await inCallback({ device: 'mobile', connectedArm: 'next_step' }, () => store.getAuthCode('abc'));
+      await flush();
+      expect(prisma.productEvent.create.mock.calls[0][0].data).toEqual(
+        expect.objectContaining({ event: 'authorization_code_exchanged', metadata: { client: 'Claude' } }),
+      );
     });
   });
 
