@@ -36,7 +36,11 @@
  *   pages and catalog, signed or token links, provider webhooks and OAuth,
  *   SSO and SCIM flows, cron and internal secrets.
  * - `mcp-roles`: the MCP endpoint; MCP roles decide which tools a client can
- *   list and call, in both modes.
+ *   list and call, in both modes. One thing member visibility adds there: in
+ *   a restricted workspace `/mcp/<serverId>` of another member's server
+ *   answers a member who is not an admin the 404 of an unknown id, instead of
+ *   that server's name and instructions (McpEndpointController,
+ *   `hiddenFromRestrictedMember`).
  */
 export const MEMBER_VISIBILITY_DECISIONS = [
   'scoped',
@@ -447,7 +451,9 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
   'OrganizationsController.deleteCurrent': admin('checked in the handler'),
   'OrganizationsController.revokeWorkspaceSessions': admin('checked in the handler'),
   'OrganizationsController.switchOrg': own('switches the caller\'s active workspace'),
-  'OrganizationsController.createOrg': own('creates a workspace the caller owns'),
+  'OrganizationsController.createOrg': own(
+    'creates a workspace the caller owns; on self-hosted only for an ADMIN (checked in the handler)',
+  ),
   'PublicStatsController.getStats': noSession('public aggregate counts'),
 
   // ── roles and keys ─────────────────────────────────────────────────────

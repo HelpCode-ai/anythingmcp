@@ -2238,7 +2238,8 @@ export class ConnectorsController {
       'reports the outcome; nothing is changed. `kind` classifies it: `ok`, `auth_failed` (401/403, check the ' +
       'credentials), `not_found` (reachable, but the path does not exist), `unreachable` (DNS, network, timeout or a ' +
       'blocked address), `unsupported` or `error`. A connector with per-user credentials is tested with your own sign-in. ' +
-      'Only the connector owner or an admin may test it.',
+      'Only the connector owner or an admin may test it. In a workspace with restricted member visibility, a member ' +
+      'who is not an admin gets 404 for a connector they cannot see.',
   })
   @ApiResponse({
     status: 201,
@@ -2249,6 +2250,9 @@ export class ConnectorsController {
   })
   async test(@Req() req: any, @Param('id') id: string) {
     const connector = await this.connectorsService.findById(id);
+    // A restricted member gets the unknown-id 404 for a connector they cannot
+    // see, before the owner-or-admin 403 could tell them it exists.
+    await this.hideUnlessVisible(req, connector, id);
     this.assertCanWrite(connector, req);
     return this.connectorsService.testConnection(id, { userId: req.user.sub });
   }

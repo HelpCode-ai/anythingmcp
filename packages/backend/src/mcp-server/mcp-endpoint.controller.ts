@@ -749,6 +749,10 @@ export class McpEndpointController {
           if (!byOrg.has(t.organizationId)) byOrg.set(t.organizationId, new Set());
           byOrg.get(t.organizationId)!.add(t.connectorId);
         }
+        // `scopeTools` is already what the caller's roles allow. Where roles
+        // limit tools, the graph names those tools only (a connector is in
+        // scope with one allowed tool, and its graph names all of them).
+        const roleLimited = (req as { roleLimitedOrgIds?: Set<string> }).roleLimitedOrgIds;
         const results: unknown[] = [];
         for (const [orgId, connectorIds] of byOrg) {
           if (!(await this.kgService.isEnabled(orgId))) continue;
@@ -756,6 +760,9 @@ export class McpEndpointController {
             await this.kgService.lookup(orgId, query, {
               connectorIds: [...connectorIds],
               folders: await this.folderAccessFor(orgId, user.sub),
+              allowedToolNames: roleLimited?.has(orgId)
+                ? new Set(scopeTools.filter((t) => t.organizationId === orgId).map((t) => t.name))
+                : null,
             }),
           );
         }
@@ -964,6 +971,11 @@ export class McpEndpointController {
     // The full entries, not just the names: `answerToolsList` builds this
     // caller's tools/list from them.
     (req as { visibleTools?: RegisteredTool[] }).visibleTools = visible;
+    // The workspaces whose roles limit this caller's tools (an allow-list,
+    // not `null`): there the knowledge graph names allowed tools only.
+    (req as { roleLimitedOrgIds?: Set<string> }).roleLimitedOrgIds = new Set(
+      [...allowedByOrg].filter(([, allowed]) => allowed !== null).map(([orgId]) => orgId),
+    );
 
     const visibleNames = new Set(visible.map((t) => t.name));
     user.roles = [
@@ -1344,6 +1356,20 @@ export class McpEndpointController {
     return true;
   }
 
+  /**
+   * Whether this server must answer "not found" to this caller: a server of
+   * someone else, in a workspace whose member visibility is restricted, asked
+   * for by a member who is not an admin there. False for the owner (no
+   * lookup), for admins and in open workspaces.
+   */
+  private async hiddenFromRestrictedMember(
+    server: { userId?: string | null; organizationId: string },
+    user: { sub?: string } | undefined,
+  ): Promise<boolean> {
+    if (!user?.sub || server.userId === user.sub) return false;
+    return this.grants.restrictedIn(user.sub, server.organizationId);
+  }
+
   private async handleMcpRequest(
     serverId: string,
     req: Request,
@@ -1466,6 +1492,26 @@ export class McpEndpointController {
               'Access denied: this sign-in or API key belongs to a different workspace than this MCP server. ' +
               'Connect with a key created in the workspace that owns the server, or sign in with an account that is a member of it.',
           },
+          id: null,
+        });
+      }
+
+      // Member visibility: in a restricted workspace a member who is not an
+      // admin is never shown another member's server (its name, its endpoint
+      // path, its connectors). Here its id used to answer the handshake with
+      // the server's name and its own instructions. It now answers exactly as
+      // an id that does not exist; the member reaches shared connectors
+      // through their own server or the workspace connection (/mcp). The
+      // owner is served without a lookup, and a failure to read the mode
+      // reaches the caller as an error instead of the server's content.
+      if (await this.hiddenFromRestrictedMember(mcpServerConfig, user)) {
+        this.logger.warn(
+          `MCP request refused: server ${serverId} belongs to another member and the workspace ` +
+            `restricts member visibility (${this.describePrincipal(user)})`,
+        );
+        return res.status(404).json({
+          jsonrpc: '2.0',
+          error: { code: -32001, message: 'MCP server not found' },
           id: null,
         });
       }
@@ -2431,6 +2477,7 @@ export class McpEndpointController {
     ) {
       const orgId = invocationContext.organizationId;
       const scopeConnectorIds = this.kgScopeConnectorIds(params);
+      const scopeToolNames = this.kgAllowedToolNames(params);
       const scopeServerId = invocationContext.mcpServerId;
       entries.push({
         name: 'kg_how_to_obtain',
@@ -2463,6 +2510,7 @@ export class McpEndpointController {
                 connectorIds: scopeConnectorIds,
                 mcpServerId: scopeServerId,
                 folders: params.folders,
+                allowedToolNames: scopeToolNames,
               });
               // What the workspace remembers about these entities (memory,
               // within the caller's access and folders).
@@ -3087,6 +3135,21 @@ export class McpEndpointController {
   }
 
   /**
+   * The names of the server's tools this caller's roles allow, for the
+   * knowledge graph; null when the roles limit nothing (an admin, or a
+   * workspace without tool whitelists). A connector is in the graph's scope
+   * with a single allowed tool, and its entities name every tool that reaches
+   * them: without this, kg_how_to_obtain and the knowledge-graph resource
+   * named tools beyond the caller's role.
+   */
+  private kgAllowedToolNames(params: ToolSetParams): Set<string> | null {
+    const { serverTools, allowedToolIds } = params;
+    if (allowedToolIds === null || allowedToolIds === undefined) return null;
+    const allowed = new Set(allowedToolIds);
+    return new Set(serverTools.filter((t) => allowed.has(t.id)).map((t) => t.name));
+  }
+
+  /**
    * Registers the caller's instructions and stored resources (see
    * mcp-resources.ts). The plan is built from content already narrowed to the
    * connectors this caller can use, so a resource that is not registered here
@@ -3244,6 +3307,7 @@ export class McpEndpointController {
               mcpServerId: invocationContext.mcpServerId,
               serverName: invocationContext.mcpServerName,
               folders: params.folders,
+              allowedToolNames: this.kgAllowedToolNames(params),
             }),
           },
         ],

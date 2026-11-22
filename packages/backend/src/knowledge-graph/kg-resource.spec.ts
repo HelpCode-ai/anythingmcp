@@ -46,6 +46,22 @@ describe('KgService.describeForResource', () => {
     });
   });
 
+  it('names only the tools the caller may call, and no entity that only denied tools reach', async () => {
+    const { svc, prisma } = make({ nodes: [node('n1', 'c1', 'Customer'), node('n2', 'c1', 'Payroll')] });
+    const text = await svc.describeForResource(ORG, {
+      connectorIds: ['c1'],
+      allowedToolNames: new Set(['c1_get_customer']),
+    });
+
+    expect(text).toContain('`c1_get_customer`');
+    expect(text).not.toContain('c1_list_customers');
+    expect(text).not.toContain('Payroll');
+    expect(text).not.toContain('payroll');
+    expect(text).toContain('## Entities (1)');
+    // Edges are asked for the entities that are left only.
+    expect(prisma.kgEdge.findMany.mock.calls[0][0].where.sourceNodeId).toEqual({ in: ['n1'] });
+  });
+
   it('touches no entity at all for a caller who may use no connector', async () => {
     const { svc, prisma } = make();
     const text = await svc.describeForResource(ORG, { connectorIds: [], mcpServerId: 'srv-1' });

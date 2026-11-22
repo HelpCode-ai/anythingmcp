@@ -64,7 +64,7 @@ describe('McpEndpointController — tenant isolation', () => {
       remove: jest.fn().mockResolvedValue(undefined),
       notifyToolsChanged: jest.fn().mockResolvedValue(undefined),
     };
-    grants = { resolve: jest.fn().mockResolvedValue(null) };
+    grants = { resolve: jest.fn().mockResolvedValue(null), restrictedIn: jest.fn().mockResolvedValue(false) };
     controller = new McpEndpointController(
       mcpServersService,
       toolRegistry,
@@ -457,6 +457,100 @@ describe('McpEndpointController — tenant isolation', () => {
     expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
     expect(res.status).not.toHaveBeenCalledWith(403);
   });
+
+  /**
+   * Member visibility: in a restricted workspace a member who is not an admin
+   * is never shown another member's MCP server in the dashboard. Its id on
+   * the MCP endpoint used to answer the handshake with that server's name and
+   * instructions. It now answers as an id that does not exist.
+   */
+  describe('another member\'s server in a workspace with restricted member visibility', () => {
+    const OWNED = { ...SERVER, userId: 'u-owner' };
+    const member = (extra: Record<string, unknown> = {}) => ({
+      user: { sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt', ...extra },
+      headers: {},
+    });
+    const unknownAnswer = async () => {
+      mcpServersService.findById.mockResolvedValueOnce(null);
+      const res = makeRes();
+      await controller.handlePost('srv-missing', member() as any, res, {});
+      return { status: res.status.mock.calls[0][0], body: res.json.mock.calls[0][0] };
+    };
+
+    beforeEach(() => {
+      mcpServersService.findById.mockResolvedValue(OWNED);
+      grants.restrictedIn = jest.fn().mockResolvedValue(true);
+    });
+
+    it('answers a restricted member exactly as an unknown server id, before reading anything of it', async () => {
+      const unknown = await unknownAnswer();
+      const res = makeRes();
+      await controller.handlePost('srv-A', member() as any, res, {});
+
+      expect(grants.restrictedIn).toHaveBeenCalledWith('u-a', 'org-A');
+      expect(res.status).toHaveBeenCalledWith(unknown.status);
+      expect(res.json).toHaveBeenCalledWith(unknown.body);
+      expect(unknown).toEqual({
+        status: 404,
+        body: { jsonrpc: '2.0', error: { code: -32001, message: 'MCP server not found' }, id: null },
+      });
+      expect(JSON.stringify(res.json.mock.calls)).not.toContain(OWNED.name);
+      expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+      expect(mcpServersService.getVisibleContent).not.toHaveBeenCalled();
+    });
+
+    it('answers a subscriptions/listen probe the same way', async () => {
+      const res = makeRes();
+      await controller.handlePost('srv-A', member() as any, res, { jsonrpc: '2.0', id: 1, method: 'subscriptions/listen' });
+      expect(res.status).toHaveBeenCalledWith(404);
+      expect(JSON.stringify(res.json.mock.calls)).not.toContain(OWNED.name);
+    });
+
+    it('also for an API key of the workspace that is not pinned to a server', async () => {
+      const res = makeRes();
+      await controller.handlePost('srv-A', member({ authMethod: 'mcp_api_key', apiKeyName: 'laptop' }) as any, res, {});
+      expect(res.status).toHaveBeenCalledWith(404);
+    });
+
+    it('serves the owner without asking for the mode', async () => {
+      const res = makeRes();
+      await controller.handlePost('srv-A', member({ sub: 'u-owner' }) as any, res, {});
+      expect(grants.restrictedIn).not.toHaveBeenCalled();
+      expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+      expect(res.status).not.toHaveBeenCalledWith(404);
+    });
+
+    it('serves an admin, and any member of an open workspace', async () => {
+      // restrictedIn is false for an admin of the workspace and in open mode.
+      grants.restrictedIn.mockResolvedValue(false);
+      const res = makeRes();
+      await controller.handlePost('srv-A', member() as any, res, {});
+      expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+      expect(res.status).not.toHaveBeenCalledWith(404);
+    });
+
+    it('keeps today\'s answer for someone who is not a member of the workspace', async () => {
+      const res = makeRes();
+      await controller.handlePost('srv-A', member({ sub: 'u-b', organizationId: 'org-B' }) as any, res, {});
+      expect(res.status).toHaveBeenCalledWith(401);
+      expect(grants.restrictedIn).not.toHaveBeenCalled();
+    });
+
+    it('does not ask for instance-level static credentials, which carry no user', async () => {
+      const res = makeRes();
+      await controller.handlePost('srv-A', { user: { authMethod: 'static_bearer' }, headers: {} } as any, res, {});
+      expect(grants.restrictedIn).not.toHaveBeenCalled();
+      expect(mcpServersService.getConnectorIds).toHaveBeenCalledWith('srv-A');
+    });
+
+    it('fails closed when the mode cannot be read', async () => {
+      grants.restrictedIn.mockRejectedValue(new Error('db down'));
+      const res = makeRes();
+      await controller.handlePost('srv-A', member() as any, res, {}).catch(() => undefined);
+      expect(mcpServersService.getConnectorIds).not.toHaveBeenCalled();
+      expect(mcpServersService.getVisibleContent).not.toHaveBeenCalled();
+    });
+  });
 });
 
 /**
@@ -522,7 +616,7 @@ describe('McpEndpointController — keys created for a server', () => {
         captureIntentEnabled: jest.fn().mockResolvedValue(false),
       } as any,
       sessionManager,
-      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { resolve: jest.fn().mockResolvedValue(null), restrictedIn: jest.fn().mockResolvedValue(false) } as any,
       { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     (controller as any).serveStateless = jest.fn().mockResolvedValue(undefined);
@@ -700,7 +794,7 @@ describe('McpEndpointController — same tool name in several connectors', () =>
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
-      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { resolve: jest.fn().mockResolvedValue(null), restrictedIn: jest.fn().mockResolvedValue(false) } as any,
       { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     const entries = (controller as any).planToolSet({
@@ -801,7 +895,7 @@ describe('McpEndpointController — structuredContent', () => {
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
-      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { resolve: jest.fn().mockResolvedValue(null), restrictedIn: jest.fn().mockResolvedValue(false) } as any,
       { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
 
@@ -874,7 +968,7 @@ describe('McpEndpointController — structuredContent', () => {
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
-      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { resolve: jest.fn().mockResolvedValue(null), restrictedIn: jest.fn().mockResolvedValue(false) } as any,
       { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     const entries = (controller as any).planToolSet({
@@ -995,6 +1089,17 @@ describe('McpEndpointController — knowledge graph scope', () => {
     expect(await lookupScope(controller, kgService, null)).toEqual(['c-crm', 'c-fibu']);
   });
 
+  it('kg_how_to_obtain is told which tool names the role allows, and nothing for an unrestricted caller', async () => {
+    const { controller, kgService } = make();
+    await lookupScope(controller, kgService, ['crm_get_customer']);
+    expect(kgService.lookup.mock.calls.at(-1)[2].allowedToolNames).toEqual(new Set(['crm_get_customer']));
+    await lookupScope(controller, kgService, null);
+    expect(kgService.lookup.mock.calls.at(-1)[2].allowedToolNames).toBeNull();
+    // A role without any tool on this server: an empty set, not "everything".
+    await lookupScope(controller, kgService, []);
+    expect(kgService.lookup.mock.calls.at(-1)[2].allowedToolNames).toEqual(new Set());
+  });
+
   it('publishes the knowledge-graph resource, scoped to the role, built on read', async () => {
     const { controller, kgService } = make();
     const server = fakeServer();
@@ -1010,6 +1115,7 @@ describe('McpEndpointController — knowledge graph scope', () => {
       connectorIds: ['c-crm'],
       mcpServerId: 'srv-1',
       serverName: 'Sales',
+      allowedToolNames: new Set(['crm_get_customer']),
     });
     expect(result.contents[0]).toEqual({
       uri: 'anythingmcp://server/srv-1/knowledge-graph',
@@ -1045,7 +1151,7 @@ describe('McpEndpointController — skills_save_to_workspace', () => {
       { getAllowedToolIds: jest.fn() } as any,
       { lookup: jest.fn(), isEnabled: jest.fn(), captureIntentEnabled: jest.fn() } as any,
       { get: jest.fn(), add: jest.fn(), remove: jest.fn() } as any,
-      { resolve: jest.fn().mockResolvedValue(null) } as any,
+      { resolve: jest.fn().mockResolvedValue(null), restrictedIn: jest.fn().mockResolvedValue(false) } as any,
       { create } as any,
     );
     const entries = (controller as any).planToolSet({
@@ -1341,7 +1447,7 @@ describe('McpEndpointController — resources and instructions follow the tool p
       rolesService,
       kgService,
       sessionManager as any,
-      { resolve: jest.fn() } as any,
+      { resolve: jest.fn(), restrictedIn: jest.fn().mockResolvedValue(false) } as any,
       { create: jest.fn(), hasVisible: jest.fn().mockResolvedValue(false) } as any,
     );
     built = undefined;

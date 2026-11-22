@@ -282,6 +282,18 @@ describe('shared /mcp in fixed mode', () => {
     expect(executor.executeTool).not.toHaveBeenCalled();
   });
 
+  it('asks the knowledge graph for the allowed tools only, on a connector the role reaches in part', async () => {
+    // conn-A1 holds crm_find_customer and crm_list_deals; the role allows the second.
+    const { kg, connect } = build({ allowedByOrg: { 'org-A': ['t-a2'] } });
+    const client = await connect({ sub: 'u-a', organizationId: 'org-A', authMethod: 'jwt' });
+    await call(client, 'kg_how_to_obtain', { query: 'customer_id' });
+    expect(kg.lookup).toHaveBeenCalledWith('org-A', 'customer_id', {
+      connectorIds: ['conn-A1'],
+      folders: null,
+      allowedToolNames: new Set(['crm_list_deals']),
+    });
+  });
+
   it('follows a connection grant into another workspace, with that workspace\'s context', async () => {
     const { executor, kg, connect } = build({
       grant: { mode: 'organization', organizationId: 'org-A' },
@@ -293,7 +305,12 @@ describe('shared /mcp in fixed mode', () => {
 
     const graph = await call(client, 'kg_how_to_obtain', { query: 'customer_id' });
     expect(graph.body).toEqual({ org: 'org-A' });
-    expect(kg.lookup).toHaveBeenCalledWith('org-A', 'customer_id', { connectorIds: ['conn-A1'], folders: null });
+    // No role limits tools there, so the graph is not narrowed by tool name.
+    expect(kg.lookup).toHaveBeenCalledWith('org-A', 'customer_id', {
+      connectorIds: ['conn-A1'],
+      folders: null,
+      allowedToolNames: null,
+    });
 
     const cfg = await call(client, 'anythingmcp_get_configuration_url');
     expect(cfg.body.servers[0].url).toMatch(/\/mcp\/srv-org-A$/);

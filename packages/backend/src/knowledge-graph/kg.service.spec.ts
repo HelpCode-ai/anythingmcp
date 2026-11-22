@@ -182,6 +182,64 @@ describe('KgService — manual curation', () => {
       expect(r.relatedTo.every((e: any) => e.to !== '?')).toBe(true);
       expect(r.entities.map((e: any) => e.entity)).toEqual(['customer']);
     });
+
+    /**
+     * A connector is in scope as soon as the caller's role allows one of its
+     * tools. The graph of that connector still named every tool of it, so
+     * kg_how_to_obtain told a member which tools exist beyond their role.
+     */
+    describe('with the tool names the caller may call', () => {
+      const prismaFor = () => ({
+        kgSkillSuggestion: { findMany: jest.fn().mockResolvedValue([]) },
+        kgNode: {
+          findMany: jest.fn().mockResolvedValue([
+            { id: 'n1', entity: 'customer', label: 'Customer', description: null, fields: [{ name: 'customer_id' }], toolNames: ['crm_get_customer', 'crm_delete_customer'] },
+            { id: 'n2', entity: 'invoice', label: 'Invoice', description: null, fields: [{ name: 'customer_id' }], toolNames: ['crm_list_invoices'] },
+            { id: 'n3', entity: 'payroll', label: 'Payroll', description: null, fields: [{ name: 'customer_id' }], toolNames: ['crm_read_payroll'] },
+            { id: 'n4', entity: 'customer_note', label: 'Customer note', description: 'Curated by hand', fields: [], toolNames: [] },
+          ]),
+        },
+        kgEdge: {
+          findMany: jest.fn().mockResolvedValue([
+            { sourceNodeId: 'n2', targetNodeId: 'n1', kind: 'references', matchKey: 'customer_id', note: null },
+            { sourceNodeId: 'n3', targetNodeId: 'n1', kind: 'references', matchKey: 'customer_id', note: null },
+          ]),
+        },
+      });
+
+      it('names only allowed tools and drops an entity that only denied tools reach', async () => {
+        const r = await make(prismaFor()).lookup(ORG, 'customer_id', {
+          connectorIds: ['c1'],
+          allowedToolNames: new Set(['crm_get_customer', 'crm_list_invoices']),
+        });
+        const text = JSON.stringify(r);
+        expect(text).not.toContain('crm_delete_customer');
+        expect(text).not.toContain('crm_read_payroll');
+        expect(text).not.toContain('Payroll');
+        expect(r.entities.map((e: any) => e.entity).sort()).toEqual(['customer', 'invoice']);
+        expect(r.entities.find((e: any) => e.entity === 'customer')!.tools).toEqual(['crm_get_customer']);
+        expect(r.howToObtain).toEqual([
+          expect.objectContaining({ fromEntity: 'Invoice', toEntity: 'Customer', viaTools: ['crm_list_invoices'] }),
+        ]);
+      });
+
+      it('keeps an entity curated by hand, which no tool names', async () => {
+        const r = await make(prismaFor()).lookup(ORG, 'customer_note', {
+          connectorIds: ['c1'],
+          allowedToolNames: new Set(['crm_get_customer']),
+        });
+        expect(r.entities.map((e: any) => e.entity)).toEqual(['customer_note']);
+      });
+
+      it('narrows nothing for a caller whose roles do not limit tools', async () => {
+        for (const allowedToolNames of [null, undefined]) {
+          const r = await make(prismaFor()).lookup(ORG, 'customer_id', { connectorIds: ['c1'], allowedToolNames });
+          expect(r.entities.map((e: any) => e.entity).sort()).toEqual(['customer', 'invoice', 'payroll']);
+          expect(r.entities.find((e: any) => e.entity === 'customer')!.tools).toEqual(['crm_get_customer', 'crm_delete_customer']);
+          expect(r.howToObtain).toHaveLength(2);
+        }
+      });
+    });
   });
 
   describe('enrich', () => {

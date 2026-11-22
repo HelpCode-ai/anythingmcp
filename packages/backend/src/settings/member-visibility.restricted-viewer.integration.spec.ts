@@ -277,7 +277,14 @@ const ADDRESS = 'erp-db.internal.example.invalid';
       const hidden = await get('VIEWER', `/api/connectors/${ids[c]}`);
       expect(hidden.status).toBe(404);
       expect(hidden.body).toEqual({ statusCode: 404, message: `Connector ${ids[c]} not found`, error: 'Not Found' });
+      // The connection test is owner-or-admin: a hidden connector must not
+      // answer the 403 that says "it exists, but it is not yours".
+      const test = await call('VIEWER', 'POST', `/api/connectors/${ids[c]}/test`);
+      expect(test).toEqual(hidden);
     }
+    // One they can see keeps today's answer: a viewer changes no connector.
+    const visible = await call('VIEWER', 'POST', `/api/connectors/${ids.c1}/test`);
+    expect(visible.status).toBe(403);
   });
 
   it('lists only their own MCP server, holding only the connector they can see', async () => {
