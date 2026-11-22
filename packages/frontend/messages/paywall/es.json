@@ -155,6 +155,8 @@
     "returningNoDate": "Esta dirección de correo ya tuvo una suscripción a AnythingMCP, así que no es posible una nueva prueba gratuita con método de pago. <strong>Tu plan empieza hoy y se cobra hoy.</strong> Tu workspace, tus conectores y tus ajustes se quedan exactamente como están.",
     "trial": "Todas las funciones, gratis hasta el <strong>{date}</strong>. Añade ahora un método de pago y tu plan continúa sin más después de la prueba, sin ningún cargo antes. O sigue probando sin datos de pago: esa prueba tiene un <strong>límite de conectores más bajo</strong>, y puedes añadir un método de pago cuando quieras para desbloquear tu plan completo.",
     "trialNoDate": "Todas las funciones, gratis hasta que termine tu prueba. Añade ahora un método de pago y tu plan continúa sin más después de la prueba, sin ningún cargo antes. O sigue probando sin datos de pago: esa prueba tiene un <strong>límite de conectores más bajo</strong>, y puedes añadir un método de pago cuando quieras para desbloquear tu plan completo.",
+    "trialShort": "Todas las funciones, gratis hasta el <strong>{date}</strong>. No se cobra nada antes.",
+    "trialShortNoDate": "Todas las funciones, gratis hasta que termine tu prueba. No se cobra nada antes.",
     "authorizationReturn": "En cualquier caso, vuelves directamente a terminar de conectar tu cliente de IA.",
     "chargesToday": "Esta dirección ya tuvo una suscripción, así que el checkout cobrará {amount} hoy.",
     "start": {
@@ -173,6 +175,7 @@
     "notReadyCard": "¿Aún no quieres añadir un método de pago?",
     "keepFree": "Seguir con la prueba gratuita",
     "tryFree": "Probar gratis sin datos de pago",
+    "skipNote": "Sin datos de pago, la prueba tiene un límite de conectores más bajo. Puedes añadir un método de pago cuando quieras.",
     "methods": {
       "trial": "0 € hoy · tarjeta, PayPal y otros métodos",
       "pay": "Tarjeta, PayPal y otros métodos"
