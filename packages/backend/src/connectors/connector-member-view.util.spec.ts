@@ -87,9 +87,15 @@ describe('connector member view', () => {
     const owned = { userId: 'me' };
     const others = { userId: 'someone-else' };
     expect(seesMemberView({ restricted: false }, others)).toBe(false);
-    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: ['t1'] }, owned)).toBe(false);
-    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: ['t1'] }, others)).toBe(true);
+    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: ['t1'], ownerAccess: true }, owned)).toBe(false);
+    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: ['t1'], ownerAccess: true }, others)).toBe(true);
     // No tool whitelist: every connector is visible, another member's still reduced.
-    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: null }, others)).toBe(true);
+    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: null, ownerAccess: true }, others)).toBe(true);
+  });
+
+  it('a restricted VIEWER gets the reduced view even of a connector they own', () => {
+    const owned = { userId: 'me' };
+    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: ['t1'], ownerAccess: false }, owned)).toBe(true);
+    expect(seesMemberView({ restricted: true, userId: 'me', allowedToolIds: null, ownerAccess: false }, owned)).toBe(true);
   });
 });

@@ -31,7 +31,7 @@ import { buildFileSearchBuiltinTools } from './file-search-builtins';
 import { clampInterval, nextPlan, SYNC_INTERVALS } from './file-search-quotas';
 import { applySelection, checkQuota, estimate, selectionOf, type CompactListing, type Selection } from './file-search-selection';
 import { CLOUD_PROTOCOLS, FILE_SEARCH_PROTOCOLS, isPausedState, type FileSearchConfig } from './file-search.types';
-import type { VisibilityScope } from '../settings/member-visibility.service';
+import { ownedConnectorWhere, type VisibilityScope } from '../settings/member-visibility.service';
 
 /**
  * The setup wizard and the Files tab (#1385). Orchestration only: tests,
@@ -197,7 +197,7 @@ export class FileSearchService {
   async assertVisible(actor: Actor, id: string, scope: VisibilityScope): Promise<void> {
     if (!scope.restricted) return;
     const c = await this.prisma.connector.findFirst({
-      where: { AND: [{ id, organizationId: actor.organizationId, type: 'FILE_SEARCH' as any }, { userId: scope.userId }] },
+      where: { AND: [{ id, organizationId: actor.organizationId, type: 'FILE_SEARCH' as any }, ownedConnectorWhere(scope)] },
       select: { id: true },
     });
     if (!c) throw new NotFoundException(FILE_SEARCH_CONNECTOR_NOT_FOUND);

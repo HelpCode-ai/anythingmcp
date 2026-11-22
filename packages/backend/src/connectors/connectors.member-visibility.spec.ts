@@ -418,7 +418,16 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
   describe.each(CASES)('$name', ({ allowed, visible: restrictedVisible }) => {
     describe.each(['ADMIN', 'EDITOR', 'VIEWER'])('%s', (role) => {
       const restricted = mode === 'restricted' && role !== 'ADMIN';
-      const visible = restricted ? restrictedVisible : ALL_IN_ORG;
+      // A restricted VIEWER owns 'mine' and 'fsMine' only from an earlier
+      // role: owning shows nothing more than their roles allow (and neither
+      // holds an allowed tool).
+      const ownerSees = !(restricted && role === 'VIEWER');
+      const owned = ownerSees ? OWNED : [];
+      const visible = !restricted
+        ? ALL_IN_ORG
+        : ownerSees || allowed === null
+          ? restrictedVisible
+          : restrictedVisible.filter((id) => !OWNED.includes(id));
       let c: Ctx;
       beforeEach(() => {
         c = build({ mode, allowed });
@@ -440,10 +449,10 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
           expect(shared.tools.map((t: any) => t.id)).toEqual(expected);
         }
         const mine = rows.find((r) => r.id === 'mine');
-        expect(mine.tools.map((t: any) => t.id)).toEqual(['m1', 'm2']);
+        if (mine) expect(mine.tools.map((t: any) => t.id)).toEqual(['m1', 'm2']);
         // The reduced view of a connector the member does not own carries no workspace id.
         const reduced = rows.filter((r) => r.memberView);
-        expect(reduced.map((r) => r.id).sort()).toEqual(restricted ? visible.filter((id) => !OWNED.includes(id)).sort() : []);
+        expect(reduced.map((r) => r.id).sort()).toEqual(restricted ? visible.filter((id) => !owned.includes(id)).sort() : []);
         expect(rows.filter((r) => !r.memberView).every((r) => r.organizationId === ORG)).toBe(true);
       });
 
@@ -465,23 +474,31 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
         // The fixture's test answers "ok"; a member who does not own the
         // connector gets the fixed sentence instead.
         for (const row of out.connectors) {
-          expect(row.message).toBe(restricted && !OWNED.includes(row.id) ? 'Connection successful' : 'ok');
+          expect(row.message).toBe(restricted && !owned.includes(row.id) ? 'Connection successful' : 'ok');
         }
       });
 
       it('GET /api/connectors/export-all exports owned connectors only for a restricted member', async () => {
         const out: any = await c.connectors.exportAll(req(role));
-        const expected = restricted ? ['mine', 'fsMine'] : ALL_IN_ORG;
+        const expected = restricted ? owned : ALL_IN_ORG;
         expect(out.connectors.map((e: any) => e.name).sort()).toEqual([...expected].sort());
       });
 
       it('GET /api/connectors/:id names only MCP servers the caller can see', async () => {
         // The caller's own connector: restricted, only the servers they own
         // hold it as far as they can tell; otherwise every server that does.
-        const own: any = await c.connectors.findOne(req(role), 'mine');
-        expect(own.mcpServers).toEqual(
-          restricted ? [{ mcpServerId: 'srv-mine' }] : [{ mcpServerId: 'srv-mine' }, { mcpServerId: 'srv-team' }],
-        );
+        const ownGot = await outcome(c.connectors.findOne(req(role), 'mine'));
+        if (!visible.includes('mine')) {
+          expect(ownGot.ok).toBe(false);
+        } else if (!ownerSees) {
+          // A viewer's own connector: the reduced view, naming no server.
+          expect((ownGot as any).value.memberView).toBe(true);
+          expect((ownGot as any).value).not.toHaveProperty('mcpServers');
+        } else {
+          expect((ownGot as any).value.mcpServers).toEqual(
+            restricted ? [{ mcpServerId: 'srv-mine' }] : [{ mcpServerId: 'srv-mine' }, { mcpServerId: 'srv-team' }],
+          );
+        }
         const got = await outcome(c.connectors.findOne(req(role), 'shared'));
         if (!visible.includes('shared')) {
           expect(got.ok).toBe(false);
@@ -509,8 +526,12 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
         expect(((got as any).value as any[]).map((t) => t.id).sort()).toEqual(
           restricted && allowed !== null ? ['s1'] : ['s1', 's2'],
         );
-        const own = (await c.tools.list(req(role), 'mine')) as any[];
-        expect(own.map((t) => t.id).sort()).toEqual(['m1', 'm2']);
+        const ownGot = await outcome(c.tools.list(req(role), 'mine'));
+        if (visible.includes('mine')) {
+          expect(((ownGot as any).value as any[]).map((t) => t.id).sort()).toEqual(['m1', 'm2']);
+        } else {
+          expect((ownGot as any).error).toBeInstanceOf(NotFoundException);
+        }
       });
 
       describe.each(Object.keys(BY_ID))('%s', (route) => {
@@ -519,6 +540,11 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
         const ids = idsFor(route);
 
         it('owned connector: allowed (owner-or-admin routes included)', async () => {
+          if (!ownerSees) {
+            // A restricted VIEWER: their own connector is like another
+            // member's (see the two cases below).
+            return expectOthers(ids.owned);
+          }
           const got = await outcome(BY_ID[route](c, role, ids.owned));
           if (role === 'VIEWER' && rule === 'visible-then-owner') {
             // Today's rule, unchanged: viewers cannot modify connectors.
@@ -825,8 +851,10 @@ describe('reduced view of a connector the restricted member does not own', () =>
       });
       expect(byId.fs.status).toBe('unhealthy');
       expect(byId.fs.message).toBe('Connection failed. The connector owner or a workspace admin can see why.');
-      // Their own connector: the real message.
-      expect(byId.mine.message).toBe('connect ECONNREFUSED db.internal.example.invalid:5432');
+      // Their own connector: the real message, for an editor. A viewer's own
+      // connector holds no allowed tool, so it is not checked at all.
+      if (role === 'EDITOR') expect(byId.mine.message).toBe('connect ECONNREFUSED db.internal.example.invalid:5432');
+      else expect(byId.mine).toBeUndefined();
       expectNoLeak([byId.shared, byId.fs]);
     });
 
@@ -835,7 +863,11 @@ describe('reduced view of a connector the restricted member does not own', () =>
       const got = await outcome(c.connectors.getOAuthConfig(req(role), 'shared'));
       expect((got as any).error).toBeInstanceOf(NotFoundException);
       expect((got as any).error.getResponse()).toEqual(await hiddenIdBody(c, 'ConnectorsController.getOAuthConfig', 'shared'));
-      await expect(c.connectors.getOAuthConfig(req(role), 'mine')).resolves.toMatchObject({ grant: 'authorization_code' });
+      if (role === 'EDITOR') {
+        await expect(c.connectors.getOAuthConfig(req(role), 'mine')).resolves.toMatchObject({ grant: 'authorization_code' });
+      } else {
+        await expect(c.connectors.getOAuthConfig(req(role), 'mine')).rejects.toBeInstanceOf(NotFoundException);
+      }
     });
 
     it('per-user sign-in still works on a connector read in the reduced view', async () => {
@@ -850,6 +882,7 @@ describe('reduced view of a connector the restricted member does not own', () =>
     });
 
     it('their own connector comes back in full, exactly as an admin reads it', async () => {
+      if (role === 'VIEWER') return; // see the VIEWER case below
       const member = buildRich({ mode: 'restricted', allowed: ['s1'] });
       const admin = buildRich({ mode: 'restricted', allowed: ['s1'] });
       const text = async (c: Ctx, r: string) =>
@@ -868,6 +901,24 @@ describe('reduced view of a connector the restricted member does not own', () =>
       expect(own).toContain('"baseUrl":"https://api.example.invalid"');
       expect(own).toContain('"endpointMapping"');
       expect(own).not.toContain('memberView');
+    });
+  });
+
+  describe('a VIEWER who owns connectors from an earlier role', () => {
+    it('sees their own connector only through their roles, and then in the reduced view', async () => {
+      const hidden = buildRich({ mode: 'restricted', allowed: ['s1'] });
+      expect(((await hidden.connectors.list(req('VIEWER'), {} as any)) as any[]).map((r) => r.id)).not.toContain('mine');
+      await expect(hidden.connectors.findOne(req('VIEWER'), 'mine')).rejects.toBeInstanceOf(NotFoundException);
+      await expect(hidden.connectors.exportOne(req('VIEWER'), 'mine', 'json', res())).rejects.toBeInstanceOf(NotFoundException);
+      expect(((await hidden.connectors.exportAll(req('VIEWER'))) as any).connectors).toEqual([]);
+
+      const shared = buildRich({ mode: 'restricted', allowed: ['m1'] });
+      const row = ((await shared.connectors.list(req('VIEWER'), {} as any)) as any[]).find((r) => r.id === 'mine');
+      expect(row.memberView).toBe(true);
+      expect(row.tools.map((t: any) => t.id)).toEqual(['m1']);
+      for (const key of Object.keys(row)) expect([...CONNECTOR_KEYS]).toContain(key);
+      expect(row).not.toHaveProperty('baseUrl');
+      await expect(shared.connectors.getOAuthConfig(req('VIEWER'), 'mine')).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 
