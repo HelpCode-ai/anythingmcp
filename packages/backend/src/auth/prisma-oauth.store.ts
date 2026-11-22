@@ -1,7 +1,8 @@
 import { Injectable, Logger } from '@nestjs/common';
 import { createHash } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
-import { ProductEvents } from '../audit/product-event.service';
+import { boundEventMetadata, ProductEvents } from '../audit/product-event.service';
+import { authorizationAttemptContext } from './authorization-attempt';
 import type {
   IOAuthStore,
   OAuthClient,
@@ -113,16 +114,26 @@ export class PrismaOAuthStore implements IOAuthStore {
    */
   private async recordCodeEvent(event: string, userId: string, clientId: string): Promise<void> {
     try {
-      const [user, client] = await Promise.all([
+      // What /callback knows about the attempt (the device, the attempt, the
+      // page arm): only when the code is issued, where a browser is present.
+      const context =
+        event === ProductEvents.AUTHORIZATION_CODE_ISSUED ? authorizationAttemptContext.getStore() : undefined;
+      const [user, client, attempt] = await Promise.all([
         this.prisma.user.findUnique({ where: { id: userId }, select: { id: true, organizationId: true } }),
         this.prisma.oAuthClient.findUnique({ where: { clientId }, select: { clientName: true } }),
+        context ? context.attempt.catch(() => undefined) : undefined,
       ]);
       await this.prisma.productEvent.create({
         data: {
           event,
           userId: user?.id ?? null,
           organizationId: user?.organizationId ?? null,
-          metadata: client?.clientName ? { client: client.clientName.slice(0, 80) } : {},
+          // Through the event store's allow-list, like every other event.
+          metadata:
+            boundEventMetadata({
+              ...(client?.clientName ? { client: client.clientName.slice(0, 80) } : {}),
+              ...(context ? { device: context.device, attempt, connectedArm: context.connectedArm } : {}),
+            }) ?? {},
         },
       });
     } catch (err: any) {

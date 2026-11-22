@@ -681,8 +681,10 @@ describe('LoginController', () => {
       productEvents = { log: jest.fn().mockResolvedValue(undefined) };
       licenseGuard = { getTrialState: jest.fn().mockResolvedValue(null) };
       eligibility = { hadSubscription: jest.fn().mockResolvedValue(false) };
+      // The page test (authorization-attempt.ts) is held on its control arm
+      // here: the tests of the arms set it themselves.
       config.get.mockImplementation((key: string) =>
-        key === 'FRONTEND_URL' ? 'https://cloud.example/' : undefined,
+        key === 'FRONTEND_URL' ? 'https://cloud.example/' : key === 'AUTHORIZE_CONNECTED_PAGE_TEST' ? 'control' : undefined,
       );
       cloud = new LoginController(
         authService as unknown as AuthService,
@@ -714,7 +716,14 @@ describe('LoginController', () => {
       await view('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36');
       const views = productEvents.log.mock.calls.map((c) => c[0]).filter((e) => e.event === 'authorize_page_viewed');
       expect(views).toHaveLength(2);
-      expect(views[0].metadata).toEqual({ client: 'Claude', device: 'mobile', attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/) });
+      expect(views[0].metadata).toEqual({
+        client: 'Claude',
+        device: 'mobile',
+        attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/),
+        connectedArm: 'control',
+        // No Accept-Language header: no language bucket.
+        lang: undefined,
+      });
       expect(views[1].metadata.device).toBe('desktop');
       // The same authorization: the same value, so a reload counts once.
       expect(views[1].metadata.attempt).toBe(views[0].metadata.attempt);
@@ -803,7 +812,7 @@ describe('LoginController', () => {
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'empty_workspace_prompt',
-            metadata: { client: 'Claude', cardTrialOffered: true },
+            metadata: expect.objectContaining({ client: 'Claude', cardTrialOffered: true }),
           }),
         );
       });
@@ -819,9 +828,9 @@ describe('LoginController', () => {
 
         expect(res._sent).toContain('Claude is connected');
         expect(res._sent).not.toContain('start-trial');
-        expect(productEvents.log).toHaveBeenCalledWith(
-          expect.objectContaining({ metadata: { client: 'Claude' } }),
-        );
+        const prompt = productEvents.log.mock.calls.map((c) => c[0]).find((e) => e.event === 'empty_workspace_prompt');
+        expect(prompt.metadata).toEqual(expect.objectContaining({ client: 'Claude' }));
+        expect(prompt.metadata).not.toHaveProperty('cardTrialOffered');
       });
 
       it('is left out for an address that had a subscription: it would pay today', async () => {
@@ -885,7 +894,7 @@ describe('LoginController', () => {
 
       expect(res._redirect).toBe('http://mcp.test/callback');
       expect(res._cookies['login_user'].options.maxAge).toBe(60 * 1000);
-      expect(productEvents.log).not.toHaveBeenCalled();
+      expect(productEvents.log.mock.calls.map((c) => c[0].event)).not.toContain('empty_workspace_prompt');
     });
 
     it('goes straight to /callback when the client connects one server URL', async () => {
@@ -1437,8 +1446,9 @@ describe('LoginController', () => {
             for (const forbidden of ['preventDefault', 'stopPropagation', 'window.open', 'location', 'await', 'return false', 'setTimeout', '.click(', 'href', 'setAttribute']) {
               expect(copy).not.toContain(forbidden);
             }
-            // One click listener on Continue in the whole page, and no window opened anywhere in it.
-            expect(script.match(/cont\.addEventListener\('click'/g)).toHaveLength(1);
+            // Two click listeners on Continue in the whole page (the copy, and the
+            // beacon that reports the click), and no window opened anywhere in it.
+            expect(script.match(/cont\.addEventListener\('click'/g)).toHaveLength(2);
             expect(script).not.toContain('window.open');
           });
         });
@@ -1512,7 +1522,14 @@ describe('LoginController', () => {
           event: 'post_approve_app_picked',
           userId: 'u1',
           organizationId: 'org-1',
-          metadata: { adapterSlug: 'telegram-bot', client: 'Claude', status: 'added' },
+          metadata: {
+            adapterSlug: 'telegram-bot',
+            client: 'Claude',
+            status: 'added',
+            device: 'desktop',
+            attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/),
+            connectedArm: 'control',
+          },
         });
       });
 
@@ -1607,7 +1624,7 @@ describe('LoginController', () => {
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'post_approve_app_picked',
-            metadata: { adapterSlug: 'woocommerce', client: 'Claude', status: 'failed', error: 'Connector limit reached' },
+            metadata: expect.objectContaining({ adapterSlug: 'woocommerce', client: 'Claude', status: 'failed', error: 'Connector limit reached' }),
           }),
         );
       });
