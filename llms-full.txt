@@ -6180,6 +6180,8 @@ Copy it from the server's page (**MCP Servers → your server → MCP endpoint**
 
 There is also a shared endpoint, `https://<your-host>/mcp`. When a client connects to it, the sign-in asks which of your servers (or which workspace) the connection may reach; with a single server, it is picked for you. The Claude Directory listing below uses this shared endpoint.
 
+On AnythingMCP Cloud the shared endpoint follows the Claude Directory policy, so it does not serve everything a workspace has: tools that generate images, video or audio with an AI model (text to speech included), cryptocurrency connectors, and the write tools of payment and banking connectors are left out. This also holds for a connector you built yourself for an image, video or audio generation service. All of them stay available on the server's own URL above. A self-hosted instance serves the same tools on both URLs by default.
+
 ---
 
 ## Option 1: the Claude Directory (AnythingMCP Cloud)
