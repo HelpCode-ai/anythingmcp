@@ -12,7 +12,10 @@ import { OrgSettingsService } from './org-settings.service';
  *   restricted  a member who is not an admin sees only what their AI client
  *               can use: their own calls, the connectors their roles reach,
  *               and the MCP servers they own (never another member's server,
- *               even one holding a connector they may see)
+ *               even one holding a connector they may see). An EDITOR also
+ *               sees the connectors they own in full, to manage them; a
+ *               VIEWER, who can change no connector, does not (see
+ *               `ownsConnector`)
  *
  * Stored in `org_settings` under `member_visibility`. No row, or any value
  * other than `restricted`, reads as `open`, so a workspace that never touched
@@ -34,10 +37,17 @@ const MAX_CACHED_WORKSPACES = 5_000;
  * `allowedToolIds` is what `RolesService.getAllowedToolIds` returns for the
  * caller: `null` when the roles do not narrow anything (the workspace has no
  * tool whitelist), otherwise the ids of every tool the caller may call.
+ *
+ * `ownerAccess` says whether owning a connector shows it (in full) on top of
+ * the roles: true for a member who may change the connectors they own (an
+ * EDITOR), false for a VIEWER. A VIEWER can own connectors only from an
+ * earlier role (an admin or editor made a viewer); they can change none of
+ * them and their AI client can call only what their roles allow, so in
+ * restricted mode they see what their roles allow and nothing more.
  */
 export type VisibilityScope =
   | { restricted: false }
-  | { restricted: true; userId: string; allowedToolIds: string[] | null };
+  | { restricted: true; userId: string; allowedToolIds: string[] | null; ownerAccess: boolean };
 
 /** The fields of `req.user` the decision needs. */
 export interface VisibilityUser {
@@ -48,26 +58,42 @@ export interface VisibilityUser {
 
 const UNRESTRICTED: VisibilityScope = Object.freeze({ restricted: false as const });
 
+/**
+ * Whether the scope sees `connector` as its owner: restricted, a member who
+ * may manage what they own, and the owner. False when not restricted (the
+ * caller then sees everything anyway).
+ */
+export function ownsConnector(scope: VisibilityScope, connector: { userId: string | null }): boolean {
+  return scope.restricted && scope.ownerAccess && connector.userId === scope.userId;
+}
+
+/**
+ * Prisma `where` for connectors the scope sees as their owner (see
+ * `ownsConnector`); matches nothing when owning shows nothing. Combine it
+ * with the `organizationId` filter using AND. Only for restricted scopes.
+ */
+export function ownedConnectorWhere(scope: VisibilityScope): Prisma.ConnectorWhereInput {
+  if (scope.restricted && scope.ownerAccess) return { userId: scope.userId };
+  return { id: { in: [] } };
+}
+
 /** `restricted` only for the exact stored value; anything else is `open`. */
 export function parseMemberVisibilityMode(raw: string | null | undefined): MemberVisibilityMode {
   return raw === 'restricted' ? 'restricted' : 'open';
 }
 
 /**
- * Prisma `where` for connectors the scope may see: owned by the caller, or
- * holding at least one tool the caller may call. `{}` when nothing narrows
- * (not restricted, or no tool whitelist). Always combine it with the
- * `organizationId` filter using AND, never instead of it.
+ * Prisma `where` for connectors the scope may see: owned by the caller (when
+ * owning counts, see `ownsConnector`), or holding at least one tool the caller
+ * may call. `{}` when nothing narrows (not restricted, or no tool whitelist).
+ * Always combine it with the `organizationId` filter using AND, never
+ * instead of it.
  */
 export function connectorWhere(scope: VisibilityScope): Prisma.ConnectorWhereInput {
   if (!scope.restricted || scope.allowedToolIds === null) return {};
-  if (scope.allowedToolIds.length === 0) return { userId: scope.userId };
-  return {
-    OR: [
-      { userId: scope.userId },
-      { tools: { some: { id: { in: scope.allowedToolIds } } } },
-    ],
-  };
+  if (scope.allowedToolIds.length === 0) return ownedConnectorWhere(scope);
+  const byRole: Prisma.ConnectorWhereInput = { tools: { some: { id: { in: scope.allowedToolIds } } } };
+  return scope.ownerAccess ? { OR: [{ userId: scope.userId }, byRole] } : byRole;
 }
 
 /** In-memory twin of `connectorWhere` for one connector loaded with its tool ids. */
@@ -76,14 +102,15 @@ export function canSeeConnector(
   connector: { userId: string; tools: ReadonlyArray<{ id: string }> },
 ): boolean {
   if (!scope.restricted || scope.allowedToolIds === null) return true;
-  if (connector.userId === scope.userId) return true;
+  if (ownsConnector(scope, connector)) return true;
   const allowed = new Set(scope.allowedToolIds);
   return connector.tools.some((tool) => allowed.has(tool.id));
 }
 
 /**
- * The tools of a connector the scope may see: all of them for the owner (and
- * when nothing narrows), otherwise only the allowed ones. Keeps the order.
+ * The tools of a connector the scope may see: all of them for the owner (see
+ * `ownsConnector`) and when nothing narrows, otherwise only the allowed ones.
+ * Keeps the order.
  */
 export function visibleTools<T extends { id: string }>(
   scope: VisibilityScope,
@@ -91,7 +118,7 @@ export function visibleTools<T extends { id: string }>(
   tools: T[],
 ): T[] {
   if (!scope.restricted || scope.allowedToolIds === null) return tools;
-  if (connector.userId === scope.userId) return tools;
+  if (ownsConnector(scope, connector)) return tools;
   const allowed = new Set(scope.allowedToolIds);
   return tools.filter((tool) => allowed.has(tool.id));
 }
@@ -103,7 +130,7 @@ export function visibleTools<T extends { id: string }>(
  */
 export function toolWhere(scope: VisibilityScope, connector: { userId: string }): Prisma.McpToolWhereInput {
   if (!scope.restricted || scope.allowedToolIds === null) return {};
-  if (connector.userId === scope.userId) return {};
+  if (ownsConnector(scope, connector)) return {};
   return { id: { in: scope.allowedToolIds } };
 }
 
@@ -162,7 +189,9 @@ export class MemberVisibilityService {
     }
     if ((await this.mode(user.organizationId)) === 'open') return UNRESTRICTED;
     const allowedToolIds = await this.roles.getAllowedToolIds(user.sub, user.organizationId);
-    return { restricted: true, userId: user.sub, allowedToolIds };
+    // Only an EDITOR manages the connectors they own; a VIEWER (or any
+    // unexpected role) sees what their roles allow, as their AI client does.
+    return { restricted: true, userId: user.sub, allowedToolIds, ownerAccess: user.role === 'EDITOR' };
   }
 
   /** The workspace's mode, from the 30 s cache when fresh. */

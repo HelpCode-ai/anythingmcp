@@ -97,25 +97,29 @@ describe('MemberVisibilityService.scopeFor', () => {
     expect(roles.getAllowedToolIds).not.toHaveBeenCalled();
   });
 
-  it.each(['VIEWER', 'EDITOR'])('restricts a %s in a restricted workspace, with the allowed tool ids', async (role) => {
+  it.each([
+    ['VIEWER', false],
+    ['EDITOR', true],
+  ])('restricts a %s in a restricted workspace, with the allowed tool ids', async (role, ownerAccess) => {
     const { service, roles } = make({ settings: restrictedSetting, allowed: ['t1', 't2'] });
-    await expect(service.scopeFor(member(role))).resolves.toEqual({
+    await expect(service.scopeFor(member(role as string))).resolves.toEqual({
       restricted: true,
       userId: 'u1',
       allowedToolIds: ['t1', 't2'],
+      ownerAccess,
     });
     expect(roles.getAllowedToolIds).toHaveBeenCalledWith('u1', ORG);
   });
 
   it('keeps null allowed tool ids (roles narrow nothing) and [] (no tool) apart', async () => {
     const open = make({ settings: restrictedSetting, allowed: null });
-    await expect(open.service.scopeFor(member())).resolves.toEqual({
+    await expect(open.service.scopeFor(member())).resolves.toMatchObject({
       restricted: true,
       userId: 'u1',
       allowedToolIds: null,
     });
     const none = make({ settings: { ...restrictedSetting }, allowed: [] });
-    await expect(none.service.scopeFor(member())).resolves.toEqual({
+    await expect(none.service.scopeFor(member())).resolves.toMatchObject({
       restricted: true,
       userId: 'u1',
       allowedToolIds: [],
@@ -236,9 +240,13 @@ describe('MemberVisibilityService.setMode', () => {
 
 describe('visibility helpers', () => {
   const open: VisibilityScope = { restricted: false };
-  const noWhitelist: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: null };
-  const someTools: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: ['t1', 't3'] };
-  const noTools: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: [] };
+  // An EDITOR: owning a connector shows it.
+  const noWhitelist: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: null, ownerAccess: true };
+  const someTools: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: ['t1', 't3'], ownerAccess: true };
+  const noTools: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: [], ownerAccess: true };
+  // A VIEWER: owning a connector (from an earlier role) shows nothing more.
+  const viewerSomeTools: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: ['t1', 't3'], ownerAccess: false };
+  const viewerNoTools: VisibilityScope = { restricted: true, userId: 'u1', allowedToolIds: [], ownerAccess: false };
 
   const owned = { userId: 'u1', tools: [{ id: 'x1' }, { id: 'x2' }] };
   const shared = { userId: 'u9', tools: [{ id: 't1' }, { id: 't2' }] };
@@ -259,6 +267,11 @@ describe('visibility helpers', () => {
 
     it('matches only owned connectors when no tool is allowed', () => {
       expect(connectorWhere(noTools)).toEqual({ userId: 'u1' });
+    });
+
+    it('ignores ownership for a VIEWER: allowed tools only, or nothing', () => {
+      expect(connectorWhere(viewerSomeTools)).toEqual({ tools: { some: { id: { in: ['t1', 't3'] } } } });
+      expect(connectorWhere(viewerNoTools)).toEqual({ id: { in: [] } });
     });
   });
 
@@ -282,6 +295,12 @@ describe('visibility helpers', () => {
       expect(canSeeConnector(noTools, shared)).toBe(false);
     });
 
+    it('a VIEWER does not see a connector they own unless a role allows one of its tools', () => {
+      expect(canSeeConnector(viewerSomeTools, owned)).toBe(false);
+      expect(canSeeConnector(viewerSomeTools, shared)).toBe(true);
+      expect(canSeeConnector(viewerNoTools, owned)).toBe(false);
+    });
+
     it('agrees with connectorWhere on the same inputs', () => {
       // A tiny evaluator for the shapes connectorWhere returns.
       const matches = (where: any, c: typeof owned): boolean => {
@@ -289,9 +308,10 @@ describe('visibility helpers', () => {
         if (where.OR) return where.OR.some((w: any) => matches(w, c));
         if (where.userId) return c.userId === where.userId;
         if (where.tools) return c.tools.some((t) => where.tools.some.id.in.includes(t.id));
+        if (where.id) return where.id.in.length > 0;
         throw new Error('unknown shape');
       };
-      for (const scope of [open, noWhitelist, someTools, noTools]) {
+      for (const scope of [open, noWhitelist, someTools, noTools, viewerSomeTools, viewerNoTools]) {
         for (const c of [owned, shared, hidden, empty]) {
           expect(canSeeConnector(scope, c)).toBe(matches(connectorWhere(scope), c));
         }
@@ -310,6 +330,14 @@ describe('visibility helpers', () => {
     it('returns every tool to the owner', () => {
       expect(visibleTools(someTools, { userId: 'u1' }, tools)).toBe(tools);
       expect(visibleTools(noTools, { userId: 'u1' }, tools)).toBe(tools);
+    });
+
+    it('returns only allowed tools to a VIEWER, even of a connector they own', () => {
+      expect(visibleTools(viewerSomeTools, { userId: 'u1' }, tools)).toEqual([
+        { id: 't1', name: 'a' },
+        { id: 't3', name: 'c' },
+      ]);
+      expect(toolWhere(viewerSomeTools, { userId: 'u1' })).toEqual({ id: { in: ['t1', 't3'] } });
     });
 
     it('returns only allowed tools, in order, to anyone else', () => {

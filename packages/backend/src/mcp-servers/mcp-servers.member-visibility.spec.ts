@@ -427,7 +427,14 @@ describe.each(['open', 'restricted'] as const)('%s workspace', (mode) => {
     describe.each(['ADMIN', 'EDITOR', 'VIEWER'])('%s', (role) => {
       const restricted = mode === 'restricted' && role !== 'ADMIN';
       const visible = restricted ? restrictedVisible : IN_ORG;
-      const names = restricted ? restrictedNames : ALL_NAMES;
+      // A restricted VIEWER owns `mine` only from an earlier role: inside
+      // their own server they see it only when a role allows one of its tools
+      // (none of these roles does).
+      const names = !restricted
+        ? ALL_NAMES
+        : role === 'VIEWER' && allowed !== null
+          ? { ...restrictedNames, 'srv-mine': [] }
+          : restrictedNames;
       let c: Ctx;
       beforeEach(() => {
         c = build({ mode, role, allowed });

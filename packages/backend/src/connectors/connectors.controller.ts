@@ -131,6 +131,7 @@ import {
   MemberVisibilityService,
   canSeeConnector,
   connectorWhere,
+  ownedConnectorWhere,
   serverWhere,
   visibleTools,
   type VisibilityScope,
@@ -820,8 +821,9 @@ const MEMBER_HEALTH_MESSAGES: Record<string, string> = {
 /**
  * Member visibility (settings/member-visibility.service.ts) on this
  * controller: in a workspace set to `restricted`, a member who is not an admin
- * reads only the connectors they own or that hold a tool their roles allow.
- * A connector they own they read in full. One they do not own they read in
+ * reads only the connectors that hold a tool their roles allow and, for an
+ * EDITOR, the connectors they own ("owns" below: `ownsConnector`, never a
+ * VIEWER). A connector they own they read in full. Any other they read in
  * the reduced view of connector-member-view.util.ts: its name, type, status
  * and the allowed tools by name and description, never its address, settings
  * or the tools' mappings; routes whose whole answer is settings (the OAuth
@@ -963,8 +965,8 @@ export class ConnectorsController {
       '`missingVariables` are empty) or `needs_authorization` (a sign-in at the provider is pending). ' +
       'Without `limit` all connectors are returned.\n\n' +
       '```bash\namcp api GET "/api/connectors?limit=50"\n```\n\n' +
-      'In a workspace with restricted member visibility, a member who is not an admin gets only the connectors they own ' +
-      'or that hold a tool their roles allow. A connector they do not own comes back in a reduced view, marked ' +
+      'In a workspace with restricted member visibility, a member who is not an admin gets only the connectors that hold ' +
+      'a tool their roles allow and, for an EDITOR, the connectors they own. Any other connector comes back in a reduced view, marked ' +
       '`memberView: true`: `id`, `name`, `type`, `icon`, `isActive`, `credentialScope`, `setupStatus`, `authStatus`, ' +
       '`authStatusCode` and, of the tools their roles allow, `id`, `name`, `description` and `isEnabled`. Its address, ' +
       'variables, headers, instructions and the tools\' parameters and endpoint mappings are left out.',
@@ -1500,7 +1502,7 @@ export class ConnectorsController {
       'shows its password as `********`. A database password kept in ' +
       'authConfig is in no export, so a restored connector needs it typed in again. ' +
       'In a workspace with restricted member visibility, a member who is not ' +
-      'an admin exports only the connectors they own.',
+      'an admin exports only the connectors they own, and a VIEWER none.',
   })
   async exportAll(@Req() req: any) {
     const organizationId = requireOrganizationId(req);
@@ -1513,7 +1515,7 @@ export class ConnectorsController {
       return toExportEnvelope(allConnectors, mayExportSecrets(req));
     }
     const owned = await this.prisma.connector.findMany({
-      where: { organizationId, userId: scope.userId },
+      where: { AND: [{ organizationId }, ownedConnectorWhere(scope)] },
       include: { tools: true },
     });
     return toExportEnvelope(owned, mayExportSecrets(req));
@@ -1531,7 +1533,7 @@ export class ConnectorsController {
       'and a DATABASE connection string shows its password as `********`. A database ' +
       'password kept in authConfig is in no export. ' +
       'The `X-Secrets-Included` response header says which it was. In a workspace with restricted member ' +
-      'visibility, a member who is not an admin gets 404 for a connector they do not own.\n\n' +
+      'visibility, a member who is not an admin gets 404 for a connector they do not own, and a VIEWER for every connector.\n\n' +
       '```bash\ncurl -s "$AMCP_URL/api/connectors/<id>/export?format=yaml" -H "Authorization: Bearer $AMCP_API_KEY" -o acme.yaml\n```',
   })
   @ApiQuery({ name: 'format', required: false, enum: ['json', 'yaml'], description: 'File format (default json).', example: 'yaml' })
@@ -1551,7 +1553,7 @@ export class ConnectorsController {
     // restricted member, one they do not own) is simply not found, so its
     // existence is not revealed either.
     const connector = await this.prisma.connector.findFirst({
-      where: !scope.restricted ? { id, organizationId } : { id, organizationId, userId: scope.userId },
+      where: !scope.restricted ? { id, organizationId } : { AND: [{ id, organizationId }, ownedConnectorWhere(scope)] },
       include: { tools: true },
     });
     if (!connector) {
@@ -1577,8 +1579,8 @@ export class ConnectorsController {
     summary: 'Get connector details',
     description:
       'In a workspace with restricted member visibility, a member who is not an admin gets 404 for a connector they ' +
-      'cannot see. For a connector they own they get all of it, with only the MCP servers they can see. For one they ' +
-      'do not own they get the reduced view of `GET /api/connectors` (`memberView: true`): what it is called, whether ' +
+      'cannot see. For a connector they own as an EDITOR they get all of it, with only the MCP servers they can see. For ' +
+      'any other they get the reduced view of `GET /api/connectors` (`memberView: true`): what it is called, whether ' +
       'it works and the tools their roles allow by name and description, without its address, variables, headers, ' +
       'instructions, MCP servers or the tools\' parameters and endpoint mappings.',
   })

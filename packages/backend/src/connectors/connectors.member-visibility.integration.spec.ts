@@ -214,7 +214,9 @@ const KEY = 'k'.repeat(48);
   const ALL = () => [...order].reverse(); // newest first, as the list returns them
   const visibleFor = (who: string, mode: string, state: string): string[] => {
     if (who === 'ADMIN' || mode === 'open' || state === 'none') return ALL();
-    const own = who === 'EDITOR' ? 'edMine' : 'vwMine';
+    // Only an EDITOR's own connector shows on top of the roles: a VIEWER owns
+    // `vwMine` from an earlier role and sees it only through a role.
+    const own = who === 'EDITOR' ? 'edMine' : null;
     const allowed = state === 'with tools' ? ['shared', 'fs', 'page0', 'page2', 'page4'] : [];
     return ALL().filter((n) => n === own || allowed.includes(n));
   };
@@ -261,7 +263,7 @@ const KEY = 'k'.repeat(48);
         const sharedRow = list.body.find((c: any) => c.id === ids.shared);
         if (sharedRow) expect(sharedRow.tools.map((t: any) => t.name).sort()).toEqual(narrowed ? ['shared_s1'] : ['shared_s1', 'shared_s2']);
         // Reduced exactly for the connectors a restricted member does not own.
-        const own = who === 'EDITOR' ? 'edMine' : who === 'VIEWER' ? 'vwMine' : null;
+        const own = who === 'EDITOR' ? 'edMine' : null;
         const reducedView = (c: string) => restricted && c !== own;
         for (const row of list.body) {
           if (reducedView(name(row.id)!)) expectReduced(row);
@@ -308,7 +310,7 @@ const KEY = 'k'.repeat(48);
         const exportAll = await get(who, '/api/connectors/export-all');
         const exported = exportAll.body.connectors.map((c: any) => c.name);
         expect(exported.sort()).toEqual(
-          restricted ? [who === 'EDITOR' ? 'edMine' : 'vwMine'] : [...order].sort(),
+          restricted ? (who === 'EDITOR' ? ['edMine'] : []) : [...order].sort(),
         );
         const exportShared = await get(who, `/api/connectors/${ids.shared}/export`);
         expect(exportShared.status).toBe(restricted ? 404 : 200);
@@ -341,16 +343,19 @@ const KEY = 'k'.repeat(48);
   it('pages over visible connectors only: limit and offset are applied after the filter', async () => {
     await setMode('restricted');
     await setWhitelist('with tools');
-    const all = (await get('VIEWER', '/api/connectors')).body.map((c: any) => name(c.id));
-    expect(all).toEqual(['page4', 'page2', 'page0', 'fs', 'shared', 'vwMine']);
+    const all = (await get('EDITOR', '/api/connectors')).body.map((c: any) => name(c.id));
+    expect(all).toEqual(['page4', 'page2', 'page0', 'fs', 'shared', 'edMine']);
     const pages: string[] = [];
     for (let offset = 0; offset < all.length; offset += 2) {
-      const page = await get('VIEWER', `/api/connectors?limit=2&offset=${offset}`);
+      const page = await get('EDITOR', `/api/connectors?limit=2&offset=${offset}`);
       expect(page.body).toHaveLength(2);
       pages.push(...page.body.map((c: any) => name(c.id)));
     }
     expect(pages).toEqual(all);
-    expect((await get('VIEWER', '/api/connectors?limit=2&offset=6')).body).toEqual([]);
+    expect((await get('EDITOR', '/api/connectors?limit=2&offset=6')).body).toEqual([]);
+    // A VIEWER: the same list without the editor's connector, and without
+    // the one they own from an earlier role.
+    expect((await get('VIEWER', '/api/connectors')).body.map((c: any) => name(c.id))).toEqual(['page4', 'page2', 'page0', 'fs', 'shared']);
   });
 
   it('fails closed: a role lookup that throws answers 500, never the unrestricted list', async () => {

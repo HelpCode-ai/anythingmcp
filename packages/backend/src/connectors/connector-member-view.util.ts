@@ -1,4 +1,4 @@
-import type { VisibilityScope } from '../settings/member-visibility.service';
+import { ownsConnector, type VisibilityScope } from '../settings/member-visibility.service';
 
 /**
  * The reduced view of a connector for a member of a workspace with restricted
@@ -53,11 +53,13 @@ function pick<K extends string>(source: object, fields: readonly K[]): Partial<R
 
 /**
  * True when the caller gets the reduced view of this connector: their
- * visibility is restricted and they do not own it. Admins, owners and every
- * caller in an open workspace keep the full view.
+ * visibility is restricted and they do not see it as its owner
+ * (`ownsConnector`: an EDITOR who owns it). Admins, such owners and every
+ * caller in an open workspace keep the full view; a VIEWER gets the reduced
+ * view even of a connector they own from an earlier role.
  */
 export function seesMemberView(scope: VisibilityScope, connector: { userId: string }): boolean {
-  return scope.restricted && connector.userId !== scope.userId;
+  return scope.restricted && !ownsConnector(scope, connector);
 }
 
 /** A tool as a restricted member who does not own its connector may see it. */
