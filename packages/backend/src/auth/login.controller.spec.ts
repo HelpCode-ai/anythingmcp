@@ -795,17 +795,20 @@ describe('LoginController', () => {
         ...over,
       });
 
-      it('tells an admin on the free trial when it ends, under Continue, in a new tab', async () => {
+      it('offers an admin on the free trial a payment method under Continue, coming back through /callback', async () => {
         arrange();
         licenseGuard.getTrialState.mockResolvedValue(trial());
         const res = await login();
 
         expect(licenseGuard.getTrialState).toHaveBeenCalledWith('org-1');
         expect(res._sent).toContain('Your free trial runs until October&nbsp;13.');
-        expect(res._sent).toContain('Nothing is charged before October&nbsp;13.');
-        expect(res._sent).toMatch(
-          /<a href="https:\/\/cloud\.example\/start-trial\?source=post_approve" target="_blank" rel="noopener noreferrer">add a payment method now \(new tab\)<\/a>/,
+        expect(res._sent).toContain('nothing is charged before October&nbsp;13.');
+        // Same tab: the card-trial page sends every way out back to /callback,
+        // which finishes this authorization.
+        expect(res._sent).toContain(
+          '<a class="button secondary-link" id="card-trial-link" href="https://cloud.example/start-trial?source=post_approve&amp;return=%2Fcallback">Add a payment method (optional)</a>',
         );
+        expect(res._sent).not.toMatch(/id="card-trial-link"[^>]*target=/);
         // Continue stays the first and only button.
         const html = res._sent ?? '';
         expect(html.indexOf('Continue to Claude')).toBeLessThan(html.indexOf('start-trial'));

@@ -448,13 +448,26 @@ export function formatTrialEnd(
  * all end on the same consent page.
  *
  * localStorage, not sessionStorage: Stripe can open in another tab on some
- * mobile browsers. Only the backend's own /auth/ pages qualify.
+ * mobile browsers. Only the backend's own /auth/ pages and /callback qualify.
+ *
+ * Since 22 Nov 2026 the offer is also reachable after approving, from the
+ * "One more step" page (`/start-trial?return=/callback`): never before
+ * Approve again (#842 halved the connections, #843).
  */
 const AUTH_RETURN_KEY = 'amcp_card_trial_return';
 export const AUTH_RETURN_TTL_MS = 30 * 60 * 1000;
 
 export function isAuthorizationPath(path: string | null | undefined): path is string {
-  return typeof path === 'string' && path.startsWith('/auth/') && safeRedirect(path, '') === path;
+  if (typeof path !== 'string' || safeRedirect(path, '') !== path) return false;
+  // `/callback` finishes an authorization that was approved and paused on the
+  // backend's "One more step" page (its sign-in cookie lasts as long as the
+  // authorization): coming back there connects the client at once.
+  return path.startsWith('/auth/') || path === '/callback';
+}
+
+/** A backend page (not a Next route): needs a full navigation. */
+export function isBackendAuthorizationPath(path: string): boolean {
+  return path.startsWith('/auth/') || path === '/callback';
 }
 
 export function saveAuthorizationReturn(path: string, now: number = Date.now()): void {

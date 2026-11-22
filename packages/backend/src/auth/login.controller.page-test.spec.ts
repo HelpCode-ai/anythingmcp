@@ -364,7 +364,11 @@ describe('the page shown to an empty workspace, as a split test', () => {
     expect(html).toContain('<h1>One more step: go back to Claude</h1>');
     expect(html).toContain('<title>One more step: go back to Claude</title>');
     expect(html).not.toContain('Claude is connected</h1>');
-    expect(html).toContain('Claude is connected once you press <strong>Continue to Claude</strong> below.');
+    expect(html).toContain('Claude is connected once you press <strong>Continue to Claude</strong>.');
+    // On a phone Continue follows that sentence; the example request comes after it.
+    expect(html).toContain('<div class="flow next">');
+    expect(html).toContain('.flow.next > #continue { order: 2; }');
+    expect(html).toContain('id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>');
     // The same link, the same picker, and nothing else that looks like the way on.
     expect(html).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
     expect(html.match(/class="button"/g)).toHaveLength(1);
@@ -584,5 +588,34 @@ describe('the page shown to an empty workspace, as a split test', () => {
       expect(script.match(/location\.assign\(/g)).toHaveLength(1);
       expect(script).toContain("var target = cont.getAttribute('href');");
     });
+  });
+});
+
+describe('the sign-in page on a phone', () => {
+  const signInPage = async () => {
+    const { controller } = build({ setting: 'next_step' });
+    const res = makeRes();
+    await controller.showLoginPage(undefined as any, undefined as any, req({ headers: { host: 'mcp.test', 'user-agent': IPHONE } }), res);
+    return res._sent as string;
+  };
+
+  it('keeps the destination warning right above the buttons, and moves the consent box under them', async () => {
+    const html = await signInPage();
+    expect(html).toContain('<div class="flow login">');
+    // The short form of the warning comes before the form, the full box before it too (desktop order).
+    const compact = html.indexOf('class="returns-compact"');
+    expect(compact).toBeGreaterThan(-1);
+    expect(compact).toBeLessThan(html.indexOf('<form method="POST" action="/auth/login">'));
+    expect(html).toContain('is sent to <span class="host">claude.ai</span>. Only continue if you started this and recognise this destination. If you did not, choose <strong>Cancel</strong>.</p>');
+    // Phone layout: the form first, the consent box and the badge after it.
+    expect(html).toContain('.flow.login > form { order: 1; }');
+    expect(html).toContain('.flow.login > .consent { order: 3; margin: 18px 0 0; }');
+    expect(html).toContain('.flow.login > .returns-compact { display: block; }');
+  });
+
+  it('does not focus the email field when provider buttons are above it', async () => {
+    const html = await signInPage();
+    expect(html).toContain('value="social:google"');
+    expect(html).not.toMatch(/id="email"[^>]*autofocus/);
   });
 });

@@ -1540,8 +1540,8 @@ export class LoginController {
       });
     }
 
-    // An admin on the free trial is told when it ends and that a card keeps
-    // the workspace running, as a small line under "Continue". Never before
+    // An admin on the free trial is offered a payment method, as a secondary
+    // button under "Continue" that comes back through /callback. Never before
     // Approve: a payment step there halved the connections (#842, #843).
     const trial =
       member?.role === 'ADMIN'
@@ -1584,7 +1584,7 @@ export class LoginController {
         welcomeUrl: dashboardLink('/welcome'),
         ...(pickerCsrf ? { pickerCsrf } : {}),
         ...(telegramOneTap ? { telegramOneTap } : {}),
-        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}`) } } : {}),
+        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}&return=%2Fcallback`) } } : {}),
       }),
     );
     return true;
@@ -1695,13 +1695,20 @@ export class LoginController {
     // A base-36 number (attemptKey); checked again here because it is written into the script.
     const attempt = params.attempt && /^[0-9a-z]{6,12}$/.test(params.attempt) ? params.attempt : '';
     const heading = nextStep ? `One more step: go back to ${client}` : `${client} is connected`;
+    // On the next_step page the sentence about Continue stands alone, so on a
+    // phone the button can follow it directly (see the order in the styles);
+    // the example request comes after the button there.
     const sub = nextStep
-      ? `You are signed in. ${client} is connected once you press <strong>Continue to ${client}</strong> below. Your workspace has no apps yet: you can add them right in the chat. For example, ask:`
+      ? `You are signed in. ${client} is connected once you press <strong>Continue to ${client}</strong>.`
       : `Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:`;
+    const sub2 = nextStep
+      ? `<p class="sub sub2" id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>`
+      : '';
     const card = `
+    <div class="flow${nextStep ? ' next' : ''}">
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1>${heading}</h1>
-    <p class="sub" id="first-sub">${sub}</p>
+    <p class="sub" id="first-sub">${sub}</p>${sub2}
     <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
     <p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>
     <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}${
@@ -1710,13 +1717,21 @@ export class LoginController {
     <p class="auto" id="auto-continue" role="status" aria-live="polite" hidden><span id="auto-continue-text"></span> <button type="button" class="stay" id="auto-continue-stay">Stay on this page</button></p>`
         : ''
     }
-    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}" data-client="${client}">Continue to ${client}</a>
-    <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
+    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}" data-client="${client}">Continue to ${client}</a>${
+      // Optional, under Continue and never in its place. Same tab: every way
+      // out of the card-trial page (checkout done, cancelled, skipped) comes
+      // back through /callback, which finishes this authorization (the
+      // sign-in cookie lasts as long as it). Never before Approve (#842/#843).
       params.cardTrial
         ? `
-    <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a payment method now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
+    <div class="trial" id="card-trial">
+      <a class="button secondary-link" id="card-trial-link" href="${this.escapeHtml(params.cardTrial.url)}">Add a payment method (optional)</a>
+      <p>Your free trial runs until ${trialEnd}. With a payment method your plan carries on after it; nothing is charged before ${trialEnd}. Either way you come straight back to ${client}.</p>
+    </div>`
         : ''
     }
+    <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>
+    </div>
     <script>
     // Copy the example request, to paste into the chat after "Continue":
     // easier than retyping it. The quotes are left out of the copy.
@@ -1842,8 +1857,29 @@ export class LoginController {
              font: inherit; font-size: 14px; background: #fff; color: var(--text); margin: 0 0 8px; }
   .quick-status { font-size: 13px; color: var(--text-2); margin: 0 0 8px; line-height: 1.45; }
   .quick-status:empty { margin: 0; }
-  .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
-  .trial a { color: var(--brand); }
+  .trial { font-size: 13px; color: var(--text-2); margin: 12px 0 0; line-height: 1.5; }
+  .trial p { margin: 8px 0 0; text-align: center; }
+  .trial a.secondary-link { background: #fff; color: var(--text); border: 1px solid var(--border-strong); }
+  .trial a.secondary-link:hover { border-color: var(--brand); color: var(--brand); }
+  .sub2 { margin-top: -8px; }
+  /* On a phone the way on comes first: heading, one sentence, Continue (and
+     the optional payment method); the example request, the picker and the
+     rest follow. Claude's in-app browser leaves about 640 px of height. */
+  @media (max-width: 480px) {
+    .flow.next { display: flex; flex-direction: column; }
+    .flow.next > .pair { margin-bottom: 14px; }
+    .flow.next > #first-sub { margin-bottom: 14px; }
+    .flow.next > .auto { order: 1; }
+    .flow.next > #continue { order: 2; }
+    .flow.next > #card-trial { order: 3; }
+    .flow.next > .sub2 { order: 4; margin: 20px 0 10px; }
+    .flow.next > .example { order: 5; }
+    .flow.next > .copied { order: 6; }
+    .flow.next > .body { order: 7; }
+    .flow.next > .quick { order: 8; }
+    .flow.next > .links { order: 9; }
+  }
+
   .auto { font-size: 13.5px; font-weight: 500; color: var(--text); line-height: 1.45; margin: 0 0 12px; }
   .auto[hidden] { display: none; }
   .auto button.stay { width: auto; min-height: 28px; padding: 0 10px; margin-left: 4px; font-size: 12.5px; font-weight: 500;
@@ -2805,7 +2841,7 @@ export class LoginController {
         You come straight back here to finish connecting${consent ? ` ${client}` : ''}.</p>
       <a class="signup-btn" href="${signupHref}">Create an account</a>
     </div>
-    <div class="divider"><span>Already have an account? Sign in</span></div>`
+    <div class="divider signup-divider"><span>Already have an account? Sign in</span></div>`
         : '';
     const preAuthLinks = sessionUser
       ? ''
@@ -2831,26 +2867,62 @@ export class LoginController {
       : `
       ${socialHtml}${ssoHtml}
       <label for="email">Email</label>
-      <input type="email" id="email" name="email" required autofocus autocomplete="email" placeholder="you@company.com">
+      <input type="email" id="email" name="email" required${
+        // With provider buttons above it, focusing the field scrolled a phone
+        // past the heading and the buttons on load.
+        socialProviders.length ? '' : ' autofocus'
+      } autocomplete="email" placeholder="you@company.com">
       <label for="password">Password</label>
       <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Your password">
       ${buttons(`<button type="submit" name="action" value="approve">${submitLabel}</button>`)}
       ${preAuthLinks}`;
 
+    // On a phone the consent box moves under the buttons, and this short
+    // form of its last part (where access goes, and to cancel otherwise)
+    // stays right above them: the destination warning is never below the
+    // button it is about.
+    const returnsCompact = consent
+      ? `
+    <p class="returns-compact${known ? '' : ' unknown'}">${sessionUser ? 'If you allow it, access' : 'After you sign in, access'} is sent to <span class="host">${this.escapeHtml(consent.redirectHost)}</span>. Only continue if you started this and recognise this destination. If you did not, choose <strong>Cancel</strong>.</p>`
+      : '';
+
     const card = `
+    <div class="flow login">
     ${top}
     <h1>${heading}</h1>
     <p class="sub">${sub}</p>${directoryPill}${signupHtml}
     ${errorHtml}
-    ${consentHtml}
+    ${consentHtml}${returnsCompact}
     <form method="POST" action="/auth/login">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">${formHtml}
-    </form>`;
+    </form>
+    </div>`;
 
     return renderAuthPage({
       title: `${sessionUser ? 'Authorize' : 'Sign In'} — ${serverName}`,
       card,
       trust: this.trust(),
+      // On a phone (Claude's in-app browser leaves about 640 px) the buttons
+      // come right after the heading: "Allow access", or the provider
+      // buttons. The consent box, the sign-up box and the directory badge
+      // follow the form.
+      extraStyles: `
+  .returns-compact { display: none; font-size: 12.5px; color: var(--text-2); line-height: 1.45; margin: 0 0 12px; text-align: center; }
+  .returns-compact .host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; color: var(--text); }
+  .returns-compact.unknown { color: #92400e; }
+  .returns-compact.unknown .host { color: #b45309; }
+  @media (max-width: 480px) {
+    .flow.login { display: flex; flex-direction: column; }
+    .flow.login > .pair { margin-bottom: 12px; }
+    .flow.login > .sub { margin-bottom: 12px; }
+    .flow.login > .returns-compact { display: block; }
+    .flow.login > form { order: 1; }
+    .flow.login > .signup-divider { display: none; }
+    .flow.login > .signup { order: 2; margin-top: 18px; }
+    .flow.login > .consent { order: 3; margin: 18px 0 0; }
+    .flow.login > .consent .returns { display: none; }
+    .flow.login > .verified { order: 4; margin: 16px auto 0; }
+  }`,
     });
   }
 
