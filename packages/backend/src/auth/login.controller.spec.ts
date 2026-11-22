@@ -153,7 +153,8 @@ describe('LoginController', () => {
       expect(csrf).toBeDefined();
       expect(csrf.options.signed).toBe(true);
       expect(csrf.options.httpOnly).toBe(true);
-      expect(res._sent).toContain(`name="csrf" value="${csrf.value}"`);
+      // The form holds the token; the cookie also names the pending authorization it belongs to.
+      expect(res._sent).toContain(`name="csrf" value="${csrf.value.split('.')[0]}"`);
     });
 
     it('renders the provider mark unescaped and the provider name escaped', async () => {
