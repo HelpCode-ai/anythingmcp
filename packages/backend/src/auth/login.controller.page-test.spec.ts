@@ -367,7 +367,8 @@ describe('the page shown to an empty workspace, as a split test', () => {
     expect(html).toContain('Claude is connected once you press <strong>Continue to Claude</strong>.');
     // On a phone Continue follows that sentence; the example request comes after it.
     expect(html).toContain('<div class="flow next">');
-    expect(html).toContain('.flow.next > #continue { order: 2; }');
+    expect(html).toContain('.flow.next > .quick { order: 1; margin-bottom: 12px; }');
+    expect(html).toContain('.flow.next > #continue { order: 3; }');
     expect(html).toContain('id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>');
     // The same link, the same picker, and nothing else that looks like the way on.
     expect(html).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');

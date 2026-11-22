@@ -1862,21 +1862,23 @@ export class LoginController {
   .trial a.secondary-link { background: #fff; color: var(--text); border: 1px solid var(--border-strong); }
   .trial a.secondary-link:hover { border-color: var(--brand); color: var(--brand); }
   .sub2 { margin-top: -8px; }
-  /* On a phone the way on comes first: heading, one sentence, Continue (and
-     the optional payment method); the example request, the picker and the
-     rest follow. Claude's in-app browser leaves about 640 px of height. */
+  /* On a phone the first screen holds what matters: heading, one sentence,
+     the app picker, Continue (and the optional payment method). The example
+     request and the rest follow. Claude's in-app browser leaves about 640 px
+     of height; with the picker shown Continue still ends above 500 px. */
   @media (max-width: 480px) {
     .flow.next { display: flex; flex-direction: column; }
-    .flow.next > .pair { margin-bottom: 14px; }
-    .flow.next > #first-sub { margin-bottom: 14px; }
-    .flow.next > .auto { order: 1; }
-    .flow.next > #continue { order: 2; }
-    .flow.next > #card-trial { order: 3; }
-    .flow.next > .sub2 { order: 4; margin: 20px 0 10px; }
-    .flow.next > .example { order: 5; }
-    .flow.next > .copied { order: 6; }
-    .flow.next > .body { order: 7; }
-    .flow.next > .quick { order: 8; }
+    .flow.next > .pair { margin-bottom: 12px; }
+    .flow.next > .pair .tile { width: 40px; height: 40px; border-radius: 10px; }
+    .flow.next > #first-sub { margin-bottom: 12px; }
+    .flow.next > .quick { order: 1; margin-bottom: 12px; }
+    .flow.next > .auto { order: 2; }
+    .flow.next > #continue { order: 3; }
+    .flow.next > #card-trial { order: 4; }
+    .flow.next > .sub2 { order: 5; margin: 20px 0 10px; }
+    .flow.next > .example { order: 6; }
+    .flow.next > .copied { order: 7; }
+    .flow.next > .body { order: 8; }
     .flow.next > .links { order: 9; }
   }
 
