@@ -1176,7 +1176,8 @@ describe('LoginController', () => {
         expect(page).toContain('role="status" aria-live="polite"');
         // Optional: Continue is still the one button, straight to the callback.
         expect(page.match(/class="button"/g)).toHaveLength(1);
-        expect(page).toContain('href="http://mcp.test/callback" data-open-chat="https://claude.ai/new"');
+        expect(page).toContain('href="http://mcp.test/callback" data-client="Claude"');
+        expect(page).not.toContain('data-open-chat');
         expect(page.indexOf('id="quick-apps"')).toBeLessThan(page.indexOf('Continue to Claude'));
       });
 
@@ -1237,11 +1238,8 @@ describe('LoginController', () => {
             'quick-status': el(),
             'other-app': el(),
             // Continue and the "Copied" line as the page really has them.
-            continue: el({
-              'data-client': 'Claude',
-              ...(/id="continue"[^>]*data-open-chat=/.test(page) ? { 'data-open-chat': 'https://claude.ai/new' } : {}),
-            }),
-            'request-copied': el(/id="request-copied"[^>]*data-phone="1"/.test(page) ? { 'data-phone': '1' } : {}),
+            continue: el({ 'data-client': 'Claude' }),
+            'request-copied': el(),
           };
           nodes['request-copied'].hidden = /id="request-copied"[^>]*\shidden/.test(page);
           const fetch = jest.fn(async () => ({ json: async () => fetchAnswer() }));
@@ -1292,7 +1290,7 @@ describe('LoginController', () => {
           expect(chips.every((c) => c.attrs['aria-disabled'] === 'false' && !c.disabled)).toBe(true);
         });
 
-        it('turns another app into the request, and opens Claude with it on Continue', async () => {
+        it('turns another app into the request, and opens nothing on Continue', async () => {
           const { nodes, open } = await run(async () => ({}));
           nodes['other-app'].value = '  HubSpot   CRM ';
           nodes['other-app'].listeners.input({});
@@ -1301,24 +1299,22 @@ describe('LoginController', () => {
           nodes['other-app'].listeners.input({});
           expect(nodes['example-request'].textContent).toBe('Connect my Telegram bot to AnythingMCP.');
 
-          nodes.continue.listeners.click({});
-          expect(open).toHaveBeenCalledWith(
-            'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP.',
-            '_blank',
-            'noopener',
-          );
+          // No clipboard in this browser: Continue is the plain link, with no listener at all.
+          expect(nodes.continue.listeners.click).toBeUndefined();
+          expect(open).not.toHaveBeenCalled();
         });
 
-        it('opens no second tab on a touch device, whatever its user agent says', async () => {
+        it('opens no second tab on a touch device either, whatever its user agent says', async () => {
           const { nodes, open } = await run(async () => ({}), true);
           expect(nodes.continue.listeners.click).toBeUndefined();
           expect(open).not.toHaveBeenCalled();
         });
 
-        // A phone gets no chat tab, so the tap on Continue copies the request
-        // instead. Continue is where 60% of phone users were lost for two
-        // weeks: the copy must not be able to change what the tap does.
-        describe('on a phone, Continue also copies the request', () => {
+        // Continue opens no chat tab on any device, so the click copies the
+        // request instead. Continue is where 60% of phone users were lost for
+        // two weeks, and a fifth of the desktop ones later: the copy must not
+        // be able to change what the click does.
+        describe('Continue also copies the request', () => {
           const IPHONE =
             'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
           const MAC =
@@ -1342,14 +1338,15 @@ describe('LoginController', () => {
             arrange();
             const phone = (await showPage(picking, IPHONE))._sent as string;
             const desktop = (await showPage(picking, MAC))._sent as string;
-            expect(phone).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" data-phone="1" hidden></p>');
-            expect(desktop).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>');
             for (const page of [phone, desktop]) {
+              expect(page).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>');
               expect(page.indexOf('id="example-request"')).toBeLessThan(page.indexOf('id="request-copied"'));
               expect(page.indexOf('id="request-copied"')).toBeLessThan(page.indexOf('id="continue"'));
             }
-            // Continue itself is the same link as before on a phone: no new attribute.
-            expect(phone).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
+            // Continue itself is the same plain link on both: no attribute for a chat tab.
+            for (const page of [phone, desktop]) {
+              expect(page).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
+            }
           });
 
           it('copies inside the tap and says so, without preventing the default action or opening a window', async () => {
@@ -1406,7 +1403,7 @@ describe('LoginController', () => {
             }
           });
 
-          it('copies on a touch device that asked for the desktop site, where no chat tab opens either', async () => {
+          it('copies on a touch device that asked for the desktop site', async () => {
             const writeText = jest.fn().mockResolvedValue(undefined);
             const { nodes, open } = await run(async () => ({}), true, { userAgent: MAC, navigator: { clipboard: { writeText } } });
             expect(Object.keys(nodes.continue.listeners)).toEqual(['click']);
@@ -1417,56 +1414,55 @@ describe('LoginController', () => {
             expect(nodes['request-copied'].hidden).toBe(false);
           });
 
-          it('leaves a desktop exactly as it was: the chat tab opens, and nothing is copied', async () => {
+          it('copies on a desktop too, and opens no chat tab there', async () => {
             const writeText = jest.fn().mockResolvedValue(undefined);
             const { nodes, open } = await run(async () => ({}), false, { userAgent: MAC, navigator: { clipboard: { writeText } } });
+            expect(Object.keys(nodes.continue.listeners)).toEqual(['click']);
             const event = tap();
             nodes.continue.listeners.click(event);
             await flush();
-            expect(open).toHaveBeenCalledTimes(1);
-            expect(open).toHaveBeenCalledWith('https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP.', '_blank', 'noopener');
-            expect(writeText).not.toHaveBeenCalled();
-            expect(nodes['request-copied'].hidden).toBe(true);
+            expect(writeText).toHaveBeenCalledTimes(1);
+            expect(writeText).toHaveBeenCalledWith('Connect my Telegram bot to AnythingMCP.');
+            expect(nodes['request-copied'].hidden).toBe(false);
+            expect(open).not.toHaveBeenCalled();
             untouched(event);
+            expect(nodes.continue.attrs).toEqual({ 'data-client': 'Claude' });
           });
 
           it('is written so that it cannot stop, delay or redirect the tap', async () => {
             const { page } = await run(async () => ({}), true, { userAgent: IPHONE });
             const script = page.slice(page.indexOf('<script>') + 8, page.indexOf('</script>'));
-            const copy = script.slice(script.indexOf('// A phone gets no chat tab'));
+            const copy = script.slice(script.indexOf('// Continue goes back through the authorization and opens nothing else'));
             expect(copy).toContain("cont.addEventListener('click'");
             for (const forbidden of ['preventDefault', 'stopPropagation', 'window.open', 'location', 'await', 'return false', 'setTimeout', '.click(', 'href', 'setAttribute']) {
               expect(copy).not.toContain(forbidden);
             }
-            // One click listener on Continue in the whole page per device: this one, or the desktop's chat tab.
-            expect(script.match(/cont\.addEventListener\('click'/g)).toHaveLength(2);
+            // One click listener on Continue in the whole page, and no window opened anywhere in it.
+            expect(script.match(/cont\.addEventListener\('click'/g)).toHaveLength(1);
+            expect(script).not.toContain('window.open');
           });
         });
       });
 
-      // A second tab on a phone takes over and the authorization in the first
-      // one is never finished (about 200 codes a day were left unexchanged).
+      // A second tab takes over and the authorization in the first one is never
+      // finished: about 200 codes a day were left unexchanged on phones in early
+      // November 2026, and a fifth of the desktop codes from 19 November.
       it.each([
         ['iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'],
         ['Android', 'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36'],
         ['iPad', 'Mozilla/5.0 (iPad; CPU OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'],
+        ['a Mac', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'],
+        ['Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0'],
       ])('goes straight back to Claude on %s, without a chat tab', async (_device, userAgent) => {
         arrange();
         const page = (await showPage(picking, userAgent))._sent as string;
-        expect(page).toContain('Continue to Claude');
-        expect(page).toContain('href="http://mcp.test/callback"');
-        expect(page).not.toContain('data-open-chat="');
+        expect(page).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
+        expect(page).not.toContain('data-open-chat');
+        expect(page).not.toContain('window.open');
+        expect(page).not.toContain('claude.ai/new');
       });
 
-      it('keeps the chat tab on a desktop browser', async () => {
-        arrange();
-        const page = (
-          await showPage(picking, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36')
-        )._sent as string;
-        expect(page).toContain('href="http://mcp.test/callback" data-open-chat="https://claude.ai/new"');
-      });
-
-      it('opens a new chat only for a code sent to claude.ai', async () => {
+      it('opens no chat for another client either', async () => {
         arrange();
         store.getOAuthSession.mockResolvedValue({
           sessionId: 's1',
@@ -1478,7 +1474,8 @@ describe('LoginController', () => {
         store.getClient.mockResolvedValue({ client_id: 'client-abc', client_name: 'ChatGPT' } as any);
         const page = (await showPage())._sent as string;
         expect(page).toContain('Continue to ChatGPT');
-        expect(page).not.toContain('data-open-chat="');
+        expect(page).not.toContain('data-open-chat');
+        expect(page).not.toContain('window.open');
       });
 
       it('is left out, with its cookie, when this instance cannot add connectors', async () => {
@@ -1791,7 +1788,7 @@ describe('LoginController', () => {
             expect(page.indexOf('id="tg-setup"')).toBeLessThan(page.indexOf('Continue to Claude'));
             expect(page.match(/class="button"/g)).toHaveLength(1);
             expect(page).toContain(
-              '<a class="button" id="continue" href="http://mcp.test/callback" data-open-chat="https://claude.ai/new" data-client="Claude">Continue to Claude</a>',
+              '<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>',
             );
           });
 
@@ -1813,7 +1810,7 @@ describe('LoginController', () => {
               expect(page).not.toContain('id="tg-link-web"');
               expect(page).not.toContain('<figure');
               expect(page).not.toContain('Scan with your phone');
-              // Continue as it is on a phone: straight to the callback, no chat tab.
+              // Continue as on every device: straight to the callback, no chat tab.
               expect(page).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
             }
           });
@@ -2180,7 +2177,6 @@ describe('LoginController', () => {
             const picker = node({ 'data-csrf': /data-csrf="([^"]+)"/.exec(page)![1] });
             picker.hidden = true;
             picker.querySelectorAll = () => chips;
-            const cont = /<a class="button" id="continue"([^>]*)>/.exec(page)![1];
             const nodes: Record<string, Node> = {
               'copy-request': node(),
               'example-request': node({}, 'Connect my Telegram bot to AnythingMCP.'),
@@ -2189,10 +2185,7 @@ describe('LoginController', () => {
               'quick-apps': picker,
               'quick-status': node(),
               'other-app': node(),
-              continue: node({
-                'data-client': 'Claude',
-                ...(cont.includes('data-open-chat') ? { 'data-open-chat': 'https://claude.ai/new' } : {}),
-              }),
+              continue: node({ 'data-client': 'Claude' }),
             };
             // Every element of the panel the page really has, hidden where its markup says so.
             for (const m of page.matchAll(/<[a-z]+[^>]*\bid="(tg-[a-z-]+)"([^>]*)>/g)) {
@@ -2420,7 +2413,7 @@ describe('LoginController', () => {
             expect((t.nodes.continue as any).click).not.toHaveBeenCalled();
             expect(t.open).not.toHaveBeenCalled();
             expect(t.nodes.continue.listeners.click).toBe(before);
-            expect(t.nodes.continue.attrs).toEqual({ 'data-client': 'Claude', 'data-open-chat': 'https://claude.ai/new' });
+            expect(t.nodes.continue.attrs).toEqual({ 'data-client': 'Claude' });
           });
 
           it('still shows the bot as connected in a browser that cannot scroll that way', async () => {
@@ -2711,7 +2704,7 @@ describe('LoginController', () => {
             });
           });
 
-          it('leaves Continue alone: its one listener is the page\'s own, and there is none on a phone', async () => {
+          it('leaves Continue alone: no listener of its own, on a desktop or a phone', async () => {
             const desktop = await run();
             const before = desktop.nodes.continue.listeners.click;
             await desktop.pickTelegram();
@@ -2722,13 +2715,10 @@ describe('LoginController', () => {
             await flush();
             await desktop.advance(5_000);
             expect(desktop.nodes['tg-link'].hidden).toBe(false);
-            expect(desktop.nodes.continue.listeners.click).toBe(before);
-            expect(Object.keys(desktop.nodes.continue.listeners)).toEqual(['click']);
+            // This test browser has no clipboard, so the page added nothing to Continue either.
+            expect(before).toBeUndefined();
+            expect(desktop.nodes.continue.listeners).toEqual({});
             expect(desktop.open).not.toHaveBeenCalled();
-            // Continue still opens the chat with the request, as before.
-            desktop.nodes.continue.listeners.click({});
-            expect(desktop.open).toHaveBeenCalledTimes(1);
-            expect(desktop.open.mock.calls[0][0]).toContain('https://claude.ai/new?q=');
 
             const phone = await run({ userAgent: PHONE_UA, touch: true });
             await phone.pickTelegram();

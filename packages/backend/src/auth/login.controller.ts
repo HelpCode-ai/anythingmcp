@@ -1378,15 +1378,15 @@ export class LoginController {
           params.cardTrial.endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
         ).replace(' ', '&nbsp;')
       : '';
-    // Back in Claude, a new chat opens with the request typed in. Only for a
-    // code sent to claude.ai itself, where /new?q= is known to work, and never
-    // on a phone: there the new tab (or the Claude app it opens) takes over
-    // and the authorization in this tab is never finished. From 2 November
-    // 2026, when the chat tab was added, to 15 November about 200
-    // authorization codes a day were never exchanged, against about 10 before,
-    // nearly all from phones.
-    const host = (params.redirectHost ?? '').toLowerCase();
-    const opensChat = host === 'claude.ai' && !params.onPhone;
+    // Continue only goes back through the authorization, on every device. It
+    // used to open a new Claude chat in a second tab as well (2 November
+    // 2026). On phones that tab took over and the authorization in this tab
+    // was never finished: about 200 authorization codes a day were never
+    // exchanged, against about 10 before, until phones lost the tab on 15
+    // November. From 18 November the same happened on computers (19 % of the
+    // codes issued from this page never exchanged, against 3 % without the
+    // page), so no device opens a second tab now. The same click copies the
+    // request instead, to paste in a new chat.
     const telegram = !!params.pickerCsrf && !!params.telegramOneTap;
     // Hidden until the script shows it: without JavaScript the page is the
     // same as before, and never more than one click from the chat.
@@ -1412,9 +1412,9 @@ export class LoginController {
     <h1>${client} is connected</h1>
     <p class="sub" id="first-sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
     <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
-    <p class="copied" id="request-copied" role="status" aria-live="polite"${params.onPhone ? ' data-phone="1"' : ''} hidden></p>
+    <p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>
     <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
-    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}"${opensChat ? ' data-open-chat="https://claude.ai/new"' : ''} data-client="${client}">Continue to ${client}</a>
+    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}" data-client="${client}">Continue to ${client}</a>
     <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
       params.cardTrial
         ? `
@@ -1494,40 +1494,18 @@ export class LoginController {
       });
       picker.hidden = false;
     })();${telegram ? TELEGRAM_PANEL_SCRIPT : ''}
-    // Continue still goes back through the authorization; for Claude, the
-    // same click also opens a new chat with the request typed in.
-    (function () {
-      var cont = document.getElementById('continue');
-      var request = document.getElementById('example-request');
-      var chat = cont && cont.getAttribute('data-open-chat');
-      if (!chat || !request) return;
-      // A touch device that did not say so in its user agent (an iPad asking
-      // for the desktop site): no second tab there either.
-      try {
-        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
-      } catch (e) { /* no media queries: treated as a desktop */ }
-      cont.addEventListener('click', function () {
-        try {
-          window.open(chat + '?q=' + encodeURIComponent(request.textContent || ''), '_blank', 'noopener');
-        } catch (e) { /* the authorization goes on regardless */ }
-      });
-    })();
-    // A phone gets no chat tab (see above), so the same tap copies the
-    // request instead, to paste in a new chat. Best effort and nothing more:
-    // the listener returns at once, never waits for the clipboard, never
-    // prevents the default action and opens nothing, so the browser follows
-    // the link exactly as it does without it. A refused clipboard changes
-    // nothing on the page.
+    // Continue goes back through the authorization and opens nothing else
+    // (see the comment above the card). The same click copies the
+    // request, to paste in a new chat. Best effort and nothing more: the
+    // listener returns at once, never waits for the clipboard, never prevents
+    // the default action and opens nothing, so the browser follows the link
+    // exactly as it does without it. A refused clipboard changes nothing on
+    // the page.
     (function () {
       var cont = document.getElementById('continue');
       var request = document.getElementById('example-request');
       var note = document.getElementById('request-copied');
       if (!cont || !request || !note || !navigator.clipboard || !navigator.clipboard.writeText) return;
-      var phone = note.getAttribute('data-phone') === '1';
-      try {
-        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) phone = true;
-      } catch (e) { /* no media queries: what the server saw decides */ }
-      if (!phone) return;
       var clientName = cont.getAttribute('data-client') || 'your assistant';
       cont.addEventListener('click', function () {
         try {
