@@ -20,6 +20,8 @@ import { ActionMenu } from '@/components/ui/action-menu';
 import { cn } from '@/lib/utils';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { useMemberVisibility } from '@/lib/use-member-visibility';
+import { useMemberAccess } from '@/lib/use-member-access';
+import { useConnectorOwners } from '@/lib/use-connector-owners';
 import { canManageConnector } from '@/lib/can-manage-connector';
 
 type HealthStatus = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
@@ -103,6 +105,10 @@ export default function ConnectorsPage() {
   const canCreate = user?.role !== 'VIEWER';
   // Restricted member visibility: an empty list means nothing was shared yet.
   const { restrictedForMe } = useMemberVisibility();
+  // The catalog installs connectors: not offered to a member who may not open it.
+  const canBrowseStore = useMemberAccess().can('/connectors/store');
+  // Admins see who owns each connector: ownership decides what members see.
+  const ownerOf = useConnectorOwners();
   const authTypeLabel = useAuthTypeLabel();
   // Only "Database" and "Email" are words; the other type names are the same everywhere.
   const typeLabel = (type: string) =>
@@ -280,7 +286,7 @@ export default function ConnectorsPage() {
     { label: checkingHealth ? t('menu.checking') : t('menu.healthCheck'), icon: <HeartPulseIcon />, onSelect: handleHealthCheck, disabled: checkingHealth },
     { label: t('menu.exportAll'), icon: <DownloadIcon />, onSelect: handleExportAll },
     ...(canCreate ? [{ label: t('menu.importFromFile'), icon: <UploadIcon />, onSelect: () => setShowImportModal(true) }] : []),
-    { label: t('menu.browseAdapters'), icon: <StoreIcon />, href: '/connectors/store' },
+    ...(canBrowseStore ? [{ label: t('menu.browseAdapters'), icon: <StoreIcon />, href: '/connectors/store' }] : []),
   ];
 
   const headerActions = (
@@ -306,14 +312,16 @@ export default function ConnectorsPage() {
           <span>{t('header.import')}</span>
         </Button>
       )}
-      <Link
-        href="/connectors/store"
-        title={t('header.adaptersTitle')}
-        className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'max-md:hidden')}
-      >
-        <StoreIcon />
-        <span>{t('header.adapters')}</span>
-      </Link>
+      {canBrowseStore && (
+        <Link
+          href="/connectors/store"
+          title={t('header.adaptersTitle')}
+          className={cn(buttonVariants({ variant: 'secondary', size: 'md' }), 'max-md:hidden')}
+        >
+          <StoreIcon />
+          <span>{t('header.adapters')}</span>
+        </Link>
+      )}
       <ActionMenu items={utilityActions} className="md:hidden" />
       {canCreate && (
         <Link href="/connectors/new" className={cn(buttonVariants({ variant: 'primary', size: 'md' }))}>
@@ -564,6 +572,8 @@ export default function ConnectorsPage() {
               const canManage = canManageConnector(user, c);
               const paused = !c.isActive && pausedByPlan.has(c.id);
               const canImportSpec = c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP';
+              // Admins only; undefined while loading, null for a former member.
+              const owner = ownerOf(c.userId);
               return (
                 <Card
                   key={c.id}
@@ -578,6 +588,11 @@ export default function ConnectorsPage() {
                       </div>
                       {c.baseUrl && (
                         <div className="mt-0.5 truncate font-mono text-[12px] text-[var(--text-3)]">{c.baseUrl}</div>
+                      )}
+                      {owner !== undefined && (
+                        <div className="mt-0.5 truncate text-[12px] text-[var(--text-3)]" data-testid="connector-owner">
+                          {owner === null ? t('card.ownerGone') : t('card.owner', { name: owner })}
+                        </div>
                       )}
                     </div>
                     <Badge tone={tone} className="flex-shrink-0">{typeLabel(c.type)}</Badge>

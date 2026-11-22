@@ -46,6 +46,9 @@ import { SentryConfig } from '@/components/sentry-config';
 import { TRANSLATION_SAFE_DOM_SCRIPT } from '@/lib/translation-safe-dom';
 import { NextIntlClientProvider } from 'next-intl';
 import { getLocale } from 'next-intl/server';
+import { cookies } from 'next/headers';
+import { MemberRouteGuard } from '@/components/member-route-guard';
+import { NAV_HINT_COOKIE, parseNavHint } from '@/lib/member-access';
 
 export const metadata: Metadata = {
   // Under 70 characters: Bing flags longer titles (Webmaster Tools, Nov 2026).
@@ -103,6 +106,10 @@ export default async function RootLayout({
   const cookieDomain = process.env.COOKIE_DOMAIN;
   // amcp_locale cookie, then Accept-Language, then English (src/i18n/request.ts).
   const locale = await getLocale();
+  // What the dashboard last knew about this browser's member (an admin or an
+  // Open workspace, or a restricted member), so the first HTML already holds
+  // the right navigation. A hint for rendering only; the API decides access.
+  const navHint = parseNavHint((await cookies()).get(NAV_HINT_COOKIE)?.value);
 
   return (
     <html lang={locale} className={`${Geist.variable} ${GeistMono.variable}`} suppressHydrationWarning>
@@ -116,9 +123,10 @@ export default async function RootLayout({
         <GoogleTagManagerNoscript />
         {/* Almost every page is a client component, so the messages are passed once here. */}
         <NextIntlClientProvider>
-          <Providers>
+          <Providers navHint={navHint}>
             <LicenseWall />
-            {children}
+            {/* Sends a restricted member away from pages that are not theirs, before they render. */}
+            <MemberRouteGuard>{children}</MemberRouteGuard>
           </Providers>
         </NextIntlClientProvider>
         {gtmEnabled && <CookieConsentBanner cookieDomain={cookieDomain} />}

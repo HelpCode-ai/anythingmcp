@@ -45,6 +45,10 @@
       "hideAriaLabel": "Nascondi il pulsante Stella su GitHub"
     }
   },
+  "memberAccess": {
+    "notAvailableTitle": "Questa pagina non è disponibile per te",
+    "notAvailableBody": "Il tuo ruolo in questo workspace non la comprende. Qui trovi i connettori che puoi usare; se ti serve altro, chiedi a un admin del workspace."
+  },
   "signIn": {
     "continueAs": "Continua come {email}",
     "continueAsHint": "Hai appena effettuato l'accesso qui per collegare il tuo assistente AI.",
@@ -799,7 +803,9 @@
       "active": "Attivo",
       "inactive": "Inattivo",
       "importSpec": "Importa specifica",
-      "delete": "Elimina"
+      "delete": "Elimina",
+      "owner": "Proprietario: {name}",
+      "ownerGone": "Proprietario: non più membro"
     },
     "addTile": {
       "title": "Aggiungi un connettore",
@@ -1673,7 +1679,9 @@
       "envSavedWarnings": "Variabili d'ambiente salvate. {warnings}",
       "discoveryFailed": "Rilevamento non riuscito: {message}",
       "authorizationFailed": "Autorizzazione non riuscita: {message}"
-    }
+    },
+    "owner": "Proprietario: {name}",
+    "ownerGone": "Proprietario: non più membro di questo workspace"
   },
   "userCredentials": {
     "scopeError": "Impossibile cambiare la modalità di accesso.",
@@ -2262,11 +2270,16 @@
       },
       "restricted": {
         "label": "Limitata",
-        "description": "I membri che non sono admin vedono solo le proprie chiamate agli strumenti, i connettori raggiunti dai loro ruoli e i server MCP che ne contengono almeno uno."
+        "description": "I membri che non sono admin vedono solo le proprie chiamate agli strumenti, i connettori raggiunti dai loro ruoli (un Editor anche i connettori di cui è proprietario) e i propri server MCP. Le pagine per gestire il workspace non vengono mostrate."
       },
-      "noToolList": "Nessun ruolo limita ancora gli strumenti, quindi i membri vedono ancora tutti i connettori. Crea un ruolo con un elenco di strumenti in <link>Ruoli</link>.",
+      "noToolList": "Con Limitata non cambia ancora quali connettori vedono i membri. Nessun ruolo di questo workspace ha un elenco di strumenti, quindi ogni membro continua a vedere ogni connettore con nome, stato e strumenti (non le impostazioni); solo le chiamate agli strumenti sono limitate alle proprie. Crea un ruolo con un elenco di strumenti in <link>Ruoli</link> e assegnalo. Da quel momento un membro senza ruolo non vede alcun connettore.",
       "saved": "Visibilità per i membri salvata.",
-      "saveFailed": "Impossibile salvare la visibilità per i membri."
+      "saveFailed": "Impossibile salvare la visibilità per i membri.",
+      "activeNow": "Attiva ora: {mode}",
+      "unsavedToRestricted": "Non ancora salvato. Questo workspace è ancora aperto: ogni membro vede tutto finché non salvi.",
+      "unsavedToOpen": "Non ancora salvato. Questo workspace resta limitato finché non salvi.",
+      "saveSwitch": "Salva: passa a {mode}",
+      "discard": "Annulla"
     },
     "revokeDialog": {
       "title": "Disconnetti tutti",
@@ -2301,7 +2314,8 @@
       "createTitle": "Crea una nuova organizzazione",
       "createPlaceholder": "Nome della nuova organizzazione",
       "creating": "Creazione...",
-      "create": "Crea organizzazione"
+      "create": "Crea organizzazione",
+      "createAdminOnly": "Su questa istanza solo gli admin possono creare un workspace."
     }
   },
   "settingsUsers": {
@@ -2366,7 +2380,8 @@
       "emailFailed": "Invio dell'email non riuscito:",
       "link": "Link di invito (da condividere manualmente):",
       "sending": "Invio...",
-      "send": "Invia invito"
+      "send": "Invia invito",
+      "restrictedRoleHint": "Qui la visibilità dei membri è limitata. Un Viewer vede solo ciò che i suoi ruoli MCP raggiungono. Un Editor crea anche connettori e vede sempre quelli di cui è proprietario."
     },
     "bulk": {
       "selected": "{count} selezionati · Apprendimento delle skill:",

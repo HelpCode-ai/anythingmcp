@@ -1,10 +1,26 @@
 'use client';
 
-import { createContext, useContext, useState, useEffect, useCallback, ReactNode } from 'react';
+import { createContext, useContext, useState, useEffect, useCallback, useRef, ReactNode } from 'react';
 import { useRouter, usePathname } from 'next/navigation';
 import { users, server, organizations, recentSignIn, AUTH_EXPIRED_EVENT, ApiError } from './api';
 import { storage } from './storage';
 import { clearCommandPaletteCache } from './command-palette-cache';
+import { navHintForRole, writeNavHint } from './member-access';
+
+/** Who a saved session belongs to, and in which workspace. null when there is none. */
+function sessionIdentity(user: Pick<User, 'id' | 'organizationId'> | null | undefined): string | null {
+  return user?.id ? `${user.id}:${user.organizationId ?? ''}` : null;
+}
+
+function savedSessionIdentity(): string | null {
+  // No token means signed out, whatever user record is still there.
+  if (!storage.get('amcp_token')) return null;
+  try {
+    return sessionIdentity(JSON.parse(storage.get('amcp_user') || 'null'));
+  } catch {
+    return null;
+  }
+}
 
 interface User {
   id: string;
@@ -78,6 +94,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const logout = useCallback(() => {
     clearCommandPaletteCache();
+    writeNavHint(null);
     // Signing out also forgets the authorization page's recent sign-in, or
     // the sign-in page would offer "Continue as …" right after.
     void recentSignIn.forget();
@@ -111,6 +128,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (err instanceof ApiError && err.status < 500) {
           // The backend answered and rejected the session.
           clearCommandPaletteCache();
+          writeNavHint(null);
           setToken(null);
           setUser(null);
           storage.remove('amcp_token');
@@ -136,6 +154,31 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     server.info().then((info) => {
       setDeploymentMode(info.deploymentMode || 'self-hosted');
     }).catch(() => {}).finally(() => setDeploymentModeLoaded(true));
+  }, []);
+
+  // The session lives in localStorage, which every tab of the browser shares.
+  // When another tab signs out, signs in as someone else or switches
+  // workspace, this tab kept its own copy in memory: the old name and
+  // navigation on screen, the other account's token on the next reload, and
+  // in between requests answered for a workspace the page did not show. Load
+  // the page again as soon as the saved session is no longer this tab's, so
+  // it shows one identity, the current one. A tab that is signed out is left
+  // alone (someone may be typing on a sign-in page).
+  const identityRef = useRef<string | null>(null);
+  useEffect(() => {
+    identityRef.current = token ? sessionIdentity(user) : null;
+  }, [token, user]);
+  useEffect(() => {
+    const onStorage = (event: StorageEvent) => {
+      // `key` is null when the whole storage was cleared.
+      if (event.key !== null && event.key !== 'amcp_token' && event.key !== 'amcp_user') return;
+      const mine = identityRef.current;
+      if (!mine || savedSessionIdentity() === mine) return;
+      clearCommandPaletteCache();
+      window.location.reload();
+    };
+    window.addEventListener('storage', onStorage);
+    return () => window.removeEventListener('storage', onStorage);
   }, []);
 
   // Listen for 401 events from api.ts to auto-logout
@@ -170,6 +213,12 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [isLoading, token, pathname, router]);
 
   const login = (newToken: string, newUser: User) => {
+    // What the command palette remembered belongs to whoever was signed in
+    // before: accepting an invitation in an admin's tab showed the admin's
+    // connector names to the new member until the list was loaded again.
+    clearCommandPaletteCache();
+    // An admin is never restricted; for anyone else the answer is loaded next.
+    writeNavHint(navHintForRole(newUser.role));
     setToken(newToken);
     setUser(newUser);
     storage.set('amcp_token', newToken);
@@ -184,6 +233,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       clearCommandPaletteCache();
       const result = await organizations.switchOrg(organizationId, token);
       // Store new token and user from the switch response
+      writeNavHint(navHintForRole(result.user?.role));
       setToken(result.accessToken);
       setUser(result.user);
       storage.set('amcp_token', result.accessToken);
@@ -201,6 +251,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
 
   const replaceSession = (newToken: string, newUser: User, newOrgName?: string | null) => {
     clearCommandPaletteCache();
+    writeNavHint(navHintForRole(newUser.role));
     setToken(newToken);
     setUser(newUser);
     storage.set('amcp_token', newToken);

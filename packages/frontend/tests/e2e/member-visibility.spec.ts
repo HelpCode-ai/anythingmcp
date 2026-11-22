@@ -148,7 +148,7 @@ const WRITE_BUTTONS = ['Test', 'Edit', 'Delete', 'Import Tools', 'Add Tool', 'Di
 
 const OWN_CALLS = 'You see your own calls. Workspace admins see all calls.';
 const NOTHING_SHARED = 'Nothing has been shared with you yet. Ask a workspace admin for a role.';
-const NO_TOOL_LIST = /No role limits tools yet, so members still see every connector/;
+const NO_TOOL_LIST = /Restricted does not narrow which connectors members see yet/;
 
 test.describe('admin control', () => {
   test('an admin sees the control, gets the warning without a tool list, and switches the mode', async ({ page }) => {
@@ -209,16 +209,23 @@ test.describe('restricted member', () => {
     await expect(page.getByText('Calls by user', { exact: true })).toHaveCount(0);
   });
 
-  test('sees the empty state on Connectors and MCP Servers, without create actions as a VIEWER', async ({ page }) => {
+  test('sees the empty state on Connectors, without create actions as a VIEWER', async ({ page }) => {
     await fakeSession(page, { role: 'VIEWER', mode: 'restricted' });
     await page.goto('/connectors');
     await expect(page.getByTestId('nothing-shared')).toContainText(NOTHING_SHARED);
     await expect(page.getByRole('link', { name: 'Add Connector' })).toHaveCount(0);
 
+    // A VIEWER who owns no MCP server has no MCP Servers page: it would list
+    // nothing and she cannot create one (restricted-navigation.spec.ts).
+    await page.goto('/mcp-server');
+    await expect(page).toHaveURL(/\/connectors$/);
+  });
+
+  test('sees the empty state on MCP Servers as an EDITOR, who may create one', async ({ page }) => {
+    await fakeSession(page, { role: 'EDITOR', mode: 'restricted' });
     await page.goto('/mcp-server');
     await expect(page.getByTestId('nothing-shared')).toHaveText(NOTHING_SHARED);
-    await expect(page.getByRole('button', { name: 'New MCP Server' })).toHaveCount(0);
-    await expect(page.getByRole('button', { name: 'Create your first MCP Server' })).toHaveCount(0);
+    await expect(page.getByRole('button', { name: 'Create your first MCP Server' })).toBeVisible();
   });
 
   test('sees a shared connector in the reduced view: name, status and tools, nothing to change', async ({ page }) => {

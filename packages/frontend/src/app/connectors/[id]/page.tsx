@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { missingLoginCredential, tokenPathFromInput, tokenPathToInput } from '@/lib/login-token-form';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { canManageConnector } from '@/lib/can-manage-connector';
+import { useConnectorOwners } from '@/lib/use-connector-owners';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
 import { WebhookCard } from '@/components/webhook-card';
@@ -258,6 +259,8 @@ export default function ConnectorDetailPage() {
   const { token, user, deploymentMode } = useAuth();
   const t = useTranslations('connectorDetail');
   const te = useTranslations('emailSettings');
+  // Admins see who owns the connector: ownership decides what members see.
+  const ownerOf = useConnectorOwners();
   const tt = useTranslations('connectorTools');
   const tfs = useTranslations('fileSearch');
   const locale = useLocale();
@@ -1612,6 +1615,13 @@ export default function ConnectorDetailPage() {
             {connector.baseUrl && (
               <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
                 {connector.baseUrl}
+              </div>
+            )}
+            {ownerOf(connector.userId) !== undefined && (
+              <div className="mt-0.5 text-[12.5px] text-[var(--text-3)]" data-testid="connector-owner">
+                {ownerOf(connector.userId) === null
+                  ? t('ownerGone')
+                  : t('owner', { name: ownerOf(connector.userId) as string })}
               </div>
             )}
           </div>
