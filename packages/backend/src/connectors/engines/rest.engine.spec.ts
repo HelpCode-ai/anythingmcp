@@ -245,6 +245,27 @@ describe('RestEngine', () => {
     expect(sent.params).not.toHaveProperty('__rawquery');
   });
 
+  it('leaves out an OData $skip of 0 (Graph refuses $skip with $search)', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    const mapping = {
+      method: 'GET',
+      path: '/me/messages',
+      queryParams: { $search: '$search', $top: '$top', $skip: '$skip' },
+    };
+    const config = { baseUrl: 'https://graph.microsoft.com/v1.0', authType: 'NONE' };
+
+    await engine.execute(config, mapping, { search: '"invoice"', top: 25, skip: 0 });
+    await engine.execute(config, mapping, { search: '"invoice"', top: 25, skip: '0' });
+    await engine.execute(config, mapping, { top: 25, skip: 50 });
+
+    const params = mockedAxios.mock.calls.map(
+      (c) => (c[0] as unknown as { params: Record<string, unknown> }).params,
+    );
+    expect(params[0]).toEqual({ $search: '"invoice"', $top: 25 });
+    expect(params[1]).toEqual({ $search: '"invoice"', $top: 25 });
+    expect(params[2]).toEqual({ $top: 25, $skip: 50 });
+  });
+
   it('drops __rawquery keys that would reach the prototype chain', async () => {
     // The fragment comes from a tool argument, so from the model.
     mockedAxios.mockResolvedValue({ data: {} });
