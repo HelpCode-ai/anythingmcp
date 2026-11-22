@@ -41,9 +41,7 @@ export default function DashboardPage() {
   const [connectHref, setConnectHref] = useState('/mcp-server');
 
   useEffect(() => {
-    // Wait until the member's access is known, so the graph is asked for once
-    // and only by someone who may read it.
-    if (!token || !decided) return;
+    if (!token) return;
     const load = async () => {
       try {
         const [connList, auditStats, analyticsData] = await Promise.all([
@@ -70,12 +68,6 @@ export default function DashboardPage() {
               })
               .catch(() => {});
           }
-          // Knowledge-graph teaser counts (free static/observational layers; no AI).
-          if (canSeeGraph) {
-            knowledgeGraph.stats(token)
-              .then((s) => setKgStats({ nodes: s.nodes, edges: s.edges }))
-              .catch(() => {});
-          }
         }
       } catch {
         // Backend may not be running
@@ -84,7 +76,18 @@ export default function DashboardPage() {
       }
     };
     load();
-  }, [token, decided, canSeeGraph]);
+  }, [token]);
+
+  // Knowledge-graph teaser counts (free static/observational layers; no AI).
+  // The one request here a restricted member must not make: it waits until
+  // their access is known. Everything above starts at once, for everyone.
+  const hasConnectors = stats.connectors > 0;
+  useEffect(() => {
+    if (!token || !decided || !canSeeGraph || !hasConnectors) return;
+    knowledgeGraph.stats(token)
+      .then((s) => setKgStats({ nodes: s.nodes, edges: s.edges }))
+      .catch(() => {});
+  }, [token, decided, canSeeGraph, hasConnectors]);
 
   const handleHealthCheck = async () => {
     if (!token) return;

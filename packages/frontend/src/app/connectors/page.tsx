@@ -98,7 +98,7 @@ const SUPPORTED_TYPES = [
 ];
 
 export default function ConnectorsPage() {
-  const { token, user } = useAuth();
+  const { token, user, deploymentMode, deploymentModeLoaded } = useAuth();
   const t = useTranslations('connectors');
   // A VIEWER cannot create or import connectors (the API answers 403), so
   // the page does not offer it.
@@ -107,8 +107,6 @@ export default function ConnectorsPage() {
   const { restrictedForMe } = useMemberVisibility();
   // The catalog installs connectors: not offered to a member who may not open it.
   const canBrowseStore = useMemberAccess().can('/connectors/store');
-  // Admins see who owns each connector: ownership decides what members see.
-  const ownerOf = useConnectorOwners();
   const authTypeLabel = useAuthTypeLabel();
   // Only "Database" and "Email" are words; the other type names are the same everywhere.
   const typeLabel = (type: string) =>
@@ -132,6 +130,16 @@ export default function ConnectorsPage() {
   // Cloud: which connectors the last automatic downgrade paused, and the swap
   // dialog when activating one would go past the plan.
   const { usage, reload: reloadUsage } = usePlanUsage();
+  // Admins of a workspace with several members see who owns each connector.
+  // Cloud: the plan usage this page loads anyway says how many members there
+  // are, so a single-member workspace asks for no members list. Self-hosted
+  // has no such number for the workspace: the hook makes that one request.
+  const memberCount = !deploymentModeLoaded
+    ? null
+    : deploymentMode === 'cloud'
+      ? (usage ? usage.users.current : null)
+      : undefined;
+  const ownerOf = useConnectorOwners(memberCount);
   const pausedByPlan = pausedByPlanSets(usage).connectors;
   const tSwap = useTranslations('planSwap');
   const [swap, setSwap] = useState<{ id: string; name: string; axis: SwapAxis; max: number | null } | null>(null);
@@ -572,7 +580,8 @@ export default function ConnectorsPage() {
               const canManage = canManageConnector(user, c);
               const paused = !c.isActive && pausedByPlan.has(c.id);
               const canImportSpec = c.type === 'REST' || c.type === 'GRAPHQL' || c.type === 'SOAP';
-              // Admins only; undefined while loading, null for a former member.
+              // Admins of a workspace with several members; undefined otherwise
+              // and while loading, null for a former member.
               const owner = ownerOf(c.userId);
               return (
                 <Card

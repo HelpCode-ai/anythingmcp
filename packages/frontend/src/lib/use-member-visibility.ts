@@ -25,7 +25,7 @@ let settled: { key: string; state: MemberVisibilityState } | null = null;
 /** Keeps the answer for the next mount and for the next page load (the navigation hint). */
 function settle(key: string, state: MemberVisibilityState): void {
   settled = { key, state };
-  writeNavHint(state.restrictedForMe ? 'restricted' : 'open');
+  writeNavHint(state.restrictedForMe ? 'restricted' : null);
 }
 
 function cacheKey(token: string, organizationId: string | null | undefined): string {

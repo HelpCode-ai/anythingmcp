@@ -113,9 +113,27 @@ export default function OrganizationSettingsPage() {
       // Chrome shows its prompt only when returnValue is set.
       event.returnValue = '';
     };
+    // A link inside the dashboard leaves without a page load, so the browser
+    // asks nothing. Ask here, before the click reaches the link: a refused
+    // click is cancelled and the choice stays. (The command palette and the
+    // browser's back button are not links and are not covered.)
+    const confirmLink = (event: MouseEvent) => {
+      if (event.defaultPrevented || event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+      const link = (event.target as Element | null)?.closest?.('a[href]') as HTMLAnchorElement | null;
+      if (!link || link.target === '_blank' || link.origin !== window.location.origin) return;
+      if (link.pathname === window.location.pathname) return;
+      if (!window.confirm(t('visibility.confirmLeave'))) {
+        event.preventDefault();
+        event.stopPropagation();
+      }
+    };
     window.addEventListener('beforeunload', warn);
-    return () => window.removeEventListener('beforeunload', warn);
-  }, [visibilityDirty]);
+    document.addEventListener('click', confirmLink, true);
+    return () => {
+      window.removeEventListener('beforeunload', warn);
+      document.removeEventListener('click', confirmLink, true);
+    };
+  }, [visibilityDirty, t]);
 
   const handleSaveVisibility = async () => {
     if (!token || !visibility.loaded) return;

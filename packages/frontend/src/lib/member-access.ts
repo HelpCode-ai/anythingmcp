@@ -117,26 +117,29 @@ export function canCreateWorkspace(role: string | null | undefined, isCloud: boo
 // ── The navigation hint ────────────────────────────────────────────────────
 
 /**
- * What the dashboard last knew about this browser's member, kept in a cookie
- * so the server can render the right navigation before any script runs.
+ * Whether the dashboard last knew this browser's member as restricted, kept in
+ * a cookie so the server can render that member's navigation before any
+ * script runs.
  *
- * `open`: an admin, or a member of an Open workspace: render as always.
- * `restricted`: a restricted member. No cookie: not known. Anything but
- * `open` renders the narrow navigation first and withholds guarded pages
- * until the real answer is loaded, so a restricted member never sees, for a
- * moment, the entries of an admin.
+ * The cookie exists only for a restricted member. Without it (an admin, a
+ * member of an Open workspace, or a browser the dashboard has not seen yet)
+ * everything renders as it always did: the whole navigation and every page.
+ * Almost every workspace is Open with one admin, and they must not wait for
+ * anything. A restricted member on their very first load in a browser sees
+ * the whole navigation until their answer has loaded, a moment later; from
+ * then on the cookie is there and the first HTML is already theirs.
  *
  * A hint only: it decides what is drawn while the answer loads, never what
  * the member may read. The answer itself always comes from the API.
  */
-export type NavHint = 'open' | 'restricted' | null;
+export type NavHint = 'restricted' | null;
 export const NAV_HINT_COOKIE = 'amcp_nav';
 
 export function parseNavHint(raw: string | null | undefined): NavHint {
-  return raw === 'open' || raw === 'restricted' ? raw : null;
+  return raw === 'restricted' ? raw : null;
 }
 
-/** Stores the hint for the next page load; `null` forgets it. Browser only. */
+/** Stores the hint for the next page load; `null` removes the cookie. Browser only. */
 export function writeNavHint(hint: NavHint): void {
   if (typeof document === 'undefined') return;
   try {
@@ -146,9 +149,4 @@ export function writeNavHint(hint: NavHint): void {
   } catch {
     // A browser that refuses cookies only loses the hint.
   }
-}
-
-/** The hint a role alone gives: an admin is never restricted. */
-export function navHintForRole(role: string | null | undefined): NavHint {
-  return role === 'ADMIN' ? 'open' : null;
 }

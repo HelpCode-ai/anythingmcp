@@ -47,7 +47,7 @@
   },
   "memberAccess": {
     "notAvailableTitle": "Diese Seite steht Ihnen nicht zur Verfügung",
-    "notAvailableBody": "Ihre Rolle in diesem Workspace umfasst sie nicht. Hier sind die Connectors, die Sie nutzen können. Wenn Sie mehr brauchen, wenden Sie sich an einen Workspace-Admin."
+    "notAvailableBody": "Ihre Rolle in diesem Workspace umfasst sie nicht. Wenn Sie mehr brauchen, wenden Sie sich an einen Workspace-Admin."
   },
   "signIn": {
     "continueAs": "Weiter als {email}",
@@ -2279,7 +2279,8 @@
       "unsavedToRestricted": "Noch nicht gespeichert. Dieser Workspace ist weiterhin offen: Jedes Mitglied sieht alles, bis Sie speichern.",
       "unsavedToOpen": "Noch nicht gespeichert. Dieser Workspace bleibt eingeschränkt, bis Sie speichern.",
       "saveSwitch": "Speichern: auf {mode} umstellen",
-      "discard": "Verwerfen"
+      "discard": "Verwerfen",
+      "confirmLeave": "Die gewählte Sichtbarkeit für Mitglieder ist noch nicht gespeichert. Diese Seite ohne Speichern verlassen?"
     },
     "revokeDialog": {
       "title": "Alle abmelden",

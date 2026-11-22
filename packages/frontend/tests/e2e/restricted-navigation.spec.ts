@@ -34,6 +34,17 @@ interface Setup {
   /** Members returned by /api/users (admin only). */
   members?: unknown[];
   user?: { id: string; email: string; name: string };
+  /**
+   * Her very first load in this browser: no `amcp_nav` cookie yet. Otherwise
+   * a restricted member's session carries the cookie her earlier loads left.
+   */
+  firstVisit?: boolean;
+  /** How many requests for GET /api/mcp-servers fail (500) before it answers. */
+  serversFailures?: number;
+  /** Delay of GET /api/users/me, in ms. */
+  meDelay?: number;
+  /** GET /api/license/usage (Cloud). */
+  usage?: unknown;
 }
 
 const OWN_SERVER = { id: 's1', name: 'Default (Rita)', slug: 'default-rita', isActive: true, connectors: [] };
@@ -54,7 +65,7 @@ function userFor(setup: Setup) {
 }
 
 async function mockApi(page: Page, setup: Setup, currentUser: () => ReturnType<typeof userFor>) {
-  const state = { mode: setup.mode };
+  const state = { mode: setup.mode, serversFailures: setup.serversFailures ?? 0 };
   const puts: unknown[] = [];
   /** Every API path the page asked for. */
   const paths: string[] = [];
@@ -84,11 +95,27 @@ async function mockApi(page: Page, setup: Setup, currentUser: () => ReturnType<t
       return json({ mode: body.mode, restrictedForMe: false });
     }
     if (p === '/api/users/me/onboarding-state') return json({ onboardingCompletedAt: '2026-01-01T00:00:00Z' });
-    if (p === '/api/users/me') return json(user);
+    if (p === '/api/users/me') {
+      if (setup.meDelay) await new Promise((r) => setTimeout(r, setup.meDelay));
+      return json(user);
+    }
     if (p === '/api/organizations/current') return json({ id: 'o1', name: 'Acme', createdAt: '2026-01-01' });
     if (p === '/api/organizations/mine') return json([{ id: 'o1', name: 'Acme', role: user.role, joinedAt: '2026-01-01' }]);
     if (p === '/api/license/status') return json({ plan: 'team', status: 'active' });
-    if (p === '/api/mcp-servers') return json(setup.servers ?? []);
+    if (p === '/api/mcp-servers') {
+      if (state.serversFailures > 0) {
+        state.serversFailures--;
+        return json({ statusCode: 500, message: 'Internal server error' }, 500);
+      }
+      return json(setup.servers ?? []);
+    }
+    // One server: hers, or the 404 of an unknown id (also for another member's).
+    const serverId = /^\/api\/mcp-servers\/([^/]+)$/.exec(p)?.[1];
+    if (serverId) {
+      const own = (setup.servers as Array<{ id: string }> | undefined)?.find((x) => x.id === serverId);
+      return own ? json(own) : json({ statusCode: 404, message: 'MCP server not found', error: 'Not Found' }, 404);
+    }
+    if (p === '/api/license/usage' && setup.usage) return json(setup.usage);
     if (p === '/api/memory/status') {
       return json({
         licensed: false,
@@ -124,7 +151,13 @@ async function mockApi(page: Page, setup: Setup, currentUser: () => ReturnType<t
 /** A signed-in session whose identity is set again on every page load. */
 async function fakeSession(page: Page, setup: Setup) {
   const user = userFor(setup);
-  await page.context().addCookies([{ name: 'amcp_token', value: 't', url: BASE_URL }]);
+  await page.context().addCookies([
+    { name: 'amcp_token', value: 't', url: BASE_URL },
+    // What her earlier loads left in this browser (lib/member-access.ts).
+    ...(setup.mode === 'restricted' && setup.role !== 'ADMIN' && !setup.firstVisit
+      ? [{ name: 'amcp_nav', value: 'restricted', url: BASE_URL }]
+      : []),
+  ]);
   await page.addInitScript((u) => {
     localStorage.setItem('amcp_token', 't');
     localStorage.setItem('amcp_user', JSON.stringify(u));
@@ -227,13 +260,87 @@ test.describe('restricted VIEWER', () => {
     });
   }
 
-  test('her first load leaves the hint the server renders the next one from', async ({ page }) => {
-    await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER] });
+  test('her very first load in a browser ends narrow too, and leaves the hint for the next one', async ({ page }) => {
+    await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER], firstVisit: true });
     await page.goto('/connectors');
     await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors', 'MCP Servers']);
     await expect
       .poll(async () => (await page.context().cookies(BASE_URL)).find((c) => c.name === 'amcp_nav')?.value)
       .toBe('restricted');
+  });
+
+  test('on her very first load a direct URL still lands on the connectors list', async ({ page }) => {
+    // Without the hint the page is sent as for anyone; she is redirected as
+    // soon as her answer has loaded.
+    await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER], firstVisit: true });
+    await page.goto('/settings/users');
+    await expect(page).toHaveURL(/\/connectors$/);
+    await expect(page.getByText('This page is not available to you', { exact: true })).toBeVisible();
+  });
+
+  test('opening the same refused page twice without a page load redirects twice', async ({ page }) => {
+    await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER] });
+    await page.goto('/connectors');
+    await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors', 'MCP Servers']);
+
+    // A client-side navigation, as a link inside the dashboard makes it (a
+    // plan banner links to /settings/license): no page load in between.
+    const openLicencePage = () =>
+      page.evaluate(() => {
+        window.history.pushState(null, '', '/settings/license');
+      });
+    let loads = 0;
+    page.on('load', () => loads++);
+
+    await openLicencePage();
+    await expect(page).toHaveURL(/\/connectors$/);
+    await expect(page.getByTestId('nothing-shared')).toBeVisible();
+
+    // The second time used to leave the page blank: nothing rendered, no redirect.
+    await openLicencePage();
+    await expect(page).toHaveURL(/\/connectors$/);
+    await expect(page.getByTestId('nothing-shared')).toBeVisible();
+    await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors', 'MCP Servers']);
+    expect(loads).toBe(0);
+  });
+
+  test('a failed request for her servers hides nothing and refuses nothing, and is asked again', async ({ page }) => {
+    await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER], serversFailures: 1 });
+    await page.goto('/connectors');
+    // Not known is not "no": the entry stays, and the page opens.
+    await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors', 'MCP Servers']);
+    await sidebar(page).filter({ hasText: 'MCP Servers' }).click();
+    await expect(page).toHaveURL(/\/mcp-server$/);
+    await expect(page.getByText('Default (Rita)')).toBeVisible();
+  });
+
+  test('after a failed request the next page asks again and then follows the answer', async ({ page }) => {
+    // She owns no server; the first request for the list fails.
+    const { paths } = await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [], serversFailures: 1 });
+    await page.goto('/connectors');
+    await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors', 'MCP Servers']);
+
+    await sidebar(page).filter({ hasText: 'Analytics' }).click();
+    await expect(page).toHaveURL(/\/analytics$/);
+    await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors']);
+    expect(paths.filter((x) => x === '/api/mcp-servers').length).toBeGreaterThanOrEqual(2);
+  });
+
+  test('another member\'s MCP server sends her back to her own list, with the same note', async ({ page }) => {
+    await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER] });
+    await page.goto('/mcp-server/s-of-someone-else');
+    await expect(page).toHaveURL(/\/mcp-server$/);
+    await expect(page.getByText('This page is not available to you', { exact: true })).toBeVisible();
+    await expect(page.getByText('Default (Rita)')).toBeVisible();
+    await expect(page.getByText('MCP server not found')).toHaveCount(0);
+  });
+
+  test('a File Search hand-off that cannot be opened sends her to her connectors', async ({ page }) => {
+    await fakeSession(page, { role: 'VIEWER', mode: 'restricted', servers: [OWN_SERVER] });
+    await page.goto('/setup/file-search');
+    await expect(page).toHaveURL(/\/connectors$/);
+    await expect(page.getByText('This page is not available to you', { exact: true })).toBeVisible();
+    await expect(page.getByText('The folder setup could not be opened')).toHaveCount(0);
   });
 
   test('the settings navigation and the command palette follow the same rule', async ({ page }) => {
@@ -282,14 +389,13 @@ test.describe('restricted VIEWER', () => {
 
 /**
  * What the server sends before any script runs, read with JavaScript off.
- * It knows the member only through the hint cookie the dashboard left on the
- * last load (lib/member-access.ts): `restricted` or no cookie renders the
- * narrow navigation and no guarded page; `open` renders as it always did.
+ * It knows the member only through the hint cookie the dashboard left on an
+ * earlier load (lib/member-access.ts). With the cookie it renders her narrow
+ * navigation and nothing of a guarded page. Without it, which is everyone but
+ * a restricted member, it renders exactly what it always did.
  */
 test.describe('the server-rendered page', () => {
-  const NARROW = ['Dashboard', 'Analytics', 'Audit Log', 'Connectors'];
-
-  async function withoutScripts(browser: Browser, hint: 'restricted' | 'open' | null) {
+  async function withoutScripts(browser: Browser, hint: 'restricted' | null) {
     const context = await browser.newContext({ javaScriptEnabled: false });
     await context.addCookies([
       { name: 'amcp_token', value: 't', url: BASE_URL },
@@ -298,28 +404,28 @@ test.describe('the server-rendered page', () => {
     return { context, page: await context.newPage() };
   }
 
-  for (const hint of ['restricted', null] as const) {
-    test(`hint ${hint ?? 'absent'}: the narrow navigation, and nothing of a guarded page`, async ({ browser }) => {
-      const { context, page } = await withoutScripts(browser, hint);
-      await page.goto('/connectors');
-      await expect(sidebar(page)).toHaveText(NARROW);
+  test('with the hint: the narrow navigation, and nothing of a guarded page', async ({ browser }) => {
+    const { context, page } = await withoutScripts(browser, 'restricted');
+    await page.goto('/connectors');
+    await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors']);
 
-      await page.goto('/settings/users');
-      await expect(page.getByTestId('app-nav')).toHaveCount(0);
-      await expect(page.getByText('Access Denied')).toHaveCount(0);
-      await page.goto('/connectors/store');
-      await expect(page.getByTestId('app-nav')).toHaveCount(0);
-      await context.close();
-    });
-  }
+    await page.goto('/settings/users');
+    await expect(page.getByTestId('app-nav')).toHaveCount(0);
+    await expect(page.getByText('Access Denied')).toHaveCount(0);
+    await page.goto('/mcp-server');
+    await expect(page.getByTestId('app-nav')).toHaveCount(0);
+    await context.close();
+  });
 
-  test('hint open: the whole navigation and the page, as before', async ({ browser }) => {
-    const { context, page } = await withoutScripts(browser, 'open');
+  test('without the hint: the whole navigation and every page, as before', async ({ browser }) => {
+    const { context, page } = await withoutScripts(browser, null);
     await page.goto('/connectors');
     await expect(sidebar(page)).toHaveText(FULL_NAV);
-    // A page of admins is sent as it always was: its shell is not withheld.
-    await page.goto('/settings/users');
-    await expect(sidebar(page)).toHaveText(FULL_NAV);
+    // Guarded pages are sent as they always were: their shell is not withheld.
+    for (const path of ['/settings/users', '/mcp-server', '/settings/license']) {
+      await page.goto(path);
+      await expect(sidebar(page)).toHaveText(FULL_NAV);
+    }
     await context.close();
   });
 });
@@ -343,6 +449,13 @@ test.describe('restricted EDITOR', () => {
     }
   });
 
+  test('keeps the File Search hand-off page, whose wizard she may open', async ({ page }) => {
+    await fakeSession(page, { role: 'EDITOR', mode: 'restricted' });
+    await page.goto('/setup/file-search');
+    await expect(page).toHaveURL(/\/setup\/file-search$/);
+    await expect(page.getByText('The folder setup could not be opened')).toBeVisible();
+  });
+
   test('cannot create a workspace on a self-hosted instance either', async ({ page }) => {
     await fakeSession(page, { role: 'EDITOR', mode: 'restricted' });
     await page.goto('/settings/organization');
@@ -356,9 +469,9 @@ test.describe('unchanged for everyone else', () => {
     await fakeSession(page, { role: 'ADMIN', mode: 'restricted', servers: [OWN_SERVER], roles: [], members: [] });
     await page.goto('/connectors');
     await expect(sidebar(page)).toHaveText(FULL_NAV);
-    await expect
-      .poll(async () => (await page.context().cookies(BASE_URL)).find((c) => c.name === 'amcp_nav')?.value)
-      .toBe('open');
+    // The hint exists only for a restricted member.
+    await page.waitForTimeout(300);
+    expect((await page.context().cookies(BASE_URL)).some((c) => c.name === 'amcp_nav')).toBe(false);
 
     await page.goto('/settings/users');
     await expect(page).toHaveURL(/\/settings\/users$/);
@@ -387,6 +500,24 @@ test.describe('unchanged for everyone else', () => {
         await expect(page.getByRole('heading', { name: 'Access Denied' })).toBeVisible();
       });
     }
+  });
+
+  test('an admin signing in clears a hint a restricted member left in the browser', async ({ page }) => {
+    await fakeSession(page, { role: 'ADMIN', mode: 'restricted', servers: [OWN_SERVER] });
+    await page.context().addCookies([{ name: 'amcp_nav', value: 'restricted', url: BASE_URL }]);
+    await page.goto('/connectors');
+    await expect(sidebar(page)).toHaveText(FULL_NAV);
+    await expect
+      .poll(async () => (await page.context().cookies(BASE_URL)).some((c) => c.name === 'amcp_nav'))
+      .toBe(false);
+  });
+
+  test('the dashboard loads its data without waiting for the profile request', async ({ page }) => {
+    const { paths } = await fakeSession(page, { role: 'ADMIN', mode: 'open', meDelay: 4000 });
+    await page.goto('/');
+    // Asked for while GET /api/users/me is still on its way.
+    await expect.poll(() => paths.includes('/api/audit/stats'), { timeout: 2500 }).toBe(true);
+    expect(paths.includes('/api/connectors')).toBe(true);
   });
 
   test('Cloud: every member may still create their own workspace', async ({ page }) => {
@@ -431,6 +562,17 @@ test.describe('the member visibility setting', () => {
     await dialog.dismiss();
     await leaving;
 
+    // A link inside the dashboard asks too: no page load, so no browser prompt.
+    const asksOnLink = page.waitForEvent('dialog');
+    const click = sidebar(page).filter({ hasText: 'Connectors' }).click();
+    const confirm = await asksOnLink;
+    expect(confirm.type()).toBe('confirm');
+    expect(confirm.message()).toBe('The member visibility you chose is not saved yet. Leave this page without saving?');
+    await confirm.dismiss();
+    await click;
+    await expect(page).toHaveURL(/\/settings\/organization$/);
+    await expect(page.getByTestId('member-visibility-unsaved')).toBeVisible();
+
     // Discard puts the saved mode back; nothing was written.
     await section.getByRole('button', { name: 'Discard' }).click();
     await expect(section.getByRole('radio', { name: /^Open/ })).toBeChecked();
@@ -443,6 +585,19 @@ test.describe('the member visibility setting', () => {
     expect(puts).toEqual([{ mode: 'restricted' }]);
     // Saved and still without any tool list: the notice stays.
     await expect(page.getByTestId('member-visibility-no-tool-list')).toBeVisible();
+
+    // Nothing unsaved any more: a link just leaves.
+    await sidebar(page).filter({ hasText: 'Connectors' }).click();
+    await expect(page).toHaveURL(/\/connectors$/);
+  });
+
+  test('leaving through a link is possible after confirming', async ({ page }) => {
+    await fakeSession(page, { role: 'ADMIN', mode: 'open', roles: [] });
+    await page.goto('/settings/organization');
+    await page.getByTestId('member-visibility').getByRole('radio', { name: /^Restricted/ }).check();
+    page.once('dialog', (dialog) => void dialog.accept());
+    await sidebar(page).filter({ hasText: 'Connectors' }).click();
+    await expect(page).toHaveURL(/\/connectors$/);
   });
 
   test('the invite form offers Viewer first in a restricted workspace, Editor in an open one', async ({ page }) => {
@@ -476,6 +631,62 @@ test.describe('connector owners', () => {
     await fakeSession(page, { role: 'ADMIN', mode: 'restricted', connectors, members });
     await page.goto('/connectors');
     await expect(page.getByTestId('connector-owner')).toHaveText(['Owner: Paul', 'Owner: no longer a member']);
+  });
+
+  test('a workspace with one active member shows no owner line', async ({ page }) => {
+    const alone = [
+      { id: 'u1', email: 'rita@example.test', name: 'Rita', role: 'ADMIN', active: true, deactivatedAt: null },
+      { id: 'u2', email: 'paul@example.test', name: 'Paul', role: 'VIEWER', active: false, deactivatedAt: '2026-10-01T00:00:00Z' },
+    ];
+    await fakeSession(page, { role: 'ADMIN', mode: 'open', connectors, members: alone });
+    await page.goto('/connectors');
+    await expect(page.getByText('https://ledger.example.test')).toBeVisible();
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('connector-owner')).toHaveCount(0);
+  });
+
+  test('Cloud, one member: no owner line and no request for the members list', async ({ page }) => {
+    const usage = (users: number) => ({
+      plan: 'team',
+      connectors: { current: 2, max: 50, isOver: false },
+      mcpServers: { current: 1, max: 10, isOver: false },
+      users: { current: users, max: 5, isOver: false },
+      isOverAny: false,
+    });
+    const { paths } = await fakeSession(page, {
+      role: 'ADMIN',
+      mode: 'open',
+      deploymentMode: 'cloud',
+      connectors,
+      members,
+      usage: usage(1),
+    });
+    await page.goto('/connectors');
+    await expect(page.getByText('https://ledger.example.test')).toBeVisible();
+    await expect.poll(() => paths.includes('/api/license/usage')).toBe(true);
+    await page.waitForTimeout(300);
+    await expect(page.getByTestId('connector-owner')).toHaveCount(0);
+    expect(paths).not.toContain('/api/users');
+  });
+
+  test('Cloud, several members: the owner lines, from one request', async ({ page }) => {
+    const { paths } = await fakeSession(page, {
+      role: 'ADMIN',
+      mode: 'open',
+      deploymentMode: 'cloud',
+      connectors,
+      members,
+      usage: {
+        plan: 'team',
+        connectors: { current: 2, max: 50, isOver: false },
+        mcpServers: { current: 1, max: 10, isOver: false },
+        users: { current: 2, max: 5, isOver: false },
+        isOverAny: false,
+      },
+    });
+    await page.goto('/connectors');
+    await expect(page.getByTestId('connector-owner')).toHaveText(['Owner: Paul', 'Owner: no longer a member']);
+    expect(paths.filter((x) => x === '/api/users')).toHaveLength(1);
   });
 
   test('a member is not shown owners and the members list is not asked for', async ({ page }) => {

@@ -6,6 +6,8 @@ import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
 import { fileSearchSetup } from '@/lib/api';
+import { useMemberAccess } from '@/lib/use-member-access';
+import { useNotAvailableRedirect } from '@/components/member-route-guard';
 import { Card } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
@@ -38,6 +40,16 @@ function Handoff() {
   const option = params.get('option') ?? '';
   const csrf = params.get('t') ?? '';
   const error = !option || !csrf ? t('openFailed') : failure;
+  // A signed-in member who may not set up a connector (a restricted VIEWER)
+  // has nothing to do here once the hand-off failed: the page offered the
+  // File Search wizard, which is not theirs. They go to their connectors with
+  // the note every refused page shows.
+  const access = useMemberAccess();
+  const notAvailable = useNotAvailableRedirect();
+  const notHers = !!error && access.decided && access.restricted && !access.can('/connectors/new/file-search');
+  useEffect(() => {
+    if (notHers) notAvailable();
+  }, [notHers, notAvailable]);
 
   useEffect(() => {
     if (isLoading || started.current || !option || !csrf) return;
@@ -50,6 +62,8 @@ function Handoff() {
       })
       .catch((e: Error) => setError(e.message || t('openFailed')));
   }, [isLoading, option, csrf, login, router, t]);
+
+  if (notHers) return null;
 
   return (
     <div className="flex min-h-screen items-center justify-center bg-[var(--bg)] p-6">

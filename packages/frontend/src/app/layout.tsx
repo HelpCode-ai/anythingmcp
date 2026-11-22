@@ -106,9 +106,10 @@ export default async function RootLayout({
   const cookieDomain = process.env.COOKIE_DOMAIN;
   // amcp_locale cookie, then Accept-Language, then English (src/i18n/request.ts).
   const locale = await getLocale();
-  // What the dashboard last knew about this browser's member (an admin or an
-  // Open workspace, or a restricted member), so the first HTML already holds
-  // the right navigation. A hint for rendering only; the API decides access.
+  // Whether the dashboard last knew this browser's member as restricted, so
+  // that member's first HTML already holds their navigation. Absent for
+  // everyone else, who get the page as always. A hint for rendering only;
+  // the API decides access.
   const navHint = parseNavHint((await cookies()).get(NAV_HINT_COOKIE)?.value);
 
   return (

@@ -22,15 +22,22 @@ export function NavHintProvider({ hint, children }: { hint: NavHint; children: R
   return <NavHintContext.Provider value={hint}>{children}</NavHintContext.Provider>;
 }
 
-/** What only a restricted member's navigation needs to know. */
+/**
+ * What only a restricted member's navigation needs to know. `null`: the
+ * request for it failed, so it is not known.
+ */
 interface RestrictedFacts {
-  ownsMcpServer: boolean;
-  memoryAccess: boolean;
+  ownsMcpServer: boolean | null;
+  memoryAccess: boolean | null;
 }
 
 /**
  * One load per session and workspace, shared by every mounted hook, like the
  * member visibility itself: the app shell is mounted again by every page.
+ *
+ * Only a complete answer is kept. When a request fails, nothing is cached:
+ * the next page asks again, so one failed request does not take "MCP Servers"
+ * away from a member until they reload.
  */
 let cached: { key: string; promise: Promise<RestrictedFacts> } | null = null;
 let settled: { key: string; facts: RestrictedFacts } | null = null;
@@ -42,14 +49,17 @@ function loadFacts(key: string, token: string): Promise<RestrictedFacts> {
     mcpServers
       .list(token)
       .then((list) => Array.isArray(list) && list.length > 0)
-      .catch(() => false),
+      .catch(() => null),
     memory
       .status(token)
       .then((s) => !!s?.licensed && (s.isCurator === true || (!!s.access && s.access !== 'none')))
-      .catch(() => false),
+      .catch(() => null),
   ]).then(([ownsMcpServer, memoryAccess]) => {
     const facts = { ownsMcpServer, memoryAccess };
-    if (cached?.key === key) settled = { key, facts };
+    if (cached?.key === key) {
+      if (ownsMcpServer === null || memoryAccess === null) cached = null;
+      else settled = { key, facts };
+    }
     return facts;
   });
   cached = { key, promise };
@@ -59,13 +69,13 @@ function loadFacts(key: string, token: string): Promise<RestrictedFacts> {
 export interface MemberAccess {
   /**
    * The role and member visibility of this session are known. Until then the
-   * answers below are the careful guess described at `restricted`.
+   * answers below are the guess described at `restricted`.
    */
   decided: boolean;
   /**
    * Member visibility narrows this member's view. While not `decided` it is
-   * true unless the browser's last known answer was "not restricted", so a
-   * restricted member is never shown an admin's navigation for a moment.
+   * true only when the browser's last known answer was "restricted" (the
+   * navigation hint), so everyone else gets the page as always.
    */
   restricted: boolean;
   /** `allow`, `deny`, or `pending` while a fact the path depends on loads. */
@@ -83,7 +93,10 @@ export interface MemberAccess {
  *
  * Admins and members of an Open workspace get `allow` for everything and no
  * extra request. For a restricted member it asks, once per session, whether
- * they own an MCP server and whether Memory has something for them.
+ * they own an MCP server and whether Memory has something for them. A fact
+ * whose request failed counts as "yes" for now and is asked again by the next
+ * page: a failed request never hides an entry or refuses a page, the API
+ * still decides what the page shows.
  */
 export function useMemberAccess(): MemberAccess {
   const { token, user, isLoading, deploymentMode } = useAuth();
@@ -97,7 +110,7 @@ export function useMemberAccess(): MemberAccess {
     ? false
     : user && visibility.loaded
       ? visibility.restrictedForMe
-      : hint !== 'open';
+      : hint === 'restricted';
 
   const key = token && user ? `${user.organizationId ?? ''}:${token}` : null;
   const needsFacts = decided && restricted && !!key;
@@ -114,9 +127,12 @@ export function useMemberAccess(): MemberAccess {
     };
   }, [needsFacts, key, token]);
 
-  const known = !needsFacts || !key ? null : loaded?.key === key ? loaded.facts : settled?.key === key ? settled.facts : null;
-  const ownsMcpServer = known ? known.ownsMcpServer : null;
-  const memoryAccess = known ? known.memoryAccess : null;
+  // A complete answer another mount got (after this one's request failed) wins.
+  const known =
+    !needsFacts || !key ? null : settled?.key === key ? settled.facts : loaded?.key === key ? loaded.facts : null;
+  // Still loading: null (pending). Asked and failed: not a reason to refuse.
+  const ownsMcpServer = known ? (known.ownsMcpServer ?? true) : null;
+  const memoryAccess = known ? (known.memoryAccess ?? true) : null;
 
   const facts: MemberAccessFacts = useMemo(
     () => ({ role, restricted, ownsMcpServer, memoryAccess }),

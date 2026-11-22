@@ -47,7 +47,7 @@
   },
   "memberAccess": {
     "notAvailableTitle": "This page is not available to you",
-    "notAvailableBody": "Your role in this workspace does not include it. Here are the connectors you can use; ask a workspace admin if you need more."
+    "notAvailableBody": "Your role in this workspace does not include it. Ask a workspace admin if you need more."
   },
   "signIn": {
     "continueAs": "Continue as {email}",
@@ -2279,7 +2279,8 @@
       "unsavedToRestricted": "Not saved yet. This workspace is still Open: every member sees everything until you save.",
       "unsavedToOpen": "Not saved yet. This workspace is still Restricted until you save.",
       "saveSwitch": "Save: switch to {mode}",
-      "discard": "Discard"
+      "discard": "Discard",
+      "confirmLeave": "The member visibility you chose is not saved yet. Leave this page without saving?"
     },
     "revokeDialog": {
       "title": "Sign everyone out",

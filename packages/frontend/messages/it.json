@@ -47,7 +47,7 @@
   },
   "memberAccess": {
     "notAvailableTitle": "Questa pagina non è disponibile per te",
-    "notAvailableBody": "Il tuo ruolo in questo workspace non la comprende. Qui trovi i connettori che puoi usare; se ti serve altro, chiedi a un admin del workspace."
+    "notAvailableBody": "Il tuo ruolo in questo workspace non la comprende. Se ti serve altro, chiedi a un admin del workspace."
   },
   "signIn": {
     "continueAs": "Continua come {email}",
@@ -2279,7 +2279,8 @@
       "unsavedToRestricted": "Non ancora salvato. Questo workspace è ancora aperto: ogni membro vede tutto finché non salvi.",
       "unsavedToOpen": "Non ancora salvato. Questo workspace resta limitato finché non salvi.",
       "saveSwitch": "Salva: passa a {mode}",
-      "discard": "Annulla"
+      "discard": "Annulla",
+      "confirmLeave": "La visibilità per i membri che hai scelto non è ancora salvata. Uscire da questa pagina senza salvare?"
     },
     "revokeDialog": {
       "title": "Disconnetti tutti",
