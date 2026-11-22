@@ -1356,20 +1356,6 @@ export class McpEndpointController {
     return true;
   }
 
-  /**
-   * Whether this server must answer "not found" to this caller: a server of
-   * someone else, in a workspace whose member visibility is restricted, asked
-   * for by a member who is not an admin there. False for the owner (no
-   * lookup), for admins and in open workspaces.
-   */
-  private async hiddenFromRestrictedMember(
-    server: { userId?: string | null; organizationId: string },
-    user: { sub?: string } | undefined,
-  ): Promise<boolean> {
-    if (!user?.sub || server.userId === user.sub) return false;
-    return this.grants.restrictedIn(user.sub, server.organizationId);
-  }
-
   private async handleMcpRequest(
     serverId: string,
     req: Request,
@@ -1492,26 +1478,6 @@ export class McpEndpointController {
               'Access denied: this sign-in or API key belongs to a different workspace than this MCP server. ' +
               'Connect with a key created in the workspace that owns the server, or sign in with an account that is a member of it.',
           },
-          id: null,
-        });
-      }
-
-      // Member visibility: in a restricted workspace a member who is not an
-      // admin is never shown another member's server (its name, its endpoint
-      // path, its connectors). Here its id used to answer the handshake with
-      // the server's name and its own instructions. It now answers exactly as
-      // an id that does not exist; the member reaches shared connectors
-      // through their own server or the workspace connection (/mcp). The
-      // owner is served without a lookup, and a failure to read the mode
-      // reaches the caller as an error instead of the server's content.
-      if (await this.hiddenFromRestrictedMember(mcpServerConfig, user)) {
-        this.logger.warn(
-          `MCP request refused: server ${serverId} belongs to another member and the workspace ` +
-            `restricts member visibility (${this.describePrincipal(user)})`,
-        );
-        return res.status(404).json({
-          jsonrpc: '2.0',
-          error: { code: -32001, message: 'MCP server not found' },
           id: null,
         });
       }

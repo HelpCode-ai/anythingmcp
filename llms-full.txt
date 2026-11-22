@@ -7082,7 +7082,7 @@ workspace until an admin switches it.
 | Plan fit (`GET /api/license/plan-fit`, Cloud) | Any member | Admins only (403): it names every connector and MCP server of the workspace. |
 | Catalog (`/api/adapters/popular-connectors`, `/starter-pack`) | `installed` for every connector of the workspace | `installed` only for connectors the member can see. |
 | Members, invitations, roles, identity providers (`/api/users`, `/api/roles`, ...) | Admins only | Admins only (unchanged) |
-| MCP endpoint (`/mcp`, `/mcp/<serverId>`) | Tools filtered by MCP roles | Roles decide what an AI client can list and call, as in Open. `/mcp/<id>` of **another member's server** answers 404 `MCP server not found`, the answer of an id that does not exist: it used to return that server's name and instructions. The member's own servers and the workspace connection (`/mcp`) are unchanged. The server links the workspace connection hands to the model (`anythingmcp_get_configuration_url`) list only the member's own servers. |
+| MCP endpoint (`/mcp`, `/mcp/<serverId>`) | Tools filtered by MCP roles | Unchanged: roles already decide what an AI client can list and call. The server links the workspace connection hands to the model (`anythingmcp_get_configuration_url`) list only the member's own servers. |
 | Tool names inside tools (`kg_how_to_obtain`, the knowledge-graph resource, `amcp.search` in code mode) | Every tool of the connectors in reach | Only the tools the member's roles allow, in both modes whenever roles limit tools: a connector is in reach with one allowed tool, and these answers named all of its tools. An entity only denied tools reach is left out. |
 | Connector status in the chat (`setup_get_status` on the workspace connection, EDITOR and ADMIN) | Up to 50 connectors of the workspace, with links to finish or fix a setup and the provider's last error | The connectors the member can see. One they own: as in Open. One shared with them: its name and status only, no link and no error text. |
 
@@ -7232,16 +7232,15 @@ in one of two ways:
   member gets. An admin can put shared connectors on it; the member then sees
   those connectors on it as far as their roles reach.
 
-A connection to the workspace (`/mcp`) or to the member's own server keeps
-working when the workspace is switched to restricted: roles decide the tools,
-as before.
+Connections made before the workspace was switched to restricted keep working:
+the MCP endpoint is unchanged and roles still decide the tools. The dashboard
+just no longer names a server the member does not own.
 
-A connection a member made earlier **to another member's server**, for example
-a team server an admin owns, stops answering: `/mcp/<that server's id>` answers
-404 to a restricted member, as an id that does not exist would. Before
-switching a workspace to restricted, put the shared connectors on each
-member's own server or have members connect to the workspace (`/mcp`); their
-roles give them the same tools there. Admins keep reaching every server.
+That includes a connection to a team server an admin owns: the member's AI
+client keeps reaching `/mcp/<that server's id>` and gets the tools their roles
+allow on it. A client that connects there learns the server's name and its
+instructions, which the dashboard no longer shows the member; it cannot list
+or call a tool outside their roles.
 
 ## Set it up with roles and SSO group mapping
 

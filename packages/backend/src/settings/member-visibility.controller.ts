@@ -102,8 +102,8 @@ export class MemberVisibilityAdminController {
       'least one tool their roles allow; an EDITOR also the connectors they own, a VIEWER not) and the MCP ' +
       'servers they own, never another member\'s server. In a workspace without any tool whitelist, roles ' +
       'narrow nothing, so members still see every connector in the reduced view; only the tool calls are ' +
-      'narrowed. Admins always see everything. On the MCP endpoint roles already filter what an AI client ' +
-      'can call; another member\'s server answers 404 there to a restricted member.\n\n' +
+      'narrowed. Admins always see everything. The MCP endpoint is not affected: roles already filter what ' +
+      'an AI client can call there.\n\n' +
       'Applies to the workspace of the caller. A change writes a `MEMBER_VISIBILITY_CHANGED` security event ' +
       'with the old and new mode, and can take up to 30 seconds to reach every server process. A read-only ' +
       '(`MANAGEMENT_READ`) API key gets 403.\n\n' +
