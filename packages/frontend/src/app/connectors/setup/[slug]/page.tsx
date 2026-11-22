@@ -1140,6 +1140,10 @@ function SetupContent() {
                 : null
             }
             onSkip={() => setStepIndex(guide.steps.length - 1)}
+            // Back to choose another app, or none for now: the welcome
+            // wizard it was picked in (`?back=welcome`), else the dashboard
+            // (which sends a workspace without connectors to the wizard).
+            onBack={() => router.push(params.get('back') === 'welcome' ? '/welcome' : '/')}
           />
         </Card>
       );
