@@ -1,0 +1,1804 @@
+{
+  "slug": "iiko",
+  "name": "iiko",
+  "aliases": [
+    "Syrve",
+    "iikoCloud",
+    "Syrve Cloud",
+    "iikoCloud API",
+    "Syrve Live API",
+    "iiko Transport",
+    "iikoWeb"
+  ],
+  "description": "iiko and Syrve restaurant management through the iikoCloud API (Syrve Cloud API): organizations and terminal groups, menu and external menus, stop lists, delivery and table orders, reservations, couriers, order and payment types, discounts and loyalty customers. API login from the web back office.",
+  "region": "intl",
+  "category": "e-commerce",
+  "icon": "iiko",
+  "docsUrl": "https://api-ru.iiko.services/docs",
+  "prerequisites": "An iiko or Syrve restaurant account with the cloud API (iikoCloud / Syrve Live API) in its licence, and an administrator who can create an API login (API key) in the web back office under Integrations, API keys. About 5 minutes.",
+  "requiredEnvVars": [
+    "IIKO_API_HOST",
+    "IIKO_LOYALTY_API",
+    "IIKO_API_LOGIN"
+  ],
+  "optionalEnvVars": [
+    "IIKO_ORGANIZATION_ID"
+  ],
+  "envVarMeta": {
+    "IIKO_API_HOST": {
+      "label": "Product (API host)",
+      "kind": "address",
+      "help": "iiko accounts use api-ru.iiko.services, Syrve accounts use api-eu.syrve.live. An API login only works on the host of its own product.",
+      "link": "https://api-ru.iiko.services/docs",
+      "pattern": "^https://(api-ru\\.iiko\\.services|api-eu\\.syrve\\.live)$",
+      "patternMessage": "Pick one of the two API hosts, https://api-ru.iiko.services or https://api-eu.syrve.live.",
+      "options": [
+        {
+          "value": "https://api-ru.iiko.services",
+          "label": "iiko (api-ru.iiko.services)"
+        },
+        {
+          "value": "https://api-eu.syrve.live",
+          "label": "Syrve (api-eu.syrve.live)"
+        }
+      ]
+    },
+    "IIKO_LOYALTY_API": {
+      "label": "Loyalty API of your product",
+      "kind": "setting",
+      "help": "Pick the same product as for the API host. The loyalty calls live under /loyalty/iiko on iiko and under /loyalty/syrve on Syrve.",
+      "link": "https://api-eu.syrve.live/docs",
+      "pattern": "^(iiko|syrve)$",
+      "patternMessage": "Pick iiko or syrve, matching the API host.",
+      "options": [
+        {
+          "value": "iiko",
+          "label": "iiko"
+        },
+        {
+          "value": "syrve",
+          "label": "Syrve"
+        }
+      ]
+    },
+    "IIKO_API_LOGIN": {
+      "label": "API login (API key)",
+      "kind": "credential",
+      "secret": true,
+      "help": "Web back office (iikoWeb or Syrve Web), Integrations, API keys: create an API login for this connector, pick the organizations it may reach and copy the key. Keys expire after at most 2 years.",
+      "link": "https://en.syrve.help/articles/api/api-key-validity-period",
+      "pattern": "^\\S{4,100}$",
+      "patternMessage": "Paste only the API login, without spaces or quotes."
+    },
+    "IIKO_ORGANIZATION_ID": {
+      "label": "Default organization id",
+      "kind": "setting",
+      "help": "Optional. The id of your main restaurant (id of iiko_list_organizations). Tools that take a single organization use it when none is given.",
+      "example": "7bc05553-4b68-44e8-b7bc-37be63c6d9e9",
+      "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+      "patternMessage": "Paste the organization id as a UUID, e.g. 7bc05553-4b68-44e8-b7bc-37be63c6d9e9."
+    }
+  },
+  "verifyHints": {
+    "400": "iiko refused the request body. The errorDescription names the field; check ids (UUIDs) and dates (yyyy-MM-dd HH:mm:ss.fff).",
+    "401": {
+      "hint": "iiko refused the API login: it is wrong, expired, deactivated, or belongs to the other product. Copy it again from the web back office (Integrations, API keys) and check that the API host matches your product (iiko or Syrve).",
+      "field": "IIKO_API_LOGIN"
+    },
+    "403": "The API login has no right for this method or organization. Add the organization or the right (for example changing stop lists) to the API login in the web back office.",
+    "404": "iiko found nothing at this path. Check that the loyalty setting matches your product: iiko for api-ru.iiko.services, Syrve for api-eu.syrve.live.",
+    "408": "The restaurant POS did not answer in time. Check with iiko_check_terminal_groups_alive whether the terminal group is online and try again.",
+    "rate_limited": "iiko limits each group of methods per time slot (usually one minute). Wait for the slot to end, ask for several organizations in one call and cache dictionaries and menus."
+  },
+  "probe": {
+    "tool": "iiko_list_organizations",
+    "params": {
+      "return_additional_info": false
+    }
+  },
+  "connector": {
+    "name": "iikoCloud API",
+    "type": "REST",
+    "baseUrl": "{{IIKO_API_HOST}}",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "{{IIKO_API_HOST}}/api/1/access_token",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "apiLogin": "${username}"
+      },
+      "username": "{{IIKO_API_LOGIN}}",
+      "password": "{{IIKO_API_LOGIN}}",
+      "tokenJsonPath": "token",
+      "tokenTTLSeconds": 3600,
+      "proactiveRefreshSeconds": 300,
+      "refreshOn401": true,
+      "headerName": "Authorization",
+      "headerTemplate": "Bearer ${token}"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    }
+  },
+  "instructions": "## iiko / Syrve\nThis connector works with the **iikoCloud API** (iiko, host `api-ru.iiko.services`) and the identical **Syrve Cloud API** (Syrve, host `api-eu.syrve.live`), the cloud API of the iiko / Syrve restaurant management system: organizations and terminal groups, the menu and external menus, stop lists, delivery and table orders, reservations, couriers, dictionaries and loyalty customers.\n\n**Setup (about 5 minutes)**\n1. Sign in to the web back office (iikoWeb for iiko, Syrve Web / Syrve App for Syrve) as an administrator and open the cloud API settings (**Integrations, API keys**; called **API settings** or **Live API settings** in older versions).\n2. Create an API login (API key) for this connector: give it a name, pick the organizations it may reach and an expiry date (at most 2 years). Copy the key; a new key is 36 characters long and may be shown only once.\n3. Paste it into `IIKO_API_LOGIN`. Pick your product twice: the API host in `IIKO_API_HOST` and the same product in `IIKO_LOYALTY_API` (iiko and Syrve name the loyalty paths differently).\n4. Optional: put the id of your main restaurant into `IIKO_ORGANIZATION_ID` after the first `iiko_list_organizations` call, so tools that take one organization can leave it out.\n\nThe connector exchanges the API login at `/api/1/access_token` for a bearer token that lasts 1 hour and renews it by itself. iiko marks this login call as deprecated in favour of `/api/v2/access_token`, which also needs an app registered in the developer portal; if iiko switches the old call off, the setup check reports a failed login.\n\n**Where to start**: `iiko_list_organizations` gives the organization ids every other tool needs. `iiko_list_terminal_groups` lists the POS installations of an organization and `iiko_check_terminal_groups_alive` tells whether they are online.\n\n**Menu**: `iiko_list_external_menus` and `iiko_get_external_menu` read the menus prepared for delivery channels, with prices per organization. `iiko_get_nomenclature` reads the full back office menu (large; documented for Syrve, no longer in the iiko reference, so prefer the external menu on iiko). `iiko_get_stop_lists` shows what is out of stock per terminal group; `iiko_add_to_stop_list` and `iiko_remove_from_stop_list` change it and are installed switched off (they need an API login with the extra stop-list right).\n\n**Delivery orders**: `iiko_list_deliveries_by_date_and_status` (the daily overview), `iiko_search_deliveries` (text search and problem filter), `iiko_list_deliveries_by_phone`, `iiko_get_deliveries_by_id`. These are guaranteed for the last 7 days; `iiko_list_delivery_history_by_phone` reaches back 90 days. Statuses: Unconfirmed, WaitCooking, ReadyForCooking, CookingStarted, CookingCompleted, Waiting, OnWay, Delivered, Closed, Cancelled. `iiko_create_delivery` and `iiko_cancel_delivery` are installed switched off: a created order reaches the kitchen and a cancellation cannot be undone.\n\n**Table orders and reservations**: `iiko_get_table_orders_by_id` and `iiko_list_table_orders_by_table` read dine-in orders. For reservations, `iiko_list_reserve_terminal_groups`, then `iiko_list_restaurant_sections` (halls and tables), `iiko_list_reserves` (what is booked from a time on) and `iiko_get_reserves_by_id` (the details). The connector does not create reservations.\n\n**Dictionaries**: `iiko_list_order_types`, `iiko_list_payment_types`, `iiko_list_discounts`, `iiko_list_cancel_causes`, `iiko_list_couriers`. They rarely change: read them once per conversation, not per order.\n\n**Loyalty**: `iiko_get_customer` finds a guest by phone, email or card and shows the wallet balances; `iiko_list_customer_transactions` lists the bonus movements; `iiko_list_customer_categories` and `iiko_list_loyalty_programs` describe the programme. `iiko_create_or_update_customer` saves guest master data. The connector never tops up, holds or writes off a wallet and records no payments.\n\n**Commands**: creating or cancelling a delivery and changing a stop list answer at once with a `correlationId`; the POS carries the command out afterwards. Read the outcome with `iiko_get_command_status` (InProgress, Success, Error).\n\n**Formats**: ids are UUIDs. Dates are `yyyy-MM-dd HH:mm:ss.fff` without a time zone: order and reservation times are local to the terminal (see the time zone in `iiko_list_terminal_groups`), loyalty report dates are UTC. Sums are in the currency of the organization. Almost every call is a POST with a JSON body, also the reads.\n\n**Limits**: iiko groups the methods (dictionaries, menu, stop lists, order reading and others) and limits each group per time slot, usually one minute; over the limit every call of that group answers 429 until the slot ends. Limits for order and stop-list methods grow with the number of restaurants. Ask for several organizations in one call instead of one call each, cache dictionaries and menus, and do not poll single orders. Repeating identical or failing requests in bulk can get the API login blocked.\n\n**Errors**: an error answer has `errorDescription` and often `error` (a code) plus a `correlationId` to quote to iiko support. 401 means the token or API login was refused, 400 names the wrong field, 408 means the POS did not answer in time (the restaurant may be offline).",
+  "tools": [
+    {
+      "name": "iiko_list_organizations",
+      "description": "List the organizations (restaurants) the API login can reach: id, name and code, plus country, address, coordinates, time zone settings, POS version and currency when return_additional_info is true. Every other tool needs these ids. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Only these organization ids. Leave out for every organization of the API login."
+          },
+          "return_additional_info": {
+            "type": "boolean",
+            "default": true,
+            "description": "true (default): include country, address, version, currency and delivery settings. false: only id and name."
+          },
+          "include_disabled": {
+            "type": "boolean",
+            "description": "true to include disabled organizations."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/organizations",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "returnAdditionalInfo": "$return_additional_info",
+          "includeDisabled": "$include_disabled"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_terminal_groups",
+      "description": "List the terminal groups (the POS installations orders are sent to) of one or more organizations: per organization the groups with id, name, address, time zone and POS version, and the groups that are in sleep mode. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose terminal groups to list. Several restaurants can go into one call."
+          },
+          "include_disabled": {
+            "type": "boolean",
+            "description": "true to include disabled terminal groups."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/terminal_groups",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "includeDisabled": "$include_disabled"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_check_terminal_groups_alive",
+      "description": "Check whether terminal groups are online right now: per terminal group isAlive true or false. Use it before telling someone a restaurant can take orders. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) the terminal groups belong to. Several restaurants can go into one call."
+          },
+          "terminal_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Terminal group ids from iiko_list_terminal_groups.",
+            "minItems": 1
+          }
+        },
+        "required": [
+          "organization_ids",
+          "terminal_group_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/terminal_groups/is_alive",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "terminalGroupIds": "$terminal_group_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_get_nomenclature",
+      "description": "Read the full menu (nomenclature) of one organization as exported from the back office: groups, product categories, products (dishes, goods, modifiers, services) with code, name, description, sizePrices, modifiers, nutrition values, weight and tags, sizes, and the menu revision. The answer can be several megabytes for a large menu; prefer iiko_get_external_menu when an external menu exists. Syrve documents this method; iiko has dropped it from its current reference, so on an iiko account fall back to the external menu if it answers an error. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) whose menu to read. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "start_revision": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Menu revision you already have (the revision field of the previous answer); the menu is returned only when it changed since then. Leave out or pass 0 for the full menu."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/nomenclature",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "timeoutMs": 60000,
+        "headers": {
+          "Timeout": "45"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "startRevision": "$start_revision"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_external_menus",
+      "description": "List the external menus (the menus prepared for delivery sites and apps in the web back office) and the price categories of the account: id and name of each. Pass an id to iiko_get_external_menu. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2/menu",
+        "bodyMapping": {}
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_get_external_menu",
+      "description": "Read one external menu with its item categories, items, sizes, prices per organization, modifier groups, allergens, nutrition values, combos and the hours the menu is valid. Prices are in the organization currency. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "external_menu_id": {
+            "type": "string",
+            "description": "External menu id from iiko_list_external_menus, e.g. 12345."
+          },
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose prices and availability to return. Several restaurants can go into one call."
+          },
+          "price_category_id": {
+            "type": "string",
+            "description": "Price category id from iiko_list_external_menus. Leave out for the base prices."
+          },
+          "version": {
+            "type": "integer",
+            "enum": [
+              2,
+              3,
+              4
+            ],
+            "description": "Version of the answer format. Leave out for the default (2); 3 and 4 add newer fields."
+          },
+          "language": {
+            "type": "string",
+            "description": "Language code of the menu texts, when the menu has translations, e.g. en."
+          }
+        },
+        "required": [
+          "external_menu_id",
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/2/menu/by_id",
+        "timeoutMs": 60000,
+        "headers": {
+          "Timeout": "45"
+        },
+        "bodyMapping": {
+          "externalMenuId": "$external_menu_id",
+          "organizationIds": "$organization_ids",
+          "priceCategoryId": "$price_category_id",
+          "version": "$version",
+          "language": "$language"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_get_stop_lists",
+      "description": "Read the stop lists (out-of-stock items): per organization and terminal group the items with productId, sizeId, sku, balance (remaining quantity, 0 when sold out) and dateAdd. Match productId against the menu to get names. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose stop lists to read. Several restaurants can go into one call."
+          },
+          "terminal_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Only these terminal groups. Leave out for all."
+          },
+          "return_size": {
+            "type": "boolean",
+            "description": "true to return the dish size of each item."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/stop_lists",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "terminalGroupsIds": "$terminal_group_ids",
+          "returnSize": "$return_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_order_types",
+      "description": "List the order types per organization: id, name, orderServiceType (Common for table orders, DeliveryByCourier, DeliveryByClient for pickup), isDefault and isDeleted. Read-only; cache the answer, it rarely changes.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose order types to list. Several restaurants can go into one call."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/order_types",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_payment_types",
+      "description": "List the payment types: id, code, name, paymentTypeKind (Cash, Card, External, LoyaltyCard and others), paymentProcessingType, the terminal groups each applies to and isDeleted. Read-only; cache the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose payment types to list. Several restaurants can go into one call."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/payment_types",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_discounts",
+      "description": "List the discounts and surcharges set up in the back office per organization: id, name, percent or fixed sum, mode, minimum order sum, whether it is manual, automatic or card based, and isDeleted. Read-only; cache the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose discounts to list. Several restaurants can go into one call."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/discounts",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_cancel_causes",
+      "description": "List the delivery cancellation causes: id, name and isDeleted. An id is needed to cancel a delivery. Read-only; cache the answer.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose cancel causes to list. Several restaurants can go into one call."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/cancel_causes",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_deliveries_by_date_and_status",
+      "description": "List delivery and pickup orders by delivery date and status: per organization the orders with id, posId, creationStatus and the order itself (number, status, customer, phone, delivery address, courier, items, payments, discounts, sum, completeBefore and the when... timestamps), plus maxRevision. Guaranteed for the last 7 days; times are local to the delivery terminal. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose orders to list. Several restaurants can go into one call."
+          },
+          "delivery_date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Lower limit of the delivery date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "delivery_date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Upper limit of the delivery date, local time of the terminal. Leave out for no upper limit. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Unconfirmed",
+                "WaitCooking",
+                "ReadyForCooking",
+                "CookingStarted",
+                "CookingCompleted",
+                "Waiting",
+                "OnWay",
+                "Delivered",
+                "Closed",
+                "Cancelled"
+              ]
+            },
+            "description": "Only orders in these statuses. Leave out for all."
+          },
+          "courier_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Only orders of these couriers (ids from iiko_list_couriers)."
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        },
+        "required": [
+          "organization_ids",
+          "delivery_date_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/by_delivery_date_and_status",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "deliveryDateFrom": "$delivery_date_from",
+          "deliveryDateTo": "$delivery_date_to",
+          "statuses": "$statuses",
+          "courierIds": "$courier_ids",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_deliveries_by_phone",
+      "description": "Find the recent delivery orders of a phone number (guaranteed for the last 7 days): the same order details as iiko_list_deliveries_by_date_and_status, grouped by organization. For older orders use iiko_list_delivery_history_by_phone. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) to search in. Several restaurants can go into one call."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Customer phone number as stored on the order, with country code, e.g. +971501234567."
+          },
+          "delivery_date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Lower limit of the delivery date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "delivery_date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Upper limit of the delivery date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "rows_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "description": "Maximum number of orders. Leave out for all."
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        },
+        "required": [
+          "organization_ids",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/by_delivery_date_and_phone",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "phone": "$phone",
+          "deliveryDateFrom": "$delivery_date_from",
+          "deliveryDateTo": "$delivery_date_to",
+          "rowsCount": "$rows_count",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_delivery_history_by_phone",
+      "description": "Find older delivery orders of a phone number in the order history (kept 90 days): the same order details, grouped by organization, at most 200 per call. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) to search in. Several restaurants can go into one call."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Customer phone number as stored on the order, with country code, e.g. +971501234567."
+          },
+          "delivery_date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Lower limit of the delivery date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "delivery_date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Upper limit of the delivery date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "rows_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "Maximum number of orders (default 50, at most 200)."
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        },
+        "required": [
+          "organization_ids",
+          "phone"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/history/by_delivery_date_and_phone",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "phone": "$phone",
+          "deliveryDateFrom": "$delivery_date_from",
+          "deliveryDateTo": "$delivery_date_to",
+          "rowsCount": "$rows_count",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_search_deliveries",
+      "description": "Search delivery orders by text (prefix search on order number, customer name, phone or address) with filters for date, status, service type and problem flag, sorted as asked. Returns the same order details grouped by organization. Guaranteed for the last 7 days. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) to search in. Several restaurants can go into one call."
+          },
+          "search_text": {
+            "type": "string",
+            "description": "Text to search for, matched from the start of a word, e.g. an order number or the first letters of a name."
+          },
+          "terminal_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Only these terminal groups."
+          },
+          "delivery_date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Lower limit of the delivery date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "delivery_date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Upper limit of the delivery date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "Unconfirmed",
+                "WaitCooking",
+                "ReadyForCooking",
+                "CookingStarted",
+                "CookingCompleted",
+                "Waiting",
+                "OnWay",
+                "Delivered",
+                "Closed",
+                "Cancelled"
+              ]
+            },
+            "description": "Only orders in these statuses."
+          },
+          "has_problem": {
+            "type": "boolean",
+            "description": "true: only orders with a problem (flagged, or late in their status). false: only orders without."
+          },
+          "order_service_type": {
+            "type": "string",
+            "enum": [
+              "DeliveryByCourier",
+              "DeliveryByClient"
+            ],
+            "description": "DeliveryByCourier (courier delivery) or DeliveryByClient (pickup)."
+          },
+          "sort_property": {
+            "type": "string",
+            "enum": [
+              "Number",
+              "CompleteBefore",
+              "Sum",
+              "Customer",
+              "Courier",
+              "Status",
+              "OrderTypeName"
+            ],
+            "default": "CompleteBefore",
+            "description": "Field to sort by (default CompleteBefore)."
+          },
+          "sort_direction": {
+            "type": "string",
+            "enum": [
+              "Ascending",
+              "Descending"
+            ],
+            "default": "Descending",
+            "description": "Sort direction (default Descending)."
+          },
+          "rows_count": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 50,
+            "description": "Maximum number of orders (default 50)."
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/by_delivery_date_and_source_key_and_filter",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "searchText": "$search_text",
+          "terminalGroupIds": "$terminal_group_ids",
+          "deliveryDateFrom": "$delivery_date_from",
+          "deliveryDateTo": "$delivery_date_to",
+          "statuses": "$statuses",
+          "hasProblem": "$has_problem",
+          "orderServiceType": "$order_service_type",
+          "sortProperty": "$sort_property",
+          "sortDirection": "$sort_direction",
+          "rowsCount": "$rows_count",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_get_deliveries_by_id",
+      "description": "Read up to 200 delivery orders by id: creationStatus (Success, InProgress, Error with errorInfo) and the full order with status, customer, address, courier, items with modifiers, payments, discounts, sum and timestamps. Pass order_ids or pos_order_ids, not both. Guaranteed for the last 7 days. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the orders belong to. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Order ids (id of an order), at most 200.",
+            "maxItems": 200
+          },
+          "pos_order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "POS order ids (posId of an order), at most 200. Only when order_ids is left out.",
+            "maxItems": 200
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/by_id",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "orderIds": "$order_ids",
+          "posOrderIds": "$pos_order_ids",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_get_table_orders_by_id",
+      "description": "Read table (dine-in) orders by id: creationStatus and the order with tableIds, status (New, Bill, Closed, Deleted), waiter, customer, items, payments, discounts, sum, whenCreated, whenBillPrinted and whenClosed. Pass order_ids or pos_order_ids, not both. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) the orders belong to. Several restaurants can go into one call."
+          },
+          "order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Order ids."
+          },
+          "pos_order_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "POS order ids. Only when order_ids is left out."
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/order/by_id",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "orderIds": "$order_ids",
+          "posOrderIds": "$pos_order_ids",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_table_orders_by_table",
+      "description": "List the table (dine-in) orders of given tables, optionally by status and creation date: the same details as iiko_get_table_orders_by_id. Order details are kept 90 days; times are local to the terminal. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) the tables belong to. Several restaurants can go into one call."
+          },
+          "table_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Table ids from iiko_list_restaurant_sections.",
+            "minItems": 1
+          },
+          "statuses": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "enum": [
+                "New",
+                "Bill",
+                "Closed",
+                "Deleted"
+              ]
+            },
+            "description": "Only orders in these statuses: New (open), Bill (bill printed), Closed, Deleted. Leave out for all."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Lower limit of the order creation date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Upper limit of the order creation date, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        },
+        "required": [
+          "organization_ids",
+          "table_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/order/by_table",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids",
+          "tableIds": "$table_ids",
+          "statuses": "$statuses",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_reserve_terminal_groups",
+      "description": "List the terminal groups of the given organizations that accept table reservations and banquets: id, name, address and time zone, and the groups in sleep mode. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) to check. Several restaurants can go into one call."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/reserve/available_terminal_groups",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_restaurant_sections",
+      "description": "List the restaurant sections (halls) of terminal groups that accept reservations, with their tables: section id and name, and per table id, number, name and seating capacity. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "terminal_group_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Terminal group ids from iiko_list_reserve_terminal_groups.",
+            "minItems": 1
+          },
+          "return_schema": {
+            "type": "boolean",
+            "description": "true to include the table layout (positions and shapes) of each section."
+          }
+        },
+        "required": [
+          "terminal_group_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/reserve/available_restaurant_sections",
+        "bodyMapping": {
+          "terminalGroupIds": "$terminal_group_ids",
+          "returnSchema": "$return_schema"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_reserves",
+      "description": "List the reservations and banquets booked in restaurant sections from a start time: id, tableIds, estimatedStartTime, durationInMinutes and guestsCount. Use it to see which tables are taken; details come from iiko_get_reserves_by_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "restaurant_section_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Section ids from iiko_list_restaurant_sections.",
+            "minItems": 1
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Lower limit of the estimated start time, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Upper limit of the estimated start time, local time of the terminal. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          }
+        },
+        "required": [
+          "restaurant_section_ids",
+          "date_from"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/reserve/restaurant_sections_workload",
+        "bodyMapping": {
+          "restaurantSectionIds": "$restaurant_section_ids",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_get_reserves_by_id",
+      "description": "Read reservations and banquets by id: creationStatus, isDeleted and the reserve with customer, phone, guest count, tables, estimated start time, duration, status, comment, and the pre-ordered items and prepayments of a banquet. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the reserves belong to. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "reserve_ids": {
+            "type": "array",
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Reserve ids from iiko_list_reserves.",
+            "minItems": 1
+          },
+          "source_keys": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "Only orders created by these sources (the sourceKey an integration sets on its orders). Leave out for all sources."
+          }
+        },
+        "required": [
+          "reserve_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/reserve/status_by_id",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "reserveIds": "$reserve_ids",
+          "sourceKeys": "$source_keys"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_couriers",
+      "description": "List the employees who are delivery couriers, per organization: id, firstName, lastName, displayName, code and isDeleted. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_ids": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$"
+            },
+            "description": "Organization ids (UUIDs from iiko_list_organizations) whose couriers to list. Several restaurants can go into one call."
+          }
+        },
+        "required": [
+          "organization_ids"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/employees/couriers",
+        "bodyMapping": {
+          "organizationIds": "$organization_ids"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_get_customer",
+      "description": "Look up one loyalty customer (guest) by phone, email, card number, card track or id: id, name, surname, phone, email, birthday, sex, consent status, cards, categories, walletBalances (bonus and deposit balances per wallet), marketing opt-ins, registration date and last order date. A customer that does not exist answers with an error. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) whose loyalty programme to search. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "type": {
+            "type": "string",
+            "enum": [
+              "phone",
+              "email",
+              "cardNumber",
+              "cardTrack",
+              "id"
+            ],
+            "default": "phone",
+            "description": "What to search by (default phone). Fill the matching parameter: phone, email, card_number, card_track or customer_id."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number with country code, e.g. +971501234567. With type phone."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address. With type email."
+          },
+          "card_number": {
+            "type": "string",
+            "description": "Loyalty card number. With type cardNumber."
+          },
+          "card_track": {
+            "type": "string",
+            "description": "Loyalty card track. With type cardTrack."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer id (UUID). With type id."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/loyalty/{{IIKO_LOYALTY_API}}/customer/info",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "type": "$type",
+          "phone": "$phone",
+          "email": "$email",
+          "cardNumber": "$card_number",
+          "cardTrack": "$card_track",
+          "id": "$customer_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_customer_categories",
+      "description": "List the customer (guest) categories of the loyalty programme of an organization: id, name, isActive and isDefaultForNewGuests. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) whose categories to list. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/loyalty/{{IIKO_LOYALTY_API}}/customer_category",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_loyalty_programs",
+      "description": "List the loyalty programmes of an organization: id, name, description, programType, isActive, validity dates, walletId, and the marketing campaigns with their conditions and actions unless left out. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) whose programmes to list. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "without_marketing_campaigns": {
+            "type": "boolean",
+            "description": "true to leave the marketing campaigns out of the answer (much smaller)."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/loyalty/{{IIKO_LOYALTY_API}}/program",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "withoutMarketingCampaigns": "$without_marketing_campaigns"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_list_customer_transactions",
+      "description": "List the loyalty transactions of one customer in a period (bonus accruals and write-offs, wallet refills, coupons): type, typeName, sum, balanceBefore, balanceAfter, orderNumber, orderSum, programId, walletId and whenCreated. Dates are UTC and included. Paged from page 0. Read-only: it reports wallet movements and never makes one.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the customer belongs to. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer id (id of iiko_get_customer)."
+          },
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Start of the period, UTC, included. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "End of the period, UTC, included. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page number, starting at 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 500,
+            "default": 100,
+            "description": "Rows per page (default 100). The server may use a smaller size; read pageSize in the answer."
+          }
+        },
+        "required": [
+          "customer_id",
+          "date_from",
+          "date_to"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/loyalty/{{IIKO_LOYALTY_API}}/customer/transactions/by_date",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "customerId": "$customer_id",
+          "dateFrom": "$date_from",
+          "dateTo": "$date_to",
+          "pageNumber": "$page_number",
+          "pageSize": "$page_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_create_or_update_customer",
+      "description": "Create a loyalty customer or update one found by id, phone or card: name, phone, email, birthday, sex, comment, consent status and marketing opt-ins. Returns the customer id. Fields left out stay as they are. It changes guest master data only: no bonus points or wallet balances. Show the user what will be saved and wait for confirmation.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the customer belongs to. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "customer_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Customer id to update. Leave out to match by phone or card, or to create a new customer."
+          },
+          "phone": {
+            "type": "string",
+            "description": "Phone number with country code, e.g. +971501234567."
+          },
+          "name": {
+            "type": "string",
+            "description": "First name."
+          },
+          "surname": {
+            "type": "string",
+            "description": "Surname."
+          },
+          "middle_name": {
+            "type": "string",
+            "description": "Middle name."
+          },
+          "email": {
+            "type": "string",
+            "description": "Email address."
+          },
+          "birthday": {
+            "type": "string",
+            "pattern": "^\\d{4}-\\d{2}-\\d{2} \\d{2}:\\d{2}:\\d{2}\\.\\d{3}$",
+            "description": "Birthday. Format yyyy-MM-dd HH:mm:ss.fff, e.g. 2026-11-19 00:00:00.000."
+          },
+          "sex": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "0 not specified, 1 male, 2 female."
+          },
+          "consent_status": {
+            "type": "integer",
+            "enum": [
+              0,
+              1,
+              2
+            ],
+            "description": "Personal data consent: 0 unknown, 1 given, 2 revoked."
+          },
+          "should_receive_promo_actions_info": {
+            "type": "boolean",
+            "description": "Whether the customer receives promotional messages (email, SMS)."
+          },
+          "should_receive_loyalty_info": {
+            "type": "boolean",
+            "description": "Whether the customer receives loyalty messages (email, SMS)."
+          },
+          "card_number": {
+            "type": "string",
+            "description": "Loyalty card number to attach. Needs card_track."
+          },
+          "card_track": {
+            "type": "string",
+            "description": "Loyalty card track to attach. Needs card_number."
+          },
+          "comment": {
+            "type": "string",
+            "description": "Free comment on the customer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/loyalty/{{IIKO_LOYALTY_API}}/customer/create_or_update",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "id": "$customer_id",
+          "phone": "$phone",
+          "name": "$name",
+          "surName": "$surname",
+          "middleName": "$middle_name",
+          "email": "$email",
+          "birthday": "$birthday",
+          "sex": "$sex",
+          "consentStatus": "$consent_status",
+          "shouldReceivePromoActionsInfo": "$should_receive_promo_actions_info",
+          "shouldReceiveLoyaltyInfo": "$should_receive_loyalty_info",
+          "cardNumber": "$card_number",
+          "cardTrack": "$card_track",
+          "comment": "$comment"
+        }
+      }
+    },
+    {
+      "name": "iiko_get_command_status",
+      "description": "Check the result of a command (creating or cancelling a delivery, changing a stop list): state InProgress, Success or Error with errorReason. Commands answer at once with a correlationId and are carried out by the POS afterwards; poll every few seconds until the state is final. HTTP 410 means the correlationId is too old. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the command was sent for. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "correlation_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "correlationId from the answer of the command."
+          }
+        },
+        "required": [
+          "correlation_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/commands/status",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "correlationId": "$correlation_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "iiko_create_delivery",
+      "description": "Create a delivery or pickup order in the POS. It is a command: the answer carries a correlationId and orderInfo with creationStatus InProgress; confirm the result with iiko_get_command_status or iiko_get_deliveries_by_id. The kitchen starts working on a created order, so show the user the complete order and wait for confirmation; never retry a successful create. Payments in the order only record how the guest pays; nothing is charged by this connector. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the order is created in. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "terminal_group_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Terminal group the order is sent to (iiko_list_terminal_groups). Leave out to let iiko pick by delivery zone."
+          },
+          "order": {
+            "type": "object",
+            "description": "The order as the iikoCloud API documents it. Required: phone (starts with + and has at least 8 digits) and items. Usual fields: orderServiceType (DeliveryByCourier or DeliveryByClient) or orderTypeId, completeBefore (local time, yyyy-MM-dd HH:mm:ss.fff; leave out for as soon as possible), customer, deliveryPoint (address; not needed for pickup), comment, payments, sourceKey. Example: `{\"phone\": \"+971501234567\", \"orderServiceType\": \"DeliveryByClient\", \"customer\": {\"name\": \"Anna\"}, \"items\": [{\"type\": \"Product\", \"productId\": \"9a2b6c1e-0000-4000-8000-000000000001\", \"amount\": 1}]}`. Product ids come from the menu tools.",
+            "properties": {
+              "phone": {
+                "type": "string",
+                "description": "Customer phone, starting with + and at least 8 digits."
+              },
+              "items": {
+                "type": "array",
+                "items": {
+                  "type": "object"
+                },
+                "description": "Order items: type Product (productId, amount, optional price, modifiers, comment) or Compound."
+              }
+            },
+            "required": [
+              "phone",
+              "items"
+            ]
+          }
+        },
+        "required": [
+          "order"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/create",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "terminalGroupId": "$terminal_group_id",
+          "order": "$order"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "iiko_cancel_delivery",
+      "description": "Cancel a delivery order, with a cancel cause. It cannot be undone and items already printed are written off. It is a command: check the result with iiko_get_command_status. Show the user which order will be cancelled and wait for confirmation. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the order belongs to. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "order_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Order id (id of the delivery order)."
+          },
+          "cancel_cause_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Cancel cause id from iiko_list_cancel_causes."
+          },
+          "cancel_comment": {
+            "type": "string",
+            "description": "Comment on the cancellation."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/deliveries/cancel",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "orderId": "$order_id",
+          "cancelCauseId": "$cancel_cause_id",
+          "cancelComment": "$cancel_comment"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "iiko_add_to_stop_list",
+      "description": "Put products on the stop list of one terminal group, with the remaining quantity (0 for sold out). Guests can no longer order a sold-out item. Needs an API login with the extra right to change stop lists and POS version 8.6.1 or later. It is a command: check the result with iiko_get_command_status. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the terminal group belongs to. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "terminal_group_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Terminal group id from iiko_list_terminal_groups."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "description": "Product id from the menu."
+                },
+                "sizeId": {
+                  "type": "string",
+                  "description": "Size id, for a product sold in sizes."
+                },
+                "balance": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Remaining quantity; 0 means sold out."
+                }
+              },
+              "required": [
+                "productId",
+                "balance"
+              ]
+            },
+            "description": "Products to add, each with productId and balance, e.g. `[{\"productId\": \"9a2b6c1e-0000-4000-8000-000000000001\", \"balance\": 0}]`."
+          }
+        },
+        "required": [
+          "terminal_group_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/stop_lists/add",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "terminalGroupId": "$terminal_group_id",
+          "items": "$items"
+        }
+      },
+      "enabled": false
+    },
+    {
+      "name": "iiko_remove_from_stop_list",
+      "description": "Take products off the stop list of one terminal group, so they can be ordered again. Needs an API login with the extra right to change stop lists and POS version 8.6.1 or later. It is a command: check the result with iiko_get_command_status. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "organization_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Organization id (UUID from iiko_list_organizations) the terminal group belongs to. Leave it out to use the connector's default organization (IIKO_ORGANIZATION_ID); without a default it is required."
+          },
+          "terminal_group_id": {
+            "type": "string",
+            "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
+            "description": "Terminal group id from iiko_list_terminal_groups."
+          },
+          "items": {
+            "type": "array",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "productId": {
+                  "type": "string",
+                  "description": "Product id from the stop list."
+                },
+                "sizeId": {
+                  "type": "string",
+                  "description": "Size id, for a product sold in sizes."
+                }
+              },
+              "required": [
+                "productId"
+              ]
+            },
+            "description": "Products to remove, each with productId, e.g. `[{\"productId\": \"9a2b6c1e-0000-4000-8000-000000000001\"}]`."
+          }
+        },
+        "required": [
+          "terminal_group_id",
+          "items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/api/1/stop_lists/remove",
+        "envDefaults": {
+          "organization_id": "IIKO_ORGANIZATION_ID"
+        },
+        "bodyMapping": {
+          "organizationId": "$organization_id",
+          "terminalGroupId": "$terminal_group_id",
+          "items": "$items"
+        }
+      },
+      "enabled": false
+    }
+  ]
+}

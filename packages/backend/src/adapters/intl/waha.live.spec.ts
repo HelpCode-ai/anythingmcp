@@ -211,6 +211,12 @@ describe('waha adapter: static contract', () => {
     }
   });
 
+  it('is unlisted and points to the official WhatsApp connector', () => {
+    expect((a as { unlisted?: boolean }).unlisted).toBe(true);
+    expect(a.instructions).toMatch(/taken out of the store/);
+    expect(a.instructions).toMatch(/whatsapp-business/);
+  });
+
   it('says it is an unofficial gateway and names the official connector', () => {
     expect(a.instructions).toMatch(/Unofficial gateway/);
     expect(a.instructions).toContain('WhatsApp Business Cloud API');

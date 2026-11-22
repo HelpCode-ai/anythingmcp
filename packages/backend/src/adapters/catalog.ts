@@ -393,6 +393,7 @@ import * as huggingface from './intl/huggingface.json';
 import * as hunter from './intl/hunter.json';
 import * as idealista from './intl/idealista.json';
 import * as ideasoft from './intl/ideasoft.json';
+import * as iiko from './intl/iiko.json';
 import * as imapSmtp from './intl/imap-smtp.json';
 import * as immich from './intl/immich.json';
 import * as incidentIo from './intl/incident-io.json';
@@ -824,6 +825,7 @@ import * as xxxlutz from './intl/xxxlutz.json';
 import * as yandexDirect from './intl/yandex-direct.json';
 import * as yandexDisk from './intl/yandex-disk.json';
 import * as yandexMetrica from './intl/yandex-metrica.json';
+import * as yclients from './intl/yclients.json';
 import * as youcom from './intl/youcom.json';
 import * as yougile from './intl/yougile.json';
 import * as youtrack from './intl/youtrack.json';
@@ -1667,6 +1669,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   hunter as unknown as AdapterDefinition,
   idealista as unknown as AdapterDefinition,
   ideasoft as unknown as AdapterDefinition,
+  iiko as unknown as AdapterDefinition,
   imapSmtp as unknown as AdapterDefinition,
   immich as unknown as AdapterDefinition,
   incidentIo as unknown as AdapterDefinition,
@@ -2098,6 +2101,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   yandexDirect as unknown as AdapterDefinition,
   yandexDisk as unknown as AdapterDefinition,
   yandexMetrica as unknown as AdapterDefinition,
+  yclients as unknown as AdapterDefinition,
   youcom as unknown as AdapterDefinition,
   yougile as unknown as AdapterDefinition,
   youtrack as unknown as AdapterDefinition,

@@ -1630,6 +1630,21 @@ function rawResponseText(err: any): string {
   }
 }
 
+/**
+ * `text` without its trailing dots and whitespace: what `/[.\s]+$/` removes,
+ * in one pass from the end. The regex retries every run of spaces in the
+ * middle of a long message, which is quadratic in its length.
+ */
+export function trimTrailingDotsAndSpace(text: string): string {
+  let end = text.length;
+  while (end > 0) {
+    const ch = text[end - 1];
+    if (ch !== '.' && !/\s/.test(ch)) break;
+    end--;
+  }
+  return text.slice(0, end);
+}
+
 function withResponseExcerpt(message: string, err: any, max = 200): string {
   const data = err?.response?.data;
   if (data === undefined || data === null || message.includes('body=')) return message;
@@ -1640,10 +1655,10 @@ function withResponseExcerpt(message: string, err: any, max = 200): string {
     return message;
   }
   // A web page instead of API data: its readable words, never its markup.
-  if (looksLikeHtml(body)) return `${message.replace(/[.\s]+$/, '')}: ${describeHtmlAnswer(body, max)}`;
+  if (looksLikeHtml(body)) return `${trimTrailingDotsAndSpace(message)}: ${describeHtmlAnswer(body, max)}`;
   body = body.replace(/\s+/g, ' ').trim();
   if (!body || body === '{}' || body === '""' || message.includes(body)) return message;
-  return `${message.replace(/[.\s]+$/, '')}: ${body.length > max ? `${body.slice(0, max)}…` : body}`;
+  return `${trimTrailingDotsAndSpace(message)}: ${body.length > max ? `${body.slice(0, max)}…` : body}`;
 }
 
 function truncateSample(value: unknown, max = 600): string {

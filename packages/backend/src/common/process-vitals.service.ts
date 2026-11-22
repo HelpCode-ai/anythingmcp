@@ -14,6 +14,7 @@ import {
   readHeapPolicy,
   readSnapshotDir,
   readVitalsIntervalSec,
+  snapshotCost,
 } from './process-vitals';
 
 /** What a tick reads. Overridable so tests can feed numbers. */
@@ -190,13 +191,13 @@ export class ProcessVitalsService implements OnModuleInit, OnModuleDestroy {
       } else if (action === 'snapshot-skipped') {
         this.logger.warn(
           `Heap crossed ${this.policy.snapshotPercent}% but a snapshot would need about ` +
-            `${vitals.heapUsedMb} MB more, and rss ${vitals.rssMb} MB of a ${vitals.rssLimitMb} MB ` +
+            `${mb(snapshotCost(mem.heapUsed))} MB more, and rss ${vitals.rssMb} MB of a ${vitals.rssLimitMb} MB ` +
             `cgroup limit leaves no room for it. Not writing one: that is how 21 Sep went.`,
         );
       } else if (action === 'snapshot') {
         this.logger.warn(
           `Heap crossed ${this.policy.snapshotPercent}% — writing a heap snapshot to ${this.snapshotDir}. ` +
-            `This blocks the event loop while it runs and needs roughly ${vitals.heapUsedMb} MB more memory.`,
+            `This blocks the event loop while it runs and needs roughly ${mb(snapshotCost(mem.heapUsed))} MB more memory.`,
         );
         // Let that line reach stdout before the loop stops. It is the line
         // that explains the pause — and the kill, if one comes anyway.

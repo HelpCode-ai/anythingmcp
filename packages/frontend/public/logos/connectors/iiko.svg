@@ -1,0 +1,7 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 128 128" role="img" aria-label="iiko connector">
+  <rect width="128" height="128" rx="24" fill="#E3262E"/>
+  <circle cx="45" cy="35" r="9" fill="#fff"/>
+  <rect x="37" y="52" width="16" height="48" rx="8" fill="#fff"/>
+  <circle cx="83" cy="35" r="9" fill="#fff"/>
+  <rect x="75" y="52" width="16" height="48" rx="8" fill="#fff"/>
+</svg>
