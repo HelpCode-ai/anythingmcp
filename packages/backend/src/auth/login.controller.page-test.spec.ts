@@ -70,6 +70,8 @@ function build(
     deployment?: object;
     /** `AUTHORIZE_CONNECTED_PAGE_TEST`. */
     setting?: string;
+    /** `AUTHORIZE_SIGNIN_PAGE_TEST`; 'off' unless a test sets it. */
+    signin?: string;
     session?: boolean;
     createdAt?: Date;
     telegram?: boolean;
@@ -95,7 +97,13 @@ function build(
   };
   const config = {
     get: jest.fn((key: string) =>
-      key === 'FRONTEND_URL' ? 'https://cloud.example' : key === 'AUTHORIZE_CONNECTED_PAGE_TEST' ? opts.setting : undefined,
+      key === 'FRONTEND_URL'
+        ? 'https://cloud.example'
+        : key === 'AUTHORIZE_CONNECTED_PAGE_TEST'
+          ? opts.setting
+          : key === 'AUTHORIZE_SIGNIN_PAGE_TEST'
+            ? (opts.signin ?? 'off')
+            : undefined,
     ),
   };
   const store = {
@@ -618,5 +626,82 @@ describe('the sign-in page on a phone', () => {
     const html = await signInPage();
     expect(html).toContain('value="social:google"');
     expect(html).not.toMatch(/id="email"[^>]*autofocus/);
+  });
+});
+
+describe('the sign-in page test (A3/A4)', () => {
+  const signIn = async (signin: string, lang = 'de-DE,de;q=0.9,en;q=0.8', ua = MAC) => {
+    const { controller, events } = build({ setting: 'next_step', signin });
+    const res = makeRes();
+    await controller.showLoginPage(
+      undefined as any,
+      undefined as any,
+      req({ headers: { host: 'mcp.test', 'user-agent': ua, 'accept-language': lang } }),
+      res,
+    );
+    await flush();
+    return { html: res._sent as string, events: events() };
+  };
+
+  it('speaks the browser language on buttons_first, with the value line and the buttons first', async () => {
+    const { html, events } = await signIn('buttons_first');
+    expect(html).toContain('<html lang="de">');
+    expect(html).toContain('<h1>Claude mit AnythingMCP verbinden</h1>');
+    expect(html).toContain('<p class="sub value">Danach arbeitet Claude mit Ihren Apps');
+    expect(html).not.toContain('Melden Sie sich an, damit');
+    expect(html).toContain('<span>Weiter mit Google</span>');
+    expect(html).toContain('<div class="flow login bf">');
+    // The sign-up box gives way to a link under the form.
+    expect(html).not.toContain('class="signup-btn"');
+    expect(html).toContain('<a id="signup-link" href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=claude">Konto mit E-Mail erstellen</a>');
+    // The destination warning stays above the buttons, in full.
+    expect(html).toContain('Nach der Anmeldung geht der Zugang an <span class="host">claude.ai</span>. Fahren Sie nur fort, wenn Sie das selbst gestartet haben und dieses Ziel kennen. Andernfalls wählen Sie <strong>Abbrechen</strong>.');
+    expect(html.indexOf('class="returns-compact"')).toBeLessThan(html.indexOf('value="social:google"'));
+    expect(html).toContain('.flow.login.bf > .consent { order: 3; margin: 18px 0 0; }');
+    expect(events.find((e) => e.event === 'authorize_page_viewed').metadata).toEqual(
+      expect.objectContaining({ signinArm: 'buttons_first', lang: 'de' }),
+    );
+  });
+
+  it('is English on buttons_first for a language we do not speak', async () => {
+    const { html } = await signIn('buttons_first', 'fr-FR,fr;q=0.9');
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain('<h1>Connect Claude to AnythingMCP</h1>');
+    expect(html).toContain('<p class="sub value">Then Claude works with the apps you use');
+  });
+
+  it('keeps the control page as before, in English, whatever the browser language', async () => {
+    const { html, events } = await signIn('control');
+    expect(html).toContain('<html lang="en">');
+    expect(html).toContain('<h1>Connect Claude to AnythingMCP</h1>');
+    expect(html).not.toContain('sub value');
+    expect(html).toContain('class="signup-btn"');
+    expect(html).toContain('<div class="flow login">');
+    expect(html).toContain('Only continue if you started this and recognise this destination. If you did not, choose <strong>Cancel</strong>.');
+    expect(events.find((e) => e.event === 'authorize_page_viewed').metadata).toEqual(expect.objectContaining({ signinArm: 'control' }));
+  });
+
+  it('reports a click on "Create an account" on both arms', async () => {
+    for (const arm of ['control', 'buttons_first']) {
+      const { html } = await signIn(arm);
+      expect(html).toContain(`new URLSearchParams({ e: 'create_account', a: '${ATTEMPT}' })`);
+      expect(html).toContain("document.querySelectorAll('.signup-btn, #signup-link')");
+    }
+  });
+
+  it('translates the signed-in consent page too', async () => {
+    const { controller } = build({ setting: 'next_step', signin: 'buttons_first' });
+    const r = req({ headers: { host: 'mcp.test', 'user-agent': IPHONE } });
+    const consent = await (controller as any).loadConsentContext(r);
+    const html = (controller as any).renderLoginPage({
+      error: undefined, serverName: 'AnythingMCP', consent, csrfToken: 'tok', ssoProviders: [], socialProviders: [],
+      sessionUser: { id: 'u1', email: 'a@b.com', name: 'A' }, lang: 'it',
+    });
+    expect(html).toContain('<h1>Collega Claude a AnythingMCP</h1>');
+    expect(html).toContain('>Consenti l’accesso</button>');
+    expect(html).toContain('Accesso come <strong>a@b.com</strong>');
+    expect(html).toContain('>Annulla</button>');
+    // No value line for someone already signed in.
+    expect(html).not.toContain('sub value');
   });
 });

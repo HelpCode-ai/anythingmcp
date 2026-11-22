@@ -68,10 +68,16 @@ import {
   TELEGRAM_SLUG,
   type TelegramOneTap,
 } from '../adapters/telegram-managed-bot';
+import { fill, signInTexts } from './auth-page-i18n';
 import {
   attemptKey,
   connectedPageArm,
   CONNECTED_PAGE_TEST_ENV,
+  pageLanguageFor,
+  signInPageArm,
+  SIGNIN_PAGE_TEST_ENV,
+  type SignInPageArm,
+  type PageLanguage,
   deviceOf,
   isPhoneUserAgent,
   languageBucket,
@@ -149,6 +155,8 @@ interface ConsentContext {
    * does not run: the page is then the control, and no arm is recorded.
    */
   connectedArm: ConnectedPageArm | null;
+  /** The arm of the sign-in page test (A3/A4); null when it does not run. */
+  signinArm: SignInPageArm | null;
 }
 
 /** The longest an authorization may stay paused on the first-connector page. */
@@ -535,6 +543,7 @@ export class LoginController {
       // itself is stored.
       ...(attempt ? { attempt } : {}),
       ...(consent.connectedArm ? { connectedArm: consent.connectedArm } : {}),
+      ...(consent.signinArm ? { signinArm: consent.signinArm } : {}),
     };
   }
 
@@ -658,6 +667,7 @@ export class LoginController {
         socialProviders,
         sessionUser,
         requestedServer,
+        lang: pageLanguageFor(req.headers['accept-language']),
       }),
     );
   }
@@ -2493,6 +2503,10 @@ export class LoginController {
           cloud: this.deployment.isCloud(),
           setting: this.configService.get<string>(CONNECTED_PAGE_TEST_ENV),
         }),
+        signinArm: signInPageArm(sessionId, {
+          cloud: this.deployment.isCloud(),
+          setting: this.configService.get<string>(SIGNIN_PAGE_TEST_ENV),
+        }),
       };
     } catch (e) {
       this.logger.warn('Failed to load OAuth consent context', e as Error);
@@ -2715,9 +2729,17 @@ export class LoginController {
     sessionUser?: SessionUser | null;
     /** The MCP server the client asked for, when the signed-in user may see its name. */
     requestedServer?: string | null;
+    /** The browser's language, if one of ours (buttons_first arm only). */
+    lang?: PageLanguage | null;
   }): string {
     const { error, serverName, consent, csrfToken, ssoProviders, sessionUser, requestedServer } =
       params;
+    // The sign-in page test (A3/A4): the buttons_first arm speaks the
+    // browser's language and leads with the provider buttons. The control
+    // uses the English texts, which are the page as before.
+    const buttonsFirst = consent?.signinArm === 'buttons_first';
+    const lang: PageLanguage = buttonsFirst && params.lang ? params.lang : 'en';
+    const T = signInTexts(lang);
     const socialProviders = params.socialProviders ?? [];
     const server = this.escapeHtml(serverName);
     const client = consent ? this.escapeHtml(consent.clientName) : '';
@@ -2756,12 +2778,15 @@ export class LoginController {
             (p) =>
               `<button type="submit" name="action" value="social:${this.escapeHtml(p.id)}" formnovalidate class="sso">` +
               providerMarkSvg(p.id) +
-              `<span>Continue with ${this.escapeHtml(p.name)}</span>` +
+              `<span>${fill(T.continueWith, { provider: this.escapeHtml(p.name) })}</span>` +
               `</button>`,
           )
           .join('') +
-        `<p class="links">New here? Continuing creates your account and accepts the <a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener">Terms</a> and <a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener">Privacy Policy</a>.</p>` +
-        '<div class="divider"><span>or use your email</span></div>'
+        `<p class="links">${fill(T.terms, {
+          terms: `<a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener">${T.termsLabel}</a>`,
+          privacy: `<a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener">${T.privacyLabel}</a>`,
+        })}</p>` +
+        `<div class="divider"><span>${T.orEmail}</span></div>`
       : '';
 
     // The pair of tiles shows the client's logo only when the code goes back
@@ -2770,12 +2795,15 @@ export class LoginController {
       ? clientTilePair(consent.clientName, consent.redirectHost)
       : `<div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>`;
 
-    const heading = consent ? `Connect ${client} to ${server}` : 'Sign in';
-    const sub = consent
-      ? sessionUser
-        ? `${client} will use the tools your role allows on ${server}. You stay in control and can disconnect at any time.`
-        : `Sign in to let ${client} use your ${server} tools. You stay in control and can disconnect at any time.`
-      : `Authorize access to ${server} MCP Server`;
+    const heading = consent ? fill(T.heading, { client, server }) : 'Sign in';
+    // A4: on buttons_first a signed-out person reads what they get instead
+    // of the general sentence, so the buttons stay high on a phone.
+    const valueFirst = buttonsFirst && !sessionUser && !!consent;
+    const sub = valueFirst
+      ? fill(T.value, { client })
+      : consent
+        ? fill(sessionUser ? T.subSignedIn : T.subSignedOut, { client, server })
+        : `Authorize access to ${server} MCP Server`;
 
     // Claude's and ChatGPT's directories list AnythingMCP Cloud, so the
     // badge appears only there. Each assistant's users see only its own
@@ -2785,34 +2813,34 @@ export class LoginController {
 
     const DEFAULT_SCOPE = "Access to your organization's MCP tools and connected servers.";
     const toolsLine = requestedServer
-      ? `Use the tools on <b>${this.escapeHtml(requestedServer)}</b> that your role allows`
-      : `Use the tools on your MCP server that your role allows`;
+      ? fill(T.toolsOn, { server: `<b>${this.escapeHtml(requestedServer)}</b>` })
+      : T.tools;
     // The destination is the security-relevant part: a code sent anywhere
     // else than the client the user means to connect is a stolen session.
     // Unknown destinations are shown in amber.
     const consentHtml = consent
       ? `
     <div class="consent">
-      <h2>${client} will be able to</h2>
+      <h2>${fill(T.canDo, { client })}</h2>
       <div class="row"><span class="ok">&#10003;</span><span>${toolsLine}</span></div>
-      <div class="row"><span class="ok">&#10003;</span><span>Read your name and email address</span></div>
-      <div class="row muted"><span class="no">&ndash;</span><span>It never sees your connector passwords or API keys</span></div>${
+      <div class="row"><span class="ok">&#10003;</span><span>${T.readProfile}</span></div>
+      <div class="row muted"><span class="no">&ndash;</span><span>${T.noSecrets}</span></div>${
         consent.scopeText && consent.scopeText !== DEFAULT_SCOPE
           ? `
-      <div class="row muted"><span class="no">&middot;</span><span>Requested scope: <span class="host">${this.escapeHtml(consent.scopeText)}</span></span></div>`
+      <div class="row muted"><span class="no">&middot;</span><span>${T.scope} <span class="host">${this.escapeHtml(consent.scopeText)}</span></span></div>`
           : ''
       }
-      <div class="returns${known ? '' : ' unknown'}">${sessionUser ? 'If you allow it, access' : 'After you sign in, access'} is sent to <span class="host">${this.escapeHtml(consent.redirectHost)}</span>
-        <p class="warn">Only continue if you started this and recognise this destination. If you did not, choose <strong>Cancel</strong>.</p>
+      <div class="returns${known ? '' : ' unknown'}">${fill(sessionUser ? T.sentIfAllow : T.sentAfterSignIn, { host: `<span class="host">${this.escapeHtml(consent.redirectHost)}</span>` })}
+        <p class="warn">${fill(T.warn, { cancel: T.cancel })}</p>
       </div>
     </div>`
       : '';
 
     const denyButton = consent
-      ? `<button type="submit" name="action" value="deny" formnovalidate class="secondary">Cancel</button>`
+      ? `<button type="submit" name="action" value="deny" formnovalidate class="secondary">${T.cancel}</button>`
       : '';
 
-    const submitLabel = consent ? 'Sign in &amp; allow' : 'Sign in';
+    const submitLabel = consent ? T.signInAllow : 'Sign in';
 
     // Someone arriving here from an AI client (e.g. the Claude directory)
     // without an account would otherwise hit a dead end: the only way off this
@@ -2836,7 +2864,7 @@ export class LoginController {
       '/login?mode=register&amp;redirect=%2Fauth%2Flogin' + (signupClient ? `&amp;client=${signupClient}` : '');
     const offerSignup = !sessionUser && this.deployment.isCloud();
     const signupHtml =
-      offerSignup && !error
+      offerSignup && !error && !buttonsFirst
         ? `
     <div class="signup">
       <p class="signup-lead"><strong>New to ${server}?</strong> Create your account first.
@@ -2848,8 +2876,12 @@ export class LoginController {
     const preAuthLinks = sessionUser
       ? ''
       : `
-      <p class="links"><a href="/forgot-password">Forgot your password?</a></p>` +
-        (offerSignup && error
+      <p class="links"><a href="/forgot-password">${T.forgot}</a></p>` +
+        (offerSignup && buttonsFirst
+          ? `
+      <p class="links">${T.noAccount} <a id="signup-link" href="${signupHref}">${T.createWithEmail}</a></p>`
+          : '') +
+        (offerSignup && error && !buttonsFirst
           ? `
       <p class="links">New to ${server}? <a href="${signupHref}">Create an account</a></p>`
           : '');
@@ -2864,18 +2896,18 @@ export class LoginController {
     // shows the password form instead.
     const formHtml = sessionUser
       ? `
-      <div class="acct"><span>Signed in as <strong>${this.escapeHtml(sessionUser.email)}</strong></span><a href="/auth/login?switch=1">Switch account</a></div>
-      ${buttons('<button type="submit" name="action" value="approve-session" autofocus>Allow access</button>')}`
+      <div class="acct"><span>${fill(T.signedInAs, { email: `<strong>${this.escapeHtml(sessionUser.email)}</strong>` })}</span><a href="/auth/login?switch=1">${T.switchAccount}</a></div>
+      ${buttons(`<button type="submit" name="action" value="approve-session" autofocus>${T.allow}</button>`)}`
       : `
       ${socialHtml}${ssoHtml}
-      <label for="email">Email</label>
+      <label for="email">${T.email}</label>
       <input type="email" id="email" name="email" required${
         // With provider buttons above it, focusing the field scrolled a phone
         // past the heading and the buttons on load.
         socialProviders.length ? '' : ' autofocus'
       } autocomplete="email" placeholder="you@company.com">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Your password">
+      <label for="password">${T.password}</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="${T.passwordPlaceholder}">
       ${buttons(`<button type="submit" name="action" value="approve">${submitLabel}</button>`)}
       ${preAuthLinks}`;
 
@@ -2885,23 +2917,40 @@ export class LoginController {
     // button it is about.
     const returnsCompact = consent
       ? `
-    <p class="returns-compact${known ? '' : ' unknown'}">${sessionUser ? 'If you allow it, access' : 'After you sign in, access'} is sent to <span class="host">${this.escapeHtml(consent.redirectHost)}</span>. Only continue if you started this and recognise this destination. If you did not, choose <strong>Cancel</strong>.</p>`
+    <p class="returns-compact${known ? '' : ' unknown'}">${fill(sessionUser ? T.sentIfAllow : T.sentAfterSignIn, { host: `<span class="host">${this.escapeHtml(consent.redirectHost)}</span>` })}. ${fill(T.warn, { cancel: T.cancel })}</p>`
       : '';
+    // The click on "Create an account" (authorize_action create_account):
+    // a beacon that never delays the link.
+    const attempt = consent ? attemptKey(consent.expiresAt) : undefined;
+    const signupBeacon =
+      offerSignup && attempt && /^[0-9a-z]{6,12}$/.test(attempt)
+        ? `
+    <script>
+    (function () {
+      var links = document.querySelectorAll('.signup-btn, #signup-link');
+      if (!links.length || !navigator.sendBeacon || !window.URLSearchParams) return;
+      for (var i = 0; i < links.length; i++) links[i].addEventListener('click', function () {
+        try { navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: 'create_account', a: '${attempt}' })); } catch (e) {}
+      });
+    })();
+    </script>`
+        : '';
 
     const card = `
-    <div class="flow login">
+    <div class="flow login${buttonsFirst ? ' bf' : ''}">
     ${top}
     <h1>${heading}</h1>
-    <p class="sub">${sub}</p>${directoryPill}${signupHtml}
+    <p class="sub${valueFirst ? ' value' : ''}">${sub}</p>${directoryPill}${signupHtml}
     ${errorHtml}
     ${consentHtml}${returnsCompact}
     <form method="POST" action="/auth/login">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">${formHtml}
     </form>
-    </div>`;
+    </div>${signupBeacon}`;
 
     return renderAuthPage({
-      title: `${sessionUser ? 'Authorize' : 'Sign In'} — ${serverName}`,
+      title: `${sessionUser ? T.titleAuthorize : T.titleSignIn} — ${serverName}`,
+      lang,
       card,
       trust: this.trust(),
       // On a phone (Claude's in-app browser leaves about 640 px) the buttons
@@ -2924,7 +2973,15 @@ export class LoginController {
     .flow.login > .consent { order: 3; margin: 18px 0 0; }
     .flow.login > .consent .returns { display: none; }
     .flow.login > .verified { order: 4; margin: 16px auto 0; }
-  }`,
+  }
+  .sub.value { color: var(--text); }
+  /* buttons_first arm (A3): the phone order on every screen. */
+  .flow.login.bf { display: flex; flex-direction: column; }
+  .flow.login.bf > .returns-compact { display: block; }
+  .flow.login.bf > form { order: 1; }
+  .flow.login.bf > .consent { order: 3; margin: 18px 0 0; }
+  .flow.login.bf > .consent .returns { display: none; }
+  .flow.login.bf > .verified { order: 4; margin: 16px auto 0; }`,
     });
   }
 

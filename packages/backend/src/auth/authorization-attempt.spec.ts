@@ -2,6 +2,8 @@ import {
   attemptKey,
   CONNECTED_PAGE_ARMS,
   connectedPageArm,
+  signInPageArm,
+  SIGNIN_PAGE_ARMS,
   deviceOf,
   languageBucket,
   pageLanguageFor,
@@ -89,6 +91,34 @@ describe('authorization attempt', () => {
         for (let i = 0; i < 50; i++) expect(connectedPageArm(`session-${i}`, { cloud: true, setting })).toBe('next_step');
       }
       expect(connectedPageArm('session-1', CLOUD)).toBe('next_step');
+    });
+  });
+
+  describe('the arm of the sign-in page test', () => {
+    it('splits pending authorizations into equal parts when unset, independently of the other test', () => {
+      const counts: Record<string, number> = { control: 0, buttons_first: 0 };
+      let same = 0;
+      for (let i = 0; i < 4000; i++) {
+        const arm = signInPageArm(`session-${i}`, { cloud: true }) as string;
+        counts[arm] += 1;
+        if ((arm === 'control') === (connectedPageArm(`session-${i}`, { cloud: true, setting: 'split' }) === 'control')) same += 1;
+      }
+      expect(counts.control).toBeGreaterThan(1800);
+      expect(counts.buttons_first).toBeGreaterThan(1800);
+      expect(same).toBeGreaterThan(1600);
+      expect(same).toBeLessThan(2400);
+    });
+
+    it("is off with 'off', on self-hosted and without a pending authorization", () => {
+      expect(signInPageArm('s', { cloud: true, setting: 'off' })).toBeNull();
+      expect(signInPageArm('s', { cloud: false })).toBeNull();
+      expect(signInPageArm(undefined, { cloud: true })).toBeNull();
+    });
+
+    it('gives everyone the arm the setting names', () => {
+      for (const arm of SIGNIN_PAGE_ARMS) {
+        for (let i = 0; i < 30; i++) expect(signInPageArm(`s-${i}`, { cloud: true, setting: arm })).toBe(arm);
+      }
     });
   });
 
