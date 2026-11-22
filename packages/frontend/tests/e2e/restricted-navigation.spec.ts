@@ -133,6 +133,23 @@ async function mockApi(page: Page, setup: Setup, currentUser: () => ReturnType<t
     if (p === '/api/audit/analytics') {
       return json({ daily: [], topTools: [], totalInvocations: 0, successRate: 100, avgDuration: 0 });
     }
+    // The Analytics page reads `rates` as soon as this answer arrives: with
+    // the catch-all `{}` below the page ended on its error boundary, and a
+    // test that goes to /analytics passed only while that answer was late.
+    if (p === '/api/audit/breakdowns') {
+      return json({
+        days: 30,
+        total: 0,
+        errors: 0,
+        proxyCalls: 0,
+        estCostMicros: 0,
+        rates: { callMicros: 0, proxyCallMicros: 0 },
+        byConnector: [],
+        byServer: [],
+        byUser: [],
+      });
+    }
+    if (p === '/api/audit/tool-performance') return json({ items: [], hasMore: false });
     // What the API answers a member who is not an admin.
     if (user.role !== 'ADMIN' && ADMIN_ONLY_CALLS.test(p) && p !== '/api/adapters') {
       return json({ statusCode: 403, message: 'Forbidden' }, 403);
@@ -324,6 +341,9 @@ test.describe('restricted VIEWER', () => {
     await expect(page).toHaveURL(/\/analytics$/);
     await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors']);
     expect(paths.filter((x) => x === '/api/mcp-servers').length).toBeGreaterThanOrEqual(2);
+    // The page itself has loaded its data and still stands.
+    await expect.poll(() => paths.includes('/api/audit/breakdowns')).toBe(true);
+    await expect(sidebar(page)).toHaveText(['Dashboard', 'Analytics', 'Audit Log', 'Connectors']);
   });
 
   test('another member\'s MCP server sends her back to her own list, with the same note', async ({ page }) => {
