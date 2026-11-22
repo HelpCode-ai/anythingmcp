@@ -1,5 +1,6 @@
 import {
   Controller,
+  ExecutionContext,
   Get,
   Post,
   Query,
@@ -226,6 +227,51 @@ export function fileSearchWizardPathFor(optionId: string, serverIds: readonly st
   const servers = serverIds.filter((id) => /^[a-z0-9]{20,40}$/i.test(id));
   if (servers.length) q.set('servers', servers.join(','));
   return `/connectors/new/file-search?${q.toString()}`;
+}
+
+/**
+ * What a post of the sign-in form asks for. `password` is every post that can
+ * reach the password check in handleLogin: "Sign in & allow", and anything
+ * this function does not recognise. `button` is a post that handleLogin
+ * answers before it looks at a password: a provider button, the single
+ * sign-on button, "Allow access" with the dashboard session, and Cancel.
+ */
+export function loginPostKind(body: unknown): 'password' | 'button' {
+  const action = (body as { action?: unknown } | null | undefined)?.action;
+  if (typeof action !== 'string') return 'password';
+  return action === 'deny' ||
+    action === 'approve-session' ||
+    action.startsWith('sso:') ||
+    action.startsWith('social:')
+    ? 'button'
+    : 'password';
+}
+
+/**
+ * Posts of the sign-in form allowed per address in a minute. Password
+ * attempts keep the limit of 5 they always had. The buttons that check no
+ * password used to share those 5, so one address with several people behind
+ * it, or one person pressing a provider button again, was refused (127 times
+ * from 16 to 22 November 2026): they are counted on their own, 30 a minute,
+ * the limit of the provider's return address.
+ */
+export function loginPostLimit(context: ExecutionContext): number {
+  return loginPostKind(context.switchToHttp().getRequest<Request>().body) === 'password' ? 5 : 30;
+}
+
+/**
+ * The counter a post of the sign-in form is added to: one per address for
+ * password attempts (the key the throttler builds by default, so nothing
+ * changes for them) and a second one per address for the buttons. The kind
+ * comes from the same function the limit uses, and a post counted as a
+ * button never reaches the password check.
+ */
+export function loginPostThrottleKey(context: ExecutionContext, tracker: string, throttlerName: string): string {
+  const kind = loginPostKind(context.switchToHttp().getRequest<Request>().body);
+  const prefix = `${context.getClass().name}-${context.getHandler().name}-${throttlerName}`;
+  return createHash('sha256')
+    .update(kind === 'password' ? `${prefix}-${tracker}` : `${prefix}-${tracker}-button`)
+    .digest('hex');
 }
 
 /**
@@ -512,7 +558,7 @@ export class LoginController {
 
   // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: loginPostLimit, ttl: 60_000, generateKey: loginPostThrottleKey } })
   @ApiExcludeEndpoint()
   async handleLogin(
     @Req() req: Request,
