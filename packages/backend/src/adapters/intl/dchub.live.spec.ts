@@ -52,14 +52,16 @@ const a = adapter as unknown as {
 };
 
 const SWITCHED_OFF = [
+  'accept_capacity_intro',
   'accept_capacity_terms',
   'bind_email',
-  'claim_free_key',
   'delete_standing_intent',
+  'get_api_key',
   'recover_my_key',
   'register_standing_intent',
   'report_finding',
   'request_capacity_intro',
+  'request_enhancement',
   'set_market_alert',
   'set_shortlist_alert',
   'set_site_alert',
