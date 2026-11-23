@@ -1,4 +1,8 @@
 import qrcode from 'qrcode-generator';
+import { escapeHtml } from './auth-page';
+import { SCRIPT_FILL, scriptTexts } from './auth-page-i18n';
+import { telegramPanelTexts } from './auth-page-i18n.telegram';
+import type { PageLanguage } from './authorization-attempt';
 
 /**
  * The one-tap Telegram bot on the page after approving an AI client (see
@@ -19,6 +23,10 @@ import qrcode from 'qrcode-generator';
  * - "Changed the username? Link your bot" opens the manager bot's chat with
  *   the setup's code, for a bot whose username names no setup. It appears
  *   when the server saw such a bot, or when no bot arrived in time.
+ *
+ * Its texts are in auth-page-i18n.telegram.ts. The markup takes them escaped;
+ * the script takes them as one object literal (`scriptTexts`) and only ever
+ * writes them into `textContent`.
  */
 
 /**
@@ -35,52 +43,55 @@ export function telegramQrDataUri(link: string): string {
   return `data:image/svg+xml;base64,${Buffer.from(svg, 'utf8').toString('base64')}`;
 }
 
-/** The panel. `withQr`: a desktop browser, which also gets the QR codes. */
-export function telegramPanelHtml(opts: { withQr: boolean }): string {
+/** The panel. `withQr`: a desktop browser, which also gets the QR codes. `lang`: the page's language (English when absent). */
+export function telegramPanelHtml(opts: { withQr: boolean; lang?: PageLanguage | null }): string {
+  const texts = telegramPanelTexts(opts.lang);
+  // Every text of the panel's markup, escaped once here.
+  const T = Object.fromEntries(
+    Object.entries(texts).map(([key, value]) => [key, typeof value === 'string' ? escapeHtml(value) : '']),
+  ) as Record<Exclude<keyof typeof texts, 'js' | 'answers'>, string>;
   const qr = opts.withQr
     ? `
         <figure class="tg-qr" id="tg-qr" hidden>
-          <img id="tg-qr-img" alt="QR code that opens Telegram to create your bot" width="104" height="104">
-          <figcaption>Scan with your phone<a class="tg-web" id="tg-web" href="https://web.telegram.org/a/" target="_blank" rel="noopener noreferrer" hidden>or open Telegram Web in this browser</a></figcaption>
+          <img id="tg-qr-img" alt="${T.qrAlt}" width="104" height="104">
+          <figcaption>${T.scan}<a class="tg-web" id="tg-web" href="https://web.telegram.org/a/" target="_blank" rel="noopener noreferrer" hidden>${T.openWeb}</a></figcaption>
         </figure>`
     : '';
   // Beside the button, not under it: the panel stays short.
   const linkQr = opts.withQr
     ? `
           <figure class="tg-qr" id="tg-link-qr" hidden>
-            <img id="tg-link-qr-img" alt="QR code that opens Telegram to link your bot" width="104" height="104">
+            <img id="tg-link-qr-img" alt="${T.linkQrAlt}" width="104" height="104">
           </figure>`
     : '';
-  const linkHint = opts.withQr
-    ? 'Telegram opens our setup bot: press Start there, then come back here. Bot made on your phone? Scan the code.'
-    : 'Telegram opens our setup bot: press Start there, then come back here.';
+  const linkHint = opts.withQr ? T.linkHintQr : T.linkHint;
   const linkWeb = opts.withQr
     ? `
-            <a class="tg-web" id="tg-link-web" href="https://web.telegram.org/a/" target="_blank" rel="noopener noreferrer" hidden>Or open it in Telegram Web</a>`
+            <a class="tg-web" id="tg-link-web" href="https://web.telegram.org/a/" target="_blank" rel="noopener noreferrer" hidden>${T.linkWeb}</a>`
     : '';
   return `
       <div class="tg" id="tg-setup" hidden>
-        <a class="tg-create" id="tg-create" href="https://t.me/" target="_blank" rel="noopener noreferrer">Create your Telegram bot</a>
-        <p class="tg-help" id="tg-help">This creates a new bot that belongs to you: it appears in your own @BotFather list, and you can rename it, add a picture and use it with your customers. Already have a bot? Paste its token below.</p>${qr}
+        <a class="tg-create" id="tg-create" href="https://t.me/" target="_blank" rel="noopener noreferrer">${T.create}</a>
+        <p class="tg-help" id="tg-help">${T.help}</p>${qr}
         <p class="tg-status" id="tg-status" role="status" aria-live="polite"></p>
         <p class="tg-next" id="tg-next" role="status" aria-live="polite" hidden></p>
         <div class="tg-link" id="tg-link" hidden>${linkQr}
           <div class="tg-link-main">
-            <a class="tg-link-btn" id="tg-link-btn" href="https://t.me/" target="_blank" rel="noopener noreferrer">Changed the username? Link your bot</a>
+            <a class="tg-link-btn" id="tg-link-btn" href="https://t.me/" target="_blank" rel="noopener noreferrer">${T.linkButton}</a>
             <p class="tg-hint" id="tg-hint">${linkHint}</p>${linkWeb}
           </div>
         </div>
         <details class="tg-paste" id="tg-paste">
-          <summary>Already have a bot? Paste its token</summary>
+          <summary>${T.pasteSummary}</summary>
           <ol class="tg-steps">
-            <li>In Telegram, open @BotFather and send /mybots (or /newbot for a new bot).</li>
-            <li>Pick the bot, choose API Token, and paste the token here.</li>
+            <li>${T.step1}</li>
+            <li>${T.step2}</li>
           </ol>
           <form id="tg-token-form" novalidate>
-            <label for="tg-token">Bot token</label>
+            <label for="tg-token">${T.tokenLabel}</label>
             <div class="tg-token-row">
               <input type="text" id="tg-token" class="other" maxlength="120" autocomplete="off" autocapitalize="off" spellcheck="false" placeholder="123456789:AAH...">
-              <button type="submit" class="secondary" id="tg-token-save">Save</button>
+              <button type="submit" class="secondary" id="tg-token-save">${T.save}</button>
             </div>
           </form>
           <p class="tg-token-status" id="tg-token-status" role="status" aria-live="polite"></p>
@@ -157,8 +168,11 @@ export const TELEGRAM_PANEL_STYLES = `
  * and at once when the user comes back to it (on a phone they leave for
  * Telegram). It never navigates and adds nothing to the Continue link: a
  * second tab opened from Continue broke the hand-back on phones.
+ *
+ * The same source in every language: only the object literal `T` differs.
  */
-export const TELEGRAM_PANEL_SCRIPT = `
+export function telegramPanelScript(lang?: PageLanguage | null): string {
+  return `
     // The one-tap Telegram bot: a link that creates the bot in Telegram, and
     // a check every two seconds for its token. Continue is not touched.
     (function () {
@@ -187,7 +201,9 @@ export const TELEGRAM_PANEL_SCRIPT = `
       var linkWeb = document.getElementById('tg-link-web');
       if (!panel || !picker || !request || !quick || !cont || !create || !help || !status || !next || !link || !linkButton || !paste ||
           !form || !field || !save || !formStatus || !window.fetch || !window.JSON) return;
-      var clientName = cont.getAttribute('data-client') || 'the chat';
+      var T = ${scriptTexts(telegramPanelTexts(lang).js)};
+      ${SCRIPT_FILL}
+      var clientName = cont.getAttribute('data-client') || T.theChat;
       var POLL_MS = 2000;
       // "Link your bot" appears when the server saw a bot with another
       // username, or by time: a bot with the suggested username is connected
@@ -234,7 +250,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
         if (!connected) { connected = true; connectedAt = Date.now(); }
         // 'start': connected, and the user has not pressed Start in the bot's chat yet.
         panel.setAttribute('data-state', out.startUrl ? 'start' : 'connected');
-        status.textContent = 'Telegram is connected' + (out.bot ? ': ' + out.bot : '') + '.';
+        status.textContent = out.bot ? fill(T.connectedBot, { bot: out.bot }) : T.connected;
         quick.textContent = '';
         link.hidden = true;
         paste.hidden = true;
@@ -243,7 +259,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
         // The page opened on "your workspace has no apps yet": no longer true.
         var sub = document.getElementById('first-sub');
         var body = document.getElementById('first-body');
-        if (sub) sub.textContent = 'Telegram is ready. Continue to ' + clientName + ' and ask, for example:';
+        if (sub) sub.textContent = fill(T.ready, { client: clientName });
         if (body) body.hidden = true;
         // The AI client is not connected yet: only Continue finishes that.
         // Said in so many words, because people stopped here for minutes.
@@ -251,14 +267,14 @@ export const TELEGRAM_PANEL_SCRIPT = `
         if (out.startUrl) {
           // A bot can only write to someone who pressed Start in its chat.
           create.setAttribute('href', out.startUrl);
-          create.textContent = 'Open your bot and press Start';
-          help.textContent = 'Your bot can write to you once you have pressed Start in its chat.';
-          next.textContent = 'Two steps left: press Start in your bot’s chat, then tap Continue to ' + clientName + ' below.';
+          create.textContent = T.openBot;
+          help.textContent = T.startHelp;
+          next.textContent = fill(T.twoSteps, { client: clientName });
           if (Date.now() - connectedAt > GREET_MS) stop();
         } else {
           create.hidden = true;
           help.hidden = true;
-          next.textContent = 'Last step: tap Continue to ' + clientName + ' below.';
+          next.textContent = fill(T.lastStep, { client: clientName });
           picker.setAttribute('data-telegram', 'done');
           showContinue();
           stop();
@@ -277,7 +293,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
         if (!out || typeof out.ok !== 'boolean') return;
         if (out.ok !== true || out.state === 'none' || out.state === 'expired') {
           if (!connected) {
-            status.textContent = 'This link has expired. Go back to ' + clientName + ' and press Connect again.';
+            status.textContent = fill(T.expired, { client: clientName });
             link.hidden = true;
           }
           return stop();
@@ -288,7 +304,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
           // whatever bot this Telegram account creates now is connected.
           claimed = true;
           link.hidden = true;
-          status.textContent = 'Your Telegram account is linked. Now create your bot: any username works.';
+          status.textContent = T.linked;
           return;
         }
         // A bot whose username was changed carries no code: its creator
@@ -366,17 +382,17 @@ export const TELEGRAM_PANEL_SCRIPT = `
         if (saving || connected) return;
         var token = (field.value || '').replace(/\\s+/g, '');
         if (!/^[0-9]+:[A-Za-z0-9_-]{30,}$/.test(token)) {
-          formStatus.textContent = 'This does not look like a bot token. Paste the whole value from @BotFather, like 123456789:AAH...';
+          formStatus.textContent = T.notAToken;
           return;
         }
         saving = true;
         save.setAttribute('aria-disabled', 'true');
-        formStatus.textContent = 'Checking the token with Telegram…';
+        formStatus.textContent = T.checking;
         var done = function (out) {
           saving = false;
           save.setAttribute('aria-disabled', 'false');
           if (!out || out.ok !== true) {
-            formStatus.textContent = (out && out.error) || 'The token could not be saved. Try again.';
+            formStatus.textContent = (out && out.error) || T.notSaved;
             return;
           }
           field.value = '';
@@ -413,8 +429,8 @@ export const TELEGRAM_PANEL_SCRIPT = `
           }
         }
         picker.setAttribute('data-telegram', 'on');
-        quick.textContent = 'Telegram added. Create its bot now, or continue and finish it in ' + clientName + '.';
-        status.textContent = 'Waiting for your bot…';
+        quick.textContent = fill(T.added, { client: clientName });
+        status.textContent = T.waiting;
         panel.hidden = false;
         if (document.addEventListener) {
           document.addEventListener('visibilitychange', function () { if (!document.hidden) checkNow(); });
@@ -423,3 +439,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
         again();
       };
     })();`;
+}
+
+/** The panel's script in English, as the control page and the specs use it. */
+export const TELEGRAM_PANEL_SCRIPT = telegramPanelScript('en');

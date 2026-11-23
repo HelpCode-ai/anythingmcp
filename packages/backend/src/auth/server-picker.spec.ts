@@ -245,7 +245,7 @@ describe('submitting the selection', () => {
 
     expect(grants.grantServers).not.toHaveBeenCalled();
     expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('Choose%20at%20least%20one'),
+      expect.stringContaining('error=chooseServer'),
     );
   });
 
@@ -275,7 +275,7 @@ describe('submitting the selection', () => {
     await submit(controller, req, { servers: ['srv-theirs'], csrf: 'tok' }, res);
 
     expect(res.redirect).toHaveBeenCalledWith(
-      expect.stringContaining('None%20of%20the%20selected'),
+      expect.stringContaining('error=noServersAvailable'),
     );
   });
 });
