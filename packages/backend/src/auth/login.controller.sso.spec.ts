@@ -1,7 +1,7 @@
 // `openid-client` is ESM-only; nothing here exercises the network half.
 jest.mock('openid-client', () => ({}));
 
-import { LoginController, WRONG_WORKSPACE_MESSAGE } from './login.controller';
+import { LoginController } from './login.controller';
 import { SSO_REQUIRED_MESSAGE } from './sso-enforcement.service';
 import { HealthController } from '../health/health.controller';
 import type { Request, Response } from 'express';
@@ -263,7 +263,8 @@ describe('authorization page: a password in a workspace that requires single sig
     const enforcement = blocked();
     const b = build({ users: [{ ...ACCOUNT, passwordLoginDisabled: true }], enforcement });
     const res = await password(b);
-    expect(decodeURIComponent(res._redirect)).toContain('Password sign-in is disabled for this account');
+    // The page writes the text from this key, in its own language.
+    expect(res._redirect).toBe('/auth/login?error=passwordDisabled');
     expect(enforcement.isPasswordLoginBlocked).not.toHaveBeenCalled();
   });
 
@@ -273,7 +274,7 @@ describe('authorization page: a password in a workspace that requires single sig
     b.auth.comparePassword.mockResolvedValue(false);
     const res = await password(b);
     expect(enforcement.isPasswordLoginBlocked).not.toHaveBeenCalled();
-    expect(decodeURIComponent(res._redirect)).toContain('Invalid email or password');
+    expect(res._redirect).toBe('/auth/login?error=invalidCredentials');
   });
 
   it('signs in as before where no workspace requires it (and on Cloud, where none can)', async () => {
@@ -336,7 +337,7 @@ describe('authorization page: after an organization sign-in', () => {
     const res = makeRes();
     await b.controller.completeSsoSignIn(b.req(), res, PERSON);
 
-    expect(res._redirect).toBe(`/auth/login?switch=1&error=${encodeURIComponent(WRONG_WORKSPACE_MESSAGE)}`);
+    expect(res._redirect).toBe('/auth/login?switch=1&error=wrongWorkspace');
     expect(res._cookies['login_user']).toBeUndefined();
     expect(b.grants.grantServers).not.toHaveBeenCalled();
     expect(b.grants.grantRequestedServer).not.toHaveBeenCalled();

@@ -1391,10 +1391,14 @@ export class McpEndpointController {
     const clientId = oauthClientId(user);
     if (!clientId) return false;
 
-    const scope = await this.grants.serverScope(clientId, user.sub, {
-      id: serverId,
-      organizationId: serverOrganizationId,
-    });
+    // A lookup that fails refuses nothing, as on the refresh grant: this check
+    // must not be what takes a working connection down.
+    const scope = await this.grants
+      .serverScope(clientId, user.sub, { id: serverId, organizationId: serverOrganizationId })
+      .catch((err: any) => {
+        this.logger.warn(`MCP grant scope: lookup failed, request served (${err?.message ?? err})`);
+        return 'no-grant' as const;
+      });
     if (scope === 'no-grant' || scope === 'granted') return false;
 
     const who = `client …${clientId.slice(-6)}, ${this.describePrincipal(user)}`;
