@@ -210,7 +210,8 @@ describe('LoginController — social sign-in on the MCP consent page', () => {
       social.complete.mockRejectedValue(new SocialAuthError('x', 'Sign-in was cancelled.', 'MCP'));
       const res = makeRes();
       await controller.socialCallback('google', makeReq(), res);
-      expect(res._redirect).toBe(`/auth/login?error=${encodeURIComponent('Sign-in was cancelled.')}`);
+      // The service's English message travels as its key; the page shows it in its language.
+      expect(res._redirect).toBe('/auth/login?error=cancelled');
       expect(social.logFailure).toHaveBeenCalled();
     });
 

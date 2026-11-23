@@ -48,8 +48,8 @@ export const MCP_DIRECTORY_COOKIE = 'mcp_directory';
  * Fixing that properly means owning the authorization server; capturing the
  * value here is the fork-free half we can do now.
  *
- * WHAT THIS VALUE MAY BE USED FOR: choosing which identity-provider button to
- * render on the login page, and refusing an authorization for a server whose
+ * WHAT THIS VALUE MAY BE USED FOR: ordering the identity-provider buttons on
+ * the login page, and refusing an authorization for a server whose
  * workspace the signed-in user is not a member of (#1609). Nothing else. It is
  * unauthenticated client input — it may only ever narrow what is granted. It
  * must never influence which organization a session belongs to, which role a

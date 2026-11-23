@@ -3,6 +3,8 @@ import { ThrottlerException } from '@nestjs/throttler';
 import type { Request, Response } from 'express';
 import { DeploymentService } from '../common/deployment.service';
 import { renderAuthPage } from './auth-page';
+import { edgePageTexts } from './auth-page-i18n.pages';
+import { pageLanguageFor } from './authorization-attempt';
 
 /** Routes of the authorization pages that a script calls and that answer JSON. */
 const JSON_ROUTES = ['/auth/first-app', '/auth/beacon', '/auth/pending', '/auth/file-search/session'];
@@ -15,6 +17,10 @@ const JSON_ROUTES = ['/auth/first-app', '/auth/beacon', '/auth/pending', '/auth/
  * browser. A page request now gets a page that says to wait a minute; the
  * routes scripts call keep the JSON answer. The limits themselves are not
  * changed here.
+ *
+ * The filter does not read the pending authorization, so it has no page-test
+ * arm to go by: the page speaks the browser's language for everyone, on
+ * Cloud and self-hosted.
  */
 @Catch(ThrottlerException)
 export class AuthPageThrottleFilter implements ExceptionFilter {
@@ -34,13 +40,16 @@ export class AuthPageThrottleFilter implements ExceptionFilter {
     }
     res.setHeader('Content-Type', 'text/html; charset=utf-8');
     res.setHeader('Cache-Control', 'no-store');
+    const lang = pageLanguageFor(req.headers?.['accept-language']) ?? 'en';
+    const T = edgePageTexts(lang).rateLimit;
     res.send(
       renderAuthPage({
-        title: 'Too many attempts',
+        title: T.heading,
+        lang,
         card: `
-    <h1>Too many attempts</h1>
-    <p class="sub">Wait a minute, then try again. Your connection request stays open for 30 minutes.</p>
-    <a class="button" href="/auth/login">Back to the sign-in page</a>`,
+    <h1>${T.heading}</h1>
+    <p class="sub">${T.body}</p>
+    <a class="button" href="/auth/login">${T.back}</a>`,
         trust: { cloud: this.deployment.isCloud() },
       }),
     );

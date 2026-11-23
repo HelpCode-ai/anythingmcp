@@ -1000,7 +1000,7 @@ describe('a provider error before the attempt is known', () => {
     });
     const res = makeRes();
     await controller.socialCallback('google', req(), res as any);
-    expect(res._redirect).toBe(`/auth/login?error=${encodeURIComponent('This sign-in link has expired. Please try again.')}`);
+    expect(res._redirect).toBe('/auth/login?error=linkExpired');
   });
 
   it('keeps going to the dashboard sign-in when nothing is pending', async () => {

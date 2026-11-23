@@ -187,6 +187,11 @@ x-backend: &backend
     # unset = dry-run (log only), on = enforce, off = neither. It was never
     # passed to the container, so it could not be switched from the .env.
     - PLAN_CAPS_ENFORCE=${PLAN_CAPS_ENFORCE:-}
+    # The connection grant on a server's own URL (docs/deployment.md):
+    # enforce = refuse, report = log only, off = no check. Cloud starts in
+    # report: the log line names each client that would be refused, and the
+    # default here moves to enforce once those have been looked at.
+    - MCP_GRANT_SERVER_SCOPE=${MCP_GRANT_SERVER_SCOPE:-report}
     - META_PLATFORM_APP_ID=${META_PLATFORM_APP_ID:-}
     - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
     - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
