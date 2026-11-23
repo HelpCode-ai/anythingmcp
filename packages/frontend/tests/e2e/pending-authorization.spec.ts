@@ -29,6 +29,8 @@ const ADMIN = {
   emailVerified: true,
 };
 
+const UNVERIFIED = { ...ADMIN, id: 'u2', email: 'new@example.test', name: 'New', emailVerified: false };
+
 /** The backend's own pages: never an /api/ path. */
 const AUTH_LOGIN_PAGE = /^https?:\/\/[^/]+\/auth\/login(\?.*)?$/;
 const CALLBACK_PAGE = /^https?:\/\/[^/]+\/callback(\?.*)?$/;
@@ -329,5 +331,222 @@ test.describe('the "finish connecting" bar', () => {
     for (let i = 0; i < 5; i += 1) await page.evaluate(() => document.dispatchEvent(new Event('visibilitychange')));
     await expect(bar(page)).toBeVisible({ timeout: 10_000 });
     expect(backend.asked() - before).toBeLessThanOrEqual(2);
+  });
+});
+
+test.describe('the sign-up inside an authorization', () => {
+  test('says it is step 1 of 2 and names the client', async ({ page }) => {
+    await mockBackend(page);
+    await page.goto('/login?mode=register&redirect=%2Fauth%2Flogin&client=claude');
+    await expect(page.getByTestId('authorization-step')).toHaveText(
+      'Step 1 of 2. Create your account, then you go straight back to finish connecting Claude.',
+      { timeout: 15_000 },
+    );
+  });
+
+  test('a client it does not know is "your AI assistant", never the value from the address', async ({ page }) => {
+    await mockBackend(page);
+    await page.goto(`/login?mode=register&redirect=%2Fauth%2Flogin&client=${encodeURIComponent('<b>Evil</b>')}`);
+    await expect(page.getByTestId('authorization-step')).toHaveText(
+      'Step 1 of 2. Create your account, then you go straight back to finish connecting your AI assistant.',
+      { timeout: 15_000 },
+    );
+    await expect(page.getByText('Evil')).toHaveCount(0);
+  });
+
+  for (const query of ['?mode=register', '?mode=register&redirect=%2Fconnectors', '?redirect=%2Fauth%2Flogin']) {
+    test(`shows no step line on /login${query}`, async ({ page }) => {
+      await mockBackend(page);
+      await page.goto(`/login${query}`);
+      await expect(page.locator('#auth-email')).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId('authorization-step')).toHaveCount(0);
+    });
+  }
+});
+
+test.describe('the email code step of that sign-up', () => {
+  /** Signs up through the form; the account's address is not verified yet. */
+  async function signUpToCodeStep(page: Page) {
+    await page.goto('/login?mode=register&redirect=%2Fauth%2Flogin&client=claude');
+    await page.locator('#auth-name').fill('New');
+    await page.locator('#auth-email').fill(UNVERIFIED.email);
+    await page.locator('#auth-password').fill('Str0ng!passw0rd');
+    await page.locator('#auth-confirm-password').fill('Str0ng!passw0rd');
+    await page.getByRole('checkbox').check();
+    await page.getByRole('button', { name: /^Start free trial/ }).click();
+    await expect(page.getByRole('heading', { name: 'Verify Your Email' })).toBeVisible({ timeout: 15_000 });
+  }
+
+  /**
+   * "Resend code" waits 60 seconds after the first code. Needs
+   * `page.clock.install()` before the page loads: the countdown is a chain of
+   * one-second timers, run here one at a time.
+   */
+  async function waitOutResendCountdown(page: Page) {
+    const resend = page.getByRole('button', { name: /^Resend/ });
+    for (let i = 0; i < 200 && (await resend.isDisabled()); i += 1) await page.clock.runFor(1000);
+    await expect(resend).toHaveText('Resend code');
+  }
+
+  /** Cloud's sign-up: no session from /register, one from the sign-in that follows. */
+  const signUpAnswers = (p: string, method: string) => {
+    if (p === '/api/auth/register' && method === 'POST') return { json: { verificationRequired: true } };
+    if (p === '/api/auth/login' && method === 'POST') return { json: { accessToken: 'new-token', user: UNVERIFIED } };
+    return null;
+  };
+
+  test('"I opened the link in the email" goes back to the authorization once the address is verified', async ({ page }) => {
+    let verifyCalls = 0;
+    await mockBackend(page, {
+      extra: (p, method) => {
+        if (p === '/api/auth/verify-email') verifyCalls += 1;
+        if (p === '/api/users/me') return { json: { ...UNVERIFIED, emailVerified: true } };
+        return signUpAnswers(p, method);
+      },
+    });
+    await signUpToCodeStep(page);
+    await page.getByRole('button', { name: 'I opened the link in the email' }).click();
+    await expect(page).toHaveURL(/\/auth\/login$/, { timeout: 15_000 });
+    await expect(page.getByRole('heading', { name: 'Allow access' })).toBeVisible();
+    // Signed in to the dashboard on the way, without a code being spent.
+    expect(await page.evaluate(() => localStorage.getItem('amcp_token'))).toBe('new-token');
+    expect(verifyCalls).toBe(0);
+  });
+
+  for (const [name, me] of [
+    ['an account that is not verified yet', { json: { ...UNVERIFIED, emailVerified: false } }],
+    // Cloud refuses an unverified account everything but the verification endpoints.
+    ['Cloud refusing the unverified account', { status: 403, json: { statusCode: 403, message: 'Email verification required' } }],
+  ] as const) {
+    test(`"I opened the link in the email" says so for ${name}`, async ({ page }) => {
+      await mockBackend(page, {
+        extra: (p, method) => (p === '/api/users/me' ? me : signUpAnswers(p, method)),
+      });
+      await signUpToCodeStep(page);
+      await page.getByRole('button', { name: 'I opened the link in the email' }).click();
+      await expect(
+        page.getByText('This address is not verified yet. Open the link in the email or enter the code.'),
+      ).toBeVisible();
+      // Still the code step, and the code can still be entered.
+      await expect(page.getByRole('heading', { name: 'Verify Your Email' })).toBeVisible();
+      await expect(page.getByPlaceholder('000000')).toBeEditable();
+      expect(new URL(page.url()).pathname).toBe('/login');
+      expect(await page.evaluate(() => localStorage.getItem('amcp_token'))).toBeNull();
+    });
+  }
+
+  test('a check that fails says to try again', async ({ page }) => {
+    await mockBackend(page, {
+      extra: (p, method) =>
+        p === '/api/users/me' ? { status: 503, json: { message: 'Service Unavailable' } } : signUpAnswers(p, method),
+    });
+    await signUpToCodeStep(page);
+    await page.getByRole('button', { name: 'I opened the link in the email' }).click();
+    await expect(page.getByText('We could not check this right now. Please try again.')).toBeVisible();
+  });
+
+  test('"Resend code" answered "already verified" goes on instead of promising a new code', async ({ page }) => {
+    await mockBackend(page, {
+      extra: (p, method) => {
+        if (p === '/api/auth/resend-verification') return { json: { message: 'Email is already verified' } };
+        return signUpAnswers(p, method);
+      },
+    });
+    // On the test's clock from the start, so the countdown below can be run.
+    await page.clock.install();
+    await signUpToCodeStep(page);
+    await waitOutResendCountdown(page);
+    await page.getByRole('button', { name: 'Resend code' }).click();
+    await expect(page).toHaveURL(/\/auth\/login$/, { timeout: 15_000 });
+    await expect(page.getByText('A new code has been sent to your email')).toHaveCount(0);
+  });
+
+  test('"Resend code" that did send a code still says so', async ({ page }) => {
+    await mockBackend(page, {
+      extra: (p, method) => {
+        if (p === '/api/auth/resend-verification') return { json: { message: 'Verification code resent' } };
+        return signUpAnswers(p, method);
+      },
+    });
+    await page.clock.install();
+    await signUpToCodeStep(page);
+    await waitOutResendCountdown(page);
+    await page.getByRole('button', { name: 'Resend code' }).click();
+    await expect(page.getByText('A new code has been sent to your email')).toBeVisible();
+    expect(new URL(page.url()).pathname).toBe('/login');
+  });
+
+  test('a right code still goes back to the authorization', async ({ page }) => {
+    await mockBackend(page, {
+      extra: (p, method) => {
+        if (p === '/api/auth/verify-email') return { json: { message: 'Email verified successfully', emailVerified: true } };
+        return signUpAnswers(p, method);
+      },
+    });
+    await signUpToCodeStep(page);
+    await page.getByPlaceholder('000000').fill('123456');
+    await page.getByRole('button', { name: 'Verify Email' }).click();
+    await expect(page).toHaveURL(/\/auth\/login$/, { timeout: 15_000 });
+  });
+});
+
+test.describe('the link from the verification email', () => {
+  const verified = (p: string) => (p === '/api/auth/verify-email-link' ? { json: { ok: true } } : null);
+
+  test('with an authorization waiting, the way on is "Continue connecting Claude"', async ({ page }) => {
+    await mockBackend(page, { pending: { pending: true, client: 'Claude', step: 'allow' }, extra: verified });
+    await page.goto('/verify-email?token=abc');
+    const go = page.getByRole('link', { name: 'Continue connecting Claude' });
+    await expect(go).toBeVisible({ timeout: 15_000 });
+    await expect(go).toHaveAttribute('href', '/login?emailVerified=true&redirect=%2Fauth%2Flogin');
+    await expect(page.getByRole('link', { name: 'Go to Sign In' })).toHaveCount(0);
+    await go.click();
+    await expect(page).toHaveURL(/\/login\?emailVerified=true&redirect=%2Fauth%2Flogin$/);
+    await expect(page.getByText('Email verified', { exact: false }).first()).toBeVisible();
+  });
+
+  test('without a client name it says "your AI assistant"', async ({ page }) => {
+    await mockBackend(page, { pending: { pending: true, step: 'allow' }, extra: verified });
+    await page.goto('/verify-email?token=abc');
+    await expect(page.getByRole('link', { name: 'Continue connecting your AI assistant' })).toBeVisible({ timeout: 15_000 });
+  });
+
+  test('with nothing waiting it stays "Go to Sign In", with a hint for another device', async ({ page }) => {
+    const backend = await mockBackend(page, { pending: { pending: false }, extra: verified });
+    await page.goto('/verify-email?token=abc');
+    const go = page.getByRole('link', { name: 'Go to Sign In' });
+    await expect(go).toBeVisible({ timeout: 15_000 });
+    await expect(go).toHaveAttribute('href', '/login?emailVerified=true');
+    await expect(
+      page.getByText('Started on another device or in another tab? Go back there and choose “I opened the link in the email”.'),
+    ).toBeVisible();
+    await expect(page.getByTestId('continue-connecting')).toHaveCount(0);
+    expect(backend.asked()).toBeGreaterThan(0);
+  });
+
+  test('self-hosted keeps "Go to Sign In" and never asks', async ({ page }) => {
+    const backend = await mockBackend(page, {
+      cloud: false,
+      pending: { pending: true, client: 'Claude', step: 'allow' },
+      extra: verified,
+    });
+    await page.goto('/verify-email?token=abc');
+    await expect(page.getByRole('link', { name: 'Go to Sign In' })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByTestId('continue-connecting')).toHaveCount(0);
+    expect(backend.asked()).toBe(0);
+  });
+
+  test('a link that fails keeps its error and "Back to Sign In"', async ({ page }) => {
+    await mockBackend(page, {
+      pending: { pending: true, client: 'Claude', step: 'allow' },
+      extra: (p) =>
+        p === '/api/auth/verify-email-link'
+          ? { status: 400, json: { statusCode: 400, message: 'This link has already been used' } }
+          : null,
+    });
+    await page.goto('/verify-email?token=abc');
+    await expect(page.getByText('This link has already been used')).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('link', { name: 'Back to Sign In' })).toBeVisible();
+    await expect(page.getByTestId('continue-connecting')).toHaveCount(0);
   });
 });

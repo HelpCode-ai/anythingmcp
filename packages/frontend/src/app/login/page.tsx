@@ -1,10 +1,10 @@
 'use client';
 
-import { Suspense, useState, useEffect, useCallback, useRef } from 'react';
+import { Suspense, useState, useEffect, useRef } from 'react';
 import Link from 'next/link';
 import { useRouter, useSearchParams } from 'next/navigation';
 import { useTranslations } from 'next-intl';
-import { ApiError, auth, license, recentSignIn, server, social, sso, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
+import { ApiError, auth, license, recentSignIn, server, social, sso, users, type SocialProviderButton, type SsoProviderButton, recoveryCodes as recoveryApi } from '@/lib/api';
 import { useAuth } from '@/lib/auth-context';
 import { useToast } from '@/components/toast';
 import { buildEnterpriseContactUrl, directoryListingsFor } from '@/lib/marketing';
@@ -20,8 +20,10 @@ import { safeRedirect } from '@/lib/safe-redirect';
 import { startTrialPath } from '@/lib/checkout-source';
 import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
 import { pushSignUpVerified } from '@/lib/conversion';
+import { signUpClientName } from '@/lib/pending-authorization';
 import {
   cardTrialEligible,
+  clearAuthorizationReturn,
   parsePlanIntent,
   purchaseDestination,
   readCardTrialPrompt,
@@ -80,7 +82,11 @@ function LoginForm() {
   const [storedUser, setStoredUser] = useState<any>(null);
   const [resendMessage, setResendMessage] = useState('');
   const [resendCooldown, setResendCooldown] = useState(0);
+  // "I opened the link in the email" is being checked.
+  const [checkingLink, setCheckingLink] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
+  // No account exists yet: this sign-up is the instance's first-user setup.
+  const [firstUserSetup, setFirstUserSetup] = useState(false);
   const [isCloudMode, setIsCloudMode] = useState(false);
   const [infoLoaded, setInfoLoaded] = useState(false);
   const [trialDaysLeft, setTrialDaysLeft] = useState(0);
@@ -124,9 +130,16 @@ function LoginForm() {
   // the authorization page does: Claude's listing for Claude, ChatGPT's for
   // ChatGPT, none for Muse, both for anyone else (or no client at all).
   const directoryListings = directoryListingsFor(searchParams.get('client'));
+  // The same client by name, for "finish connecting Claude"; null for a
+  // client the page does not know, which reads "your AI assistant".
+  const authorizationClient = signUpClientName(searchParams.get('client'));
   const goTo = (target: string) => {
-    if (target.startsWith('/auth/')) window.location.assign(target);
-    else router.push(target);
+    if (target.startsWith('/auth/')) {
+      // The way back is being followed: a return kept for the card-trial
+      // detour must not send anyone there a second time.
+      clearAuthorizationReturn();
+      window.location.assign(target);
+    } else router.push(target);
   };
   const emailVerifiedParam = searchParams.get('emailVerified');
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
@@ -163,6 +176,7 @@ function LoginForm() {
       // Empty in cloud by design — see the comment on the backend endpoint.
       setSsoProviders(info.ssoProviders ?? []);
       setSocialProviders(info.socialProviders ?? []);
+      setFirstUserSetup(!info.hasUsers);
       if (!info.hasUsers) {
         setIsRegister(true);
       } else if (modeParam === 'register' && info.registrationEnabled) {
@@ -340,6 +354,7 @@ function LoginForm() {
           return;
         }
         login(result.accessToken, result.user);
+        if (returningToAuthorization) clearAuthorizationReturn();
         router.replace(redirectTo);
       } catch (err: any) {
         setError(err.message || t('errors.signInFailed'));
@@ -560,6 +575,38 @@ function LoginForm() {
     }
   };
 
+  /**
+   * The address is verified, by the code or by the link in the email: sign in
+   * and go on to the trial, the licence step or the destination.
+   */
+  const continueVerified = async () => {
+    const verifiedUser = { ...storedUser, emailVerified: true };
+    login(authToken, verifiedUser);
+
+    if (isCloudMode && returningToAuthorization) {
+      // Verification already created the trial; the user is in the middle
+      // of connecting an AI client, so take them straight back to approve.
+      // No card-trial offer here: put before Approve it halved the share of
+      // directory sign-ups that connected Claude (3 Oct 2026).
+      goTo(redirectTo);
+    } else if (isCloudMode) {
+      // Cloud mode: auto-activate trial
+      try {
+        const trialResult = await license.activateTrial(authToken);
+        if (offerCardTrial(storedUser, trialResult)) return;
+        setTrialDaysLeft(trialResult.trialDaysLeft);
+        setSetupStep('trial-activated');
+      } catch {
+        // Trial may already exist (e.g. returning user) — go to dashboard
+        goTo(redirectTo);
+      }
+    } else if (isFirstUserFlag) {
+      setSetupStep('license-choice');
+    } else {
+      goTo(redirectTo);
+    }
+  };
+
   const handleVerifyCode = async () => {
     setError('');
     setResendMessage('');
@@ -569,35 +616,40 @@ function LoginForm() {
       // The Google Ads conversion (cloud only; a no-op without GTM).
       pushSignUpVerified(String(storedUser?.id ?? 'code'), 'code');
       // Email verified — now log in and proceed
-      const verifiedUser = { ...storedUser, emailVerified: true };
-      login(authToken, verifiedUser);
-
-      if (isCloudMode && returningToAuthorization) {
-        // Verification already created the trial; the user is in the middle
-        // of connecting an AI client, so take them straight back to approve.
-        // No card-trial offer here: put before Approve it halved the share of
-        // directory sign-ups that connected Claude (3 Oct 2026).
-        goTo(redirectTo);
-      } else if (isCloudMode) {
-        // Cloud mode: auto-activate trial
-        try {
-          const trialResult = await license.activateTrial(authToken);
-          if (offerCardTrial(storedUser, trialResult)) return;
-          setTrialDaysLeft(trialResult.trialDaysLeft);
-          setSetupStep('trial-activated');
-        } catch (trialErr: any) {
-          // Trial may already exist (e.g. returning user) — go to dashboard
-          goTo(redirectTo);
-        }
-      } else if (isFirstUserFlag) {
-        setSetupStep('license-choice');
-      } else {
-        goTo(redirectTo);
-      }
+      await continueVerified();
     } catch (err: any) {
       setError(err.message || tVerify('errors.invalid'));
     } finally {
       setLoading(false);
+    }
+  };
+
+  /**
+   * "I opened the link in the email": the link verifies the address without
+   * this page hearing of it (it may have been opened on a phone, or in
+   * another tab), and the code is then no longer needed. Asks the account
+   * whether it is verified now, and goes on exactly as after a right code.
+   * The conversion is not reported here: the page the link opened did that.
+   */
+  const handleOpenedLink = async () => {
+    setError('');
+    setResendMessage('');
+    setCheckingLink(true);
+    try {
+      const me = await users.me(authToken);
+      if (me?.emailVerified === true) {
+        await continueVerified();
+        return;
+      }
+      setError(tVerify('notVerifiedYet'));
+    } catch (err) {
+      // Cloud answers every request of an unverified account with 403 (the
+      // verification endpoints aside), so that is "not yet", not a failure.
+      setError(
+        err instanceof ApiError && err.status === 403 ? tVerify('notVerifiedYet') : tVerify('errors.checkFailed'),
+      );
+    } finally {
+      setCheckingLink(false);
     }
   };
 
@@ -607,18 +659,24 @@ function LoginForm() {
     return () => clearTimeout(timer);
   }, [resendCooldown]);
 
-  const handleResendCode = useCallback(async () => {
+  const handleResendCode = async () => {
     if (resendCooldown > 0) return;
     setError('');
     setResendMessage('');
     try {
-      await auth.resendVerification(authToken);
+      const result = await auth.resendVerification(authToken);
+      // "Email is already verified": the link in the email was opened
+      // meanwhile, so no code was sent and none is needed.
+      if (/already verified/i.test(result?.message ?? '')) {
+        await continueVerified();
+        return;
+      }
       setResendMessage(tVerify('resent'));
       setResendCooldown(60);
     } catch (err: any) {
       setError(err.message || tVerify('errors.resendFailed'));
     }
-  }, [resendCooldown, authToken, tVerify]);
+  };
 
   const handlePersonalUse = async () => {
     setError('');
@@ -734,6 +792,19 @@ function LoginForm() {
               {loading ? tVerify('verifying') : tVerify('submit')}
             </Button>
           </form>
+
+          {/* The link in the same email verifies the address too, often on
+              another device: then this page only needs to be told. */}
+          <Button
+            type="button"
+            variant="secondary"
+            size="lg"
+            className="mt-3 w-full"
+            onClick={handleOpenedLink}
+            disabled={loading || checkingLink}
+          >
+            {checkingLink ? tVerify('checkingLink') : tVerify('openedLink')}
+          </Button>
 
           <p className="text-center text-sm text-[var(--text-2)] mt-4">
             {tVerify('noCode')}{' '}
@@ -1098,6 +1169,19 @@ function LoginForm() {
           {cloudSignup ? tSignUp('cloudSubtitle') : t('subtitle')}
         </p>
       </div>
+
+      {/* A sign-up opened from an AI client's authorization page: say that
+          the connection is finished right after, so nobody stops here. */}
+      {isRegister && returningToAuthorization && !firstUserSetup && !ssoExchanging && (
+        <p
+          data-testid="authorization-step"
+          className="mb-4 rounded-[9px] bg-[var(--brand-tint)] px-3 py-2.5 text-sm leading-relaxed text-[var(--text-2)]"
+        >
+          {authorizationClient
+            ? tSignUp.rich('authorizationStep', { client: authorizationClient, strong })
+            : tSignUp.rich('authorizationStepGeneric', { strong })}
+        </p>
+      )}
 
       {emailVerifiedParam === 'true' && (
         <div className={alertSuccess}>

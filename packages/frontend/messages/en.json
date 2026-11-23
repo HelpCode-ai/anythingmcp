@@ -84,6 +84,8 @@
     "title": "Create your account",
     "cloudTitle": "Create your free account",
     "cloudSubtitle": "7-day free trial · no credit card · connect Claude, ChatGPT, Copilot, Cursor or Meta Muse to your tools.",
+    "authorizationStep": "<strong>Step 1 of 2.</strong> Create your account, then you go straight back to finish connecting {client}.",
+    "authorizationStepGeneric": "<strong>Step 1 of 2.</strong> Create your account, then you go straight back to finish connecting your AI assistant.",
     "socialConsent": "By continuing you accept the <terms>Terms of Use</terms> and the <privacy>Privacy Policy</privacy>.",
     "continueWithEmail": "Continue with email",
     "name": "Name",
@@ -136,9 +138,13 @@
     "resendIn": "Resend in {seconds}s",
     "resent": "A new code has been sent to your email",
     "skip": "Skip for now",
+    "openedLink": "I opened the link in the email",
+    "checkingLink": "Checking…",
+    "notVerifiedYet": "This address is not verified yet. Open the link in the email or enter the code.",
     "errors": {
       "invalid": "Invalid verification code",
-      "resendFailed": "Failed to resend code"
+      "resendFailed": "Failed to resend code",
+      "checkFailed": "We could not check this right now. Please try again."
     }
   },
   "checkInbox": {
@@ -276,6 +282,9 @@
     "success": "Your email has been verified successfully!",
     "goToSignIn": "Go to Sign In",
     "backToSignIn": "Back to Sign In",
+    "continueConnecting": "Continue connecting {client}",
+    "continueConnectingGeneric": "Continue connecting your AI assistant",
+    "otherDevice": "Started on another device or in another tab? Go back there and choose “I opened the link in the email”.",
     "errors": {
       "noToken": "No verification token provided",
       "failed": "Verification failed"

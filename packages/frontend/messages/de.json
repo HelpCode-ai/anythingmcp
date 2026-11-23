@@ -84,6 +84,8 @@
     "title": "Konto erstellen",
     "cloudTitle": "Kostenloses Konto erstellen",
     "cloudSubtitle": "7 Tage kostenlos testen · keine Kreditkarte · verbinden Sie Claude, ChatGPT, Copilot, Cursor oder Meta Muse mit Ihren Tools.",
+    "authorizationStep": "<strong>Schritt 1 von 2.</strong> Erstellen Sie Ihr Konto. Danach geht es direkt zurück, um die Verbindung mit {client} abzuschließen.",
+    "authorizationStepGeneric": "<strong>Schritt 1 von 2.</strong> Erstellen Sie Ihr Konto. Danach geht es direkt zurück, um die Verbindung mit Ihrem KI-Assistenten abzuschließen.",
     "socialConsent": "Mit dem Fortfahren akzeptieren Sie die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>.",
     "continueWithEmail": "Weiter mit E-Mail",
     "name": "Name",
@@ -136,9 +138,13 @@
     "resendIn": "Erneut senden in {seconds} s",
     "resent": "Ein neuer Code wurde an Ihre E-Mail-Adresse gesendet",
     "skip": "Vorerst überspringen",
+    "openedLink": "Ich habe den Link in der E-Mail geöffnet",
+    "checkingLink": "Wird geprüft…",
+    "notVerifiedYet": "Diese Adresse ist noch nicht bestätigt. Öffnen Sie den Link in der E-Mail oder geben Sie den Code ein.",
     "errors": {
       "invalid": "Ungültiger Bestätigungscode",
-      "resendFailed": "Der Code konnte nicht erneut gesendet werden"
+      "resendFailed": "Der Code konnte nicht erneut gesendet werden",
+      "checkFailed": "Das ließ sich gerade nicht prüfen. Bitte versuchen Sie es erneut."
     }
   },
   "checkInbox": {
@@ -276,6 +282,9 @@
     "success": "Ihre E-Mail-Adresse wurde erfolgreich bestätigt!",
     "goToSignIn": "Zur Anmeldung",
     "backToSignIn": "Zurück zur Anmeldung",
+    "continueConnecting": "Verbindung mit {client} fortsetzen",
+    "continueConnectingGeneric": "Verbindung mit Ihrem KI-Assistenten fortsetzen",
+    "otherDevice": "Auf einem anderen Gerät oder in einem anderen Tab begonnen? Gehen Sie dorthin zurück und wählen Sie „Ich habe den Link in der E-Mail geöffnet“.",
     "errors": {
       "noToken": "Kein Bestätigungstoken angegeben",
       "failed": "Bestätigung fehlgeschlagen"
