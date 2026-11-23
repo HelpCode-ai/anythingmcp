@@ -26,6 +26,7 @@ function build(
 ) {
   const grants = {
     grantServers: jest.fn().mockResolvedValue(['srv-1']),
+    grantRequestedServer: jest.fn().mockResolvedValue(true),
     grantWholeOrganization: jest.fn().mockResolvedValue(true),
     listSelectableTargets: jest.fn().mockResolvedValue(opts.targets ?? []),
     restrictedIn: jest.fn().mockResolvedValue(!!opts.restricted),
@@ -142,8 +143,10 @@ describe('choosing what a client may reach', () => {
   });
 
   // The client already said which server it wants via RFC 8707. Asking again
-  // would be noise — but it still goes through grantServers, which drops an id
-  // this user cannot reach.
+  // would be noise. It goes through grantRequestedServer, which drops an id
+  // this user cannot reach and ADDS the server to what the client was already
+  // allowed: a second server URL of the same client must not take the first
+  // one's access away.
   it('honours a server the client named, without asking', async () => {
     const { controller, grants, req, res } = build({
       requestedServerId: 'srv-named',
@@ -154,7 +157,9 @@ describe('choosing what a client may reach', () => {
 
     await expect(ask(controller, req, res)).resolves.toBe(false);
 
-    expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-named']);
+    expect(grants.grantRequestedServer).toHaveBeenCalledWith('client-1', 'u1', 'srv-named');
+    // Not grantServers, which would replace the client's grant.
+    expect(grants.grantServers).not.toHaveBeenCalled();
     expect(res.send).not.toHaveBeenCalled();
   });
 

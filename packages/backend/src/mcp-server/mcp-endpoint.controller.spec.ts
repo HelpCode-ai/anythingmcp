@@ -64,7 +64,11 @@ describe('McpEndpointController — tenant isolation', () => {
       remove: jest.fn().mockResolvedValue(undefined),
       notifyToolsChanged: jest.fn().mockResolvedValue(undefined),
     };
-    grants = { resolve: jest.fn().mockResolvedValue(null) };
+    // No connection grant: the tenant check alone decides (server-url-grant.spec.ts has the grant).
+    grants = {
+      resolve: jest.fn().mockResolvedValue(null),
+      serverScope: jest.fn().mockResolvedValue('no-grant'),
+    };
     controller = new McpEndpointController(
       mcpServersService,
       toolRegistry,

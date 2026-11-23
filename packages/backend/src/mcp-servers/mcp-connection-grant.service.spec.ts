@@ -427,3 +427,341 @@ describe('McpConnectionGrantService.firstOwnServerId', () => {
     expect(findFirst).toHaveBeenCalledTimes(1);
   });
 });
+
+/**
+ * The grant on a server's own URL (`/mcp/<serverId>`), and the grant written
+ * when a client asks for one server by that URL.
+ */
+describe('McpConnectionGrantService on a server URL', () => {
+  type Row = { organizationId: string | null; serverIds: string[]; revokedAt: Date | null };
+
+  /** A grant row kept in memory, behind the same Prisma calls the service makes. */
+  function store(
+    initial: Row | null,
+    opts: {
+      /** Servers the user reaches (active, member of the workspace). */
+      reachable?: { id: string; organizationId: string }[];
+      /** Member visibility: ids the user may see. Absent: no visibility service. */
+      visible?: string[];
+    } = {},
+  ) {
+    let row: Row | null = initial ? { ...initial, serverIds: [...initial.serverIds] } : null;
+    const reachable = opts.reachable ?? [
+      { id: 'srv-A', organizationId: 'org-1' },
+      { id: 'srv-B', organizationId: 'org-1' },
+      { id: 'srv-X', organizationId: 'org-2' },
+    ];
+    const prisma: any = {
+      mcpConnectionGrant: {
+        findUnique: jest.fn(async () => (row ? { id: 'g1', ...row } : null)),
+        upsert: jest.fn(async ({ create, update }: any) => {
+          row = row
+            ? { ...row, ...update }
+            : { organizationId: create.organizationId, serverIds: create.serverIds, revokedAt: null };
+        }),
+        updateMany: jest.fn(async ({ where, data }: any) => {
+          if (!row) return { count: 0 };
+          if (data.revokedAt) {
+            if (row.revokedAt) return { count: 0 };
+            row = { ...row, revokedAt: data.revokedAt };
+            return { count: 1 };
+          }
+          const id = data.serverIds.push;
+          if (row.revokedAt || row.organizationId || row.serverIds.includes(where.NOT.serverIds.has)) {
+            return { count: 0 };
+          }
+          row = { ...row, serverIds: [...row.serverIds, id] };
+          return { count: 1 };
+        }),
+      },
+      mcpServerConfig: {
+        findMany: jest.fn(async ({ where }: any) => {
+          const ids: string[] = where.id?.in ?? where.AND?.[0]?.id?.in ?? [];
+          const found = reachable.filter((s) => ids.includes(s.id));
+          // The second shape is keepVisible's query in a restricted workspace.
+          return where.AND ? found.filter((s) => (opts.visible ?? []).includes(s.id)) : found;
+        }),
+        findUnique: jest.fn(async ({ where }: any) => reachable.find((s) => s.id === where.id) ?? null),
+      },
+      organizationMember: {
+        findMany: jest.fn(async ({ where }: any) =>
+          (where.organizationId.in as string[]).map((organizationId) => ({ organizationId, role: 'EDITOR' })),
+        ),
+        count: jest.fn().mockResolvedValue(1),
+      },
+      oAuthSession: {
+        findUnique: jest.fn(async ({ where }: any) =>
+          where.sessionId === 'sess-1' ? { clientId: 'client-1' } : null,
+        ),
+      },
+    };
+    const visibility = opts.visible
+      ? { scopeFor: jest.fn().mockResolvedValue({ restricted: true, userId: 'user-1' }) }
+      : undefined;
+    const svc = new McpConnectionGrantService(prisma, undefined, visibility as any);
+    return { svc, prisma, row: () => row };
+  }
+
+  const A = { id: 'srv-A', organizationId: 'org-1' };
+  const B = { id: 'srv-B', organizationId: 'org-1' };
+  const X = { id: 'srv-X', organizationId: 'org-2' };
+
+  describe('serverScope', () => {
+    it('is no-grant without a grant row: tokens from before grants keep working', async () => {
+      const { svc } = store(null);
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('no-grant');
+    });
+
+    it('is no-grant, without a query, when the token names no client or no user', async () => {
+      const { svc, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.serverScope(undefined, 'user-1', B)).resolves.toBe('no-grant');
+      await expect(svc.serverScope('client-1', undefined, B)).resolves.toBe('no-grant');
+      expect(prisma.mcpConnectionGrant.findUnique).not.toHaveBeenCalled();
+    });
+
+    it('grants the servers the grant names and no other', async () => {
+      const { svc } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('granted');
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('outside');
+    });
+
+    it('grants every server of a whole-workspace grant, and none of another workspace', async () => {
+      const { svc } = store({ organizationId: 'org-1', serverIds: [], revokedAt: null });
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('granted');
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('granted');
+      await expect(svc.serverScope('client-1', 'user-1', X)).resolves.toBe('outside');
+    });
+
+    it('treats a server of another workspace like any server outside a servers grant', async () => {
+      const { svc } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.serverScope('client-1', 'user-1', X)).resolves.toBe('outside');
+    });
+
+    it('is revoked for a revoked connection, whatever it named', async () => {
+      const { svc } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: new Date() });
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('revoked');
+    });
+
+    it('is outside when nothing in the grant exists any more', async () => {
+      const { svc } = store({ organizationId: null, serverIds: ['srv-deleted'], revokedAt: null });
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('outside');
+    });
+
+    it('is not-grantable when member visibility hides the server from the user', async () => {
+      const { svc } = store(
+        { organizationId: null, serverIds: ['srv-A'], revokedAt: null },
+        { visible: ['srv-A'] },
+      );
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('not-grantable');
+      // A revoked connection stays revoked: the user asked for it to stop.
+      await svc.revoke('client-1', 'user-1');
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('revoked');
+    });
+
+    it('reads the row once for requests it lets through', async () => {
+      const { svc, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      for (let i = 0; i < 5; i++) await svc.serverScope('client-1', 'user-1', A);
+      expect(prisma.mcpConnectionGrant.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('caches the absence of a grant too', async () => {
+      const { svc, prisma } = store(null);
+      for (let i = 0; i < 5; i++) await svc.serverScope('client-1', 'user-1', A);
+      expect(prisma.mcpConnectionGrant.findUnique).toHaveBeenCalledTimes(1);
+    });
+
+    it('never refuses from the cache: a grant extended elsewhere applies at once', async () => {
+      const { svc, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('outside');
+      // Another process added srv-B (this one's cache was not told).
+      prisma.mcpConnectionGrant.findUnique.mockResolvedValue({
+        organizationId: null,
+        serverIds: ['srv-A', 'srv-B'],
+        revokedAt: null,
+      });
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('granted');
+    });
+
+    it('forgets the cached row after a minute', async () => {
+      jest.useFakeTimers().setSystemTime(new Date('2026-11-23T10:00:00Z'));
+      try {
+        const { svc, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+        await svc.serverScope('client-1', 'user-1', A);
+        jest.setSystemTime(new Date('2026-11-23T10:00:59Z'));
+        await svc.serverScope('client-1', 'user-1', A);
+        expect(prisma.mcpConnectionGrant.findUnique).toHaveBeenCalledTimes(1);
+        jest.setSystemTime(new Date('2026-11-23T10:01:01Z'));
+        await svc.serverScope('client-1', 'user-1', A);
+        expect(prisma.mcpConnectionGrant.findUnique).toHaveBeenCalledTimes(2);
+      } finally {
+        jest.useRealTimers();
+      }
+    });
+
+    it('applies a revoke and a new choice of this process at once', async () => {
+      const { svc } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('granted');
+      await svc.revoke('client-1', 'user-1');
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('revoked');
+      await svc.grantServers('client-1', 'user-1', ['srv-B']);
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('granted');
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('outside');
+    });
+
+    it('serverScopeById looks the workspace up, and leaves an unknown server alone', async () => {
+      const { svc } = store({ organizationId: 'org-1', serverIds: [], revokedAt: null });
+      await expect(svc.serverScopeById('client-1', 'user-1', 'srv-B')).resolves.toBe('granted');
+      await expect(svc.serverScopeById('client-1', 'user-1', 'srv-X')).resolves.toBe('outside');
+      await expect(svc.serverScopeById('client-1', 'user-1', 'srv-unknown')).resolves.toBe('no-grant');
+    });
+  });
+
+  describe('grantRequestedServer', () => {
+    it('writes the server alone for a client without a grant', async () => {
+      const { svc, row } = store(null);
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-A')).resolves.toBe(true);
+      expect(row()).toEqual({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+    });
+
+    // One client registration used for two server URLs: the second
+    // authorization used to replace the grant, and the first URL was then
+    // outside it.
+    it('adds a second server to the grant instead of replacing it', async () => {
+      const { svc, row, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-B')).resolves.toBe(true);
+      expect(row()?.serverIds).toEqual(['srv-A', 'srv-B']);
+      expect(prisma.mcpConnectionGrant.upsert).not.toHaveBeenCalled();
+      // One conditional append, so two authorizations cannot drop each other's server.
+      expect(prisma.mcpConnectionGrant.updateMany).toHaveBeenCalledWith({
+        where: {
+          clientId: 'client-1',
+          userId: 'user-1',
+          revokedAt: null,
+          organizationId: null,
+          NOT: { serverIds: { has: 'srv-B' } },
+        },
+        data: { serverIds: { push: 'srv-B' } },
+      });
+      await expect(svc.serverScope('client-1', 'user-1', A)).resolves.toBe('granted');
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('granted');
+    });
+
+    it('writes nothing when the server is already granted', async () => {
+      const { svc, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-A')).resolves.toBe(true);
+      expect(prisma.mcpConnectionGrant.upsert).not.toHaveBeenCalled();
+      expect(prisma.mcpConnectionGrant.updateMany).not.toHaveBeenCalled();
+    });
+
+    it('applies an extension to a refusal answered a moment ago', async () => {
+      const { svc } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('outside');
+      await svc.grantRequestedServer('client-1', 'user-1', 'srv-B');
+      await expect(svc.serverScope('client-1', 'user-1', B)).resolves.toBe('granted');
+    });
+
+    it('leaves a whole-workspace grant alone when it already covers the server', async () => {
+      const { svc, row, prisma } = store({ organizationId: 'org-1', serverIds: [], revokedAt: null });
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-A')).resolves.toBe(true);
+      expect(row()).toEqual({ organizationId: 'org-1', serverIds: [], revokedAt: null });
+      expect(prisma.mcpConnectionGrant.upsert).not.toHaveBeenCalled();
+    });
+
+    it('replaces a whole-workspace grant of another workspace, as before', async () => {
+      const { svc, row } = store({ organizationId: 'org-1', serverIds: [], revokedAt: null });
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-X')).resolves.toBe(true);
+      expect(row()).toEqual({ organizationId: null, serverIds: ['srv-X'], revokedAt: null });
+    });
+
+    // A revoke meant "stop everything". Authorizing again allows the server
+    // asked for now, not what the connection reached before.
+    it('restarts a revoked connection with the requested server only', async () => {
+      const { svc, row } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: new Date() });
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-B')).resolves.toBe(true);
+      expect(row()).toEqual({ organizationId: null, serverIds: ['srv-B'], revokedAt: null });
+    });
+
+    it('writes nothing for a server the user cannot reach', async () => {
+      const { svc, row, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-of-another-tenant')).resolves.toBe(false);
+      expect(row()?.serverIds).toEqual(['srv-A']);
+      expect(prisma.mcpConnectionGrant.updateMany).not.toHaveBeenCalled();
+      // Membership is part of the query, as for every other grant.
+      expect(prisma.mcpServerConfig.findMany.mock.calls[0][0].where).toEqual({
+        id: { in: ['srv-of-another-tenant'] },
+        isActive: true,
+        organization: { members: { some: { userId: 'user-1', deactivatedAt: null } } },
+      });
+    });
+
+    it('writes nothing for a server member visibility hides from the user', async () => {
+      const { svc, row } = store(
+        { organizationId: null, serverIds: ['srv-A'], revokedAt: null },
+        { visible: ['srv-A'] },
+      );
+      await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-B')).resolves.toBe(false);
+      expect(row()?.serverIds).toEqual(['srv-A']);
+    });
+
+    it('with onlyExisting never creates a grant', async () => {
+      const { svc, row, prisma } = store(null);
+      await expect(
+        svc.grantRequestedServer('client-1', 'user-1', 'srv-A', { onlyExisting: true }),
+      ).resolves.toBe(false);
+      expect(row()).toBeNull();
+      expect(prisma.mcpConnectionGrant.upsert).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('extendForAuthorization (the SSO sign-in)', () => {
+    it('adds the server to the grant of the client that is being authorized', async () => {
+      const { svc, row } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.extendForAuthorization('sess-1', 'user-1', 'srv-B')).resolves.toBe(true);
+      expect(row()?.serverIds).toEqual(['srv-A', 'srv-B']);
+    });
+
+    it('writes no grant for a client that has none', async () => {
+      const { svc, row } = store(null);
+      await expect(svc.extendForAuthorization('sess-1', 'user-1', 'srv-B')).resolves.toBe(false);
+      expect(row()).toBeNull();
+    });
+
+    it('does nothing without a pending authorization', async () => {
+      const { svc, row, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
+      await expect(svc.extendForAuthorization(undefined, 'user-1', 'srv-B')).resolves.toBe(false);
+      await expect(svc.extendForAuthorization('sess-gone', 'user-1', 'srv-B')).resolves.toBe(false);
+      expect(row()?.serverIds).toEqual(['srv-A']);
+      expect(prisma.mcpConnectionGrant.updateMany).not.toHaveBeenCalled();
+    });
+  });
+});
+
+describe('grantServerScopeMode (MCP_GRANT_SERVER_SCOPE)', () => {
+  const { grantServerScopeMode } = jest.requireActual('./mcp-connection-grant.service');
+
+  it('enforces by default and for anything it does not know', () => {
+    expect(grantServerScopeMode(undefined)).toBe('enforce');
+    expect(grantServerScopeMode('')).toBe('enforce');
+    expect(grantServerScopeMode('enforce')).toBe('enforce');
+    expect(grantServerScopeMode('yes')).toBe('enforce');
+  });
+
+  it('reads report and off, in any case and with spaces', () => {
+    expect(grantServerScopeMode('report')).toBe('report');
+    expect(grantServerScopeMode(' Report ')).toBe('report');
+    expect(grantServerScopeMode('OFF')).toBe('off');
+  });
+
+  it('reads the environment when called without a value', () => {
+    const before = process.env.MCP_GRANT_SERVER_SCOPE;
+    try {
+      process.env.MCP_GRANT_SERVER_SCOPE = 'off';
+      expect(grantServerScopeMode()).toBe('off');
+      delete process.env.MCP_GRANT_SERVER_SCOPE;
+      expect(grantServerScopeMode()).toBe('enforce');
+    } finally {
+      if (before === undefined) delete process.env.MCP_GRANT_SERVER_SCOPE;
+      else process.env.MCP_GRANT_SERVER_SCOPE = before;
+    }
+  });
+});

@@ -15,6 +15,7 @@ import {
   UseGuards,
   BadRequestException,
   NotFoundException,
+  Optional,
 } from '@nestjs/common';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 import {
@@ -31,6 +32,8 @@ import { IsString, IsOptional } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
 import type { Request, Response } from 'express';
 import { SsoService, SsoError } from './sso.service';
+import { MCP_RESOURCE_COOKIE } from '../auth/resource-indicator.middleware';
+import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import {
   CONNECT_PAGE_PATH,
@@ -114,6 +117,7 @@ export class SsoController {
     private readonly sso: SsoService,
     private readonly config: ConfigService,
     private readonly securityEvents: SecurityEventService,
+    @Optional() private readonly grants?: McpConnectionGrantService,
   ) {}
 
   private frontendUrl(): string {
@@ -188,6 +192,17 @@ export class SsoController {
         // authorization converge on one code path.
         const isSecure =
           (req.headers['x-forwarded-proto'] as string) === 'https' || req.secure;
+        // This sign-in writes no connection grant. A client that already has
+        // one and now asks for a further server by its URL gets that server
+        // added, as on the password path: otherwise the endpoint would keep
+        // refusing it (MCP_GRANT_SERVER_SCOPE) however often the person
+        // signs in. Never creates a grant, and never stops the sign-in.
+        const requestedServerId = (req as any).signedCookies?.[MCP_RESOURCE_COOKIE];
+        if (this.grants && typeof requestedServerId === 'string' && requestedServerId) {
+          await this.grants
+            .extendForAuthorization((req as any).cookies?.oauth_session, result.profile.id, requestedServerId)
+            .catch((err: any) => this.logger.warn(`Could not extend a connection grant: ${err?.message ?? err}`));
+        }
         setLoginUserCookie(req, res, Buffer.from(JSON.stringify(result.profile)).toString('base64url'), {
           maxAge: 60 * 1000,
           secure: isSecure,
