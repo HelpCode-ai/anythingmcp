@@ -281,6 +281,21 @@
       "failed": "Verifica non riuscita"
     }
   },
+  "pendingAuthorization": {
+    "label": "Collegamento non completato",
+    "allow": {
+      "text": "{client} ti sta aspettando.",
+      "action": "Torna a collegare {client}",
+      "textGeneric": "Il tuo assistente AI ti sta aspettando.",
+      "actionGeneric": "Torna a collegare il tuo assistente AI"
+    },
+    "continue": {
+      "text": "{client} non è ancora collegato.",
+      "action": "Completa il collegamento con {client}",
+      "textGeneric": "Il tuo assistente AI non è ancora collegato.",
+      "actionGeneric": "Completa il collegamento con il tuo assistente AI"
+    }
+  },
   "acceptInvite": {
     "loading": "Caricamento…",
     "invalidTitle": "Invito non valido",

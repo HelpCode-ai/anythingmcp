@@ -281,6 +281,21 @@
       "failed": "Verification failed"
     }
   },
+  "pendingAuthorization": {
+    "label": "Unfinished connection",
+    "allow": {
+      "text": "{client} is waiting for you.",
+      "action": "Back to connecting {client}",
+      "textGeneric": "Your AI assistant is waiting for you.",
+      "actionGeneric": "Back to connecting your AI assistant"
+    },
+    "continue": {
+      "text": "{client} is not connected yet.",
+      "action": "Finish connecting {client}",
+      "textGeneric": "Your AI assistant is not connected yet.",
+      "actionGeneric": "Finish connecting your AI assistant"
+    }
+  },
   "acceptInvite": {
     "loading": "Loading...",
     "invalidTitle": "Invalid Invitation",

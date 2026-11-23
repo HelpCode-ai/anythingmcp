@@ -281,6 +281,21 @@
       "failed": "Bestätigung fehlgeschlagen"
     }
   },
+  "pendingAuthorization": {
+    "label": "Verbindung noch nicht abgeschlossen",
+    "allow": {
+      "text": "{client} wartet auf Sie.",
+      "action": "Zurück zur Verbindung mit {client}",
+      "textGeneric": "Ihr KI-Assistent wartet auf Sie.",
+      "actionGeneric": "Zurück zur Verbindung mit Ihrem KI-Assistenten"
+    },
+    "continue": {
+      "text": "{client} ist noch nicht verbunden.",
+      "action": "Verbindung mit {client} abschließen",
+      "textGeneric": "Ihr KI-Assistent ist noch nicht verbunden.",
+      "actionGeneric": "Verbindung mit Ihrem KI-Assistenten abschließen"
+    }
+  },
   "acceptInvite": {
     "loading": "Wird geladen…",
     "invalidTitle": "Ungültige Einladung",
