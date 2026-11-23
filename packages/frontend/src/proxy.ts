@@ -68,6 +68,11 @@ export function proxy(request: NextRequest) {
     pathname.startsWith('/auth') ||
     pathname.startsWith('/.well-known') ||
     pathname === '/authorize' ||
+    // Where an AI client's authorization finishes, after "Allow access". The
+    // sign-in for it happens on the backend's own page and leaves no
+    // dashboard session, so behind a single port this gate sent the browser
+    // to /login instead and the client was never connected.
+    pathname === '/callback' ||
     pathname === '/token' ||
     // OIDC UserInfo: called by relying parties with a bearer token, never by
     // a browser session. Sending it to /login broke ChatGPT's identity check.
