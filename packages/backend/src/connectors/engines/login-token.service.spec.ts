@@ -380,6 +380,13 @@ describe('LoginTokenService', () => {
       expect(bundle.token).toBe('bare-jwt');
     });
 
+    it('reports a null token field as a refused login', async () => {
+      answer({ TenantToken: null, UserToken: null });
+      await expect(
+        service.getToken({ ...listAuth, tokenJsonPath: 'TenantToken', audJsonPath: 'UserToken' }, 'conn-null'),
+      ).rejects.toThrow(/refused the login — the token at "TenantToken" was null/);
+    });
+
     it('names every path when none holds a token', async () => {
       answer({ ok: true });
       await expect(

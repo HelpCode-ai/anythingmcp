@@ -152,18 +152,33 @@ export function loginBasicAuthProblems(connector) {
  * engine would run without doing what the adapter meant.
  */
 const LOGIN_TOKEN_PLACEHOLDER = '$' + '{loginToken}';
+const LOGIN_AUD_PLACEHOLDER = '$' + '{loginAud}';
+const LOGIN_TOKEN_MAPPING = '"$' + 'loginToken"';
+const LOGIN_AUD_MAPPING = '"$' + 'loginAud"';
+
+/** True when a tool body template or bodyMapping carries `needle`. */
+function bodyCarries(tools, needle) {
+  return tools.some((tool) => {
+    const mapping = tool?.endpointMapping;
+    const template = typeof mapping?.bodyTemplate === 'string' ? mapping.bodyTemplate : '';
+    const body = mapping?.bodyMapping === undefined ? '' : JSON.stringify(mapping.bodyMapping);
+    return template.includes(needle) || body.includes(needle);
+  });
+}
+
 export function loginTokenXmlProblems(adapter) {
   const connector = adapter?.connector;
   const cfg = connector?.authConfig;
   const tools = Array.isArray(adapter?.tools) ? adapter.tools : [];
-  const templates = tools.map((t) => t?.endpointMapping?.bodyTemplate).filter((t) => typeof t === 'string');
-  const usesLoginToken = templates.some((t) => t.includes(LOGIN_TOKEN_PLACEHOLDER));
+  const usesLoginToken = bodyCarries(tools, LOGIN_TOKEN_PLACEHOLDER) || bodyCarries(tools, LOGIN_TOKEN_MAPPING);
+  const usesLoginAud = bodyCarries(tools, LOGIN_AUD_PLACEHOLDER) || bodyCarries(tools, LOGIN_AUD_MAPPING);
   const problems = [];
   const fields = ['loginBodyFormat', 'loginResponseFormat', 'tokenPlacement', 'refreshOnBody401'];
   const set = cfg && typeof cfg === 'object' ? fields.filter((f) => cfg[f] !== undefined) : [];
   if (connector?.authType !== 'LOGIN_TOKEN') {
     for (const f of set) problems.push(`${f} only applies to LOGIN_TOKEN authentication`);
     if (usesLoginToken) problems.push(`${LOGIN_TOKEN_PLACEHOLDER} in a bodyTemplate needs LOGIN_TOKEN authentication with tokenPlacement: "body"`);
+    if (usesLoginAud) problems.push(`${LOGIN_AUD_PLACEHOLDER} in a body needs LOGIN_TOKEN authentication with tokenPlacement: "body"`);
     return problems;
   }
   if (!cfg || typeof cfg !== 'object') return problems;
@@ -175,12 +190,18 @@ export function loginTokenXmlProblems(adapter) {
   if (cfg.tokenPlacement !== undefined && !['header', 'body'].includes(cfg.tokenPlacement)) problems.push('tokenPlacement must be "header" or "body"');
   if (cfg.tokenPlacement === 'body') {
     if (connector.type !== 'REST') problems.push('tokenPlacement: "body" is only supported by REST connectors');
-    if (!usesLoginToken) problems.push(`tokenPlacement: "body" sends no token header, so at least one tool's bodyTemplate must contain ${LOGIN_TOKEN_PLACEHOLDER}`);
+    if (!usesLoginToken) problems.push(`tokenPlacement: "body" sends no token header, so at least one tool's bodyTemplate must contain ${LOGIN_TOKEN_PLACEHOLDER} (or its bodyMapping $loginToken)`);
+    if (usesLoginAud && !(typeof cfg.audJsonPath === 'string' && cfg.audJsonPath.trim()) && !(typeof cfg.aud === 'string' && cfg.aud.trim())) {
+      problems.push('a body that sends loginAud needs authConfig.audJsonPath or authConfig.aud, the second value from the login');
+    }
     for (const f of ['headerName', 'headerTemplate']) {
       if (cfg[f] !== undefined) problems.push(`${f} is not sent with tokenPlacement: "body"; remove it`);
     }
   } else if (usesLoginToken && (cfg.tokenPlacement === undefined || cfg.tokenPlacement === 'header')) {
     problems.push(`${LOGIN_TOKEN_PLACEHOLDER} in a bodyTemplate renders empty without authConfig.tokenPlacement: "body"`);
+  }
+  if (usesLoginAud && cfg.tokenPlacement !== 'body') {
+    problems.push(`${LOGIN_AUD_PLACEHOLDER} in a body renders empty without authConfig.tokenPlacement: "body"`);
   }
   if (cfg.refreshOnBody401 !== undefined) {
     if (typeof cfg.refreshOnBody401 !== 'boolean') problems.push('refreshOnBody401 must be true or false');

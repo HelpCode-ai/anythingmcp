@@ -698,6 +698,7 @@ import * as signnow from './intl/signnow.json';
 import * as signwell from './intl/signwell.json';
 import * as siigo from './intl/siigo.json';
 import * as skroutz from './intl/skroutz.json';
+import * as skuvault from './intl/skuvault.json';
 import * as slab from './intl/slab.json';
 import * as slack from './intl/slack.json';
 import * as smartlead from './intl/smartlead.json';
@@ -1974,6 +1975,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   signwell as unknown as AdapterDefinition,
   siigo as unknown as AdapterDefinition,
   skroutz as unknown as AdapterDefinition,
+  skuvault as unknown as AdapterDefinition,
   slab as unknown as AdapterDefinition,
   slack as unknown as AdapterDefinition,
   smartlead as unknown as AdapterDefinition,

@@ -562,7 +562,8 @@ export class LoginTokenService {
         // thirteen failures reported that way.
         const refusal =
           extractLoginRefusal(response.data) ??
-          (authConfig.loginResponseFormat === 'xml' ? extractXmlLoginRefusal(response.data) : null);
+          (authConfig.loginResponseFormat === 'xml' ? extractXmlLoginRefusal(response.data) : null) ??
+          nullTokenRefusal(response.data, paths);
         throw new Error(
           refusal
             ? `LOGIN_TOKEN: the service refused the login — ${refusal}`
@@ -898,6 +899,19 @@ export function readTokenAt(body: unknown, paths: string[]): string | undefined 
     if (typeof value === 'string' && value.trim() !== '') return value;
   }
   return undefined;
+}
+
+/**
+ * SkuVault's getTokens, and APIs like it, answer HTTP 200 with the token
+ * field set to null when the login is refused. That is a refusal, not a
+ * path we guessed wrong.
+ */
+function nullTokenRefusal(body: unknown, paths: string[]): string | null {
+  for (const path of paths) {
+    if (isWholeBodyPath(path)) continue;
+    if (jsonPath(body, path) === null) return `the token at "${path}" was null`;
+  }
+  return null;
 }
 
 /** Why no token was found, naming the paths (the whole body in words). */

@@ -302,11 +302,16 @@ behaves exactly as before.
   (`headerName` and `headerTemplate` are not used; `extraHeaders` still are).
   The token is the placeholder `${loginToken}` in a tool's
   `endpointMapping.bodyTemplate`: XML-escaped with `bodyEncoding: "xml"`,
-  JSON-escaped in a JSON template. The engine's value always wins: a tool
-  argument named `loginToken` cannot replace it. A body that carries the token
-  is not sent again to another origin after a redirect. Fixed values the body
-  needs next to the token (a partner id, a shop id) are ordinary connector
-  variables: `{{PARTNER_ID}}` in the template.
+  JSON-escaped in a JSON template. A `bodyMapping` can name it `$loginToken`
+  instead, which leaves out any other field the caller did not pass. The
+  engine's value always wins: a tool argument named `loginToken` cannot
+  replace it. A second value from the login, read with `audJsonPath` (or the
+  static `aud`), is `${loginAud}` in a template and `$loginAud` in a
+  `bodyMapping`. Use it when the login returns two fields every later call
+  sends, such as SkuVault's TenantToken and UserToken. A body that carries
+  the token is not sent again to another origin after a redirect. Fixed
+  values the body needs next to the token (a partner id, a shop id) are
+  ordinary connector variables: `{{PARTNER_ID}}` in the template.
 
   ```json
   "endpointMapping": {

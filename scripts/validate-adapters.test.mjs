@@ -295,6 +295,25 @@ test('LOGIN_TOKEN for XML APIs: login formats, the token in the body and the re-
   assert.equal(other.length, 5);
   assert.ok(other.slice(0, 4).every((m) => /only applies to LOGIN_TOKEN authentication/.test(m)));
   assert.match(other[4], /needs LOGIN_TOKEN authentication with tokenPlacement: "body"/);
+
+  const audTool = {
+    name: 'good_lookup',
+    description: 'x'.repeat(60),
+    parameters: { type: 'object', properties: {} },
+    endpointMapping: {
+      method: 'POST',
+      path: '/q',
+      bodyMapping: { TenantToken: '$loginToken', UserToken: '$loginAud', PageNumber: '$page_number' },
+    },
+  };
+  const audErrors = (authConfig) => check({
+    authConfig: { loginBodyFormat: undefined, loginResponseFormat: undefined, refreshOnBody401: undefined, loginBody: {}, ...authConfig },
+    tools: [audTool],
+  });
+  const audText = (authConfig) => audErrors(authConfig).map((entry) => entry.message).join('\n');
+  assert.deepEqual(audErrors({ tokenPlacement: 'body', audJsonPath: 'UserToken' }), []);
+  assert.match(audText({ tokenPlacement: 'body' }), /needs authConfig.audJsonPath or authConfig.aud/);
+  assert.match(audText({ tokenPlacement: 'header', headerName: 'X-Token' }), /loginAud/);
 });
 
 test('optional and repeated blocks in an XML bodyTemplate are named, closed and only in XML bodies', () => {
