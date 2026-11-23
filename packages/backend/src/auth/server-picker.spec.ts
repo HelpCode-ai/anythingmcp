@@ -20,6 +20,8 @@ function build(
     requestedServerId?: string;
     /** Member visibility narrows the user's view of the workspace. */
     restricted?: boolean;
+    /** The user's own first server in the workspace, where connectors they add go. */
+    ownServerId?: string | null;
   } = {},
 ) {
   const grants = {
@@ -27,6 +29,7 @@ function build(
     grantWholeOrganization: jest.fn().mockResolvedValue(true),
     listSelectableTargets: jest.fn().mockResolvedValue(opts.targets ?? []),
     restrictedIn: jest.fn().mockResolvedValue(!!opts.restricted),
+    firstOwnServerId: jest.fn().mockResolvedValue(opts.ownServerId ?? null),
   };
   const store = {
     getOAuthSession: jest.fn().mockResolvedValue(
@@ -208,6 +211,157 @@ describe('choosing what a client may reach', () => {
     const html = res.send.mock.calls[0][0];
     expect(html).not.toContain('<img src=x');
     expect(html).toContain('&lt;img');
+  });
+});
+
+// A server without connectors is not a choice: every invited member gets an
+// empty default server, so any workspace with two people has several servers.
+describe('servers without connectors are not a choice', () => {
+  it('grants the whole workspace when no server has connectors (an invited member, an empty workspace)', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-admin', 'Default (Ada)', 0), server('srv-own', 'Default (Vera)', 0)]),
+      ],
+      ownServerId: 'srv-own',
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-1', 'u1', 'org-A');
+    expect(grants.grantServers).not.toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalled();
+    // No picker: none of its cookies either.
+    expect(res.cookie).not.toHaveBeenCalled();
+  });
+
+  it('grants the one server with connectors when it is the user\'s own first server', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-own', 'Default (Ada)', 3), server('srv-member', 'Default (Vera)', 0)]),
+      ],
+      ownServerId: 'srv-own',
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.firstOwnServerId).toHaveBeenCalledWith('u1', 'org-A');
+    expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-own']);
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('adds the user\'s own first server when the one with connectors is another, so what they add later arrives', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-admin', 'Default (Ada)', 3), server('srv-own', 'Default (Vera)', 0)]),
+      ],
+      ownServerId: 'srv-own',
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-admin', 'srv-own']);
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('grants only the one with connectors to a member who owns no server', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-admin', 'Default (Ada)', 2), server('srv-other', 'Default (Bo)', 0)]),
+      ],
+      ownServerId: null,
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-admin']);
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('grants a restricted member the whole workspace, whatever their own servers hold', async () => {
+    // Member visibility lists only their own servers; with one of them they
+    // already get the whole workspace, an empty second one changes nothing.
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-own', 'Default (Vera)', 1), server('srv-own-2', 'Drafts', 0)]),
+      ],
+      restricted: true,
+      ownServerId: 'srv-own',
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.restrictedIn).toHaveBeenCalledWith('u1', 'org-A');
+    expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-1', 'u1', 'org-A');
+    expect(grants.grantServers).not.toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('still asks when two servers have connectors, and lists the empty one too', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-1', 'ERP', 2), server('srv-2', 'CRM', 1), server('srv-3', 'Drafts', 0)]),
+      ],
+      ownServerId: 'srv-1',
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    const html = res.send.mock.calls[0][0];
+    expect(html).toContain('ERP');
+    expect(html).toContain('CRM');
+    expect(html).toContain('Drafts');
+    expect(grants.grantServers).not.toHaveBeenCalled();
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+  });
+
+  it('still asks a restricted member with two own servers that both have connectors', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-own', 'Default (Vera)', 1), server('srv-own-2', 'Shop', 2)]),
+      ],
+      restricted: true,
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+    expect(grants.grantServers).not.toHaveBeenCalled();
+  });
+
+  // Several workspaces keep the picker: which workspace is a choice of its own.
+  it.each([
+    ['one server with connectors', 3, 0],
+    ['no server with connectors', 0, 0],
+  ])('still asks a user in several workspaces (%s)', async (_label, first, second) => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-1', 'Default', first)]),
+        workspace('org-B', 'Globex', [server('srv-2', 'Default', second)]),
+      ],
+      ownServerId: 'srv-1',
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    const html = res.send.mock.calls[0][0];
+    expect(html).toContain('Acme');
+    expect(html).toContain('Globex');
+    expect(grants.grantServers).not.toHaveBeenCalled();
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+    expect(grants.firstOwnServerId).not.toHaveBeenCalled();
+  });
+
+  it('keeps the single-server grant for a workspace whose only server is empty', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [workspace('org-A', 'Acme', [server('srv-1', 'Default', 0)])],
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-1']);
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
   });
 });
 

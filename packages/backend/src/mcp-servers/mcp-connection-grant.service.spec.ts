@@ -402,3 +402,28 @@ describe('McpConnectionGrantService.clientRedirectUris', () => {
     expect(await svc.clientRedirectUris('c2')).toEqual([]);
   });
 });
+
+describe('McpConnectionGrantService.firstOwnServerId', () => {
+  it('asks for the user\'s oldest active server of that workspace, as attachToDefaultServer does', async () => {
+    const findFirst = jest.fn(async (_args: any) => ({ id: 'srv-own' }));
+    const svc = new McpConnectionGrantService({ mcpServerConfig: { findFirst } } as any);
+
+    await expect(svc.firstOwnServerId('user-1', 'org-1')).resolves.toBe('srv-own');
+
+    expect(findFirst).toHaveBeenCalledWith({
+      where: { userId: 'user-1', organizationId: 'org-1', isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+  });
+
+  it('answers null when they own no server there, and without a user or workspace', async () => {
+    const findFirst = jest.fn(async (_args: any) => null);
+    const svc = new McpConnectionGrantService({ mcpServerConfig: { findFirst } } as any);
+
+    await expect(svc.firstOwnServerId('user-1', 'org-1')).resolves.toBeNull();
+    await expect(svc.firstOwnServerId('', 'org-1')).resolves.toBeNull();
+    await expect(svc.firstOwnServerId('user-1', '')).resolves.toBeNull();
+    expect(findFirst).toHaveBeenCalledTimes(1);
+  });
+});

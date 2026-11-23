@@ -337,6 +337,22 @@ export class McpConnectionGrantService {
     return (await this.scopeIn(userId, membership.role as string, organizationId)).restricted;
   }
 
+  /**
+   * The user's own oldest active server in one workspace, or null when they
+   * own none there. A connector they add is attached to it
+   * (`McpServersService.attachToDefaultServer`), so a connection that includes
+   * it keeps receiving what they add later.
+   */
+  async firstOwnServerId(userId: string, organizationId: string): Promise<string | null> {
+    if (!userId || !organizationId) return null;
+    const server = await this.prisma.mcpServerConfig.findFirst({
+      where: { userId, organizationId, isActive: true },
+      orderBy: { createdAt: 'asc' },
+      select: { id: true },
+    });
+    return server?.id ?? null;
+  }
+
   /** Everything this user has granted, for the dashboard's revoke list. */
   async listForUser(userId: string) {
     return this.prisma.mcpConnectionGrant.findMany({
