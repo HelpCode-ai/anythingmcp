@@ -400,6 +400,61 @@ test.describe('card-trial offer (cloud)', () => {
     expect(await page.evaluate(() => localStorage.getItem('amcp_card_trial_return'))).toBeNull();
   });
 
+  // The offer is not for everyone who opens it after approving an AI client.
+  // Those exits used to end on the dashboard, with the client never connected:
+  // `?return=` was only read once the offer was about to be shown.
+  for (const [who, opts, failLicence] of [
+    ['a workspace that already has a plan', { license: { plan: 'cloud_starter', status: 'active', expiresAt: null, features: {} } }, false],
+    ['a trial that has ended', { license: { plan: 'trial', status: 'expired', expiresAt: null, trialDaysLeft: 0, features: {} } }, false],
+    ['someone who is not an admin', { user: { ...ADMIN, role: 'EDITOR' } }, false],
+    ['a licence that cannot be read', {}, true],
+  ] as const) {
+    test(`opened after approving an AI client by ${who}, it goes on to /callback, not to the dashboard`, async ({ page }) => {
+      await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' }, ...opts });
+      if (failLicence) {
+        await page.route('**/api/license/status', (route) => route.fulfill({ status: 500, json: { message: 'Internal Server Error' } }));
+      }
+      let callbackHits = 0;
+      await page.route('**/callback', (route) => {
+        callbackHits += 1;
+        return route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>back to the client</h1>' });
+      });
+      await page.goto('/start-trial?source=post_approve&return=%2Fcallback');
+      await expect(page).toHaveURL(/\/callback$/, { timeout: 15_000 });
+      await expect(page.getByRole('heading', { name: 'back to the client' })).toBeVisible();
+      // Followed once, and spent: nothing sends a later visit there again.
+      expect(callbackHits).toBe(1);
+      expect(await page.evaluate(() => localStorage.getItem('amcp_card_trial_return'))).toBeNull();
+      expect(new URL(page.url()).pathname).toBe('/callback');
+    });
+  }
+
+  test('without a return address, a workspace the offer is not for goes to the dashboard as before', async ({ page }) => {
+    await cloudSession(page, {
+      seed: { 'amcp_card_trial_prompt:u1': 'shown' },
+      license: { plan: 'cloud_starter', status: 'active', expiresAt: null, features: {} },
+    });
+    let callbackHit = false;
+    await page.route('**/callback', (route) => {
+      callbackHit = true;
+      return route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>back to the client</h1>' });
+    });
+    await page.goto('/start-trial?source=post_approve');
+    // The dashboard, which sends a new workspace on to its welcome page.
+    await expect(page).toHaveURL(/\/(welcome)?$/, { timeout: 15_000 });
+    expect(callbackHit).toBe(false);
+    expect(await page.evaluate(() => localStorage.getItem('amcp_card_trial_return'))).toBeNull();
+  });
+
+  test('a signed-out visitor keeps the return address through the sign-in', async ({ page }) => {
+    await cloudSession(page, { signedOut: true });
+    await page.goto('/start-trial?source=post_approve&return=%2Fcallback');
+    await expect(page).toHaveURL(
+      /\/login\?redirect=%2Fstart-trial%3Fsource%3Dpost_approve%26return%3D%252Fcallback$/,
+      { timeout: 15_000 },
+    );
+  });
+
   test('a skip from the button under the plans counts like the corner one', async ({ page }) => {
     await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
     await page.goto('/start-trial?source=signup_prompt');

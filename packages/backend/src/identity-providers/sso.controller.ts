@@ -1,3 +1,4 @@
+import { setLoginUserCookie } from '../auth/login-user-cookie';
 import {
   Controller,
   Get,
@@ -187,17 +188,10 @@ export class SsoController {
         // authorization converge on one code path.
         const isSecure =
           (req.headers['x-forwarded-proto'] as string) === 'https' || req.secure;
-        res.cookie(
-          'login_user',
-          Buffer.from(JSON.stringify(result.profile)).toString('base64url'),
-          {
-            httpOnly: true,
-            secure: isSecure,
-            maxAge: 60 * 1000,
-            sameSite: isSecure ? 'none' : 'lax',
-            signed: true,
-          },
-        );
+        setLoginUserCookie(req, res, Buffer.from(JSON.stringify(result.profile)).toString('base64url'), {
+          maxAge: 60 * 1000,
+          secure: isSecure,
+        });
         res.clearCookie('login_csrf');
         return res.redirect(303, `${this.mcpBaseUrl(req)}/callback`);
       }
