@@ -70,6 +70,16 @@ curl -s http://localhost:4000/api/auth/invite \
   -d '{"email":"user@example.com","role":"EDITOR","mcpRoleId":"optional-role-id"}'
 ```
 
+Inviting an address that already has a pending invitation reuses its link,
+sends the mail again and applies the `role` and MCP roles of this call to it.
+
+### Create a workspace
+
+`POST /api/organizations` with `{"name":"..."}` creates a workspace and makes
+the caller its ADMIN. Cloud: any signed-in user. Self-hosted: only an ADMIN of
+the active workspace (403 otherwise); see
+[who may create a workspace](operations/member-visibility.md#who-may-create-a-workspace).
+
 ---
 
 ## Connector Endpoints

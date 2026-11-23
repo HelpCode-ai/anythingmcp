@@ -448,7 +448,9 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
   'OrganizationsController.deleteCurrent': admin('checked in the handler'),
   'OrganizationsController.revokeWorkspaceSessions': admin('checked in the handler'),
   'OrganizationsController.switchOrg': own('switches the caller\'s active workspace'),
-  'OrganizationsController.createOrg': own('creates a workspace the caller owns'),
+  'OrganizationsController.createOrg': own(
+    'creates a workspace the caller owns; on self-hosted only for an ADMIN (checked in the handler)',
+  ),
   'PublicStatsController.getStats': noSession('public aggregate counts'),
 
   // ── roles and keys ─────────────────────────────────────────────────────

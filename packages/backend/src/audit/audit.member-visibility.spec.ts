@@ -1,5 +1,6 @@
 import { AuditService, analyticsQuery } from './audit.service';
 import { toolPerformanceQuery } from './tool-performance.query';
+import { MEMBER_CALL_ERROR, memberCallError } from './member-call-error';
 
 /**
  * The `onlyUserId` option of the audit reads (restricted member visibility):
@@ -95,6 +96,76 @@ describe('AuditService own-calls filter', () => {
         { id: 'c3', mcpServerId: null, mcpServer: null },
       ]);
       expect(JSON.stringify(rows)).not.toContain('Alice');
+    });
+
+    /**
+     * A restricted member reads a connector they do not own in the reduced
+     * view, without its address. The error text of their own failed call
+     * names it ("Host not found: 'erp.corp.example' ..."), so the audit log
+     * told them what the connector page withholds.
+     */
+    describe('the error text of a call on a connector the member does not own', () => {
+      const HOST = 'erp.corp.example';
+      const call = (id: string, ownerId: string, error: string | null, status = 'ERROR') => ({
+        id,
+        status,
+        error,
+        mcpServerId: null,
+        mcpServer: null,
+        tool: { name: 'erp_get', connectorId: `conn-${ownerId}`, connector: { name: 'ERP', type: 'REST', userId: ownerId } },
+      });
+      const rowsFor = () => [
+        call('net', 'admin', `Host not found: '${HOST}' could not be resolved (ENOTFOUND). Check the address in the connector settings.`),
+        call('http', 'admin', `404 Not Found: Request failed: body={"url":"https://${HOST}/api/v2/x"}`),
+        call('slow', 'admin', `timeout of 30000ms exceeded calling https://${HOST}`, 'TIMEOUT'),
+        call('ok', 'admin', null, 'SUCCESS'),
+        call('mine', ME, `Host not found: 'my.own.example'`),
+      ];
+
+      it('a VIEWER gets the status and a fixed sentence, never the provider\'s words', async () => {
+        prisma.toolInvocation.findMany.mockResolvedValue(rowsFor());
+        const rows: any[] = await service.getRecentInvocations(10, 0, { organizationId: ORG, onlyUserId: ME });
+        const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+        expect(byId.net.error).toBe(MEMBER_CALL_ERROR);
+        expect(byId.http.error).toBe(`HTTP 404. ${MEMBER_CALL_ERROR}`);
+        expect(byId.slow.error).toBe(MEMBER_CALL_ERROR);
+        expect(byId.ok.error).toBeNull();
+        // Owning a connector shows a VIEWER nothing more (ownerAccess is false).
+        expect(byId.mine.error).toBe(MEMBER_CALL_ERROR);
+        expect(JSON.stringify(rows)).not.toContain(HOST);
+        expect(JSON.stringify(rows)).not.toContain('my.own.example');
+        // The owner was read to decide, and is not handed out.
+        expect(prisma.toolInvocation.findMany.mock.calls[0][0].include.tool.select.connector.select).toEqual({
+          name: true,
+          type: true,
+          userId: true,
+        });
+        expect(rows.every((r) => !('userId' in r.tool.connector))).toBe(true);
+        expect(byId.net.tool.connector).toEqual({ name: 'ERP', type: 'REST' });
+      });
+
+      it('an EDITOR keeps the full text for the connectors they own, and only for those', async () => {
+        prisma.toolInvocation.findMany.mockResolvedValue(rowsFor());
+        const rows: any[] = await service.getRecentInvocations(10, 0, {
+          organizationId: ORG,
+          onlyUserId: ME,
+          ownerSeesErrors: true,
+        });
+        const byId = Object.fromEntries(rows.map((r) => [r.id, r]));
+        expect(byId.mine.error).toBe(`Host not found: 'my.own.example'`);
+        expect(byId.net.error).toBe(MEMBER_CALL_ERROR);
+        expect(JSON.stringify(rows)).not.toContain(HOST);
+      });
+
+      it('the open path keeps every text and does not read the owner', async () => {
+        const rows = rowsFor().map((r) => ({ ...r, tool: { ...r.tool, connector: { name: 'ERP', type: 'REST' } } }));
+        prisma.toolInvocation.findMany.mockResolvedValue(rows);
+        expect(await service.getRecentInvocations(10, 0, { organizationId: ORG })).toEqual(rows);
+        expect(prisma.toolInvocation.findMany.mock.calls[0][0].include.tool.select.connector.select).toEqual({
+          name: true,
+          type: true,
+        });
+      });
     });
 
     it('returns rows untouched on the open path', async () => {
@@ -205,6 +276,50 @@ describe('AuditService own-calls filter', () => {
       expect(sql.values.filter((v: unknown) => v === ME)).toHaveLength(5);
     });
 
+    describe('the latest error of a tool on a connector the member does not own', () => {
+      const perfRow = (connectorId: string, lastError: string | null) => ({
+        tool_id: `t-${connectorId}`,
+        tool_name: 'erp_get',
+        connector_id: connectorId,
+        connector_name: 'ERP',
+        mcp_server_id: null,
+        mcp_server_name: null,
+        calls: 3n,
+        errors: 1n,
+        latency_sample_count: 3n,
+        latency: [1, 2, 3],
+        last_error: lastError,
+        last_error_at: new Date('2026-11-01T10:00:00.000Z'),
+      });
+      const HOST_ERROR = `502 Bad Gateway: upstream https://erp.corp.example refused`;
+
+      it('a VIEWER gets the status and a fixed sentence, and no owner is looked up', async () => {
+        prisma.$queryRaw.mockResolvedValue([perfRow('c-shared', HOST_ERROR), perfRow('c-fine', null)]);
+        const out = await service.getToolPerformance(ORG, {}, ME);
+        expect(out.items.map((i) => i.lastError)).toEqual([`HTTP 502. ${MEMBER_CALL_ERROR}`, null]);
+        expect(JSON.stringify(out)).not.toContain('erp.corp.example');
+        expect(prisma.connector.findMany).not.toHaveBeenCalled();
+      });
+
+      it('an EDITOR keeps the text for connectors they own, read inside the workspace', async () => {
+        prisma.$queryRaw.mockResolvedValue([perfRow('c-shared', HOST_ERROR), perfRow('c-mine', HOST_ERROR)]);
+        prisma.connector.findMany.mockResolvedValue([{ id: 'c-mine' }]);
+        const out = await service.getToolPerformance(ORG, {}, ME, true);
+        expect(prisma.connector.findMany).toHaveBeenCalledWith({
+          where: { id: { in: ['c-shared', 'c-mine'] }, organizationId: ORG, userId: ME },
+          select: { id: true },
+        });
+        expect(out.items.map((i) => i.lastError)).toEqual([`HTTP 502. ${MEMBER_CALL_ERROR}`, HOST_ERROR]);
+      });
+
+      it('the open path keeps every text', async () => {
+        prisma.$queryRaw.mockResolvedValue([perfRow('c-shared', HOST_ERROR)]);
+        const out = await service.getToolPerformance(ORG, {});
+        expect(out.items[0].lastError).toBe(HOST_ERROR);
+        expect(prisma.connector.findMany).not.toHaveBeenCalled();
+      });
+    });
+
     it('names only servers the member owns, in the groups and in the latest-error lookup', () => {
       const sql = toolPerformanceQuery(ORG, since, until, {}, 25, ME);
       expect(sql.text).toMatch(/CASE WHEN s\.user_id = \$\d+ THEN ti\.mcp_server_id END AS mcp_server_id/);
@@ -241,5 +356,25 @@ describe('AuditService own-calls filter', () => {
       expect(sql.text).not.toContain('user_id');
       expect(sql.values).not.toContain(ME);
     });
+  });
+});
+
+describe('memberCallError', () => {
+  it('keeps an HTTP status the stored text starts with, and nothing else', () => {
+    expect(memberCallError('404 Not Found: Request failed: body={"host":"erp.corp.example"}')).toBe(`HTTP 404. ${MEMBER_CALL_ERROR}`);
+    expect(memberCallError('500')).toBe(`HTTP 500. ${MEMBER_CALL_ERROR}`);
+    expect(memberCallError('401 : Unauthorized')).toBe(`HTTP 401. ${MEMBER_CALL_ERROR}`);
+  });
+
+  it('does not take a number inside the text for a status', () => {
+    expect(memberCallError('connect ECONNREFUSED 10.0.0.5:5432')).toBe(MEMBER_CALL_ERROR);
+    expect(memberCallError('4040 rows exceeded')).toBe(MEMBER_CALL_ERROR);
+    expect(memberCallError('999 Custom')).toBe(MEMBER_CALL_ERROR);
+  });
+
+  it('leaves a call without an error text as it is', () => {
+    expect(memberCallError(null)).toBeNull();
+    expect(memberCallError('')).toBe('');
+    expect(memberCallError(undefined)).toBeUndefined();
   });
 });

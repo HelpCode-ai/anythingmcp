@@ -749,6 +749,10 @@ export class McpEndpointController {
           if (!byOrg.has(t.organizationId)) byOrg.set(t.organizationId, new Set());
           byOrg.get(t.organizationId)!.add(t.connectorId);
         }
+        // `scopeTools` is already what the caller's roles allow. Where roles
+        // limit tools, the graph names those tools only (a connector is in
+        // scope with one allowed tool, and its graph names all of them).
+        const roleLimited = (req as { roleLimitedOrgIds?: Set<string> }).roleLimitedOrgIds;
         const results: unknown[] = [];
         for (const [orgId, connectorIds] of byOrg) {
           if (!(await this.kgService.isEnabled(orgId))) continue;
@@ -756,6 +760,9 @@ export class McpEndpointController {
             await this.kgService.lookup(orgId, query, {
               connectorIds: [...connectorIds],
               folders: await this.folderAccessFor(orgId, user.sub),
+              allowedToolNames: roleLimited?.has(orgId)
+                ? new Set(scopeTools.filter((t) => t.organizationId === orgId).map((t) => t.name))
+                : null,
             }),
           );
         }
@@ -964,6 +971,11 @@ export class McpEndpointController {
     // The full entries, not just the names: `answerToolsList` builds this
     // caller's tools/list from them.
     (req as { visibleTools?: RegisteredTool[] }).visibleTools = visible;
+    // The workspaces whose roles limit this caller's tools (an allow-list,
+    // not `null`): there the knowledge graph names allowed tools only.
+    (req as { roleLimitedOrgIds?: Set<string> }).roleLimitedOrgIds = new Set(
+      [...allowedByOrg].filter(([, allowed]) => allowed !== null).map(([orgId]) => orgId),
+    );
 
     const visibleNames = new Set(visible.map((t) => t.name));
     user.roles = [
@@ -2431,6 +2443,7 @@ export class McpEndpointController {
     ) {
       const orgId = invocationContext.organizationId;
       const scopeConnectorIds = this.kgScopeConnectorIds(params);
+      const scopeToolNames = this.kgAllowedToolNames(params);
       const scopeServerId = invocationContext.mcpServerId;
       entries.push({
         name: 'kg_how_to_obtain',
@@ -2463,6 +2476,7 @@ export class McpEndpointController {
                 connectorIds: scopeConnectorIds,
                 mcpServerId: scopeServerId,
                 folders: params.folders,
+                allowedToolNames: scopeToolNames,
               });
               // What the workspace remembers about these entities (memory,
               // within the caller's access and folders).
@@ -3087,6 +3101,21 @@ export class McpEndpointController {
   }
 
   /**
+   * The names of the server's tools this caller's roles allow, for the
+   * knowledge graph; null when the roles limit nothing (an admin, or a
+   * workspace without tool whitelists). A connector is in the graph's scope
+   * with a single allowed tool, and its entities name every tool that reaches
+   * them: without this, kg_how_to_obtain and the knowledge-graph resource
+   * named tools beyond the caller's role.
+   */
+  private kgAllowedToolNames(params: ToolSetParams): Set<string> | null {
+    const { serverTools, allowedToolIds } = params;
+    if (allowedToolIds === null || allowedToolIds === undefined) return null;
+    const allowed = new Set(allowedToolIds);
+    return new Set(serverTools.filter((t) => allowed.has(t.id)).map((t) => t.name));
+  }
+
+  /**
    * Registers the caller's instructions and stored resources (see
    * mcp-resources.ts). The plan is built from content already narrowed to the
    * connectors this caller can use, so a resource that is not registered here
@@ -3244,6 +3273,7 @@ export class McpEndpointController {
               mcpServerId: invocationContext.mcpServerId,
               serverName: invocationContext.mcpServerName,
               folders: params.folders,
+              allowedToolNames: this.kgAllowedToolNames(params),
             }),
           },
         ],

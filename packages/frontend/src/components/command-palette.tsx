@@ -7,6 +7,7 @@ import { useAuth } from '@/lib/auth-context';
 import { useTheme } from '@/lib/theme-context';
 import { connectors, mcpServers, type Connector, type McpServer } from '@/lib/api';
 import { NAV, SIDEBAR_SECTIONS, getVisibleSettingsSections } from '@/lib/navigation';
+import { useMemberAccess } from '@/lib/use-member-access';
 import { cn } from '@/lib/utils';
 
 interface CommandPaletteProps {
@@ -197,6 +198,9 @@ function CommandPaletteContent({ onClose }: CommandPaletteContentProps) {
   const router = useRouter();
   const { token, user, orgs, switchOrg, logout, deploymentMode } = useAuth();
   const { resolvedTheme, setTheme } = useTheme();
+  // The same answer the sidebar and the route guard use (lib/member-access.ts):
+  // a restricted member is not offered a page or an action that is not theirs.
+  const { can } = useMemberAccess();
 
   const [query, setQuery] = useState('');
   const [activeIndex, setActiveIndex] = useState(0);
@@ -255,7 +259,7 @@ function CommandPaletteContent({ onClose }: CommandPaletteContentProps) {
   const groupedResults = useMemo(() => {
     // 1. Pages
     const pagesCandidates: CommandItem[] = NAV.flatMap((group) =>
-      group.items.map((item) => ({
+      group.items.filter((item) => can(item.href)).map((item) => ({
         id: sanitizeId('page', item.href),
         label: item.label,
         description: group.group,
@@ -269,7 +273,7 @@ function CommandPaletteContent({ onClose }: CommandPaletteContentProps) {
       .slice(0, 8);
 
     // 2. Settings (using shared visibility filtering helper)
-    const visibleSections = getVisibleSettingsSections(SIDEBAR_SECTIONS, { isAdmin, isCloud });
+    const visibleSections = getVisibleSettingsSections(SIDEBAR_SECTIONS, { isAdmin, isCloud, can });
     const settingsCandidates: CommandItem[] = visibleSections.flatMap((section) =>
       section.items.map((item) => ({
         id: sanitizeId('settings', item.href),
@@ -298,7 +302,7 @@ function CommandPaletteContent({ onClose }: CommandPaletteContentProps) {
       .slice(0, 8);
 
     // 4. MCP servers
-    const mcpItems: CommandItem[] = (mcpServersData || []).map((s) => ({
+    const mcpItems: CommandItem[] = (can('/mcp-server') ? mcpServersData || [] : []).map((s) => ({
       id: `mcp-${s.id}`,
       label: s.name || 'Unnamed server',
       description: s.slug || 'MCP server',
@@ -314,7 +318,7 @@ function CommandPaletteContent({ onClose }: CommandPaletteContentProps) {
     const actionCandidates: CommandItem[] = [];
 
     // Add connector (hidden for VIEWER)
-    if (!isViewer) {
+    if (!isViewer && can('/connectors/new')) {
       actionCandidates.push({
         id: 'action-add-connector',
         label: 'Add connector',
@@ -325,14 +329,16 @@ function CommandPaletteContent({ onClose }: CommandPaletteContentProps) {
       });
     }
 
-    actionCandidates.push({
-      id: 'action-browse-marketplace',
-      label: 'Browse Marketplace',
-      description: 'Find and install connectors',
-      group: 'Actions' as const,
-      keywords: ['browse marketplace', 'store', 'marketplace', 'catalog', 'adapters'],
-      href: '/connectors/store',
-    });
+    if (can('/connectors/store')) {
+      actionCandidates.push({
+        id: 'action-browse-marketplace',
+        label: 'Browse Marketplace',
+        description: 'Find and install connectors',
+        group: 'Actions' as const,
+        keywords: ['browse marketplace', 'store', 'marketplace', 'catalog', 'adapters'],
+        href: '/connectors/store',
+      });
+    }
 
     actionCandidates.push({
       id: 'action-toggle-theme',
@@ -388,6 +394,7 @@ function CommandPaletteContent({ onClose }: CommandPaletteContentProps) {
     isViewer,
     isCloud,
     isDark,
+    can,
     connectorsData,
     mcpServersData,
     orgs,

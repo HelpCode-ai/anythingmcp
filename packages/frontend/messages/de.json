@@ -45,6 +45,10 @@
       "hideAriaLabel": "Schaltfläche „Stern auf GitHub“ ausblenden"
     }
   },
+  "memberAccess": {
+    "notAvailableTitle": "Diese Seite steht Ihnen nicht zur Verfügung",
+    "notAvailableBody": "Ihre Rolle in diesem Workspace umfasst sie nicht. Wenn Sie mehr brauchen, wenden Sie sich an einen Workspace-Admin."
+  },
   "signIn": {
     "continueAs": "Weiter als {email}",
     "continueAsHint": "Sie haben sich hier gerade angemeldet, um Ihren KI-Assistenten zu verbinden.",
@@ -802,7 +806,9 @@
       "active": "Aktiv",
       "inactive": "Inaktiv",
       "importSpec": "Spezifikation importieren",
-      "delete": "Löschen"
+      "delete": "Löschen",
+      "owner": "Besitzer: {name}",
+      "ownerGone": "Besitzer: kein Mitglied mehr"
     },
     "addTile": {
       "title": "Connector hinzufügen",
@@ -1677,7 +1683,9 @@
       "envSavedWarnings": "Umgebungsvariablen gespeichert. {warnings}",
       "discoveryFailed": "Erkennung fehlgeschlagen: {message}",
       "authorizationFailed": "Autorisierung fehlgeschlagen: {message}"
-    }
+    },
+    "owner": "Besitzer: {name}",
+    "ownerGone": "Besitzer: kein Mitglied dieses Workspace mehr"
   },
   "userCredentials": {
     "scopeError": "Der Anmeldemodus konnte nicht geändert werden.",
@@ -2266,11 +2274,17 @@
       },
       "restricted": {
         "label": "Eingeschränkt",
-        "description": "Mitglieder ohne Admin-Rolle sehen nur ihre eigenen Tool-Aufrufe, die Connectors, die ihre Rollen erreichen, und die MCP-Server, die einen davon enthalten."
+        "description": "Mitglieder ohne Admin-Rolle sehen nur ihre eigenen Tool-Aufrufe, die Connectors, die ihre Rollen erreichen (Editoren auch ihre eigenen Connectors), und ihre eigenen MCP-Server. Seiten zur Verwaltung des Workspace werden ihnen nicht angeboten."
       },
-      "noToolList": "Noch keine Rolle schränkt Tools ein, daher sehen Mitglieder weiterhin alle Connectors. Legen Sie unter <link>Rollen</link> eine Rolle mit einer Tool-Liste an.",
+      "noToolList": "Eingeschränkt begrenzt noch nicht, welche Connectors Mitglieder sehen. Keine Rolle in diesem Workspace hat eine Tool-Liste, deshalb sieht jedes Mitglied weiterhin jeden Connector mit Name, Status und Tools (nicht dessen Einstellungen); nur die Tool-Aufrufe sind auf die eigenen begrenzt. Legen Sie unter <link>Rollen</link> eine Rolle mit Tool-Liste an und weisen Sie sie zu. Ab dann sieht ein Mitglied ohne Rolle keinen Connector.",
       "saved": "Sichtbarkeit für Mitglieder gespeichert.",
-      "saveFailed": "Die Sichtbarkeit für Mitglieder konnte nicht gespeichert werden."
+      "saveFailed": "Die Sichtbarkeit für Mitglieder konnte nicht gespeichert werden.",
+      "activeNow": "Jetzt aktiv: {mode}",
+      "unsavedToRestricted": "Noch nicht gespeichert. Dieser Workspace ist weiterhin offen: Jedes Mitglied sieht alles, bis Sie speichern.",
+      "unsavedToOpen": "Noch nicht gespeichert. Dieser Workspace bleibt eingeschränkt, bis Sie speichern.",
+      "saveSwitch": "Speichern: auf {mode} umstellen",
+      "discard": "Verwerfen",
+      "confirmLeave": "Die gewählte Sichtbarkeit für Mitglieder ist noch nicht gespeichert. Diese Seite ohne Speichern verlassen?"
     },
     "revokeDialog": {
       "title": "Alle abmelden",
@@ -2305,7 +2319,8 @@
       "createTitle": "Neue Organisation erstellen",
       "createPlaceholder": "Name der neuen Organisation",
       "creating": "Wird erstellt...",
-      "create": "Organisation erstellen"
+      "create": "Organisation erstellen",
+      "createAdminOnly": "Auf dieser Instanz können nur Admins einen Workspace anlegen."
     }
   },
   "settingsUsers": {
@@ -2370,7 +2385,8 @@
       "emailFailed": "E-Mail konnte nicht gesendet werden:",
       "link": "Einladungslink (manuell weitergeben):",
       "sending": "Wird gesendet...",
-      "send": "Einladung senden"
+      "send": "Einladung senden",
+      "restrictedRoleHint": "Die Sichtbarkeit für Mitglieder ist hier eingeschränkt. Ein Viewer sieht nur, was seine MCP-Rollen erreichen. Ein Editor legt zusätzlich Connectors an und sieht seine eigenen immer."
     },
     "bulk": {
       "selected": "{count} ausgewählt · Skill-Lernen:",

@@ -40,7 +40,8 @@ export class AuditController {
       'on one server (`mcpServerId`).\n\n' +
       '```bash\namcp api GET "/api/audit/invocations?status=ERROR&limit=20"\n```\n\n' +
       'In a workspace with restricted member visibility, a member who is not an admin gets only the calls they made ' +
-      'themselves; calls without a user are hidden.',
+      'themselves; calls without a user are hidden. On a connector they do not own, `error` is the HTTP status and a ' +
+      'fixed sentence instead of the stored text, which can name the connector\'s address.',
   })
   @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Rows to return (default 100).', example: 20 })
   @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip, for paging.', example: 0 })
@@ -113,6 +114,7 @@ export class AuditController {
         mcpServerId,
         organizationId: req.user.organizationId,
         onlyUserId: scope.userId,
+        ownerSeesErrors: scope.ownerAccess,
       },
     );
   }
@@ -176,7 +178,8 @@ export class AuditController {
       'Groups the last hours (default 24, maximum 2160) by tool, connector and MCP server. ' +
       'ERROR and TIMEOUT count as failures. Latency percentiles use stored duration samples; ' +
       'repeated failures retain their first recorded server and duration.' +
-      ' In a workspace with restricted member visibility, a member who is not an admin gets only their own calls.',
+      ' In a workspace with restricted member visibility, a member who is not an admin gets only their own calls,' +
+      ' and on a connector they do not own `lastError` is the HTTP status and a fixed sentence instead of the stored text.',
   })
   @ApiQuery({ name: 'hours', required: false, type: Number })
   @ApiQuery({ name: 'connectorId', required: false, type: String })
@@ -191,7 +194,7 @@ export class AuditController {
     if (!scope.restricted) {
       return this.auditService.getToolPerformance(req.user.organizationId, query);
     }
-    return this.auditService.getToolPerformance(req.user.organizationId, query, scope.userId);
+    return this.auditService.getToolPerformance(req.user.organizationId, query, scope.userId, scope.ownerAccess);
   }
 
   @Get('breakdowns')

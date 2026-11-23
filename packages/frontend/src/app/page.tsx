@@ -11,6 +11,7 @@ import { Button } from '@/components/ui/button';
 import { getApiOrigin } from '@/lib/origin';
 import { FirstSuccessOffer } from '@/components/first-success-offer';
 import { TrialExtensionBanner } from '@/components/trial-extension-banner';
+import { useMemberAccess } from '@/lib/use-member-access';
 
 type HealthResult = { total: number; healthy: number; unhealthy: number; connectors: any[] } | null;
 
@@ -24,6 +25,11 @@ interface AnalyticsData {
 
 export default function DashboardPage() {
   const { token, user, isLoading } = useAuth();
+  // What this member may open (lib/member-access.ts): a restricted member is
+  // not offered a page the dashboard would send them away from, and the page
+  // does not ask the API for what it would refuse.
+  const { can, decided } = useMemberAccess();
+  const canSeeGraph = can('/knowledge-graph');
   const [stats, setStats] = useState({ connectors: 0, tools: 0, invocations24h: 0, errors24h: 0 });
   const [recentConnectors, setRecentConnectors] = useState<any[]>([]);
   const [analytics, setAnalytics] = useState<AnalyticsData | null>(null);
@@ -62,10 +68,6 @@ export default function DashboardPage() {
               })
               .catch(() => {});
           }
-          // Knowledge-graph teaser counts (free static/observational layers; no AI).
-          knowledgeGraph.stats(token)
-            .then((s) => setKgStats({ nodes: s.nodes, edges: s.edges }))
-            .catch(() => {});
         }
       } catch {
         // Backend may not be running
@@ -75,6 +77,17 @@ export default function DashboardPage() {
     };
     load();
   }, [token]);
+
+  // Knowledge-graph teaser counts (free static/observational layers; no AI).
+  // The one request here a restricted member must not make: it waits until
+  // their access is known. Everything above starts at once, for everyone.
+  const hasConnectors = stats.connectors > 0;
+  useEffect(() => {
+    if (!token || !decided || !canSeeGraph || !hasConnectors) return;
+    knowledgeGraph.stats(token)
+      .then((s) => setKgStats({ nodes: s.nodes, edges: s.edges }))
+      .catch(() => {});
+  }, [token, decided, canSeeGraph, hasConnectors]);
 
   const handleHealthCheck = async () => {
     if (!token) return;
@@ -99,12 +112,14 @@ export default function DashboardPage() {
       title={`Welcome back${user?.name ? `, ${user.name}` : ''}`}
       subtitle="Here's an overview of your MCP server."
       actions={
-        <Link href="/connectors/new">
-          <Button>
-            <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
-            New connector
-          </Button>
-        </Link>
+        can('/connectors/new') && (
+          <Link href="/connectors/new">
+            <Button>
+              <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4" strokeLinecap="round"><path d="M12 5v14M5 12h14" /></svg>
+              New connector
+            </Button>
+          </Link>
+        )
       }
     >
       <div className="flex flex-col gap-[18px]">
@@ -115,7 +130,7 @@ export default function DashboardPage() {
         <FirstSuccessOffer via="dashboard" />
 
         {/* First-run nudge */}
-        {!dataLoading && stats.connectors === 0 && (
+        {!dataLoading && stats.connectors === 0 && can('/welcome') && (
           <div className="flex flex-col gap-3 rounded-[14px] border border-[var(--brand)]/30 bg-[var(--brand-tint)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-semibold">You&apos;re 60 seconds from your first AI superpower</div>
@@ -132,7 +147,7 @@ export default function DashboardPage() {
         {/* Connectors built, but no AI client has called them yet: the step
             most workspaces never take. Send them to the connect page, which
             shows live when the first request arrives. */}
-        {!dataLoading && stats.connectors > 0 && analytics && !analytics.totalInvocations && !stats.invocations24h && (
+        {!dataLoading && stats.connectors > 0 && analytics && !analytics.totalInvocations && !stats.invocations24h && can('/mcp-server') && (
           <div className="flex flex-col gap-3 rounded-[14px] border border-[var(--brand)]/30 bg-[var(--brand-tint)] px-5 py-4 sm:flex-row sm:items-center sm:justify-between">
             <div>
               <div className="text-sm font-semibold">Next step: connect your AI client</div>
@@ -306,19 +321,25 @@ export default function DashboardPage() {
           {/* Quick actions */}
           <Card className="flex flex-col gap-2.5 p-5">
             <div className="mb-1 text-sm font-semibold">Quick actions</div>
-            <QuickAction href="/connectors/new" tone="info" title="Add a connector" desc="REST, SOAP, GraphQL, DB or MCP" icon={<PlusIcon />} />
-            <QuickAction href="/mcp-server" tone="emerald" title="Configure a client" desc="Claude, ChatGPT, Muse, Cursor…" icon={<ServerStatIcon />} />
-            <QuickAction
-              href="/knowledge-graph"
-              tone="purple"
-              title="Explore the graph"
-              desc={
-                kgStats && kgStats.nodes > 0
-                  ? `${kgStats.nodes} entities · ${kgStats.edges} connections`
-                  : 'See how your data connects'
-              }
-              icon={<KgStatIcon />}
-            />
+            {can('/connectors/new') && (
+              <QuickAction href="/connectors/new" tone="info" title="Add a connector" desc="REST, SOAP, GraphQL, DB or MCP" icon={<PlusIcon />} />
+            )}
+            {can('/mcp-server') && (
+              <QuickAction href="/mcp-server" tone="emerald" title="Configure a client" desc="Claude, ChatGPT, Muse, Cursor…" icon={<ServerStatIcon />} />
+            )}
+            {canSeeGraph && (
+              <QuickAction
+                href="/knowledge-graph"
+                tone="purple"
+                title="Explore the graph"
+                desc={
+                  kgStats && kgStats.nodes > 0
+                    ? `${kgStats.nodes} entities · ${kgStats.edges} connections`
+                    : 'See how your data connects'
+                }
+                icon={<KgStatIcon />}
+              />
+            )}
 
             {recentConnectors.length > 0 && (
               <div className="mt-2 border-t border-[var(--border)] pt-3">

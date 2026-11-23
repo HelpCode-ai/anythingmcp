@@ -1668,7 +1668,7 @@ export class DynamicMcpTools {
           ? []
           : null;
 
-    const deps = this.codeBridgeDeps(usesConnectorIds, allowedToolIds, context);
+    const deps = this.codeBridgeDeps(usesConnectorIds, allowedToolIds, context, spec.runAs === 'invoker');
     const bridge = buildCodeBridge(spec, deps);
     // The program receives its tool arguments as `args` via a wrapper the runner
     // does not add, so expose them through a declared variable: prepend a const.
@@ -1885,7 +1885,7 @@ export class DynamicMcpTools {
       runAs: 'invoker' as const,
       allowWrites: false,
     };
-    const deps = this.codeBridgeDeps(opts.connectorIds, opts.allowedToolIds, context);
+    const deps = this.codeBridgeDeps(opts.connectorIds, opts.allowedToolIds, context, true);
     const bridge = buildCodeBridge(spec, deps);
     const program = `const args = {};\n${code}`;
 
@@ -1926,12 +1926,20 @@ export class DynamicMcpTools {
    * licence, tenant scope and audit apply, with inCodeRun set), and search /
    * describe over the same set. The access rules (uses, read/write, role) are
    * applied by buildCodeBridge around these, per the spec.
+   *
+   * `searchWithinRole`: with invoker rights the search names only the tools
+   * the caller's role allows, as `run` and `describe` accept only those. A
+   * connector is in reach with one allowed tool, so without this a member
+   * read the names and descriptions of every other tool on it. With definer
+   * rights the author's `uses` decides, as for the calls.
    */
   private codeBridgeDeps(
     usesConnectorIds: string[],
     allowedToolIds: string[] | null,
-    context?: CodeExecContext,
+    context: CodeExecContext | undefined,
+    searchWithinRole: boolean,
   ): CodeBridgeDeps {
+    const searchable = searchWithinRole && allowedToolIds !== null ? new Set(allowedToolIds) : null;
     const toBridgeTool = (t: RegisteredTool): BridgeResolvedTool => ({
       id: t.id,
       name: t.name,
@@ -1978,6 +1986,7 @@ export class DynamicMcpTools {
         for (const connectorId of usesConnectorIds) {
           for (const t of this.toolRegistry.getAllTools()) {
             if (t.connectorId !== connectorId || isCodeMethod(t.endpointMapping)) continue;
+            if (searchable && !searchable.has(t.id)) continue;
             if (seen.has(t.name)) continue;
             const hay = `${t.name} ${t.description ?? ''}`.toLowerCase();
             if (q && !hay.includes(q)) continue;

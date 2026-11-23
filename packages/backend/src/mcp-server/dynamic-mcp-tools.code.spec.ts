@@ -286,6 +286,58 @@ describe('DynamicMcpTools — inline code', () => {
     expect(res.content[0].text).toContain('Access denied');
   });
 
+  /**
+   * `amcp.search` listed every tool of the connectors in reach. A connector is
+   * in reach with one allowed tool, so a member read the names and
+   * descriptions of the tools their role does not grant on it. `run` and
+   * `describe` already refused them.
+   */
+  describe('search follows the caller\'s role', () => {
+    const names = (res: any) => (res.structured as Array<{ tool: string }>).map((t) => t.tool).sort();
+
+    it('inline code: only the tools the role allows', async () => {
+      const { executor } = build([innerRead, innerWrite], (b) => b.search('inner'));
+      const res = await executor.executeInlineCode(
+        'return await amcp.search("inner");',
+        { userId: 'u1', organizationId: 'org1' },
+        { connectorIds: ['c1'], allowedToolIds: ['read-1'] },
+      );
+      expect(res.isError).toBeUndefined();
+      expect(names(res)).toEqual(['inner_read']);
+      expect(JSON.stringify(res.structured)).not.toContain('inner_write');
+    });
+
+    it('inline code: every tool in reach for a caller whose roles limit nothing', async () => {
+      const { executor } = build([innerRead, innerWrite], (b) => b.search(''));
+      const res = await executor.executeInlineCode(
+        'return await amcp.search("");',
+        { userId: 'u-admin', organizationId: 'org1' },
+        { connectorIds: ['c1'], allowedToolIds: null },
+      );
+      expect(names(res)).toEqual(['inner_read', 'inner_write']);
+    });
+
+    it('a saved code tool with invoker rights: only the tools the role allows', async () => {
+      const { executor } = build([codeTool(), innerRead, innerWrite], (b) => b.search(''));
+      const res = await executor.executeTool('summary', {}, {
+        userId: 'u1',
+        organizationId: 'org1',
+        allowedToolIds: ['code-1', 'read-1'],
+      });
+      expect(names(res)).toEqual(['inner_read']);
+    });
+
+    it('a saved code tool with definer rights keeps the tools its author declared', async () => {
+      const { executor } = build([codeTool({ runAs: 'definer' }), innerRead, innerWrite], (b) => b.search(''));
+      const res = await executor.executeTool('summary', {}, {
+        userId: 'u1',
+        organizationId: 'org1',
+        allowedToolIds: ['code-1'],
+      });
+      expect(names(res)).toEqual(['inner_read', 'inner_write']);
+    });
+  });
+
   it('refuses inline code when no runner is configured', async () => {
     const { executor } = build([innerRead], (b) => b.run('inner_read', {}), { configured: false });
     const res = await executor.executeInlineCode('return 1;', { organizationId: 'org1' }, { connectorIds: ['c1'], allowedToolIds: null });

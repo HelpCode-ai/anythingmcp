@@ -38,6 +38,7 @@ import {
   ToolPerformanceQueryDto,
 } from './tool-performance-query.dto';
 import { ToolPerformanceRow, toolPerformanceQuery } from './tool-performance.query';
+import { memberCallError } from './member-call-error';
 
 @Injectable()
 export class AuditService implements OnModuleDestroy {
@@ -373,6 +374,14 @@ export class AuditService implements OnModuleDestroy {
        * value matches nothing instead of everything.
        */
       onlyUserId?: string;
+      /**
+       * With `onlyUserId`: whether owning a connector shows the member the
+       * full error text of their calls on it (an EDITOR, who reads their own
+       * connectors in full). On every other connector the member gets the
+       * reduced view, and the error text is replaced (member-call-error.ts):
+       * it can name the address that view withholds.
+       */
+      ownerSeesErrors?: boolean;
     },
   ) {
     const restricted = filters?.onlyUserId !== undefined;
@@ -401,7 +410,8 @@ export class AuditService implements OnModuleDestroy {
           select: {
             name: true,
             connectorId: true,
-            connector: { select: { name: true, type: true } },
+            // The owner only to decide below whose error text is shown in full.
+            connector: { select: { name: true, type: true, ...(restricted ? { userId: true } : {}) } },
           },
         },
         user: {
@@ -415,10 +425,26 @@ export class AuditService implements OnModuleDestroy {
     });
     if (!restricted) return rows;
     return rows.map((row: any) => {
-      const own = !!row.mcpServer && row.mcpServer.userId === filters!.onlyUserId;
-      if (!own) return { ...row, mcpServerId: null, mcpServer: null };
-      const { userId: _owner, ...server } = row.mcpServer;
-      return { ...row, mcpServer: server };
+      const out = { ...row };
+      const ownServer = !!row.mcpServer && row.mcpServer.userId === filters!.onlyUserId;
+      if (ownServer) {
+        const { userId: _owner, ...server } = row.mcpServer;
+        out.mcpServer = server;
+      } else {
+        out.mcpServerId = null;
+        out.mcpServer = null;
+      }
+      const connector = row.tool?.connector;
+      if (connector) {
+        const { userId: connectorOwner, ...shown } = connector;
+        out.tool = { ...row.tool, connector: shown };
+        const full = filters!.ownerSeesErrors === true && connectorOwner === filters!.onlyUserId;
+        if (!full && typeof row.error === 'string') out.error = memberCallError(row.error);
+      } else if (typeof row.error === 'string') {
+        // No connector to own: nothing says the member may read the text.
+        out.error = memberCallError(row.error);
+      }
+      return out;
     });
   }
 
@@ -542,6 +568,8 @@ export class AuditService implements OnModuleDestroy {
     organizationId: string,
     options: ToolPerformanceQueryDto = {},
     onlyUserId?: string,
+    /** With `onlyUserId`: see `ownerSeesErrors` of getRecentInvocations. */
+    ownerSeesErrors = false,
   ) {
     if (!organizationId) return { items: [], hasMore: false };
 
@@ -552,6 +580,21 @@ export class AuditService implements OnModuleDestroy {
     const rows = await this.prisma.$queryRaw<ToolPerformanceRow[]>(
       toolPerformanceQuery(organizationId, since, until, options, limit, onlyUserId),
     );
+
+    // Restricted member visibility: the latest error of a tool is shown in
+    // full only on a connector the member owns and may manage. On the others
+    // they read the reduced view, and the text can name its address.
+    const restricted = onlyUserId !== undefined;
+    let fullErrorConnectorIds = new Set<string>();
+    if (restricted && ownerSeesErrors && rows.length > 0) {
+      const owned = await this.prisma.connector.findMany({
+        where: { id: { in: [...new Set(rows.map((r) => r.connector_id))] }, organizationId, userId: onlyUserId },
+        select: { id: true },
+      });
+      fullErrorConnectorIds = new Set(owned.map((c) => c.id));
+    }
+    const lastErrorOf = (row: ToolPerformanceRow) =>
+      restricted && !fullErrorConnectorIds.has(row.connector_id) ? memberCallError(row.last_error) : row.last_error;
 
     return {
       items: rows.slice(0, limit).map((row) => {
@@ -571,7 +614,7 @@ export class AuditService implements OnModuleDestroy {
           p50Ms: row.latency?.[0] ?? null,
           p95Ms: row.latency?.[1] ?? null,
           p99Ms: row.latency?.[2] ?? null,
-          lastError: row.last_error,
+          lastError: lastErrorOf(row),
           lastErrorAt: row.last_error_at?.toISOString() ?? null,
         };
       }),

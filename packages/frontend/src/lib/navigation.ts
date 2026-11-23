@@ -102,6 +102,12 @@ export const SIDEBAR_SECTIONS: SettingsSection[] = [
 export interface NavigationVisibilityContext {
   isAdmin: boolean;
   isCloud: boolean;
+  /**
+   * Whether the member may open a path (useMemberAccess().can): in a
+   * workspace with restricted member visibility a member is not listed the
+   * pages the route guard would refuse. Absent means no such narrowing.
+   */
+  can?: (href: string) => boolean;
 }
 
 export function isSettingsItemVisible(
@@ -112,6 +118,7 @@ export function isSettingsItemVisible(
   if (section?.adminOnly && !context.isAdmin) return false;
   if (item.adminOnly && !context.isAdmin) return false;
   if (item.selfHostedOnly && context.isCloud) return false;
+  if (context.can && !context.can(item.href)) return false;
   return true;
 }
 

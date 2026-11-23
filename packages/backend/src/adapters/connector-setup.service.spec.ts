@@ -5,6 +5,7 @@ import { encrypt } from '../common/crypto/encryption.util';
 import { getAdapter } from './catalog';
 import { outboundRequest } from '../common/outbound-http';
 import { TrialEndedException } from '../license/license-guard.service';
+import { MemberVisibilityService } from '../settings/member-visibility.service';
 
 // The chat install asks an Odoo address about itself: no real request here.
 jest.mock('../common/outbound-http', () => ({ outboundRequest: jest.fn().mockRejectedValue(new Error('offline')) }));
@@ -12,7 +13,20 @@ const outbound = outboundRequest as jest.MockedFunction<typeof outboundRequest>;
 
 const KEY = 'k'.repeat(32);
 
-function build(opts: { role?: string; connectors?: any[]; importResult?: any; trial?: any; cloud?: boolean; lastCalls?: Record<string, any>; verify?: any; woo?: any } = {}) {
+function build(
+  opts: {
+    role?: string;
+    connectors?: any[];
+    importResult?: any;
+    trial?: any;
+    cloud?: boolean;
+    lastCalls?: Record<string, any>;
+    verify?: any;
+    woo?: any;
+    /** Member visibility of the workspace and the tool ids the caller's roles allow (null: no whitelist). */
+    visibility?: { mode: 'open' | 'restricted'; allowed: string[] | null };
+  } = {},
+) {
   process.env.ENCRYPTION_KEY = KEY;
   const links: any[] = [];
   const serverConnectors: any[] = [];
@@ -71,7 +85,21 @@ function build(opts: { role?: string; connectors?: any[]; importResult?: any; tr
   };
   const securityEvents: any = { log: jest.fn() };
   const productEvents: any = { log: jest.fn() };
-  const service = new ConnectorSetupService(prisma, adapters as unknown as AdaptersService, licenseGuard, { register: jest.fn() } as any, securityEvents, productEvents);
+  const visibility = opts.visibility
+    ? new MemberVisibilityService(
+        { get: jest.fn(async () => (opts.visibility!.mode === 'restricted' ? 'restricted' : null)) } as any,
+        { getAllowedToolIds: jest.fn(async () => opts.visibility!.allowed) } as any,
+      )
+    : undefined;
+  const service = new ConnectorSetupService(
+    prisma,
+    adapters as unknown as AdaptersService,
+    licenseGuard,
+    { register: jest.fn() } as any,
+    securityEvents,
+    productEvents,
+    visibility,
+  );
   const ctx = { userId: 'u1', organizationId: 'org-1', serverIds: ['srv-granted'], dashboardBase: 'https://cloud.example.com' };
   return { service, prisma, adapters, licenseGuard, securityEvents, productEvents, links, serverConnectors, ctx };
 }
@@ -1051,5 +1079,118 @@ describe('ConnectorSetupService — unfinished and refused connectors in status'
       fixUrl: expect.stringMatching(/\/s\//),
     });
     expect(out.credentialHint).toMatch(/fixUrl/);
+  });
+});
+
+/**
+ * setup_get_status on the shared endpoint listed up to 50 connectors of the
+ * workspace to any EDITOR, each with its status and, when a call or a
+ * credential failed, the provider's words. In a workspace with restricted
+ * member visibility a member must get there what the dashboard shows them.
+ */
+describe('ConnectorSetupService — status follows member visibility', () => {
+  const since = new Date(Date.now() - 3 * 86_400_000);
+  /** A ready connector the provider refuses, with a failed last call. */
+  async function rows() {
+    const first = build();
+    await first.service.install(first.ctx, { adapter: 'openplz' });
+    const ready = await first.prisma.connector.findUnique({ where: { id: 'c-openplz' } });
+    const refused = {
+      createdAt: since,
+      updatedAt: since,
+      authStatus: 'needs_reauth',
+      authStatusMessage: 'HTTP 401 from erp-db.internal.example.invalid',
+      authStatusAt: since,
+    };
+    return [
+      { ...ready, ...refused, id: 'c-mine', name: 'Mine', userId: 'u1', tools: [{ id: 't-mine', endpointMapping: {} }] },
+      { ...ready, ...refused, id: 'c-shared', name: 'Shared', userId: 'u-admin', tools: [{ id: 't-shared', endpointMapping: {} }] },
+    ];
+  }
+  const lastCalls = {
+    'c-mine': { status: 'ERROR', error: 'own error', createdAt: since },
+    'c-shared': { status: 'ERROR', error: 'timeout talking to erp-db.internal.example.invalid:5432', createdAt: since },
+  };
+
+  it('a restricted editor: the query stays inside the workspace and asks for visible connectors only', async () => {
+    const { service, ctx, prisma } = build({
+      role: 'EDITOR',
+      connectors: await rows(),
+      lastCalls,
+      visibility: { mode: 'restricted', allowed: ['t-shared'] },
+    });
+    await service.status(ctx);
+    expect(prisma.connector.findMany.mock.calls[0][0].where).toEqual({
+      AND: [{ organizationId: 'org-1' }, { OR: [{ userId: 'u1' }, { tools: { some: { id: { in: ['t-shared'] } } } }] }],
+    });
+  });
+
+  it('a restricted editor: their own connector in full, a shared one by name and status only', async () => {
+    const { service, ctx, links, adapters, prisma } = build({
+      role: 'EDITOR',
+      connectors: await rows(),
+      lastCalls,
+      visibility: { mode: 'restricted', allowed: ['t-shared'] },
+    });
+    const out: any = (await service.status(ctx)).body;
+
+    expect(out.connectors[0]).toMatchObject({
+      name: 'Mine',
+      status: 'ready',
+      credential: { ok: false, message: 'HTTP 401 from erp-db.internal.example.invalid' },
+      lastCall: { ok: false, error: 'own error' },
+      fixUrl: expect.stringMatching(/\/s\//),
+    });
+    // The shared one: that it exists and whether it is set up. No provider
+    // message, no last error, no link that opens its setup.
+    expect(out.connectors[1]).toEqual({ name: 'Shared', status: 'ready' });
+    expect(JSON.stringify(out)).not.toContain('5432');
+    expect(links.map((l) => l.connectorId)).toEqual(['c-mine']);
+    // Nothing is read or checked for a connector the member does not manage.
+    expect(prisma.toolInvocation.findFirst.mock.calls.map((c: any[]) => c[0].where.connectorId)).toEqual(['c-mine']);
+    expect(adapters.verifyCredentials).not.toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), 'c-shared');
+  });
+
+  it('a restricted editor without any role sees only what they own', async () => {
+    const { service, ctx, prisma } = build({
+      role: 'EDITOR',
+      connectors: [],
+      visibility: { mode: 'restricted', allowed: [] },
+    });
+    await service.status(ctx);
+    expect(prisma.connector.findMany.mock.calls[0][0].where).toEqual({
+      AND: [{ organizationId: 'org-1' }, { userId: 'u1' }],
+    });
+  });
+
+  it.each([
+    ['an admin of a restricted workspace', 'ADMIN', 'restricted'],
+    ['an editor of an open workspace', 'EDITOR', 'open'],
+  ] as const)('%s reads every connector in full, as before', async (_who, role, mode) => {
+    const { service, ctx, prisma } = build({
+      role,
+      connectors: await rows(),
+      lastCalls,
+      visibility: { mode, allowed: ['t-shared'] },
+    });
+    const out: any = (await service.status(ctx)).body;
+    expect(prisma.connector.findMany.mock.calls[0][0].where).toEqual({ organizationId: 'org-1' });
+    expect(out.connectors[1]).toMatchObject({
+      name: 'Shared',
+      credential: { ok: false, message: 'HTTP 401 from erp-db.internal.example.invalid' },
+      lastCall: { ok: false, error: 'timeout talking to erp-db.internal.example.invalid:5432' },
+      fixUrl: expect.stringMatching(/\/s\//),
+    });
+  });
+
+  it('someone who is no longer a member gets no connector at all', async () => {
+    const { service, ctx, prisma } = build({
+      connectors: [],
+      visibility: { mode: 'restricted', allowed: null },
+    });
+    await service.status(ctx);
+    expect(prisma.connector.findMany.mock.calls[0][0].where).toEqual({
+      AND: [{ organizationId: 'org-1' }, { id: { in: [] } }],
+    });
   });
 });

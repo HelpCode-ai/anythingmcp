@@ -45,6 +45,10 @@
       "hideAriaLabel": "Hide Star on GitHub button"
     }
   },
+  "memberAccess": {
+    "notAvailableTitle": "This page is not available to you",
+    "notAvailableBody": "Your role in this workspace does not include it. Ask a workspace admin if you need more."
+  },
   "signIn": {
     "continueAs": "Continue as {email}",
     "continueAsHint": "You signed in here a moment ago to connect your AI assistant.",
@@ -802,7 +806,9 @@
       "active": "Active",
       "inactive": "Inactive",
       "importSpec": "Import Spec",
-      "delete": "Delete"
+      "delete": "Delete",
+      "owner": "Owner: {name}",
+      "ownerGone": "Owner: no longer a member"
     },
     "addTile": {
       "title": "Add a connector",
@@ -1677,7 +1683,9 @@
       "envSavedWarnings": "Environment variables saved. {warnings}",
       "discoveryFailed": "Discovery failed: {message}",
       "authorizationFailed": "Authorization failed: {message}"
-    }
+    },
+    "owner": "Owner: {name}",
+    "ownerGone": "Owner: no longer a member of this workspace"
   },
   "userCredentials": {
     "scopeError": "Could not change the sign-in mode.",
@@ -2266,11 +2274,17 @@
       },
       "restricted": {
         "label": "Restricted",
-        "description": "Members who are not admins see only their own tool calls, the connectors their roles reach and the MCP servers that hold one of them."
+        "description": "Members who are not admins see only their own tool calls, the connectors their roles reach (an Editor also the connectors they own) and the MCP servers they own. Pages for running the workspace are not listed for them."
       },
-      "noToolList": "No role limits tools yet, so members still see every connector. Create a role with a tool list under <link>Roles</link>.",
+      "noToolList": "Restricted does not narrow which connectors members see yet. No role in this workspace has a tool list, so every member still sees every connector by name, status and tools (not its settings); only their tool calls are narrowed to their own. Create a role with a tool list under <link>Roles</link> and assign it. From then on a member without a role sees no connector.",
       "saved": "Member visibility saved.",
-      "saveFailed": "Could not save member visibility."
+      "saveFailed": "Could not save member visibility.",
+      "activeNow": "Active now: {mode}",
+      "unsavedToRestricted": "Not saved yet. This workspace is still Open: every member sees everything until you save.",
+      "unsavedToOpen": "Not saved yet. This workspace is still Restricted until you save.",
+      "saveSwitch": "Save: switch to {mode}",
+      "discard": "Discard",
+      "confirmLeave": "The member visibility you chose is not saved yet. Leave this page without saving?"
     },
     "revokeDialog": {
       "title": "Sign everyone out",
@@ -2305,7 +2319,8 @@
       "createTitle": "Create New Organization",
       "createPlaceholder": "New organization name",
       "creating": "Creating...",
-      "create": "Create Organization"
+      "create": "Create Organization",
+      "createAdminOnly": "Only admins can create a workspace on this instance."
     }
   },
   "settingsUsers": {
@@ -2370,7 +2385,8 @@
       "emailFailed": "Failed to send email:",
       "link": "Invitation link (share manually):",
       "sending": "Sending...",
-      "send": "Send Invitation"
+      "send": "Send Invitation",
+      "restrictedRoleHint": "Member visibility is restricted here. A Viewer sees only what their MCP roles reach. An Editor also creates connectors and always sees the ones they own."
     },
     "bulk": {
       "selected": "{count} selected · Skill learning:",

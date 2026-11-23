@@ -2237,7 +2237,7 @@ export const OPERATIONS: readonly ApiOperation[] = [
     "action": "createOrg",
     "method": "POST",
     "path": "/api/organizations",
-    "summary": "Create a new organization (cloud mode)",
+    "summary": "Create a new organization",
     "admin": false,
     "pathParams": [],
     "hasBody": true

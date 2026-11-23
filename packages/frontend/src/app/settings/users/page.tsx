@@ -24,6 +24,7 @@ import { Card } from '@/components/ui/card';
 import { Badge, StatusPill } from '@/components/ui/badge';
 import { RoleChips } from '@/components/member-role-assignments';
 import { useEdition } from '@/lib/use-edition';
+import { useMemberVisibility } from '@/lib/use-member-visibility';
 import { EnterpriseNotice } from '@/components/enterprise-notice';
 
 const ROLES = ['ADMIN', 'EDITOR', 'VIEWER'] as const;
@@ -70,7 +71,15 @@ export default function SettingsUsersPage() {
   // Invite form
   const [showInvite, setShowInvite] = useState(false);
   const [inviteEmail, setInviteEmail] = useState('');
-  const [inviteRole, setInviteRole] = useState<string>('EDITOR');
+  // Until the admin picks one, the role offered first follows the workspace:
+  // where member visibility is restricted, a member is meant to see only what
+  // their MCP roles reach, which is a VIEWER. An EDITOR also creates
+  // connectors and always sees the ones they own; offering it first there
+  // made the member an admin did not look twice at see more than intended.
+  const visibility = useMemberVisibility();
+  const restrictedWorkspace = visibility.mode === 'restricted';
+  const [inviteRoleChoice, setInviteRole] = useState<string | null>(null);
+  const inviteRole = inviteRoleChoice ?? (restrictedWorkspace ? 'VIEWER' : 'EDITOR');
   const [inviteMcpRoleId, setInviteMcpRoleId] = useState('');
   const [inviting, setInviting] = useState(false);
   const [inviteUrl, setInviteUrl] = useState('');
@@ -439,6 +448,11 @@ export default function SettingsUsersPage() {
                 className={selectClass}
                 options={ROLES.map((r) => ({ value: r, label: r }))}
               />
+              {restrictedWorkspace && (
+                <p className="mt-1 text-[11.5px] text-[var(--text-3)]" data-testid="invite-role-hint">
+                  {t('invite.restrictedRoleHint')}
+                </p>
+              )}
             </div>
             <div>
               <label className={labelClass}>{t('invite.mcpRole')}</label>

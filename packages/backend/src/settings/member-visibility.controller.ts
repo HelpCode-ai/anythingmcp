@@ -24,7 +24,7 @@ export class MemberVisibilityDto {
     description:
       '`open`: every member sees every connector, MCP server and tool call of the workspace. ' +
       '`restricted`: a member who is not an admin sees only their own tool calls, the connectors ' +
-      'their roles reach and the MCP servers that hold one of them.',
+      'their roles reach (an EDITOR also the connectors they own) and the MCP servers they own.',
     example: 'restricted',
   })
   @IsIn(MEMBER_VISIBILITY_MODES as unknown as string[], {
@@ -63,7 +63,8 @@ export class MemberVisibilityMemberController {
     description:
       'Any member may call this. `mode` is `open` (every member sees every connector, MCP server and tool call ' +
       'of the workspace) or `restricted` (a member who is not an admin sees only their own tool calls, the ' +
-      'connectors their roles reach and the MCP servers that hold one of them). A workspace that never set ' +
+      'connectors their roles reach, an EDITOR also the connectors they own, and the MCP servers they own). ' +
+      'A workspace that never set ' +
       'it is `open`. `restrictedForMe` is true when the mode is `restricted` and the caller is not an admin of ' +
       'the workspace; admins are never restricted. A change can take up to 30 seconds to reach every server ' +
       'process.\n\n' +
@@ -97,11 +98,12 @@ export class MemberVisibilityAdminController {
     description:
       'Switches what members who are not admins see in the dashboard and the REST API. `open` (the default) ' +
       'keeps every connector, MCP server and tool call of the workspace visible to every member. `restricted` ' +
-      'shows a member who is not an admin only their own tool calls, the connectors their roles reach (owned by ' +
-      'them, or with at least one tool their roles allow) and the MCP servers that hold one of them. In a ' +
-      'workspace without any tool whitelist, roles narrow nothing, so members still see every connector; only ' +
-      'the tool calls are narrowed. Admins always see everything. The MCP endpoint is not affected: roles ' +
-      'already filter what an AI client can call there.\n\n' +
+      'shows a member who is not an admin only their own tool calls, the connectors their roles reach (with at ' +
+      'least one tool their roles allow; an EDITOR also the connectors they own, a VIEWER not) and the MCP ' +
+      'servers they own, never another member\'s server. In a workspace without any tool whitelist, roles ' +
+      'narrow nothing, so members still see every connector in the reduced view; only the tool calls are ' +
+      'narrowed. Admins always see everything. The MCP endpoint is not affected: roles already filter what ' +
+      'an AI client can call there.\n\n' +
       'Applies to the workspace of the caller. A change writes a `MEMBER_VISIBILITY_CHANGED` security event ' +
       'with the old and new mode, and can take up to 30 seconds to reach every server process. A read-only ' +
       '(`MANAGEMENT_READ`) API key gets 403.\n\n' +
