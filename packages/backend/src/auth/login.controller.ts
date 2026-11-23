@@ -1711,7 +1711,7 @@ export class LoginController {
     // phone the button can follow it directly (see the order in the styles);
     // the example request comes after the button there.
     const sub = nextStep
-      ? `You are signed in. ${client} is connected once you press <strong>Continue to ${client}</strong>.`
+      ? `Press <strong>Continue to ${client}</strong> to finish connecting.`
       : `Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:`;
     const sub2 = nextStep
       ? `<p class="sub sub2" id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>`

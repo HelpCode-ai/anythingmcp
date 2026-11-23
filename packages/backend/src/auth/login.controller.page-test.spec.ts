@@ -375,7 +375,8 @@ describe('the page shown to an empty workspace, as a split test', () => {
     expect(html).toContain('h1.vh { position: absolute; width: 1px; height: 1px;');
     expect(html).toContain('<title>One more step: go back to Claude</title>');
     expect(html).not.toContain('Claude is connected</h1>');
-    expect(html).toContain('Claude is connected once you press <strong>Continue to Claude</strong>.');
+    expect(html).toContain('<p class="sub" id="first-sub">Press <strong>Continue to Claude</strong> to finish connecting.</p>');
+    expect(html).not.toContain('You are signed in');
     // On a phone Continue follows that sentence; the example request comes after it.
     expect(html).toContain('<div class="flow next">');
     // On a phone: the picker, the request to copy, then Continue.
