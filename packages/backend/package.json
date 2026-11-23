@@ -54,7 +54,7 @@
     "@sentry/profiling-node": "^11.12.0",
     "@smithy/node-http-handler": "4.14.2",
     "axios": "^1.21.1",
-    "basic-ftp": "6.2.4",
+    "basic-ftp": "6.2.6",
     "bcrypt": "^6.0.0",
     "better-sqlite3": "^12.11.1",
     "class-transformer": "^0.5.1",
