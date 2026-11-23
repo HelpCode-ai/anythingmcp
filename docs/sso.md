@@ -335,7 +335,7 @@ fields:
   - The client asked for the shared URL and the person can reach one server:
     that server is granted, without a question.
   - The client asked for the shared URL and the person can reach several
-    servers (or belongs to several workspaces): the page **Choose what to
+    servers that have connectors (or belongs to several workspaces): the page **Choose what to
     connect** is shown once per connection.
   - What was granted is listed under **Settings → Connections** and can be
     changed or revoked there, without reconnecting.
@@ -368,7 +368,7 @@ sign-in through the provider went straight back to the client. What changes:
 |---|---|---|
 | Connections that already exist | Work | Work unchanged, until the client signs in again |
 | A client that uses a server's own URL | Connected to that server | The same. The connection is now also listed under **Settings → Connections** |
-| A client that uses the shared URL | No button: only a password or an open dashboard session got through | The button is there. One reachable server: connected to it. Several: **Choose what to connect**, once |
+| A client that uses the shared URL | No button: only a password or an open dashboard session got through | The button is there. One reachable server, or only one that has connectors: connected without a question. Several with connectors: **Choose what to connect**, once |
 | A member of a workspace that requires single sign-on types a password on the authorization page | Accepted | Refused with the message above; the button gets them through |
 | A sign-in for a server of a workspace the person is not (or no longer) an active member of | A token was issued and every call with it was refused | Refused on the page, with the reason |
 | The provider answers with an error | The dashboard sign-in page, with no way back to the client | The authorization page, with a message |
@@ -484,7 +484,7 @@ deactivated keys cannot be restored.
 | Cannot enable **Require single sign-on** | Complete one dashboard sign-in through the provider, and generate recovery codes |
 | Every SSO route returns 404 | You are on AnythingMCP Cloud. SSO is self-hosted only |
 | *This workspace requires single sign-on* when connecting an AI client | The workspace has **Require single sign-on** on. Use the provider's button on the same page |
-| A member lands on **Choose what to connect** when connecting an AI client | They can reach more than one MCP server. They pick once; the choice is kept for that client |
+| A member lands on **Choose what to connect** when connecting an AI client | They can reach more than one MCP server that has connectors. They pick once; the choice is kept for that client |
 | Entra's **Get started** for provisioning is greyed out | The app came from *App registrations*. Provisioning needs a second, non-gallery app — see §6 |
 | **Test connection** fails | The Tenant URL must end in `/api/scim/v2` and be reachable from Microsoft's network; the token must be the current one. A rotation invalidates the old token immediately |
 | Provisioned, but the user has no tools | No mapped group matched, so the fallback applied. Assign MCP roles to the `from SCIM` row under *Role mappings*, or check role sync is on and reading **groups** |
