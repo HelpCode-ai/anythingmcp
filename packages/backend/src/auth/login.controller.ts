@@ -347,7 +347,9 @@ export function continueBeaconScript(attempt: string): string {
       if (!cont || !navigator.sendBeacon || !window.URLSearchParams) return;
       cont.addEventListener('click', function () {
         try {
-          navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: 'continue', a: '${attempt}' }));
+          // "Copy & continue" presses Continue for the person (data-via="copy").
+          var via = cont.getAttribute && cont.getAttribute('data-via') === 'copy' ? 'copy_continue' : 'continue';
+          navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: via, a: '${attempt}' }));
         } catch (e) { /* the authorization goes on regardless */ }
       });
     })();`;
@@ -1717,9 +1719,9 @@ export class LoginController {
     const card = `
     <div class="flow${nextStep ? ' next' : ''}">
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
-    <h1>${heading}</h1>
+    <h1${nextStep ? ' class="vh"' : ''}>${heading}</h1>
     <p class="sub" id="first-sub">${sub}</p>${sub2}
-    <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
+    <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request"${nextStep ? ' data-continue="1"' : ''}>${nextStep ? 'Copy &amp; continue' : 'Copy'}</button></div>
     <p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>
     <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}${
       nextStep && telegram
@@ -1745,16 +1747,36 @@ export class LoginController {
     <script>
     // Copy the example request, to paste into the chat after "Continue":
     // easier than retyping it. The quotes are left out of the copy.
+    //
+    // On the next_step page the button is "Copy & continue" (data-continue):
+    // once the request is copied it presses Continue for the person, so
+    // nobody copies the request, goes to the chat and finds the client not
+    // connected. One press of the same link, in the same tab, and only once:
+    // /callback must never be asked for twice. A clipboard that refuses or
+    // never answers does not hold the person back.
     (function () {
       var button = document.getElementById('copy-request');
       var request = document.getElementById('example-request');
       if (!button || !request || !navigator.clipboard) { if (button) button.hidden = true; return; }
+      var goOn = button.getAttribute('data-continue') === '1';
+      var gone = false;
+      var go = function () {
+        if (!goOn || gone) return;
+        var cont = document.getElementById('continue');
+        if (!cont || !cont.click) return;
+        gone = true;
+        cont.setAttribute('data-via', 'copy');
+        cont.click();
+      };
       button.addEventListener('click', function () {
         navigator.clipboard.writeText(request.textContent || '').then(function () {
           button.textContent = 'Copied';
+          go();
         }, function () {
           button.hidden = true;
+          go();
         });
+        if (goOn && window.setTimeout) window.setTimeout(go, 1200);
       });
     })();
     // The optional app picker: one click adds the app (it waits for its
@@ -1872,23 +1894,27 @@ export class LoginController {
   .trial a.secondary-link { background: #fff; color: var(--text); border: 1px solid var(--border-strong); }
   .trial a.secondary-link:hover { border-color: var(--brand); color: var(--brand); }
   .sub2 { margin-top: -8px; }
-  /* On a phone the first screen holds what matters: heading, one sentence,
-     the app picker, Continue (and the optional payment method). The example
-     request and the rest follow. Claude's in-app browser leaves about 640 px
-     of height; with the picker shown Continue still ends above 500 px. */
+  /* The next_step page has no visible heading: the sentence and the button
+     say it all. The heading stays for screen readers and the tab title. */
+  h1.vh { position: absolute; width: 1px; height: 1px; margin: -1px; padding: 0; overflow: hidden;
+          clip: rect(0 0 0 0); white-space: nowrap; border: 0; }
+  .flow.next > #first-sub { color: var(--text); font-size: 15px; }
+  /* On a phone the first screen holds what matters: one sentence, the app
+     picker, the request to copy, Continue (and the optional payment method).
+     Claude's in-app browser leaves about 640 px of height. */
   @media (max-width: 480px) {
     .flow.next { display: flex; flex-direction: column; }
     .flow.next > .pair { margin-bottom: 12px; }
     .flow.next > .pair .tile { width: 40px; height: 40px; border-radius: 10px; }
     .flow.next > #first-sub { margin-bottom: 12px; }
     .flow.next > .quick { order: 1; margin-bottom: 12px; }
-    .flow.next > .auto { order: 2; }
-    .flow.next > #continue { order: 3; }
-    .flow.next > #card-trial { order: 4; }
-    .flow.next > .sub2 { order: 5; margin: 20px 0 10px; }
-    .flow.next > .example { order: 6; }
-    .flow.next > .copied { order: 7; }
-    .flow.next > .body { order: 8; }
+    .flow.next > .sub2 { order: 2; margin: 0 0 8px; font-size: 13px; }
+    .flow.next > .example { order: 3; margin-bottom: 12px; padding: 10px 12px; }
+    .flow.next > .copied { order: 4; }
+    .flow.next > .auto { order: 5; }
+    .flow.next > #continue { order: 6; }
+    .flow.next > #card-trial { order: 7; }
+    .flow.next > .body { order: 8; margin-top: 18px; }
     .flow.next > .links { order: 9; }
   }
 
@@ -2138,7 +2164,7 @@ export class LoginController {
     if (!this.deployment.isCloud() || !this.productEvents) return;
     try {
       const kind = body?.e;
-      if (kind !== 'continue' && kind !== 'auto_continue' && kind !== 'create_account') return;
+      if (kind !== 'continue' && kind !== 'auto_continue' && kind !== 'copy_continue' && kind !== 'create_account') return;
       const consent = await this.loadConsentContext(req);
       const attempt = consent ? attemptKey(consent.expiresAt) : undefined;
       if (!consent || !attempt || body?.a !== attempt) return;

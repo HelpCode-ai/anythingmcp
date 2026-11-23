@@ -284,7 +284,7 @@ describe('POST /auth/beacon', () => {
     return res;
   };
 
-  it.each(['continue', 'auto_continue'])('records %s on the page shown to an empty workspace', async (kind) => {
+  it.each(['continue', 'auto_continue', 'copy_continue'])('records %s on the page shown to an empty workspace', async (kind) => {
     const { controller, events } = build({ setting: 'next_step' });
     const res = await beacon(controller, { e: kind, a: ATTEMPT });
     expect(res._status).toBe(204);
@@ -359,6 +359,7 @@ describe('the page shown to an empty workspace, as a split test', () => {
     for (const opts of [{ setting: 'control' }, { setting: 'off' }]) {
       const html = await page(opts);
       expect(html).toContain('<h1>Claude is connected</h1>');
+      expect(html).toContain('<button type="button" class="copy" id="copy-request">Copy</button>');
       expect(html).toContain('<title>Claude is connected</title>');
       expect(html).toContain('Your workspace has no apps yet, so Claude has nothing to work with.');
       expect(html).not.toContain('One more step');
@@ -369,20 +370,26 @@ describe('the page shown to an empty workspace, as a split test', () => {
 
   it('says what is still to do on the next_step arm, with Continue as the one primary button', async () => {
     const html = await page({ setting: 'next_step' });
-    expect(html).toContain('<h1>One more step: go back to Claude</h1>');
+    // No visible heading: it stays for screen readers and the tab title.
+    expect(html).toContain('<h1 class="vh">One more step: go back to Claude</h1>');
+    expect(html).toContain('h1.vh { position: absolute; width: 1px; height: 1px;');
     expect(html).toContain('<title>One more step: go back to Claude</title>');
     expect(html).not.toContain('Claude is connected</h1>');
     expect(html).toContain('Claude is connected once you press <strong>Continue to Claude</strong>.');
     // On a phone Continue follows that sentence; the example request comes after it.
     expect(html).toContain('<div class="flow next">');
+    // On a phone: the picker, the request to copy, then Continue.
     expect(html).toContain('.flow.next > .quick { order: 1; margin-bottom: 12px; }');
-    expect(html).toContain('.flow.next > #continue { order: 3; }');
+    expect(html).toContain('.flow.next > .example { order: 3; margin-bottom: 12px; padding: 10px 12px; }');
+    expect(html).toContain('.flow.next > #continue { order: 6; }');
+    // The copy button also goes on.
+    expect(html).toContain('<button type="button" class="copy" id="copy-request" data-continue="1">Copy &amp; continue</button>');
     expect(html).toContain('id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>');
     // The same link, the same picker, and nothing else that looks like the way on.
     expect(html).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
     expect(html.match(/class="button"/g)).toHaveLength(1);
     expect(html).toContain('id="quick-apps"');
-    expect(html.indexOf('<h1>')).toBeLessThan(html.indexOf('id="continue"'));
+    expect(html.indexOf('<h1 class="vh">')).toBeLessThan(html.indexOf('id="continue"'));
   });
 
   it('escapes the client name in the new heading', async () => {
@@ -390,7 +397,7 @@ describe('the page shown to an empty workspace, as a split test', () => {
     void config;
     (controller as any).oauthStore.getClient = jest.fn(async () => ({ client_id: 'c1', client_name: '<img src=x>' }));
     const res = await post(controller, { action: 'approve', email: 'a@b.com', password: 'pw' });
-    expect(res._sent).toContain('One more step: go back to &lt;img src=x&gt;');
+    expect(res._sent).toContain('<h1 class="vh">One more step: go back to &lt;img src=x&gt;</h1>');
     expect(res._sent).not.toContain('<img src=x>');
   });
 
@@ -410,7 +417,7 @@ describe('the page shown to an empty workspace, as a split test', () => {
   it('reports the click on Continue on both arms, with the attempt of this authorization', async () => {
     for (const setting of ['control', 'next_step']) {
       const script = scriptOf(await page({ setting }));
-      expect(script).toContain(`navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: 'continue', a: '${ATTEMPT}' }))`);
+      expect(script).toContain(`navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: via, a: '${ATTEMPT}' }))`);
     }
     // Nothing on the page opens a window, whatever the arm.
     for (const html of [await page({ setting: 'control', telegram: true }), await page({ setting: 'next_step', telegram: true })]) {
@@ -419,10 +426,84 @@ describe('the page shown to an empty workspace, as a split test', () => {
     }
   });
 
+  describe('the copy button', () => {
+    // Runs the page's first script block parts that concern the copy button.
+    const run = async (opts: { setting: string; clipboard: 'ok' | 'refused' | 'silent' }) => {
+      const html = await page({ setting: opts.setting });
+      const script = scriptOf(html);
+      const clicks: string[] = [];
+      const attrs: Record<string, string> = {};
+      const listeners: Record<string, Array<() => void>> = { copy: [], cont: [] };
+      const button: any = {
+        hidden: false,
+        textContent: '',
+        getAttribute: (n: string) => (n === 'data-continue' && html.includes('id="copy-request" data-continue="1"') ? '1' : null),
+        addEventListener: (_t: string, f: () => void) => listeners.copy.push(f),
+      };
+      const cont: any = {
+        getAttribute: (n: string) => attrs[n] ?? (n === 'href' ? 'http://mcp.test/callback' : n === 'data-client' ? 'Claude' : null),
+        setAttribute: (n: string, v: string) => (attrs[n] = v),
+        addEventListener: (_t: string, f: () => void) => listeners.cont.push(f),
+        click: () => clicks.push(attrs['data-via'] ?? 'plain'),
+      };
+      const timers: Array<() => void> = [];
+      const writeText = jest.fn(() =>
+        opts.clipboard === 'ok' ? Promise.resolve() : opts.clipboard === 'refused' ? Promise.reject(new Error('denied')) : new Promise<void>(() => undefined),
+      );
+      const elements: Record<string, unknown> = {
+        'copy-request': button,
+        'example-request': { textContent: 'Connect my Telegram bot to AnythingMCP.' },
+        continue: cont,
+      };
+      require('vm').runInNewContext(script, {
+        document: { getElementById: (id: string) => elements[id] ?? null, querySelectorAll: () => [] },
+        navigator: { clipboard: { writeText } },
+        window: { setTimeout: (f: () => void) => timers.push(f), URLSearchParams },
+        URLSearchParams,
+      });
+      listeners.copy[0]();
+      await flush();
+      return { clicks, timers, writeText, button };
+    };
+
+    it('copies the request and presses Continue once on the next_step page', async () => {
+      const { clicks, timers, writeText, button } = await run({ setting: 'next_step', clipboard: 'ok' });
+      expect(writeText).toHaveBeenCalledWith('Connect my Telegram bot to AnythingMCP.');
+      expect(button.textContent).toBe('Copied');
+      expect(clicks).toEqual(['copy']);
+      // The safety timer finds it already gone: /callback is never asked for twice.
+      timers.forEach((t) => t());
+      expect(clicks).toEqual(['copy']);
+    });
+
+    it('goes on when the clipboard refuses, and when it never answers', async () => {
+      const refused = await run({ setting: 'next_step', clipboard: 'refused' });
+      expect(refused.clicks).toEqual(['copy']);
+      const silent = await run({ setting: 'next_step', clipboard: 'silent' });
+      expect(silent.clicks).toEqual([]);
+      silent.timers.forEach((t) => t());
+      expect(silent.clicks).toEqual(['copy']);
+    });
+
+    it('only copies on the control page', async () => {
+      const { clicks, timers, button } = await run({ setting: 'control', clipboard: 'ok' });
+      expect(button.textContent).toBe('Copied');
+      timers.forEach((t) => t());
+      expect(clicks).toEqual([]);
+    });
+  });
+
   describe('the beacon on Continue', () => {
+    const via: { current: string | null } = { current: null };
+    afterEach(() => {
+      via.current = null;
+    });
     const run = (navigator: object, withUrlSearchParams = true) => {
       const listeners: Array<(e: unknown) => unknown> = [];
-      const cont = { addEventListener: (_t: string, f: (e: unknown) => unknown) => listeners.push(f) };
+      const cont = {
+        addEventListener: (_t: string, f: (e: unknown) => unknown) => listeners.push(f),
+        getAttribute: (name: string) => (name === 'data-via' ? via.current : null),
+      };
       require('vm').runInNewContext(continueBeaconScript(ATTEMPT), {
         document: { getElementById: (id: string) => (id === 'continue' ? cont : null) },
         navigator,
@@ -446,6 +527,15 @@ describe('the page shown to an empty workspace, as a split test', () => {
       expect(event.stopPropagation).not.toHaveBeenCalled();
       expect(event.stopImmediatePropagation).not.toHaveBeenCalled();
       expect(event.returnValue).toBe(true);
+    });
+
+    it('says so when "Copy & continue" pressed Continue', () => {
+      const sendBeacon = jest.fn(() => true);
+      const [listener] = run({ sendBeacon });
+      via.current = 'copy';
+      listener(tap());
+      const [, body] = sendBeacon.mock.calls[0] as unknown as [string, URLSearchParams];
+      expect(body.toString()).toBe(`e=copy_continue&a=${ATTEMPT}`);
     });
 
     it('changes nothing when the browser refuses or throws', () => {

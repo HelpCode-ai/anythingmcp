@@ -487,7 +487,7 @@ The page shown after approving an AI client into an empty workspace says "Claude
 | Arm | What the person sees |
 |-----|----------------------|
 | `control` | The page as before: "Claude is connected" |
-| `next_step` | "One more step: go back to Claude", with the sentence that the client is connected once Continue is pressed. The picker, the example request and the Continue link are the same. After the one-tap Telegram bot is connected the page goes on by itself (see [After the bot is connected](#after-the-bot-is-connected)) |
+| `next_step` | No visible heading (the tab title is "One more step: go back to Claude"): one sentence that the client is connected once Continue is pressed, then the picker, the example request and the Continue link. The copy button is "Copy & continue": it copies the request and presses Continue. After the one-tap Telegram bot is connected the page goes on by itself (see [After the bot is connected](#after-the-bot-is-connected)) |
 
 The arm is chosen per pending authorization (a hash of its session, never stored) and stays the same through reloads, the round trip to Google and the sign-up detour. A new connection attempt from the AI client can get the other arm.
 
@@ -500,7 +500,7 @@ The events of one attempt carry the same `attempt` value, the `device` (`mobile`
 | `authorization_signed_in` | the identity is settled and access allowed | `method`: the provider, `password`, `session`, `email_code`; `account`: `new` (created in the last 30 minutes) or `existing` |
 | `empty_workspace_prompt` | the page of the test is shown | |
 | `post_approve_app_picked` | an app is picked on it | |
-| `post_approve_continue_clicked` | Continue is pressed on it | `button`: `continue`, or `auto_continue` when the page went on by itself |
+| `post_approve_continue_clicked` | Continue is pressed on it | `button`: `continue`, `copy_continue` when "Copy & continue" pressed it, or `auto_continue` when the page went on by itself |
 | `authorization_code_issued` | the code is handed to the client's redirect | |
 | `authorization_code_exchanged` | the client presents the code | `client` only: no browser is present |
 

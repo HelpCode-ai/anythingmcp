@@ -734,6 +734,7 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   // The authorization pages (auth/authorization-attempt.ts, login.controller.ts).
   button: new Set([
     'google', 'microsoft', 'github', 'sso', 'password', 'session', 'cancel', 'create_account', 'continue', 'auto_continue',
+    'copy_continue',
   ]),
   method: new Set(['google', 'microsoft', 'github', 'sso', 'password', 'session', 'email_code']),
   account: new Set(['new', 'existing']),
