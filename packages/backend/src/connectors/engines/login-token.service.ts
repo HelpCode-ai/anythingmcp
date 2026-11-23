@@ -554,20 +554,11 @@ export class LoginTokenService {
       const paths = tokenJsonPaths(authConfig.tokenJsonPath);
       token = readTokenAt(response.data, paths);
       if (!token) {
-        // Far and away the commonest reason the token is missing is that the
-        // login itself was refused — wrong password, 2FA, a locked account.
-        // The endpoint answers 200 and puts the reason in the body, so saying
-        // "token not found at data.signIn.jwtToken.token" describes our own
-        // JSON path and hides the vendor's explanation. Sorare accounted for
-        // thirteen failures reported that way.
-        const refusal =
-          extractLoginRefusal(response.data) ??
-          (authConfig.loginResponseFormat === 'xml' ? extractXmlLoginRefusal(response.data) : null) ??
-          nullTokenRefusal(response.data, paths);
+        // No token means the login is rejected. missingTokenMessage only
+        // chooses the sentence. A field in the body cannot skip the throw
+        // or decide which lookup runs.
         throw new Error(
-          refusal
-            ? `LOGIN_TOKEN: the service refused the login — ${refusal}`
-            : tokenNotFoundMessage(paths, response.data),
+          missingTokenMessage(response.data, paths, authConfig.loginResponseFormat === 'xml'),
         );
       }
     }
@@ -899,6 +890,34 @@ export function readTokenAt(body: unknown, paths: string[]): string | undefined 
     if (typeof value === 'string' && value.trim() !== '') return value;
   }
   return undefined;
+}
+
+/**
+ * The error text when a login answer contained no token.
+ *
+ * Far and away the commonest reason is that the login was refused (wrong
+ * password, 2FA, a locked account) and the endpoint still answered 200.
+ * Naming only our JSON path hides the vendor's explanation. Sorare
+ * accounted for thirteen failures reported that way. SkuVault instead
+ * answers 200 with the token field set to null.
+ *
+ * The lookups always run. Their results are read afterwards, in order, and
+ * never decide whether the login is rejected.
+ */
+function missingTokenMessage(body: unknown, paths: string[], xml: boolean): string {
+  const fromJson = extractLoginRefusal(body);
+  const fromXml = extractXmlLoginRefusal(body);
+  const fromNull = nullTokenRefusal(body, paths);
+  const refusal = firstNonEmpty(fromJson, xml ? fromXml : null, fromNull);
+  if (refusal) return `LOGIN_TOKEN: the service refused the login — ${refusal}`;
+  return tokenNotFoundMessage(paths, body);
+}
+
+function firstNonEmpty(...parts: Array<string | null>): string | null {
+  for (const part of parts) {
+    if (part) return part;
+  }
+  return null;
 }
 
 /**
