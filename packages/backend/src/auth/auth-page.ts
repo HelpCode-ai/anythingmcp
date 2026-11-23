@@ -5,6 +5,8 @@
  * row under the card. No external resources: logos are inline SVG, fonts are
  * the system's.
  */
+import { edgePageTexts } from './auth-page-i18n.pages';
+import type { PageLanguage } from './authorization-attempt';
 
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -276,6 +278,10 @@ export function renderAuthPage(opts: {
  * the cases it is, so it says what to do in all of them. A second press on
  * Continue lands here too, after the first one already went through: that is
  * why it does not say the connection failed.
+ *
+ * There is no attempt left to read a page-test arm from, so the page speaks
+ * the browser's language for everyone, on Cloud and self-hosted: `lang` is
+ * what `pageLanguageFor` made of `Accept-Language` (English when absent).
  */
 export function renderClosedRequestPage(opts: {
   trust: TrustRowOptions;
@@ -283,20 +289,23 @@ export function renderClosedRequestPage(opts: {
   message?: string;
   /** The dashboard, for someone who only wanted to sign in. */
   dashboardUrl?: string;
+  lang?: PageLanguage | null;
 }): string {
+  const T = edgePageTexts(opts.lang).closed;
   const message = opts.message ? `<div class="error" role="alert">${escapeHtml(opts.message)}</div>` : '';
   const dashboard = opts.dashboardUrl
     ? `
-    <p class="links">Looking for the dashboard? <a href="${escapeHtml(opts.dashboardUrl)}">Open AnythingMCP</a></p>`
+    <p class="links">${T.dashboardLead} <a href="${escapeHtml(opts.dashboardUrl)}">${T.dashboardLink}</a></p>`
     : '';
   return renderAuthPage({
-    title: 'This connection request is no longer open',
+    title: T.heading,
+    ...(opts.lang ? { lang: opts.lang } : {}),
     card: `
     <div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK_SVG}</div></div>
-    <h1>This connection request is no longer open</h1>
+    <h1>${T.heading}</h1>
     ${message}
-    <p class="sub" id="closed-what">A connection request stays open for 30 minutes and works once.</p>
-    <p class="sub" id="closed-next" style="margin-bottom:0"><strong>Go back to your AI assistant.</strong> If AnythingMCP is not shown as connected there, press <strong>Connect</strong> again.</p>${dashboard}`,
+    <p class="sub" id="closed-what">${T.what}</p>
+    <p class="sub" id="closed-next" style="margin-bottom:0">${T.next}</p>${dashboard}`,
     trust: opts.trust,
     extraStyles: `
   .sub strong { color: var(--text); font-weight: 600; }`,
