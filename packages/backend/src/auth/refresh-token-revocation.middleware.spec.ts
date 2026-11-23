@@ -537,6 +537,158 @@ describe('RefreshTokenRevocationMiddleware — server of another workspace', () 
   });
 });
 
+/**
+ * The connection grant on the refresh grant: a server the user can reach but
+ * the client was not allowed to use gets no new token either, so the client
+ * authorizes again for that URL (McpEndpointController.refuseOutsideGrant).
+ */
+describe('RefreshTokenRevocationMiddleware — server outside the connection grant', () => {
+  const USER_ID = 'cmpzj8mm9007j1ymn5mo2y3eq';
+  const CLIENT = 'client-1';
+  const SRV_A = 'cmsrva00000000000000000aa';
+  const SRV_B = 'cmsrvb00000000000000000bb'; // same workspace as SRV_A
+  const OUTSIDE_GRANT = 'This connection was not allowed to use this MCP server. Connect again to allow it.';
+  const url = (path: string) => `https://cloud.anythingmcp.com${path}`;
+
+  let middleware: RefreshTokenRevocationMiddleware;
+  let prisma: any;
+  let securityEvents: any;
+  let store: CrossWorkspaceRefusalStore;
+  let grants: { serverScopeById: jest.Mock };
+  let res: any;
+  let next: jest.Mock;
+  const before = process.env.MCP_GRANT_SERVER_SCOPE;
+
+  const refresh = (extra: Record<string, unknown> = {}) =>
+    ({
+      method: 'POST',
+      body: { grant_type: 'refresh_token', refresh_token: 'a.signed.refresh-token', ...extra },
+    }) as any;
+
+  beforeEach(() => {
+    delete process.env.MCP_GRANT_SERVER_SCOPE;
+    prisma = {
+      user: {
+        findUnique: jest
+          .fn()
+          .mockResolvedValue({ id: USER_ID, sessionsValidFrom: null, organizationId: 'org-A' }),
+      },
+      oAuthUserProfile: { findUnique: jest.fn().mockResolvedValue(null) },
+      // Both servers are in the user's primary workspace: reachable.
+      mcpServerConfig: { findUnique: jest.fn().mockResolvedValue({ organizationId: 'org-A' }) },
+      organizationMember: { findFirst: jest.fn().mockResolvedValue(null) },
+    };
+    const jwt: any = {
+      verifyAsync: jest
+        .fn()
+        .mockResolvedValue({ sub: USER_ID, type: 'refresh', iat: 1000, client_id: CLIENT }),
+    };
+    securityEvents = { log: jest.fn().mockResolvedValue(undefined) };
+    store = new CrossWorkspaceRefusalStore();
+    // The client's grant names SRV_A only.
+    grants = {
+      serverScopeById: jest.fn(async (_client: string, _user: string, serverId: string) =>
+        serverId === SRV_A ? 'granted' : 'outside',
+      ),
+    };
+    res = {
+      status: jest.fn().mockReturnThis(),
+      json: jest.fn().mockReturnThis(),
+      setHeader: jest.fn().mockReturnThis(),
+    };
+    next = jest.fn();
+    middleware = new RefreshTokenRevocationMiddleware(prisma, jwt, securityEvents, store, grants as any);
+    jest.spyOn((middleware as any).logger, 'log').mockImplementation(() => undefined);
+    jest.spyOn((middleware as any).logger, 'warn').mockImplementation(() => undefined);
+  });
+
+  afterAll(() => {
+    if (before === undefined) delete process.env.MCP_GRANT_SERVER_SCOPE;
+    else process.env.MCP_GRANT_SERVER_SCOPE = before;
+  });
+
+  const expectPassthrough = () => {
+    expect(next).toHaveBeenCalled();
+    expect(res.status).not.toHaveBeenCalled();
+  };
+
+  const expectOutsideGrant = (via: 'resource' | 'marker') => {
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({ error: 'invalid_grant', error_description: OUTSIDE_GRANT });
+    expect(securityEvents.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        event: 'TOKEN_REJECTED',
+        metadata: expect.objectContaining({ reason: 'outside_grant', via, serverId: SRV_B }),
+      }),
+    );
+  };
+
+  it('refuses a refresh that names a server outside the grant', async () => {
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
+    expectOutsideGrant('resource');
+    expect(grants.serverScopeById).toHaveBeenCalledWith(CLIENT, USER_ID, SRV_B);
+  });
+
+  it('refuses via the marker the endpoint left, and keeps the marker', async () => {
+    await store.mark(USER_ID, CLIENT, SRV_B);
+    await middleware.use(refresh(), res, next);
+    expectOutsideGrant('marker');
+    await expect(store.peek(USER_ID, CLIENT)).resolves.toBe(SRV_B);
+  });
+
+  it('refuses a revoked connection', async () => {
+    grants.serverScopeById.mockResolvedValue('revoked');
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
+    expectOutsideGrant('resource');
+  });
+
+  it('passes a refresh for a server inside the grant', async () => {
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_A}`) }), res, next);
+    expectPassthrough();
+  });
+
+  it('passes once the grant was extended, and clears the marker', async () => {
+    await store.mark(USER_ID, CLIENT, SRV_B);
+    grants.serverScopeById.mockResolvedValue('granted');
+    await middleware.use(refresh(), res, next);
+    expectPassthrough();
+    await expect(store.peek(USER_ID, CLIENT)).resolves.toBeNull();
+  });
+
+  it.each(['no-grant', 'not-grantable'])('passes a client whose scope is %s', async (scope) => {
+    grants.serverScopeById.mockResolvedValue(scope);
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
+    expectPassthrough();
+  });
+
+  it('asks nothing when the refresh names no server and the endpoint refused nothing', async () => {
+    await middleware.use(refresh(), res, next);
+    expectPassthrough();
+    expect(grants.serverScopeById).not.toHaveBeenCalled();
+  });
+
+  it.each(['report', 'off'])('refuses nothing with MCP_GRANT_SERVER_SCOPE=%s', async (mode) => {
+    process.env.MCP_GRANT_SERVER_SCOPE = mode;
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
+    expectPassthrough();
+    expect(grants.serverScopeById).not.toHaveBeenCalled();
+  });
+
+  it('refuses nothing when the grant cannot be read', async () => {
+    grants.serverScopeById.mockRejectedValue(new Error('db down'));
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
+    expectPassthrough();
+  });
+
+  it('keeps the wrong-workspace answer for a server the user cannot reach', async () => {
+    prisma.mcpServerConfig.findUnique.mockResolvedValue({ organizationId: 'org-other' });
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
+    expect(res.json.mock.calls[0][0].error_description).toMatch(/not a member of the workspace/);
+    expect(grants.serverScopeById).not.toHaveBeenCalled();
+  });
+});
+
 describe('refreshResourceKind', () => {
   it.each([
     [undefined, 'none'],

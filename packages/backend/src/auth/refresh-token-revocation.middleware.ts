@@ -9,6 +9,10 @@ import { resolveUserIdFromTokenPayload } from './resolve-user-id.util';
 import { CrossWorkspaceRefusalStore } from './cross-workspace-refusal.store';
 import { serverReachability } from './server-reachability.util';
 import {
+  McpConnectionGrantService,
+  grantServerScopeMode,
+} from '../mcp-servers/mcp-connection-grant.service';
+import {
   parseAppEndpoint,
   parseDirectoryPlugin,
   parseServerId,
@@ -38,6 +42,8 @@ const REVOKED_DESCRIPTION = 'This session was revoked. Please sign in again.';
 const WRONG_WORKSPACE_DESCRIPTION =
   'This sign-in is not a member of the workspace that owns this MCP server. ' +
   'Connect again and sign in with an account of that workspace, or ask its admin to invite you.';
+const OUTSIDE_GRANT_DESCRIPTION =
+  'This connection was not allowed to use this MCP server. Connect again to allow it.';
 
 /**
  * Makes `users.sessionsValidFrom` mean something on the OAuth refresh grant.
@@ -65,6 +71,12 @@ const WRONG_WORKSPACE_DESCRIPTION =
  * CrossWorkspaceRefusalStore). Without this, a client refused with 401 by the
  * endpoint refreshed successfully, retried, was refused again, and never
  * reached the consent page that would tell the person what is wrong.
+ *
+ * CONNECTION GRANT. The endpoint also refuses a server the user can reach but
+ * this client was not allowed to use (McpEndpointController.refuseOutsideGrant,
+ * `MCP_GRANT_SERVER_SCOPE=enforce`). The refresh for that server is refused the
+ * same way and found the same way (`resource`, else the marker), so the client
+ * authorizes again for that URL and the person can allow it.
  *
  * SCOPE. It is a veto, not a second authenticator. Anything that is not a
  * verifiable refresh token — wrong method, wrong grant, bad signature, wrong
@@ -101,6 +113,7 @@ export class RefreshTokenRevocationMiddleware implements NestMiddleware {
     private readonly jwt: JwtService,
     private readonly securityEvents: SecurityEventService,
     @Optional() private readonly refusals?: CrossWorkspaceRefusalStore,
+    @Optional() private readonly grants?: McpConnectionGrantService,
   ) {}
 
   async use(req: Request, res: Response, next: NextFunction) {
@@ -175,6 +188,17 @@ export class RefreshTokenRevocationMiddleware implements NestMiddleware {
         // client retrying the same refresh token must be refused again.
         return this.deny(res, payload, userId, 'wrong_workspace', { serverId, via });
       }
+      // Reachable, but outside what this client was allowed (or the connection
+      // was revoked): the endpoint refuses every call, so no new token for it.
+      // The marker is kept, as above. A lookup error refuses nothing.
+      if (reach === 'reachable' && clientId && this.grants && grantServerScopeMode() === 'enforce') {
+        const scope = await this.grants
+          .serverScopeById(clientId, userId, serverId)
+          .catch(() => 'no-grant' as const);
+        if (scope === 'outside' || scope === 'revoked') {
+          return this.deny(res, payload, userId, 'outside_grant', { serverId, via });
+        }
+      }
       if (via === 'marker' && clientId) {
         // Invited since, or the server is gone: nothing left to refuse.
         await this.refusals?.clear(userId, clientId).catch(() => undefined);
@@ -223,7 +247,11 @@ export class RefreshTokenRevocationMiddleware implements NestMiddleware {
     return res.status(400).json({
       error: 'invalid_grant',
       error_description:
-        reason === 'wrong_workspace' ? WRONG_WORKSPACE_DESCRIPTION : REVOKED_DESCRIPTION,
+        reason === 'wrong_workspace'
+          ? WRONG_WORKSPACE_DESCRIPTION
+          : reason === 'outside_grant'
+            ? OUTSIDE_GRANT_DESCRIPTION
+            : REVOKED_DESCRIPTION,
     });
   }
 

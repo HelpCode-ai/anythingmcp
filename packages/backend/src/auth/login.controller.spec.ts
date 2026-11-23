@@ -88,6 +88,7 @@ describe('LoginController', () => {
   let sso: { startMcp: jest.Mock };
   let grants: {
     grantServers: jest.Mock;
+    grantRequestedServer: jest.Mock;
     grantWholeOrganization: jest.Mock;
     listSelectableTargets: jest.Mock;
     resolve: jest.Mock;
@@ -108,6 +109,7 @@ describe('LoginController', () => {
     sso = { startMcp: jest.fn() };
     grants = {
       grantServers: jest.fn().mockResolvedValue([]),
+      grantRequestedServer: jest.fn().mockResolvedValue(true),
       grantWholeOrganization: jest.fn().mockResolvedValue(true),
       listSelectableTargets: jest.fn().mockResolvedValue([]),
       // No grant: the user's own organization, as before grants existed.
@@ -950,6 +952,9 @@ describe('LoginController', () => {
       const res = await login({ mcp_resource: 'srv-1' });
 
       expect(res._redirect).toBe('http://mcp.test/callback');
+      // Added to what the client was already allowed, never a replacement.
+      expect(grants.grantRequestedServer).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'srv-1');
+      expect(grants.grantServers).not.toHaveBeenCalled();
     });
 
     it('never shows on self-hosted', async () => {

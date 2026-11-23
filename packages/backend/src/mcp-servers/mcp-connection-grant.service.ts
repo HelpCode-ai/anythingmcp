@@ -29,7 +29,8 @@ export type ResolvedGrant =
 
 /**
  * The user's selection of what an OAuth client may see through the shared
- * `/mcp` endpoint.
+ * `/mcp` endpoint, and which servers it may open by their own URL
+ * (`/mcp/<serverId>`, see {@link McpConnectionGrantService.serverScope}).
  *
  * The one rule everything here follows: **a grant can only ever narrow what the
  * user is already entitled to.** It is applied after authorization, never
@@ -47,10 +48,60 @@ export type ResolvedGrant =
  */
 const REDIRECT_URI_CACHE_MAX = 10_000;
 
+/**
+ * `MCP_GRANT_SERVER_SCOPE`: whether a connection grant also limits which
+ * servers the client opens by their own URL (`/mcp/<serverId>`).
+ * `enforce` (default) refuses a server outside the grant, `report` only logs
+ * what would be refused, `off` does neither. Read on every request, so
+ * changing it needs a restart but no new build.
+ */
+export type GrantServerScopeMode = 'enforce' | 'report' | 'off';
+
+export function grantServerScopeMode(
+  value: string | undefined = process.env.MCP_GRANT_SERVER_SCOPE,
+): GrantServerScopeMode {
+  const mode = (value ?? '').trim().toLowerCase();
+  return mode === 'report' || mode === 'off' ? mode : 'enforce';
+}
+
+/**
+ * What a client's grant says about one server opened by its own URL.
+ *
+ * - `no-grant`: the client has no grant row (tokens from before grants
+ *   existed, the SSO sign-in). Nothing to apply.
+ * - `granted`: the grant names the server, or its whole workspace.
+ * - `outside`: the grant does not include the server.
+ * - `revoked`: the user revoked this connection.
+ * - `not-grantable`: outside the grant, and the user could not add it by
+ *   authorizing again, because member visibility hides the server from them
+ *   (see {@link McpConnectionGrantService.grantRequestedServer}).
+ */
+export type ServerScope = 'no-grant' | 'granted' | 'outside' | 'revoked' | 'not-grantable';
+
+/** The fields of a grant row that decide a {@link ServerScope}. */
+type GrantRow = { organizationId: string | null; serverIds: string[]; revokedAt: Date | null };
+
+const GRANT_ROW_CACHE_TTL_MS = 60_000;
+const GRANT_ROW_CACHE_MAX = 20_000;
+
+function scopeOf(
+  row: GrantRow | null,
+  server: { id: string; organizationId?: string | null },
+): Exclude<ServerScope, 'not-grantable'> {
+  if (!row) return 'no-grant';
+  if (row.revokedAt) return 'revoked';
+  if (row.organizationId) {
+    return row.organizationId === server.organizationId ? 'granted' : 'outside';
+  }
+  return row.serverIds.includes(server.id) ? 'granted' : 'outside';
+}
+
 @Injectable()
 export class McpConnectionGrantService {
   private readonly logger = new Logger(McpConnectionGrantService.name);
   private readonly redirectUrisByClient = new Map<string, string[]>();
+  /** Grant rows by client and user, for {@link serverScope}. */
+  private readonly grantRows = new Map<string, { row: GrantRow | null; expiresAt: number }>();
 
   constructor(
     private readonly prisma: PrismaService,
@@ -91,6 +142,171 @@ export class McpConnectionGrantService {
 
     const servers = await this.validateServers(userId, grant.serverIds);
     return servers.length > 0 ? { mode: 'servers', servers } : { mode: 'none' };
+  }
+
+  /**
+   * What the grant of `clientId` for `userId` says about one server opened by
+   * its own URL. The caller has already checked that the server is active and
+   * that the user is a member of its workspace, so only the grant row is read.
+   *
+   * The row is cached for a minute, because `/mcp/<serverId>` is called far
+   * more often than a grant changes. A cached row is only trusted to let a
+   * request through: before a refusal the row is read again, so a grant that
+   * was just extended (possibly by another process) takes effect at once and a
+   * client never loops on a stale refusal. The other way round, a revoke or a
+   * narrowed grant can take up to a minute to apply here on another process;
+   * this process forgets the row on every write.
+   */
+  async serverScope(
+    clientId: string | undefined,
+    userId: string | undefined,
+    server: { id: string; organizationId?: string | null },
+  ): Promise<ServerScope> {
+    if (!clientId || !userId) return 'no-grant';
+
+    const cached = this.grantRows.get(this.grantRowKey(clientId, userId));
+    if (cached && cached.expiresAt > Date.now()) {
+      const scope = scopeOf(cached.row, server);
+      if (scope === 'no-grant' || scope === 'granted') return scope;
+    }
+
+    const scope = scopeOf(await this.readGrantRow(clientId, userId), server);
+    if (scope !== 'outside') return scope;
+
+    // Outside the grant. Authorizing again adds the server, unless member
+    // visibility hides it from this user: then nothing they do could fix a
+    // refusal, and the caller keeps the server reachable as before.
+    if (server.organizationId) {
+      const visible = await this.keepVisible(userId, [
+        { id: server.id, organizationId: server.organizationId },
+      ]);
+      if (visible.length === 0) return 'not-grantable';
+    }
+    return 'outside';
+  }
+
+  /** {@link serverScope} for a caller that only has the server's id (the refresh grant). */
+  async serverScopeById(
+    clientId: string | undefined,
+    userId: string | undefined,
+    serverId: string,
+  ): Promise<ServerScope> {
+    if (!clientId || !userId || !serverId) return 'no-grant';
+    const server = await this.prisma.mcpServerConfig.findUnique({
+      where: { id: serverId },
+      select: { id: true, organizationId: true },
+    });
+    // An unknown server is the endpoint's 404, not a grant question.
+    if (!server) return 'no-grant';
+    return this.serverScope(clientId, userId, server);
+  }
+
+  private grantRowKey(clientId: string, userId: string): string {
+    return `${clientId}\n${userId}`;
+  }
+
+  private async readGrantRow(clientId: string, userId: string): Promise<GrantRow | null> {
+    const row = await this.prisma.mcpConnectionGrant.findUnique({
+      where: { clientId_userId: { clientId, userId } },
+      select: { organizationId: true, serverIds: true, revokedAt: true },
+    });
+    if (this.grantRows.size >= GRANT_ROW_CACHE_MAX) this.grantRows.clear();
+    this.grantRows.set(this.grantRowKey(clientId, userId), {
+      row: row ?? null,
+      expiresAt: Date.now() + GRANT_ROW_CACHE_TTL_MS,
+    });
+    return row ?? null;
+  }
+
+  /**
+   * Grant the one server a client asked for by its URL (RFC 8707 `resource`).
+   *
+   * A client registration can be used for more than one server URL, and each
+   * URL runs its own authorization. Replacing the grant every time would leave
+   * only the last server, and the earlier URLs would be refused. So the server
+   * is ADDED to what the user already allowed this client:
+   *
+   * - no grant yet, or a revoked one: this server only;
+   * - a grant of servers: this server is added to them;
+   * - a whole-workspace grant of the server's workspace: nothing to do;
+   * - a whole-workspace grant of another workspace: replaced by this server
+   *   (a grant cannot hold both).
+   *
+   * Nothing is added that the user did not allow this client before or does
+   * not allow now, and every stored id is still re-validated on each use. The
+   * server goes through the same checks as {@link grantServers}: an id the
+   * user cannot reach or may not see is dropped and nothing is written.
+   *
+   * `onlyExisting` never creates a grant: for the SSO sign-in, which writes
+   * none, so a client that has one can still be allowed a further server.
+   *
+   * Returns whether the grant now includes the server.
+   */
+  async grantRequestedServer(
+    clientId: string,
+    userId: string,
+    serverId: string,
+    opts: { onlyExisting?: boolean } = {},
+  ): Promise<boolean> {
+    const [server] = await this.keepVisible(userId, await this.validateServers(userId, [serverId]));
+    if (!server) {
+      this.logger.warn(`Dropped 1 unreachable server id(s) from a grant for user ${userId}`);
+      return false;
+    }
+
+    const existing = await this.prisma.mcpConnectionGrant.findUnique({
+      where: { clientId_userId: { clientId, userId } },
+      select: { organizationId: true, serverIds: true, revokedAt: true },
+    });
+    if (!existing && opts.onlyExisting) return false;
+
+    if (existing && !existing.revokedAt) {
+      if (existing.organizationId === server.organizationId) return true;
+      if (!existing.organizationId) {
+        if (existing.serverIds.includes(server.id)) return true;
+        // Appended in one statement, so two authorizations finishing together
+        // cannot drop each other's server.
+        await this.prisma.mcpConnectionGrant.updateMany({
+          where: {
+            clientId,
+            userId,
+            revokedAt: null,
+            organizationId: null,
+            NOT: { serverIds: { has: server.id } },
+          },
+          data: { serverIds: { push: server.id } },
+        });
+        this.grantRows.delete(this.grantRowKey(clientId, userId));
+        return true;
+      }
+    }
+
+    await this.upsert(
+      clientId,
+      userId,
+      { organizationId: null, serverIds: [server.id] },
+      server.organizationId,
+    );
+    return true;
+  }
+
+  /**
+   * {@link grantRequestedServer} with `onlyExisting`, for a sign-in that knows
+   * the pending authorization (`oauth_sessions.session_id`) instead of the
+   * client.
+   */
+  async extendForAuthorization(
+    oauthSessionId: string | undefined,
+    userId: string,
+    serverId: string,
+  ): Promise<boolean> {
+    if (!oauthSessionId || !userId || !serverId) return false;
+    const session = await this.prisma.oAuthSession.findUnique({
+      where: { sessionId: oauthSessionId },
+      select: { clientId: true },
+    });
+    if (!session?.clientId) return false;
+    return this.grantRequestedServer(session.clientId, userId, serverId, { onlyExisting: true });
   }
 
   /**
@@ -162,6 +378,7 @@ export class McpConnectionGrantService {
       where: { clientId, userId, revokedAt: null },
       data: { revokedAt: new Date() },
     });
+    this.grantRows.delete(this.grantRowKey(clientId, userId));
     return count > 0;
   }
 
@@ -409,6 +626,7 @@ export class McpConnectionGrantService {
       // client may reach, which is the opposite of having revoked it.
       update: { ...data, revokedAt: null },
     });
+    this.grantRows.delete(this.grantRowKey(clientId, userId));
     if (!existing) await this.reportConnected(clientId, userId, eventOrganizationId);
   }
 

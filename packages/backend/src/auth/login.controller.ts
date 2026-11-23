@@ -2101,12 +2101,13 @@ ${
     if (plugin) await markDirectorySignup(this.prisma, this.productEvents, userId, plugin);
 
     // The client asked for one specific server via RFC 8707. It has already
-    // said what it wants; asking again would be noise. Still goes through
-    // grantServers, which drops an id this user cannot reach.
+    // said what it wants; asking again would be noise. An id this user cannot
+    // reach is dropped, and the server is added to what this client was
+    // already allowed, so its other server URLs keep working.
     const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
       .signedCookies?.[MCP_RESOURCE_COOKIE];
     if (typeof requestedServerId === 'string' && requestedServerId) {
-      await this.grants.grantServers(consent.clientId, userId, [requestedServerId]);
+      await this.grants.grantRequestedServer(consent.clientId, userId, requestedServerId);
       return false;
     }
 

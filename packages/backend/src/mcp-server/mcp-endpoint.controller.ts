@@ -58,6 +58,7 @@ import { PrismaService } from '../common/prisma.service';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
+  grantServerScopeMode,
 } from '../mcp-servers/mcp-connection-grant.service';
 import {
   SharedToolsetDeps,
@@ -1356,6 +1357,91 @@ export class McpEndpointController {
     return true;
   }
 
+  /**
+   * Applies the connection grant on a server's own URL.
+   *
+   * While authorizing, the person chose what the client may reach (or the
+   * client asked for one server by its URL), and that choice is stored as the
+   * client's grant. Membership of the workspace is not enough then: a client
+   * allowed one server must not open the workspace's other servers with the
+   * same token. A server outside the grant, or a revoked connection, is
+   * answered like a sign-in for the wrong workspace: 401 with `invalid_token`
+   * and a marker for the refresh grant, so the client runs the authorization
+   * again for this URL and the person can allow it (the grant is then
+   * extended, see `grantRequestedServer`).
+   *
+   * Only OAuth tokens have a grant. API keys, app JWTs and the static
+   * credentials pass, and so does a client without a grant row (tokens from
+   * before grants existed, the SSO sign-in). `MCP_GRANT_SERVER_SCOPE=report`
+   * logs instead of refusing, `off` skips the check.
+   *
+   * Call it only after the caller is known to be a member of the server's
+   * workspace. Returns true when it has answered.
+   */
+  private async refuseOutsideGrant(
+    serverId: string,
+    serverOrganizationId: string | null | undefined,
+    req: Request,
+    res: Response,
+  ): Promise<boolean> {
+    const mode = grantServerScopeMode();
+    if (mode === 'off') return false;
+    const user = (req as any).user;
+    if (user?.authMethod !== 'jwt' || !user?.sub) return false;
+    const clientId = oauthClientId(user);
+    if (!clientId) return false;
+
+    const scope = await this.grants.serverScope(clientId, user.sub, {
+      id: serverId,
+      organizationId: serverOrganizationId,
+    });
+    if (scope === 'no-grant' || scope === 'granted') return false;
+
+    const who = `client …${clientId.slice(-6)}, ${this.describePrincipal(user)}`;
+    if (scope === 'not-grantable') {
+      // Member visibility hides the server from this user, so no authorization
+      // could add it to the grant: left reachable, as before grants applied here.
+      this.logger.warn(
+        `MCP grant scope: server ${serverId} is outside the connection grant but hidden from the user ` +
+          `by member visibility, so it stays reachable (${who})`,
+      );
+      return false;
+    }
+    const why =
+      scope === 'revoked' ? 'the connection was revoked' : 'the connection grant does not include it';
+    if (mode === 'report') {
+      this.logger.warn(
+        `MCP grant scope (report only): a request to server ${serverId} would be refused, ${why} (${who})`,
+      );
+      return false;
+    }
+    this.logger.warn(`MCP request refused: server ${serverId}, ${why} (${who})`);
+
+    // As for the wrong workspace: clients answer a 401 with a refresh grant,
+    // which must be refused too, or they never reach the authorization page.
+    await this.refusals?.mark(user.sub, clientId, serverId).catch(() => undefined);
+    res.setHeader(
+      'WWW-Authenticate',
+      mcpWwwAuthenticate(
+        req,
+        `/mcp/${serverId}`,
+        process.env.SERVER_URL || 'http://localhost:4000',
+        'This connection was not allowed to use this MCP server',
+      ),
+    );
+    res.status(401).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32001,
+        message:
+          'Connect again: this connection was not allowed to use this MCP server. ' +
+          'Authorize it again from your AI client to allow this server.',
+      },
+      id: null,
+    });
+    return true;
+  }
+
   private async handleMcpRequest(
     serverId: string,
     req: Request,
@@ -1481,6 +1567,9 @@ export class McpEndpointController {
           id: null,
         });
       }
+      // A member of the workspace: the client's grant decides which of its
+      // servers this connection may open.
+      if (await this.refuseOutsideGrant(serverId, serverOrg, req, res)) return;
     }
 
     // A subscriptions/listen stream, once the caller may reach this server:
@@ -1920,6 +2009,10 @@ export class McpEndpointController {
       });
       return true;
     }
+
+    // A live session was opened when the grant allowed this server; the grant
+    // may have been narrowed or revoked since.
+    if (await this.refuseOutsideGrant(serverId, session.organizationId, req, res)) return true;
 
     this.sessionManager.touch(sessionId, Date.now());
     try {
