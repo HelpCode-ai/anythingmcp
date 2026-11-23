@@ -45,6 +45,11 @@ updates:
       opentelemetry:
         patterns:
           - "@opentelemetry/*"
+      # Same for the Sentry SDKs: backend and frontend share @sentry/core,
+      # and one bumped alone nests a second SDK copy in the backend.
+      sentry:
+        patterns:
+          - "@sentry/*"
     ignore:
       # Major upgrades require manual review (often include breaking API changes).
       - dependency-name: "*"
