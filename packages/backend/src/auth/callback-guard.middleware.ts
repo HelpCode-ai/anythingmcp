@@ -4,7 +4,7 @@ import type { Request, Response, NextFunction } from 'express';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 import { ProductEvents, ProductEventService } from '../audit/product-event.service';
-import { deviceOf } from './authorization-attempt';
+import { deviceOf, pageLanguageFor } from './authorization-attempt';
 import { renderClosedRequestPage } from './auth-page';
 import { clearLoginUserCookie, pendingAuthorizationId } from './login-user-cookie';
 
@@ -80,6 +80,8 @@ export class CallbackGuardMiddleware implements NestMiddleware {
       renderClosedRequestPage({
         trust: { cloud: this.deployment.isCloud() },
         dashboardUrl: this.dashboardUrl(),
+        // No open authorization, so no page-test arm: the browser's language.
+        lang: pageLanguageFor(req.headers?.['accept-language']),
       }),
     );
   }

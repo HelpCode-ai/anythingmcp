@@ -2,6 +2,7 @@
 jest.mock('openid-client', () => ({}));
 
 import { LoginController } from './login.controller';
+import { loginErrorText } from './auth-page-i18n.steps';
 import { followPausedPageInPlace } from './paused-page.spec-helper';
 import type { Request, Response } from 'express';
 
@@ -173,7 +174,9 @@ describe('LoginController: the sign-in form token', () => {
       return res;
     };
     const refused = (res: ReturnType<typeof makeRes>) => {
-      expect(res._redirect).toBe(`/auth/login?error=${encodeURIComponent('Your session expired. Please try again.')}`);
+      // The redirect carries the key of the message; the page writes its text.
+      expect(res._redirect).toBe('/auth/login?error=sessionExpired');
+      expect(loginErrorText('sessionExpired', 'en', [])).toBe('Your session expired. Please try again.');
       expect(res._cleared).toContain('login_csrf');
     };
 

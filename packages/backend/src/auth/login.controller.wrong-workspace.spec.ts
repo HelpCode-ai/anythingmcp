@@ -3,6 +3,7 @@
 jest.mock('openid-client', () => ({}));
 
 import { LoginController, WRONG_WORKSPACE_MESSAGE } from './login.controller';
+import { loginErrorText } from './auth-page-i18n.steps';
 import { followPausedPageInPlace } from './paused-page.spec-helper';
 
 // The page after approving is reached through a redirect: follow it in place.
@@ -91,7 +92,9 @@ describe('authorization for a server of another workspace (#1609)', () => {
     expect(res.redirect).toHaveBeenCalledTimes(1);
     const target = res.redirect.mock.calls[0][0] as string;
     expect(target).toMatch(/^\/auth\/login\?switch=1&error=/);
-    expect(decodeURIComponent(target.split('error=')[1])).toBe(WRONG_WORKSPACE_MESSAGE);
+    // The key of the message; the sign-in page writes its text.
+    expect(target.split('error=')[1]).toBe('wrongWorkspace');
+    expect(loginErrorText('wrongWorkspace', 'en', [])).toBe(WRONG_WORKSPACE_MESSAGE);
     expect(target).not.toContain('callback');
   });
 

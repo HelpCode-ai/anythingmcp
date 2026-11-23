@@ -68,12 +68,24 @@ import {
 import { assistantForRedirectUris, profileForRedirectUris } from '../mcp-server/shared-toolset';
 import { ApiExcludeEndpoint, ApiTags } from '@nestjs/swagger';
 import {
-  TELEGRAM_CONNECTED_REQUEST,
   TELEGRAM_ONE_TAP,
   TELEGRAM_SLUG,
   type TelegramOneTap,
 } from '../adapters/telegram-managed-bot';
-import { fill, signInTexts } from './auth-page-i18n';
+import { fill, PAGE_LOCALES, plural, SCRIPT_FILL, scriptTexts, signInTexts } from './auth-page-i18n';
+import {
+  emailCodeTexts,
+  LOGIN_ERROR_TEXTS,
+  loginErrorParam,
+  loginErrorParamForText,
+  loginErrorText,
+  serverPickerTexts,
+  type EmailCodeMessage,
+  type LoginErrorKey,
+} from './auth-page-i18n.steps';
+import { CONNECTED_PAGE_TEXTS, connectedPageTexts } from './auth-page-i18n.connected';
+import { telegramAnswerText, telegramPanelTexts } from './auth-page-i18n.telegram';
+import { edgePageTexts } from './auth-page-i18n.pages';
 import { boundLoginUser, clearLoginUserCookie, setLoginUserCookie } from './login-user-cookie';
 import { AuthPageThrottleFilter } from './auth-page-throttle.filter';
 import {
@@ -91,10 +103,10 @@ import {
   type ConnectedPageArm,
 } from './authorization-attempt';
 import {
-  TELEGRAM_PANEL_SCRIPT,
   TELEGRAM_PANEL_STYLES,
   TELEGRAM_PICK_HOOK,
   telegramPanelHtml,
+  telegramPanelScript,
   telegramQrDataUri,
 } from './first-app-telegram';
 
@@ -127,19 +139,13 @@ const VERIFY_CSRF_COOKIE = 'verify_csrf';
 /** At most one code per minute from the code step (the dashboard sign-in waits as long). */
 const CODE_RESEND_INTERVAL_MS = 60 * 1000;
 
-/** The notice when the hourly cap of codes is reached. */
-const TOO_MANY_CODES =
-  'You asked for many codes in the last hour: use the newest email you received, or try again later.';
-
 /**
  * Shown on the sign-in form when the account just used is not a member of the
  * workspace that owns the MCP server the client asked for. The server is not
- * named: the person may not belong to its workspace.
+ * named: the person may not belong to its workspace. This is its English
+ * text; the page shows it in its own language (LOGIN_ERROR_TEXTS).
  */
-export const WRONG_WORKSPACE_MESSAGE =
-  'The MCP server you are connecting belongs to another workspace, and this account is not a member of it. ' +
-  'Sign in with an account of that workspace, or ask its admin to invite you. ' +
-  'If you do not need this connection, remove it from your AI client.';
+export const WRONG_WORKSPACE_MESSAGE = LOGIN_ERROR_TEXTS.en.wrongWorkspace;
 
 /**
  * Context describing the OAuth client that initiated the current authorize
@@ -221,12 +227,12 @@ export const QUICK_SETUP_APPS: ReadonlyArray<{ slug: string; name: string }> = [
   { slug: 'printify', name: 'Printify' },
 ];
 
-/** The request the first-connector page suggests typing into the chat. */
-export const FIRST_CONNECTOR_EXAMPLE = 'Connect my Telegram bot to AnythingMCP.';
+/** The request the first-connector page suggests typing into the chat (its English text). */
+export const FIRST_CONNECTOR_EXAMPLE = CONNECTED_PAGE_TEXTS.en.example;
 
-/** Its text once an app was picked on the page. */
-export function finishSetupRequest(appName: string): string {
-  return `Finish setting up my ${appName} connector.`;
+/** Its text once an app was picked on the page, in the page's language. Plain text: escape it for HTML. */
+export function finishSetupRequest(appName: string, lang?: PageLanguage | null): string {
+  return fill(connectedPageTexts(lang).finishRequest, { app: appName });
 }
 
 /**
@@ -438,8 +444,12 @@ export function continueBeaconScript(attempt: string): string {
  * It counts down five seconds first, only while the tab is visible, and
  * "Stay on this page" stops it. A click on Continue stops it too, so the
  * callback is never asked for twice.
+ *
+ * `lang` is the page's language: its texts come in as one object literal
+ * (`scriptTexts`), never concatenated into the source.
  */
-export function autoContinueScript(attempt: string): string {
+export function autoContinueScript(attempt: string, lang?: PageLanguage | null): string {
+  const texts = connectedPageTexts(lang).js;
   return `
     (function () {
       var picker = document.getElementById('quick-apps');
@@ -450,7 +460,9 @@ export function autoContinueScript(attempt: string): string {
       if (!picker || !cont || !note || !text || !stay || !window.setInterval || !window.location) return;
       var target = cont.getAttribute('href');
       if (!target) return;
-      var clientName = cont.getAttribute('data-client') || 'your assistant';
+      var T = ${scriptTexts({ yourAssistant: texts.yourAssistant, pressContinue: texts.pressContinue, goingBack: texts.goingBack })};
+      ${SCRIPT_FILL}
+      var clientName = cont.getAttribute('data-client') || T.yourAssistant;
       var left = 5;
       var stopped = false;
       var timer = null;
@@ -462,7 +474,7 @@ export function autoContinueScript(attempt: string): string {
       cont.addEventListener('click', function () { stop(); });
       stay.addEventListener('click', function () {
         stop();
-        text.textContent = 'Press Continue to ' + clientName + ' when you are ready.';
+        text.textContent = fill(T.pressContinue, { client: clientName });
         stay.hidden = true;
       });
       timer = window.setInterval(function () {
@@ -470,7 +482,7 @@ export function autoContinueScript(attempt: string): string {
         // Never from a tab in the background: the person is in Telegram.
         if (document.visibilityState && document.visibilityState !== 'visible') return;
         if (left > 0) {
-          text.textContent = 'Telegram is connected. Going back to ' + clientName + ' in ' + left + ' s…';
+          text.textContent = fill(T.goingBack, { client: clientName, seconds: left });
           note.hidden = false;
           left -= 1;
           return;
@@ -554,6 +566,39 @@ export class LoginController {
   /** The trust row under every page of the flow. */
   private trust(): TrustRowOptions {
     return { cloud: this.deployment.isCloud() };
+  }
+
+  /**
+   * The language of a page of this flow.
+   *
+   * Inside an authorization attempt (`consent`), every page follows the
+   * sign-in page: the browser's language on the `buttons_first` arm of the
+   * sign-in page test, English on the control arm and on a self-hosted
+   * instance (which has no arm). One attempt never mixes languages.
+   *
+   * Without an attempt (`null`: it expired, or there never was one) there is
+   * no arm to read: the page speaks the browser's language for everyone.
+   */
+  private pageLanguage(req: Request, consent: ConsentContext | null): PageLanguage {
+    const browser = pageLanguageFor(req.headers?.['accept-language']) ?? 'en';
+    if (!consent) return browser;
+    return consent.signinArm === 'buttons_first' ? browser : 'en';
+  }
+
+  /**
+   * The language of the page that sent a script request (the app picker,
+   * the Telegram panel), for the answers it displays. Derived as the page
+   * derived its own: the arm depends only on the id of the pending
+   * authorization, which the request carries in the same cookie, so nothing
+   * is looked up and the answer matches the page even once the
+   * authorization has expired. English without that cookie.
+   */
+  private askingPageLanguage(req: Request): PageLanguage {
+    const arm = signInPageArm(req.cookies?.oauth_session, {
+      cloud: this.deployment.isCloud(),
+      setting: this.configService.get<string>(SIGNIN_PAGE_TEST_ENV),
+    });
+    return arm === 'buttons_first' ? (pageLanguageFor(req.headers?.['accept-language']) ?? 'en') : 'en';
   }
 
   /**
@@ -729,7 +774,15 @@ export class LoginController {
       }
       res.setHeader('Content-Type', 'text/html');
       res.setHeader('Cache-Control', 'no-store');
-      res.send(renderClosedRequestPage({ trust: this.trust(), message: error, dashboardUrl: this.frontendUrl() }));
+      const closedLang = this.pageLanguage(req, null);
+      res.send(
+        renderClosedRequestPage({
+          trust: this.trust(),
+          message: error ? loginErrorText(error, closedLang, this.socialProviders()) : undefined,
+          dashboardUrl: this.frontendUrl(),
+          lang: closedLang,
+        }),
+      );
       return;
     }
     // Only inside a pending authorization: a bookmark or a crawler on this
@@ -843,7 +896,7 @@ export class LoginController {
       // surface. With an authorization pending in this browser the way on is
       // its page, not the dashboard's sign-in, which has no way back to it.
       if (surface === 'MCP' || (surface === null && (await this.loadConsentContext(req)))) {
-        return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+        return res.redirect(`/auth/login?error=${loginErrorParamForText(message, this.socialProviders())}`);
       }
       if (surface === 'LINK') {
         return res.redirect(`${frontend}/settings?linkError=${encodeURIComponent(message)}`);
@@ -895,7 +948,7 @@ export class LoginController {
       this.logger.warn('Rejected login with missing/invalid CSRF token');
       res.clearCookie('login_csrf');
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Your session expired. Please try again.')}`,
+        `/auth/login?error=${loginErrorParam('sessionExpired')}`,
       );
     }
 
@@ -923,7 +976,7 @@ export class LoginController {
       }
       if (back) return res.redirect(back);
       res.setHeader('Content-Type', 'text/html');
-      return res.send(this.renderDeniedPage(serverName));
+      return res.send(this.renderDeniedPage(serverName, this.pageLanguage(req, denied)));
     }
 
     // "Sign in with <provider>" is a submit button on the same form, so it
@@ -943,7 +996,7 @@ export class LoginController {
       } catch (error: any) {
         this.logger.warn(`MCP SSO start failed: ${error?.reason ?? error}`);
         return res.redirect(
-          `/auth/login?error=${encodeURIComponent('Single sign-on is unavailable. Please contact your administrator.')}`,
+          `/auth/login?error=${loginErrorParam('ssoUnavailable')}`,
         );
       }
     }
@@ -964,7 +1017,7 @@ export class LoginController {
         : null;
       if (!sessionUser) {
         return res.redirect(
-          `/auth/login?switch=1&error=${encodeURIComponent('Your session has expired. Please sign in.')}`,
+          `/auth/login?switch=1&error=${loginErrorParam('sessionEnded')}`,
         );
       }
       this.logger.log(`Authorization approved from dashboard session: ${maskEmail(sessionUser.email)}`);
@@ -975,7 +1028,7 @@ export class LoginController {
 
     if (!email || !password) {
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Email and password are required')}`,
+        `/auth/login?error=${loginErrorParam('credentialsRequired')}`,
       );
     }
 
@@ -987,7 +1040,7 @@ export class LoginController {
       this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
+        `/auth/login?error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
 
@@ -998,7 +1051,7 @@ export class LoginController {
     if (user.passwordLoginDisabled) {
       this.logger.warn(`Password login refused for SSO-only account: ${maskEmail(email)}`);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Password sign-in is disabled for this account. Use your organization sign-in.')}`,
+        `/auth/login?error=${loginErrorParam('passwordDisabled')}`,
       );
     }
 
@@ -1016,7 +1069,7 @@ export class LoginController {
       this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
+        `/auth/login?error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
 
@@ -1029,7 +1082,7 @@ export class LoginController {
     if (!passwordValid) {
       this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
+        `/auth/login?error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
 
@@ -1040,7 +1093,7 @@ export class LoginController {
     if (this.deployment.isCloud() && !user.emailVerified) {
       if (!this.emailVerification) {
         return res.redirect(
-          `/auth/login?error=${encodeURIComponent('Verify your email address first: open the link in the email we sent you.')}`,
+          `/auth/login?error=${loginErrorParam('verifyEmailFirst')}`,
         );
       }
       this.logger.log(`Authorization held for email verification: ${maskEmail(email)}`);
@@ -1062,15 +1115,13 @@ export class LoginController {
    * Where provider buttons exist it says what the two usual cases do next:
    * 58 people typed an address that had no account and 9 a password for an
    * account made with a provider (16 to 21 November 2026).
+   *
+   * Returns the key of the message: the redirect carries it and the sign-in
+   * page writes the text in its language, with the names of the provider
+   * buttons it has (`loginErrorText`).
    */
-  private signInFailedMessage(): string {
-    const providers = this.socialProviders().map((p) => p.name);
-    if (providers.length === 0) return 'Invalid email or password';
-    const list =
-      providers.length === 1
-        ? providers[0]
-        : `${providers.slice(0, -1).join(', ')} or ${providers[providers.length - 1]}`;
-    return `That email and password do not match. If you signed up with ${list}, use that button instead. New here? Create an account first.`;
+  private signInFailedMessage(): LoginErrorKey {
+    return this.socialProviders().length === 0 ? 'invalidCredentials' : 'signInFailed';
   }
 
   /**
@@ -1089,7 +1140,7 @@ export class LoginController {
   /** "Continue with Google / Microsoft / GitHub" from a CSRF-checked form of this flow. */
   private async startSocialSignIn(req: Request, res: Response, provider: string): Promise<void> {
     if (!this.social || this.socialProviders().length === 0) {
-      return res.redirect(`/auth/login?error=${encodeURIComponent('This sign-in option is not available.')}`);
+      return res.redirect(`/auth/login?error=${loginErrorParam('optionUnavailable')}`);
     }
     try {
       const { authorizationUrl, bindingToken } = await this.social.start({
@@ -1105,7 +1156,7 @@ export class LoginController {
       this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
       const message =
         error instanceof SocialAuthError ? error.userMessage : 'This sign-in option is not available right now.';
-      return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+      return res.redirect(`/auth/login?error=${loginErrorParamForText(message, this.socialProviders())}`);
     }
   }
 
@@ -1123,7 +1174,7 @@ export class LoginController {
     req: Request,
     res: Response,
     user: { id: string; email: string },
-    opts: { sendCode?: boolean; error?: string; notice?: string } = {},
+    opts: { sendCode?: boolean; error?: EmailCodeMessage; notice?: EmailCodeMessage } = {},
   ): Promise<void> {
     let notice = opts.notice;
     if (opts.sendCode && this.emailVerification) {
@@ -1135,7 +1186,7 @@ export class LoginController {
         if (lastHour < MAX_CODES_PER_HOUR) {
           await this.emailVerification.sendCode(user.id, user.email, { sendInBackground: true });
         } else {
-          notice = TOO_MANY_CODES;
+          notice = 'tooManyCodes';
         }
       }
     }
@@ -1155,17 +1206,21 @@ export class LoginController {
     res.clearCookie('login_csrf');
 
     const consent = await this.loadConsentContext(req);
+    // The step's notices and errors are keys: written in the page's language here.
+    const lang = this.pageLanguage(req, consent);
+    const T = emailCodeTexts(lang);
     res.setHeader('Content-Type', 'text/html');
     res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
     res.send(
       this.renderEmailCodePage({
         consent,
-        maskedEmail: maskEmail(user.email) ?? 'your address',
+        maskedEmail: maskEmail(user.email) ?? T.yourAddress,
         csrfToken,
         // The round trip is bound to the pending authorization, as on the sign-in page.
         socialProviders: consent ? this.socialProviders() : [],
-        error: opts.error,
-        notice,
+        error: opts.error ? T[opts.error] : undefined,
+        notice: notice ? T[notice] : undefined,
+        lang,
       }),
     );
   }
@@ -1190,20 +1245,20 @@ export class LoginController {
       res.status(404).send('Not found');
       return null;
     }
-    const restart = (message: string) => {
+    const restart = (error: LoginErrorKey) => {
       this.clearEmailCodeStep(res);
-      res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
+      res.redirect(`/auth/login?error=${loginErrorParam(error)}`);
       return null;
     };
     if (!this.verifySignedToken(req, VERIFY_CSRF_COOKIE, csrf)) {
       this.logger.warn('Rejected email code step with missing/invalid CSRF token');
-      return restart('Your session expired. Please sign in again.');
+      return restart('sessionExpiredSignIn');
     }
     const userId = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[
       PENDING_VERIFY_COOKIE
     ];
     if (typeof userId !== 'string' || !userId) {
-      return restart('Your session expired. Please sign in again.');
+      return restart('sessionExpiredSignIn');
     }
     const user = await this.prisma.user.findUnique({
       where: { id: userId },
@@ -1212,7 +1267,7 @@ export class LoginController {
     // Gone, or made SSO-only meanwhile: the password that opened this step
     // no longer counts.
     if (!user || user.passwordLoginDisabled) {
-      return restart('Please sign in again.');
+      return restart('signInAgain');
     }
     return { id: user.id, email: user.email, name: user.name, emailVerified: user.emailVerified };
   }
@@ -1256,9 +1311,7 @@ export class LoginController {
     const code = typeof body?.code === 'string' ? body.code.replace(/\s+/g, '').slice(0, 16) : '';
     const verified = await this.emailVerification!.verifyCode(user.id, code);
     if (!verified) {
-      return this.askForEmailCode(req, res, user, {
-        error: 'That code is wrong or has expired. Use the newest email, or send a new code.',
-      });
+      return this.askForEmailCode(req, res, user, { error: 'codeWrong' });
     }
 
     this.clearEmailCodeStep(res);
@@ -1276,17 +1329,13 @@ export class LoginController {
     if (!user || (await this.continueIfVerified(req, res, user))) return;
     const verification = this.emailVerification!;
     if ((await verification.codesSentWithin(user.id, CODE_RESEND_INTERVAL_MS)) > 0) {
-      return this.askForEmailCode(req, res, user, {
-        notice: 'A code was sent less than a minute ago. Check your inbox and spam folder, or ask again in a minute.',
-      });
+      return this.askForEmailCode(req, res, user, { notice: 'resendTooSoon' });
     }
     if ((await verification.codesSentWithin(user.id, 60 * 60 * 1000)) >= MAX_CODES_PER_HOUR) {
-      return this.askForEmailCode(req, res, user, { notice: TOO_MANY_CODES });
+      return this.askForEmailCode(req, res, user, { notice: 'tooManyCodes' });
     }
     await verification.sendCode(user.id, user.email, { sendInBackground: true });
-    return this.askForEmailCode(req, res, user, {
-      notice: 'A new code is on its way. Codes sent before it no longer work.',
-    });
+    return this.askForEmailCode(req, res, user, { notice: 'newCodeSent' });
   }
 
   /** "I opened the link in the email": continues once the link verified the address. */
@@ -1297,9 +1346,7 @@ export class LoginController {
   async continueAfterEmailLink(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
     const user = await this.pendingCodeStep(req, res, body?.csrf);
     if (!user || (await this.continueIfVerified(req, res, user))) return;
-    return this.askForEmailCode(req, res, user, {
-      error: 'Your address is not verified yet. Enter the code from the email, or open its link first.',
-    });
+    return this.askForEmailCode(req, res, user, { error: 'notVerifiedYet' });
   }
 
   /** "Continue with <provider>" of the code step: the provider verifies the address. */
@@ -1344,7 +1391,7 @@ export class LoginController {
       res.clearCookie('login_csrf');
       this.recordStepViewed(req, 'wrong-workspace');
       return res.redirect(
-        `/auth/login?switch=1&error=${encodeURIComponent(WRONG_WORKSPACE_MESSAGE)}`,
+        `/auth/login?switch=1&error=${loginErrorParam('wrongWorkspace')}`,
       );
     }
     // For the funnel of the pages: who signed in, and how. Not awaited.
@@ -1491,6 +1538,7 @@ export class LoginController {
         callbackUrl,
         csrf,
         cloud: this.deployment.isCloud(),
+        lang: this.pageLanguage(req, consent),
       }),
     );
     return true;
@@ -1564,14 +1612,18 @@ export class LoginController {
       res.clearCookie(FILE_SEARCH_SETUP_CSRF_COOKIE);
       return res.redirect(`${this.getBaseUrl(req)}/callback`);
     }
+    // The language of the attempt while it is still open (signed out of it), the browser's once it is gone.
+    const lang = this.pageLanguage(req, userId ? consent : await this.loadConsentContext(req));
+    const T = edgePageTexts(lang).fileSearch;
     res.setHeader('Content-Type', 'text/html');
     return res.send(
       renderAuthPage({
-        title: 'Go back to the chat to finish',
+        title: T.doneHeading,
+        lang,
         card: `
-    <h1>Go back to the chat to finish</h1>
-    <p class="sub">The connection request from the chat timed out in the meantime. A folder you connected is saved and its first sync is running.</p>
-    <p class="sub">Go back to the chat and connect the plugin again. It takes a few seconds now.</p>`,
+    <h1>${T.doneHeading}</h1>
+    <p class="sub">${T.done1}</p>
+    <p class="sub">${T.done2}</p>`,
         trust: this.trust(),
       }),
     );
@@ -1583,8 +1635,15 @@ export class LoginController {
     callbackUrl: string;
     csrf: string;
     cloud: boolean;
+    /** The page's language (see pageLanguage); English when absent. */
+    lang?: PageLanguage | null;
   }): string {
+    const lang: PageLanguage = params.lang ?? 'en';
+    const T = edgePageTexts(lang).fileSearch;
     const client = this.escapeHtml(params.clientName);
+    // Protocol and product names stay as they are; the labels and hints that are words come from the dictionary.
+    const labels: Record<string, string | undefined> = T.optionLabels;
+    const hints: Record<string, string | undefined> = T.optionHints;
     const options = FILE_SEARCH_SETUP_OPTIONS.filter((o) => !o.selfHostedOnly || !params.cloud);
     const tiles = options
       .map((o) => {
@@ -1592,24 +1651,25 @@ export class LoginController {
         // session it opens is the dashboard's (same site as this page).
         const href = `${this.frontendUrl()}/setup/file-search?${new URLSearchParams({ option: o.id, t: params.csrf }).toString()}`;
         return `
-        <a class="fs-option" href="${this.escapeHtml(href)}"><span class="fs-option-label">${this.escapeHtml(o.label)}</span><span class="fs-option-hint">${this.escapeHtml(o.hint)}</span></a>`;
+        <a class="fs-option" href="${this.escapeHtml(href)}"><span class="fs-option-label">${this.escapeHtml(labels[o.id] ?? o.label)}</span><span class="fs-option-hint">${this.escapeHtml(hints[o.id] ?? o.hint)}</span></a>`;
       })
       .join('');
     const card = `
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
-    <h1>Connect a folder for ${client}</h1>
-    <p class="sub">${client} can search the documents on your file server once a folder is connected. Choose how AnythingMCP reaches it:</p>
-    <nav class="fs-options" aria-label="How to reach the folder">${tiles}
+    <h1>${fill(T.heading, { client })}</h1>
+    <p class="sub">${fill(T.sub, { client })}</p>
+    <nav class="fs-options" aria-label="${T.optionsLabel}">${tiles}
     </nav>
     <ol class="steps">
-      <li>Enter the server address and a read-only account, and test the connection.</li>
-      <li>Pick the folders and file types to search, and see how many files that is.</li>
-      <li>Check the description ${client} reads, then activate: the first sync starts.</li>
+      <li>${T.step1}</li>
+      <li>${T.step2}</li>
+      <li>${fill(T.step3, { client })}</li>
     </ol>
-    <p class="body">It takes about five minutes. Passwords and keys are entered on the next page, never in the chat. When the folder is active you come back here and on to ${client}.</p>
-    <p class="links"><a id="skip" href="${this.escapeHtml(params.callbackUrl)}">Skip for now and continue to ${client}</a></p>`;
+    <p class="body">${fill(T.body, { client })}</p>
+    <p class="links"><a id="skip" href="${this.escapeHtml(params.callbackUrl)}">${fill(T.skip, { client })}</a></p>`;
     return renderAuthPage({
-      title: `Connect a folder for ${params.clientName}`,
+      title: fill(T.heading, { client: params.clientName }),
+      lang,
       card,
       trust: this.trust(),
       extraStyles: `
@@ -1814,13 +1874,19 @@ export class LoginController {
     picked?: { slug: string; name: string };
     /** The workspace's free trial has ended: nothing can be added until it is reactivated. */
     trialEnded?: boolean;
+    /** The page's language (see pageLanguage); English when absent. */
+    lang?: PageLanguage | null;
   }): string {
+    // Every text of the page and of its scripts comes from this one
+    // dictionary, so the page never mixes languages.
+    const lang: PageLanguage = params.lang ?? 'en';
+    const T = connectedPageTexts(lang);
     const client = this.escapeHtml(params.clientName);
-    // "October 13", kept on one line.
+    // "October 13" ("13. Oktober", "10月13日"), in the page's language and kept on one line.
     const trialEnd = params.cardTrial
       ? this.escapeHtml(
-          params.cardTrial.endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
-        ).replace(' ', '&nbsp;')
+          params.cardTrial.endsAt.toLocaleDateString(PAGE_LOCALES[lang], { month: 'long', day: 'numeric', timeZone: 'UTC' }),
+        ).replace(/ /g, '&nbsp;')
       : '';
     // Continue only goes back through the authorization, on every device. It
     // used to open a new Claude chat in a second tab as well (2 November
@@ -1838,20 +1904,20 @@ export class LoginController {
       ? `
     <section class="quick" id="quick-apps" hidden data-csrf="${this.escapeHtml(params.pickerCsrf)}"${
       params.picked
-        ? ` data-picked="${this.escapeHtml(params.picked.slug)}" data-picked-request="${this.escapeHtml(finishSetupRequest(params.picked.name))}"`
+        ? ` data-picked="${this.escapeHtml(params.picked.slug)}" data-picked-request="${this.escapeHtml(finishSetupRequest(params.picked.name, lang))}"`
         : ''
     } aria-labelledby="quick-title">
-      <p class="quick-title" id="quick-title">Optional: add an app to start with</p>
+      <p class="quick-title" id="quick-title">${T.pickerTitle}</p>
       <div class="chips" role="group" aria-labelledby="quick-title">${QUICK_SETUP_APPS.map(
         (app) => `
         <button type="button" class="chip" aria-pressed="false" data-adapter="${this.escapeHtml(app.slug)}" data-name="${this.escapeHtml(app.name)}">${this.escapeHtml(app.name)}</button>`,
       ).join('')}
       </div>
-      <label class="other-label" for="other-app">Another app</label>
-      <input type="text" id="other-app" class="other" maxlength="60" autocomplete="off" spellcheck="false" placeholder="e.g. HubSpot">
+      <label class="other-label" for="other-app">${T.otherApp}</label>
+      <input type="text" id="other-app" class="other" maxlength="60" autocomplete="off" spellcheck="false" placeholder="${T.otherPlaceholder}">
       <p class="quick-status" id="quick-status" role="status" aria-live="polite"></p>${
         // A phone gets no QR code: the button opens the Telegram app there.
-        telegram ? telegramPanelHtml({ withQr: !params.onPhone }) : ''
+        telegram ? telegramPanelHtml({ withQr: !params.onPhone, lang }) : ''
       }
     </section>`
       : '';
@@ -1862,18 +1928,16 @@ export class LoginController {
     const nextStep = params.arm === 'next_step';
     // A base-36 number (attemptKey); checked again here because it is written into the script.
     const attempt = params.attempt && /^[0-9a-z]{6,12}$/.test(params.attempt) ? params.attempt : '';
-    const heading = nextStep ? `One more step: go back to ${client}` : `${client} is connected`;
+    const heading = fill(nextStep ? T.headingNext : T.headingControl, { client });
     // On the next_step page the sentence about Continue stands alone, so on a
     // phone the button can follow it directly (see the order in the styles);
     // the example request comes after the button there.
-    const sub = nextStep
-      ? `Press <strong>Continue to ${client}</strong> to finish connecting.`
-      : `Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:`;
+    const sub = fill(nextStep ? T.subNext : T.subControl, { client });
     const sub2 = !nextStep
       ? ''
       : params.trialEnded
-        ? `<p class="sub sub2" id="first-sub2">Your free trial has ended. ${client} will show you how to reactivate the workspace when you ask it something.</p>`
-        : `<p class="sub sub2" id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>`;
+        ? `<p class="sub sub2" id="first-sub2">${fill(T.trialEnded, { client })}</p>`
+        : `<p class="sub sub2" id="first-sub2">${T.noApps}</p>`;
     const card = `
     <div class="flow${nextStep ? ' next' : ''}">
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
@@ -1883,16 +1947,16 @@ ${
       nextStep && params.trialEnded
         ? ''
         : `
-    <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request"${nextStep ? ' data-continue="1"' : ''}>${nextStep ? 'Copy &amp; continue' : 'Copy'}</button></div>
+    <div class="example"><span>${T.quoteOpen}<span id="example-request">${this.escapeHtml(T.example)}</span>${T.quoteClose}</span><button type="button" class="copy" id="copy-request"${nextStep ? ' data-continue="1"' : ''}>${nextStep ? T.copyContinue : T.copy}</button></div>
     <p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>
-    <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>`
+    <p class="body" id="first-body">${fill(T.body, { client })}</p>`
     }${picker}${
       nextStep && telegram
         ? `
-    <p class="auto" id="auto-continue" role="status" aria-live="polite" hidden><span id="auto-continue-text"></span> <button type="button" class="stay" id="auto-continue-stay">Stay on this page</button></p>`
+    <p class="auto" id="auto-continue" role="status" aria-live="polite" hidden><span id="auto-continue-text"></span> <button type="button" class="stay" id="auto-continue-stay">${T.stay}</button></p>`
         : ''
     }
-    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}" data-client="${client}">Continue to ${client}</a>${
+    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}" data-client="${client}">${fill(T.continueTo, { client })}</a>${
       // Optional, under Continue and never in its place. Same tab: every way
       // out of the card-trial page (checkout done, cancelled, skipped) comes
       // back through /callback, which finishes this authorization (the
@@ -1900,12 +1964,12 @@ ${
       params.cardTrial
         ? `
     <div class="trial" id="card-trial">
-      <a class="button secondary-link" id="card-trial-link" href="${this.escapeHtml(params.cardTrial.url)}">Add a payment method (optional)</a>
-      <p>Your free trial runs until ${trialEnd}. With a payment method your plan carries on after it; nothing is charged before ${trialEnd}. Either way you come straight back to ${client}.</p>
+      <a class="button secondary-link" id="card-trial-link" href="${this.escapeHtml(params.cardTrial.url)}">${T.addPayment}</a>
+      <p>${fill(T.trialNote, { date: trialEnd, client })}</p>
     </div>`
         : ''
     }
-    <p class="links"><a id="open-dashboard" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>
+    <p class="links"><a id="open-dashboard" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">${T.addHere}</a></p>
     </div>
     <script>
     // Copy the example request, to paste into the chat after "Continue":
@@ -1917,7 +1981,12 @@ ${
     // connected. One press of the same link, in the same tab, and only once:
     // /callback must never be asked for twice. A clipboard that refuses or
     // never answers does not hold the person back.
+    //
+    // The texts of these scripts are the object literals T below: written
+    // by scriptTexts from the page's dictionary, never concatenated into the
+    // source, and only ever put into textContent.
     (function () {
+      var T = ${scriptTexts({ copied: T.js.copied })};
       var button = document.getElementById('copy-request');
       var request = document.getElementById('example-request');
       if (!button || !request || !navigator.clipboard) { if (button) button.hidden = true; return; }
@@ -1933,7 +2002,7 @@ ${
       };
       button.addEventListener('click', function () {
         navigator.clipboard.writeText(request.textContent || '').then(function () {
-          button.textContent = 'Copied';
+          button.textContent = T.copied;
           go();
         }, function () {
           button.hidden = true;
@@ -1952,8 +2021,16 @@ ${
       var other = document.getElementById('other-app');
       var cont = document.getElementById('continue');
       if (!picker || !request || !status || !other || !cont || !window.fetch || !window.JSON) return;
+      var T = ${scriptTexts({
+        theChat: T.js.theChat,
+        couldNotAdd: T.js.couldNotAdd,
+        adding: T.js.adding,
+        added: T.js.added,
+        connectMy: T.js.connectMy,
+      })};
+      ${SCRIPT_FILL}
       var fallback = request.textContent;
-      var clientName = cont.getAttribute('data-client') || 'the chat';
+      var clientName = cont.getAttribute('data-client') || T.theChat;
       var chips = picker.querySelectorAll('button[data-adapter]');
       var added = false;
       var busy = false;
@@ -1964,7 +2041,7 @@ ${
         other.readOnly = on;
       };
       var failed = function (name, message) {
-        status.textContent = message || ('Could not add ' + name + ' right now. You can still continue and add it in the chat.');
+        status.textContent = message || fill(T.couldNotAdd, { name: name });
         busy = false;
         setDisabled(false);
       };
@@ -1975,7 +2052,7 @@ ${
           if (added || busy) return;
           busy = true;
           setDisabled(true);
-          status.textContent = 'Adding ' + name + '…';
+          status.textContent = fill(T.adding, { name: name });
           fetch('/auth/first-app', {
             method: 'POST',
             credentials: 'same-origin',
@@ -1989,7 +2066,7 @@ ${
             busy = false;
             chip.setAttribute('aria-pressed', 'true');
             request.textContent = out.request;
-            status.textContent = out.name + ' added — you’ll finish it in ' + clientName + '.';${telegram ? TELEGRAM_PICK_HOOK : ''}
+            status.textContent = fill(T.added, { name: out.name, client: clientName });${telegram ? TELEGRAM_PICK_HOOK : ''}
           }, function () { failed(name); });
         });
       }
@@ -2002,16 +2079,16 @@ ${
           setDisabled(true);
           chips[k].setAttribute('aria-pressed', 'true');
           request.textContent = picker.getAttribute('data-picked-request') || fallback;
-          status.textContent = (chips[k].getAttribute('data-name') || '') + ' added — you’ll finish it in ' + clientName + '.';
+          status.textContent = fill(T.added, { name: chips[k].getAttribute('data-name') || '', client: clientName });
         }
       }
       other.addEventListener('input', function () {
         if (added) return;
         var app = other.value.replace(/\\s+/g, ' ').trim().slice(0, 60);
-        request.textContent = app ? 'Connect my ' + app + ' to AnythingMCP.' : fallback;
+        request.textContent = app ? fill(T.connectMy, { app: app }) : fallback;
       });
       picker.hidden = false;
-    })();${telegram ? TELEGRAM_PANEL_SCRIPT : ''}
+    })();${telegram ? telegramPanelScript(lang) : ''}
     // Continue goes back through the authorization and opens nothing else
     // (see the comment above the card). The same click copies the
     // request, to paste in a new chat. Best effort and nothing more: the
@@ -2024,19 +2101,22 @@ ${
       var request = document.getElementById('example-request');
       var note = document.getElementById('request-copied');
       if (!cont || !request || !note || !navigator.clipboard || !navigator.clipboard.writeText) return;
-      var clientName = cont.getAttribute('data-client') || 'your assistant';
+      var T = ${scriptTexts({ yourAssistant: T.js.yourAssistant, copiedPaste: T.js.copiedPaste })};
+      ${SCRIPT_FILL}
+      var clientName = cont.getAttribute('data-client') || T.yourAssistant;
       cont.addEventListener('click', function () {
         try {
           navigator.clipboard.writeText(request.textContent || '').then(function () {
-            note.textContent = 'Copied. Paste it in a new chat in ' + clientName + '.';
+            note.textContent = fill(T.copiedPaste, { client: clientName });
             note.hidden = false;
           }, function () { /* refused: nothing else happens */ });
         } catch (e) { /* the authorization goes on regardless */ }
       });
-    })();${attempt ? continueBeaconScript(attempt) : ''}${attempt ? pausedPageLinksBeaconScript(attempt) : ''}${nextStep && telegram ? autoContinueScript(attempt) : ''}${CONTINUE_ONCE_SCRIPT}
+    })();${attempt ? continueBeaconScript(attempt) : ''}${attempt ? pausedPageLinksBeaconScript(attempt) : ''}${nextStep && telegram ? autoContinueScript(attempt, lang) : ''}${CONTINUE_ONCE_SCRIPT}
     </script>`;
     return renderAuthPage({
-      title: nextStep ? `One more step: go back to ${params.clientName}` : `${params.clientName} is connected`,
+      title: fill(nextStep ? T.headingNext : T.headingControl, { client: params.clientName }),
+      lang,
       card,
       trust: this.trust(),
       extraStyles: `
@@ -2227,6 +2307,7 @@ ${
         redirectHost: consent.redirectHost,
         targets,
         csrfToken,
+        lang: this.pageLanguage(req, consent),
       }),
     );
     return true;
@@ -2256,7 +2337,7 @@ ${
       this.logger.warn('Rejected server selection with missing/invalid CSRF token');
       res.clearCookie('login_csrf');
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Your session expired. Please try again.')}`,
+        `/auth/login?error=${loginErrorParam('sessionExpired')}`,
       );
     }
 
@@ -2265,7 +2346,7 @@ ${
     const consent = await this.loadConsentContext(req);
     if (typeof userId !== 'string' || !userId || !consent) {
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Your session expired. Please sign in again.')}`,
+        `/auth/login?error=${loginErrorParam('sessionExpiredSignIn')}`,
       );
     }
 
@@ -2283,12 +2364,12 @@ ${
       const granted = await this.grants.grantServers(consent.clientId, userId, selected);
       if (granted.length === 0) {
         return res.redirect(
-          `/auth/login?error=${encodeURIComponent('None of the selected servers are available to you. Please try again.')}`,
+          `/auth/login?error=${loginErrorParam('noServersAvailable')}`,
         );
       }
     } else {
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Choose at least one MCP server.')}`,
+        `/auth/login?error=${loginErrorParam('chooseServer')}`,
       );
     }
 
@@ -2298,7 +2379,7 @@ ${
     });
     if (!user) {
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Your session expired. Please sign in again.')}`,
+        `/auth/login?error=${loginErrorParam('sessionExpiredSignIn')}`,
       );
     }
 
@@ -2383,7 +2464,9 @@ ${
           .catch(() => undefined);
       }
       res.setHeader('Content-Type', 'text/html');
-      res.send(renderClosedRequestPage({ trust: this.trust(), dashboardUrl: this.frontendUrl() }));
+      res.send(
+        renderClosedRequestPage({ trust: this.trust(), dashboardUrl: this.frontendUrl(), lang: this.pageLanguage(req, null) }),
+      );
       return;
     }
     if (!this.pendingLoginUserId(req)) return res.redirect('/auth/login');
@@ -2416,6 +2499,7 @@ ${
         callbackUrl,
         arm: consent.connectedArm,
         attempt: attemptKey(consent.expiresAt),
+        lang: this.pageLanguage(req, consent),
         welcomeUrl: dashboardLink('/welcome'),
         ...(pickerCsrf ? { pickerCsrf } : {}),
         ...(pickerCsrf && offer.g ? { telegramOneTap: true } : {}),
@@ -2515,14 +2599,17 @@ ${
     @Res() res: Response,
   ) {
     if (!this.deployment.isCloud()) return res.status(404).json({ ok: false, error: 'Not found.' });
+    // What the page displays comes back in the page's own language.
+    const lang = this.askingPageLanguage(req);
+    const answers = connectedPageTexts(lang).answers;
     // No "Continue" here: with the authorization gone it would not work either.
-    const expired = 'This page has expired. Go back to your AI assistant and press Connect again.';
+    const expired = answers.expired;
     if (!this.verifySignedToken(req, FIRST_APP_CSRF_COOKIE, body?.csrf)) {
       this.logger.warn('Rejected a first-app pick with a missing/invalid CSRF token');
       return res.status(403).json({ ok: false, error: expired });
     }
     const app = QUICK_SETUP_APPS.find((a) => a.slug === body?.adapter);
-    if (!app) return res.status(400).json({ ok: false, error: 'Unknown app.' });
+    if (!app) return res.status(400).json({ ok: false, error: answers.unknownApp });
 
     const userId = this.pendingLoginUserId(req);
     const consent = await this.loadConsentContext(req);
@@ -2535,7 +2622,7 @@ ${
     if (!provider) {
       return res
         .status(503)
-        .json({ ok: false, error: `${app.name} cannot be added here right now. Continue, and add it in the chat.` });
+        .json({ ok: false, error: fill(answers.cannotAddHere, { app: app.name }) });
     }
 
     // The workspace the connection was granted, the same one the page was
@@ -2558,7 +2645,7 @@ ${
     if (!(await provider.canSetUp(ctx).catch(() => false))) {
       return res.status(403).json({
         ok: false,
-        error: 'Only workspace admins and editors can add apps. Continue, and ask an admin to add it.',
+        error: answers.adminsOnly,
       });
     }
 
@@ -2586,7 +2673,7 @@ ${
     if (out.isError) {
       return res.json({
         ok: false,
-        error: `${app.name} could not be added right now. You can still continue and add it in the chat.`,
+        error: fill(answers.couldNotAdd, { app: app.name }),
       });
     }
     const telegram =
@@ -2612,7 +2699,7 @@ ${
       ok: true,
       adapter: app.slug,
       name: app.name,
-      request: finishSetupRequest(app.name),
+      request: finishSetupRequest(app.name, lang),
       ...(telegram ? { telegram } : {}),
     });
   }
@@ -2737,8 +2824,10 @@ ${
     @Body() body: { csrf?: unknown; opened?: unknown; offered?: unknown; via?: unknown },
     @Res() res: Response,
   ) {
+    // In the language of the page that asks, like the answers of a pick.
+    const answers = telegramPanelTexts(this.askingPageLanguage(req)).answers;
     const caller = await this.firstAppTelegramCaller(req, body?.csrf);
-    if (!caller) return res.status(403).json({ ok: false, error: 'This page has expired.' });
+    if (!caller) return res.status(403).json({ ok: false, error: answers.pageExpired });
     try {
       const status = await caller.service.status({
         organizationId: caller.organizationId,
@@ -2751,12 +2840,12 @@ ${
       return res.json({
         ok: true,
         ...status,
-        ...(status.state === 'connected' ? { request: TELEGRAM_CONNECTED_REQUEST } : {}),
+        ...(status.state === 'connected' ? { request: answers.request } : {}),
       });
     } catch (err) {
       this.logger.warn(`The one-tap Telegram status could not be read (${(err as Error)?.name || 'error'})`);
       // Not final: the page asks again.
-      return res.status(503).json({ error: 'Try again.' });
+      return res.status(503).json({ error: answers.tryAgain });
     }
   }
 
@@ -2774,9 +2863,11 @@ ${
     @Body() body: { csrf?: unknown; token?: unknown },
     @Res() res: Response,
   ) {
+    const lang = this.askingPageLanguage(req);
+    const answers = telegramPanelTexts(lang).answers;
     const caller = await this.firstAppTelegramCaller(req, body?.csrf);
     if (!caller) {
-      return res.status(403).json({ ok: false, error: 'This page has expired. Continue, and finish Telegram in the chat.' });
+      return res.status(403).json({ ok: false, error: answers.expiredContinue });
     }
     try {
       const saved = await caller.service.saveToken({
@@ -2784,11 +2875,12 @@ ${
         userId: caller.userId,
         token: body?.token,
       });
-      if (!saved.ok) return res.json(saved);
-      return res.json({ ...saved, state: 'connected', request: TELEGRAM_CONNECTED_REQUEST });
+      // The service answers in English; a refusal that is Telegram's own stays as it comes.
+      if (!saved.ok) return res.json({ ...saved, error: telegramAnswerText(saved.error, lang) });
+      return res.json({ ...saved, state: 'connected', request: answers.request });
     } catch (err) {
       this.logger.warn(`A pasted Telegram bot token could not be saved (${(err as Error)?.name || 'error'})`);
-      return res.json({ ok: false, error: 'The token could not be saved. Try again.' });
+      return res.json({ ok: false, error: answers.notSaved });
     }
   }
 
@@ -3038,8 +3130,12 @@ ${
       servers: { id: string; name: string; connectorCount: number }[];
     }[];
     csrfToken: string;
+    /** The page's language (see pageLanguage); English when absent. */
+    lang?: PageLanguage | null;
   }): string {
     const { clientName, targets, csrfToken } = params;
+    const lang: PageLanguage = params.lang ?? 'en';
+    const T = serverPickerTexts(lang);
 
     const groups = targets
       .map((t) => {
@@ -3049,14 +3145,14 @@ ${
             <label class="pick">
               <input type="checkbox" name="servers" value="${this.escapeHtml(srv.id)}" />
               <span class="pick-name">${this.escapeHtml(srv.name)}</span>
-              <span class="pick-meta">${srv.connectorCount} connector${srv.connectorCount === 1 ? '' : 's'}</span>
+              <span class="pick-meta">${plural(T.connectors, lang, srv.connectorCount)}</span>
             </label>`,
           )
           .join('');
         const whole = `
             <label class="pick whole">
               <input type="radio" name="workspace" value="${this.escapeHtml(t.organizationId)}" />
-              <span class="pick-name">Everything in this workspace<span class="pick-sub">including connectors not on a server</span></span>
+              <span class="pick-name">${T.everything}<span class="pick-sub">${T.everythingSub}</span></span>
             </label>`;
         return `
         <fieldset>
@@ -3068,15 +3164,15 @@ ${
 
     const card = `
     ${clientTilePair(clientName, params.redirectHost ?? '')}
-    <h1>Choose what to connect</h1>
-    <p class="sub"><strong>${this.escapeHtml(clientName)}</strong> will be able to use the tools from whatever you pick here, as far as your role allows, and nothing else.</p>
+    <h1>${T.heading}</h1>
+    <p class="sub">${fill(T.sub, { client: this.escapeHtml(clientName) })}</p>
     <form method="POST" action="/auth/select-servers">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}" />
       ${groups}
-      <p class="error" id="pick-error" role="alert" hidden>Choose at least one server, or a whole workspace.</p>
-      <button type="submit">Connect</button>
+      <p class="error" id="pick-error" role="alert" hidden>${T.pickError}</p>
+      <button type="submit">${T.connect}</button>
     </form>
-    <p class="note">You can change this later from Settings, without reconnecting.</p>
+    <p class="note">${T.note}</p>
     <script>
     // "Everything in this workspace" and single servers exclude each other
     // (the server reads the workspace first): ticking one unticks the other,
@@ -3101,7 +3197,8 @@ ${
     </script>`;
 
     return renderAuthPage({
-      title: 'Choose what to connect',
+      title: T.heading,
+      lang,
       card,
       trust: this.trust(),
       extraStyles: `
@@ -3148,8 +3245,10 @@ ${
     const known = consent ? knownClientFor(consent.redirectHost) : null;
     const signupClient = consent ? signupClientFor(consent.clientName, consent.redirectHost) : null;
 
+    // `error` is the key of a message (or, from a page that was already
+    // open, its English text): shown in the page's language.
     const errorHtml = error
-      ? `<div class="error" role="alert">${this.escapeHtml(error)}</div>`
+      ? `<div class="error" role="alert">${this.escapeHtml(loginErrorText(error, lang, this.socialProviders()))}</div>`
       : '';
 
     // `formnovalidate` matters: without it the browser blocks the submit
@@ -3393,10 +3492,15 @@ ${
     maskedEmail: string;
     csrfToken: string;
     socialProviders: { id: string; name: string }[];
+    /** Already in the page's language (see askForEmailCode). */
     error?: string;
     notice?: string;
+    /** The page's language (see pageLanguage); English when absent. */
+    lang?: PageLanguage | null;
   }): string {
     const { consent, maskedEmail, csrfToken, socialProviders, error, notice } = params;
+    const lang: PageLanguage = params.lang ?? 'en';
+    const T = emailCodeTexts(lang);
     const serverName = this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingMCP';
     const client = consent ? this.escapeHtml(consent.clientName) : '';
     const top = consent
@@ -3404,21 +3508,28 @@ ${
       : `<div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>`;
     const errorHtml = error ? `<div class="error" role="alert">${this.escapeHtml(error)}</div>` : '';
     const noticeHtml = notice ? `<p class="note" role="status">${this.escapeHtml(notice)}</p>` : '';
-    const purpose = consent ? `to finish connecting <strong>${client}</strong>` : 'to finish signing in';
+    const email = this.escapeHtml(maskedEmail);
+    const sub = consent ? fill(T.subConnect, { email, client }) : fill(T.subSignIn, { email });
+    // "Google, Microsoft or GitHub", each name escaped.
+    const providerNames = socialProviders.map((p) => this.escapeHtml(p.name));
+    const providerList =
+      providerNames.length <= 1
+        ? (providerNames[0] ?? '')
+        : `${providerNames.slice(0, -1).join(T.providerSep)}${T.providerLast}${providerNames[providerNames.length - 1]}`;
 
     // Same buttons as on the sign-in page; here they verify the address at once.
     const socialHtml = socialProviders.length
-      ? '<div class="divider"><span>or</span></div>' +
+      ? `<div class="divider"><span>${T.or}</span></div>` +
         socialProviders
           .map(
             (p) =>
               `<button type="submit" formaction="/auth/verify-email/social/${this.escapeHtml(encodeURIComponent(p.id))}" formnovalidate class="sso">` +
               providerMarkSvg(p.id) +
-              `<span>Continue with ${this.escapeHtml(p.name)}</span>` +
+              `<span>${fill(signInTexts(lang).continueWith, { provider: this.escapeHtml(p.name) })}</span>` +
               `</button>`,
           )
           .join('') +
-        `<p class="links">If this address is a ${socialProviders.map((p) => this.escapeHtml(p.name)).join(' or ')} account, continuing with it verifies the address without a code. You then sign in that way instead of with your password.</p>`
+        `<p class="links">${fill(T.providerAccount, { providers: providerList })}</p>`
       : '';
 
     // The code field and "Verify and continue" come first in the form, so
@@ -3426,22 +3537,23 @@ ${
     // button posts the same CSRF field to its own route (`formaction`).
     const card = `
     ${top}
-    <h1>Check your email</h1>
-    <p class="sub">We sent a 6-digit code to <strong>${this.escapeHtml(maskedEmail)}</strong>. Enter it ${purpose}.</p>
+    <h1>${T.heading}</h1>
+    <p class="sub">${sub}</p>
     ${errorHtml}${noticeHtml}
     <form method="POST" action="/auth/verify-email">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">
-      <label for="code">Verification code</label>
+      <label for="code">${T.codeLabel}</label>
       <input type="text" id="code" name="code" required autofocus inputmode="numeric" pattern="[0-9]{6}" maxlength="6" autocomplete="one-time-code" placeholder="123456">
-      <button type="submit">Verify and continue</button>
-      <button type="submit" formaction="/auth/verify-email/resend" formnovalidate class="secondary">Send a new code</button>
-      <button type="submit" formaction="/auth/verify-email/continue" formnovalidate class="secondary">I opened the link in the email</button>
+      <button type="submit">${T.verify}</button>
+      <button type="submit" formaction="/auth/verify-email/resend" formnovalidate class="secondary">${T.resend}</button>
+      <button type="submit" formaction="/auth/verify-email/continue" formnovalidate class="secondary">${T.openedLink}</button>
       ${socialHtml}
     </form>
-    <p class="links">No email? Check the spam folder. <a href="/auth/login?switch=1">Use a different account</a></p>`;
+    <p class="links">${T.noEmail} <a href="/auth/login?switch=1">${T.otherAccount}</a></p>`;
 
     return renderAuthPage({
-      title: `Verify your email — ${serverName}`,
+      title: `${T.title} — ${serverName}`,
+      lang,
       card,
       trust: this.trust(),
       extraStyles: `
@@ -3451,13 +3563,15 @@ ${
     });
   }
 
-  private renderDeniedPage(serverName: string): string {
+  private renderDeniedPage(serverName: string, lang: PageLanguage = 'en'): string {
+    const T = edgePageTexts(lang).cancelled;
     return renderAuthPage({
-      title: `Request Cancelled — ${serverName}`,
+      title: `${T.heading} — ${serverName}`,
+      lang,
       card: `
     <div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>
-    <h1>Request Cancelled</h1>
-    <p class="sub" style="margin-bottom:0">The authorization request was declined. No access was granted. You can safely close this window.</p>`,
+    <h1>${T.heading}</h1>
+    <p class="sub" style="margin-bottom:0">${T.body}</p>`,
       trust: this.trust(),
     });
   }
