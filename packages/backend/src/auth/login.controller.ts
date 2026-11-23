@@ -2,6 +2,7 @@ import {
   Controller,
   ExecutionContext,
   Get,
+  HttpCode,
   Post,
   Query,
   Param,
@@ -849,6 +850,7 @@ export class LoginController {
 
   // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('login')
+  @HttpCode(200) // a page (or a redirect), not a created resource: Nest's default for POST is 201
   @Throttle({ default: { limit: loginPostLimit, ttl: 60_000, generateKey: loginPostThrottleKey } })
   @ApiExcludeEndpoint()
   async handleLogin(
@@ -1207,6 +1209,7 @@ export class LoginController {
    * their own routes below (`formaction`), so no form field picks what runs.
    */
   @Post('verify-email')
+  @HttpCode(200) // a page (or a redirect), not a created resource: Nest's default for POST is 201
   // A code is 6 digits and lives 15 minutes: 10 tries a minute leaves no
   // realistic guess, and a person never needs more.
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
@@ -1235,6 +1238,7 @@ export class LoginController {
 
   /** "Send a new code" of the code step: at most one a minute, five an hour. */
   @Post('verify-email/resend')
+  @HttpCode(200) // a page (or a redirect), not a created resource: Nest's default for POST is 201
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiExcludeEndpoint()
   async resendEmailCode(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
@@ -1257,6 +1261,7 @@ export class LoginController {
 
   /** "I opened the link in the email": continues once the link verified the address. */
   @Post('verify-email/continue')
+  @HttpCode(200) // a page (or a redirect), not a created resource: Nest's default for POST is 201
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiExcludeEndpoint()
   async continueAfterEmailLink(@Req() req: Request, @Body() body: { csrf?: string }, @Res() res: Response) {
@@ -1269,6 +1274,7 @@ export class LoginController {
 
   /** "Continue with <provider>" of the code step: the provider verifies the address. */
   @Post('verify-email/social/:provider')
+  @HttpCode(200) // a page (or a redirect), not a created resource: Nest's default for POST is 201
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiExcludeEndpoint()
   async socialFromEmailCode(
@@ -2185,6 +2191,7 @@ ${
    */
   // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('select-servers')
+  @HttpCode(200) // a page (or a redirect), not a created resource: Nest's default for POST is 201
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiExcludeEndpoint()
   async handleServerSelection(
