@@ -8,7 +8,11 @@ import {
   LoginController,
   fileSearchWizardPathFor,
 } from './login.controller';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
 import { MCP_APP_COOKIE } from './resource-indicator.middleware';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * The File Search plugin's step after "Approve" (/mcp/file-search): an admin
@@ -54,8 +58,9 @@ function makeRes(): FakeRes {
       this._json = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };
@@ -202,7 +207,7 @@ describe('LoginController: File Search plugin setup after Approve', () => {
       await s.controller.fileSearchSetupSession(
         s.req(
           { headers: { host: 'mcp.test', ...(opts.header === false ? {} : { 'x-amcp-dashboard': '1' }) } },
-          { file_search_setup_csrf: 'csrf-1', login_user: LOGIN_USER, ...FILE_SEARCH, ...(opts.signed ?? {}) },
+          { file_search_setup_csrf: 'csrf-1', login_user: LOGIN_USER, login_bind: 's1', ...FILE_SEARCH, ...(opts.signed ?? {}) },
         ),
         body,
         res,
@@ -252,7 +257,7 @@ describe('LoginController: File Search plugin setup after Approve', () => {
     it('finishes a pending authorization', async () => {
       const s = setup();
       const res = makeRes();
-      await s.controller.fileSearchSetupContinue(s.req({}, { login_user: LOGIN_USER }), res);
+      await s.controller.fileSearchSetupContinue(s.req({}, { login_user: LOGIN_USER, login_bind: 's1' }), res);
       expect(res._redirect).toBe('http://mcp.test/callback');
     });
 
@@ -261,7 +266,9 @@ describe('LoginController: File Search plugin setup after Approve', () => {
       const res = makeRes();
       await s.controller.fileSearchSetupContinue(s.req({}, {}), res);
       expect(res._redirect).toBeUndefined();
-      expect(res._sent).toContain('Your folder is connected');
+      // It does not claim a folder was connected: the person may have skipped.
+      expect(res._sent).toContain('Go back to the chat to finish');
+      expect(res._sent).not.toContain('Your folder is connected');
       expect(res._sent).toContain('connect the plugin again');
     });
   });

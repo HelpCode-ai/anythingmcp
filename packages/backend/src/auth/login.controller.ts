@@ -10,6 +10,7 @@ import {
   Res,
   Logger,
   Optional,
+  UseFilters,
 } from '@nestjs/common';
 import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
@@ -45,6 +46,7 @@ import {
   clientTilePair,
   knownClientFor,
   renderAuthPage,
+  renderClosedRequestPage,
   directoryBadgeHtml,
   directoryBadgesFor,
   signupClientFor,
@@ -69,6 +71,8 @@ import {
   type TelegramOneTap,
 } from '../adapters/telegram-managed-bot';
 import { fill, signInTexts } from './auth-page-i18n';
+import { boundLoginUser, clearLoginUserCookie, setLoginUserCookie } from './login-user-cookie';
+import { AuthPageThrottleFilter } from './auth-page-throttle.filter';
 import {
   attemptKey,
   connectedPageArm,
@@ -157,6 +161,9 @@ interface ConsentContext {
   connectedArm: ConnectedPageArm | null;
   /** The arm of the sign-in page test (A3/A4); null when it does not run. */
   signinArm: SignInPageArm | null;
+  /** The pending authorization's id, and the `state` the client sent with it. */
+  sessionId: string;
+  clientState?: string;
 }
 
 /** The longest an authorization may stay paused on the first-connector page. */
@@ -168,6 +175,26 @@ const FIRST_CONNECTOR_PAUSE_MAX_MS = 30 * 60 * 1000;
  * collides with the sign-in form's `login_csrf`, which is spent by then.
  */
 const FIRST_APP_CSRF_COOKIE = 'first_app_csrf';
+
+/**
+ * What the page after approving needs to be shown again (GET /auth/next):
+ * signed, httpOnly, as long as the pause. The page used to be the body of
+ * whatever request finished the sign-in (a form post, or the provider's
+ * one-time callback), so a reload, the Back button or a tab restored by a
+ * phone turned it into an error. `o` workspace, `s` the provider signed in
+ * with, `t` when the trial ends (card-trial button), `g` one-tap Telegram.
+ */
+const FIRST_OFFER_COOKIE = 'first_offer';
+/** The app picked on that page (its slug), so a reload shows it as added. */
+const FIRST_APP_PICKED_COOKIE = 'first_app_picked';
+interface FirstOffer {
+  o: string;
+  s?: string;
+  t?: number;
+  g?: 1;
+  /** The workspace's free trial has ended. */
+  x?: 1;
+}
 
 /**
  * The quick-setup apps the first-connector page offers: catalog connectors
@@ -333,6 +360,48 @@ function parseLoginCsrf(cookie: unknown): { token: string; binding: string | nul
 }
 
 /**
+ * Continue may be pressed once. The first press is not touched in any way
+ * (see continueBeaconScript: phones were lost on this button once); a second
+ * press within a few seconds is dropped, because `/callback` answers only the
+ * first request and the browser would show the second answer ("no longer
+ * open") although the first one went through. After five seconds the link
+ * works again, for a hand-back the browser refused.
+ */
+export const CONTINUE_ONCE_SCRIPT = `
+    (function () {
+      var cont = document.getElementById('continue');
+      if (!cont || !window.setTimeout) return;
+      var pressed = false;
+      cont.addEventListener('click', function (event) {
+        if (pressed) { event.preventDefault(); return; }
+        pressed = true;
+        window.setTimeout(function () { pressed = false; }, 5000);
+      });
+    })();`;
+
+/**
+ * Reports the two ways off the page after approving that are not Continue:
+ * "Or add an app here first" and "Add a payment method" (`authorize_action`
+ * with button open_dashboard / payment_method). Beacons that never delay the
+ * click; `attempt` is a base-36 number.
+ */
+export function pausedPageLinksBeaconScript(attempt: string): string {
+  return `
+    (function () {
+      if (!navigator.sendBeacon || !window.URLSearchParams) return;
+      var report = function (id, kind) {
+        var link = document.getElementById(id);
+        if (!link) return;
+        link.addEventListener('click', function () {
+          try { navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: kind, a: '${attempt}' })); } catch (e) {}
+        });
+      };
+      report('open-dashboard', 'open_dashboard');
+      report('card-trial-link', 'payment_method');
+    })();`;
+}
+
+/**
  * Reports the click on "Continue" (`post_approve_continue_clicked`). Its own
  * listener, so it works where the clipboard does not. `sendBeacon` queues the
  * request and returns at once: the listener never waits, never prevents the
@@ -416,6 +485,8 @@ export function autoContinueScript(attempt: string): string {
 
 @ApiTags('MCP client sign-in')
 @Controller('auth')
+// A person who hits a rate limit on these pages gets a page, not JSON.
+@UseFilters(AuthPageThrottleFilter)
 export class LoginController {
   private readonly logger = new Logger(LoginController.name);
 
@@ -550,6 +621,25 @@ export class LoginController {
   }
 
   /**
+   * `authorize_step_viewed`: a step between the sign-in page and the code was
+   * shown ('email-code', 'servers', 'wrong-workspace'). Cloud only, never
+   * awaited, never throws.
+   */
+  private recordStepViewed(req: Request, step: string): void {
+    if (!this.productEvents || !this.deployment.isCloud()) return;
+    void this.loadConsentContext(req)
+      .then((consent) =>
+        consent
+          ? this.productEvents?.log({
+              event: ProductEvents.AUTHORIZE_STEP_VIEWED,
+              metadata: { ...this.attemptMeta(req, consent), step },
+            })
+          : undefined,
+      )
+      .catch(() => undefined);
+  }
+
+  /**
    * `authorize_action`: which button of the sign-in page was used. Never
    * awaited and never throws: the form post must not wait for a statistic.
    */
@@ -619,6 +709,24 @@ export class LoginController {
     // session that @rekog/mcp-nest's /authorize handler stored (keyed by the
     // httpOnly `oauth_session` cookie) so the user gives INFORMED consent.
     const consent = await this.loadConsentContext(req);
+    // No open authorization in this browser: it expired (30 minutes), its
+    // code was already issued, or this is a bookmark. Signing in here could
+    // only end in a refused callback, so say what to do instead of showing a
+    // form (it used to be a bare "Sign in" page, then the library's JSON 400).
+    if (!consent) {
+      if (this.deployment.isCloud()) {
+        void this.productEvents
+          ?.log({
+            event: ProductEvents.AUTHORIZE_REQUEST_CLOSED,
+            metadata: { device: deviceOf(req.headers['user-agent']), via: 'login' },
+          })
+          .catch(() => undefined);
+      }
+      res.setHeader('Content-Type', 'text/html');
+      res.setHeader('Cache-Control', 'no-store');
+      res.send(renderClosedRequestPage({ trust: this.trust(), message: error, dashboardUrl: this.frontendUrl() }));
+      return;
+    }
     // Only inside a pending authorization: a bookmark or a crawler on this
     // address is not somebody connecting an AI client.
     if (consent) {
@@ -725,7 +833,11 @@ export class LoginController {
       await this.social.logFailure(err, provider, { ip: req.ip, userAgent: req.headers['user-agent'] });
       const message = err instanceof SocialAuthError ? err.userMessage : 'Sign-in failed. Please try again.';
       const surface = err instanceof SocialAuthError ? err.surface : null;
-      if (surface === 'MCP') {
+      // An error raised before the attempt is known (the round trip took
+      // more than ten minutes, or its address was loaded twice) has no
+      // surface. With an authorization pending in this browser the way on is
+      // its page, not the dashboard's sign-in, which has no way back to it.
+      if (surface === 'MCP' || (surface === null && (await this.loadConsentContext(req)))) {
         return res.redirect(`/auth/login?error=${encodeURIComponent(message)}`);
       }
       if (surface === 'LINK') {
@@ -770,9 +882,23 @@ export class LoginController {
     // The user explicitly declined on the consent screen: abort the flow and
     // drop the OAuth session cookies so no authorization code can be issued.
     if (body.action === 'deny') {
+      const denied = await this.loadConsentContext(req);
       res.clearCookie('login_csrf');
       res.clearCookie('oauth_session');
       res.clearCookie('oauth_state');
+      clearLoginUserCookie(res);
+      // Tell the client, as OAuth says (RFC 6749 4.1.2.1): it used to hear
+      // nothing and kept waiting while the person looked at "Request
+      // Cancelled". The redirect goes to the address the client registered
+      // and this authorization was started with, never to one from the form.
+      const back = denied ? this.deniedRedirect(req, denied) : null;
+      if (denied) {
+        // Best effort: the cookies are gone either way, and the row expires by itself.
+        await Promise.resolve()
+          .then(() => this.oauthStore.removeOAuthSession(denied.sessionId))
+          .catch(() => undefined);
+      }
+      if (back) return res.redirect(back);
       res.setHeader('Content-Type', 'text/html');
       return res.send(this.renderDeniedPage(serverName));
     }
@@ -886,6 +1012,7 @@ export class LoginController {
         );
       }
       this.logger.log(`Authorization held for email verification: ${maskEmail(email)}`);
+      this.recordStepViewed(req, 'email-code');
       return this.askForEmailCode(req, res, user, { sendCode: true });
     }
 
@@ -1179,6 +1306,7 @@ export class LoginController {
         `Authorization refused: the requested MCP server belongs to a workspace ${maskEmail(user.email)} is not a member of`,
       );
       res.clearCookie('login_csrf');
+      this.recordStepViewed(req, 'wrong-workspace');
       return res.redirect(
         `/auth/login?switch=1&error=${encodeURIComponent(WRONG_WORKSPACE_MESSAGE)}`,
       );
@@ -1200,13 +1328,7 @@ export class LoginController {
 
     const isSecure = this.isSecureRequest(req);
 
-    res.cookie('login_user', encoded, {
-      httpOnly: true,
-      secure: isSecure,
-      maxAge: 60 * 1000, // 1 minute — just enough for the redirect
-      sameSite: isSecure ? 'none' : 'lax',
-      signed: true, // HMAC-signed: rejects forged cookies in the OAuth strategy
-    });
+    setLoginUserCookie(req, res, encoded, { maxAge: 60 * 1000, secure: isSecure });
 
     // The consent decision has been made — the single-use CSRF token is done.
     res.clearCookie('login_csrf');
@@ -1306,13 +1428,7 @@ export class LoginController {
     const pauseMs = consent.expiresAt
       ? Math.min(FIRST_CONNECTOR_PAUSE_MAX_MS, Math.max(60 * 1000, consent.expiresAt - Date.now()))
       : 15 * 60 * 1000;
-    res.cookie('login_user', encodedProfile, {
-      httpOnly: true,
-      secure: isSecure,
-      maxAge: pauseMs,
-      sameSite: isSecure ? 'none' : 'lax',
-      signed: true,
-    });
+    setLoginUserCookie(req, res, encodedProfile, { maxAge: pauseMs, secure: isSecure });
     const csrf = randomBytes(32).toString('base64url');
     res.cookie(FILE_SEARCH_SETUP_CSRF_COOKIE, csrf, {
       httpOnly: true,
@@ -1415,10 +1531,10 @@ export class LoginController {
     res.setHeader('Content-Type', 'text/html');
     return res.send(
       renderAuthPage({
-        title: 'Your folder is connected',
+        title: 'Go back to the chat to finish',
         card: `
-    <h1>Your folder is connected</h1>
-    <p class="sub">The connection request from the chat timed out while you set up the folder. The folder is saved and its first sync is running.</p>
+    <h1>Go back to the chat to finish</h1>
+    <p class="sub">The connection request from the chat timed out in the meantime. A folder you connected is saved and its first sync is running.</p>
     <p class="sub">Go back to the chat and connect the plugin again. It takes a few seconds now.</p>`,
         trust: this.trust(),
       }),
@@ -1503,6 +1619,9 @@ export class LoginController {
     const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
       .signedCookies?.[MCP_RESOURCE_COOKIE];
     if (typeof requestedServerId === 'string' && requestedServerId) return false;
+    // ChatGPT's database plugin has no setup tools: "add them right in the
+    // chat" and the app chips would promise what that endpoint cannot do.
+    if (this.requestedDirectoryPlugin(req) === 'chatgpt-app') return false;
     const account = await this.prisma.user.findUnique({
       where: { id: userId },
       select: { organizationId: true, email: true },
@@ -1529,16 +1648,18 @@ export class LoginController {
     const pauseMs = consent.expiresAt
       ? Math.min(FIRST_CONNECTOR_PAUSE_MAX_MS, Math.max(60 * 1000, consent.expiresAt - Date.now()))
       : 15 * 60 * 1000;
-    res.cookie('login_user', encodedProfile, {
-      httpOnly: true,
-      secure: isSecure,
-      maxAge: pauseMs,
-      sameSite: isSecure ? 'none' : 'lax',
-      signed: true,
-    });
+    setLoginUserCookie(req, res, encodedProfile, { maxAge: pauseMs, secure: isSecure });
     // The optional app picker, when this instance can install connectors: a
     // CSRF token for its one request, valid as long as the pause.
-    const pickerCsrf = this.setupProvider() ? randomBytes(32).toString('base64url') : null;
+    // An admin on the free trial is offered a payment method (below). Looked
+    // up first: with an ended trial nothing can be added, so the picker and
+    // the "add them in the chat" sentence are left out.
+    const trial =
+      member?.role === 'ADMIN'
+        ? await this.licenseGuard?.getTrialState(organizationId).catch(() => null)
+        : null;
+    const trialEnded = !!trial && !trial.active;
+    const pickerCsrf = this.setupProvider() && !trialEnded ? randomBytes(32).toString('base64url') : null;
     // Telegram can then be finished on this page, with a bot created in one
     // tap: only where this instance has a manager bot, and for this workspace.
     const telegramOneTap = !!pickerCsrf && !!this.telegramOneTap()?.isEnabledFor(organizationId);
@@ -1555,10 +1676,6 @@ export class LoginController {
     // An admin on the free trial is offered a payment method, as a secondary
     // button under "Continue" that comes back through /callback. Never before
     // Approve: a payment step there halved the connections (#842, #843).
-    const trial =
-      member?.role === 'ADMIN'
-        ? await this.licenseGuard?.getTrialState(organizationId).catch(() => null)
-        : null;
     const trialEndsAt =
       trial?.active && trial.cardTrialAvailable && !(await this.hadSubscriptionQuickly(account?.email))
         ? trial.endsAt
@@ -1573,32 +1690,27 @@ export class LoginController {
       })
       .catch(() => undefined);
 
-    const dashboard = (this.configService.get<string>('FRONTEND_URL') || '').replace(/\/+$/, '');
-    // Someone who signed in here with Google, Microsoft or GitHub has no
-    // dashboard session: this page is the only place they signed in. A plain
-    // link would land them on the sign-in form in the new tab, where most
-    // stopped (card-trial page reached by 11.6% of them in their first 16
-    // hours, against 20% of email sign-ups, 21-22 Oct 2026). The dashboard
-    // signs them in with the same provider on its own and goes on to the page.
-    const dashboardLink = (path: string) =>
-      socialProvider
-        ? `${dashboard}/login?continueWith=${encodeURIComponent(socialProvider)}&redirect=${encodeURIComponent(path)}`
-        : `${dashboard}${path}`;
-    res.setHeader('Content-Type', 'text/html');
-    res.send(
-      this.renderFirstConnectorOffer({
-        clientName: consent.clientName,
-        redirectHost: consent.redirectHost,
-        onPhone: isPhoneUserAgent(req.headers['user-agent']),
-        callbackUrl,
-        arm: consent.connectedArm,
-        attempt: attemptKey(consent.expiresAt),
-        welcomeUrl: dashboardLink('/welcome'),
-        ...(pickerCsrf ? { pickerCsrf } : {}),
-        ...(telegramOneTap ? { telegramOneTap } : {}),
-        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}&return=%2Fcallback`) } } : {}),
-      }),
-    );
+    // The page gets an address of its own (GET /auth/next): what it shows is
+    // kept in a signed cookie for as long as the pause, and this request
+    // answers with a redirect. Reload, Back and a restored tab then show the
+    // page again instead of an error (FIRST_OFFER_COOKIE).
+    const offer: FirstOffer = {
+      o: organizationId,
+      ...(socialProvider ? { s: socialProvider } : {}),
+      ...(trialEndsAt ? { t: trialEndsAt.getTime() } : {}),
+      ...(telegramOneTap ? { g: 1 as const } : {}),
+      ...(trialEnded ? { x: 1 as const } : {}),
+    };
+    res.cookie(FIRST_OFFER_COOKIE, Buffer.from(JSON.stringify(offer)).toString('base64url'), {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: pauseMs,
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    res.clearCookie(FIRST_APP_PICKED_COOKIE);
+    void callbackUrl; // the page builds it again from its own request
+    res.redirect(303, '/auth/next');
     return true;
   }
 
@@ -1662,6 +1774,10 @@ export class LoginController {
     pickerCsrf?: string;
     /** Picking Telegram offers a bot created in one tap (first-app-telegram.ts). */
     telegramOneTap?: boolean;
+    /** The app already picked on this page (shown again after a reload). */
+    picked?: { slug: string; name: string };
+    /** The workspace's free trial has ended: nothing can be added until it is reactivated. */
+    trialEnded?: boolean;
   }): string {
     const client = this.escapeHtml(params.clientName);
     // "October 13", kept on one line.
@@ -1684,7 +1800,11 @@ export class LoginController {
     // same as before, and never more than one click from the chat.
     const picker = params.pickerCsrf
       ? `
-    <section class="quick" id="quick-apps" hidden data-csrf="${this.escapeHtml(params.pickerCsrf)}" aria-labelledby="quick-title">
+    <section class="quick" id="quick-apps" hidden data-csrf="${this.escapeHtml(params.pickerCsrf)}"${
+      params.picked
+        ? ` data-picked="${this.escapeHtml(params.picked.slug)}" data-picked-request="${this.escapeHtml(finishSetupRequest(params.picked.name))}"`
+        : ''
+    } aria-labelledby="quick-title">
       <p class="quick-title" id="quick-title">Optional: add an app to start with</p>
       <div class="chips" role="group" aria-labelledby="quick-title">${QUICK_SETUP_APPS.map(
         (app) => `
@@ -1713,17 +1833,24 @@ export class LoginController {
     const sub = nextStep
       ? `Press <strong>Continue to ${client}</strong> to finish connecting.`
       : `Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:`;
-    const sub2 = nextStep
-      ? `<p class="sub sub2" id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>`
-      : '';
+    const sub2 = !nextStep
+      ? ''
+      : params.trialEnded
+        ? `<p class="sub sub2" id="first-sub2">Your free trial has ended. ${client} will show you how to reactivate the workspace when you ask it something.</p>`
+        : `<p class="sub sub2" id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>`;
     const card = `
     <div class="flow${nextStep ? ' next' : ''}">
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
     <h1${nextStep ? ' class="vh"' : ''}>${heading}</h1>
     <p class="sub" id="first-sub">${sub}</p>${sub2}
+${
+      nextStep && params.trialEnded
+        ? ''
+        : `
     <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request"${nextStep ? ' data-continue="1"' : ''}>${nextStep ? 'Copy &amp; continue' : 'Copy'}</button></div>
     <p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>
-    <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}${
+    <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>`
+    }${picker}${
       nextStep && telegram
         ? `
     <p class="auto" id="auto-continue" role="status" aria-live="polite" hidden><span id="auto-continue-text"></span> <button type="button" class="stay" id="auto-continue-stay">Stay on this page</button></p>`
@@ -1742,7 +1869,7 @@ export class LoginController {
     </div>`
         : ''
     }
-    <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>
+    <p class="links"><a id="open-dashboard" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>
     </div>
     <script>
     // Copy the example request, to paste into the chat after "Continue":
@@ -1830,6 +1957,18 @@ export class LoginController {
           }, function () { failed(name); });
         });
       }
+      // Shown again after a reload: the app picked before stays added.
+      var pickedBefore = picker.getAttribute('data-picked');
+      if (pickedBefore) {
+        for (var k = 0; k < chips.length; k++) {
+          if (chips[k].getAttribute('data-adapter') !== pickedBefore) continue;
+          added = true;
+          setDisabled(true);
+          chips[k].setAttribute('aria-pressed', 'true');
+          request.textContent = picker.getAttribute('data-picked-request') || fallback;
+          status.textContent = (chips[k].getAttribute('data-name') || '') + ' added — you’ll finish it in ' + clientName + '.';
+        }
+      }
       other.addEventListener('input', function () {
         if (added) return;
         var app = other.value.replace(/\\s+/g, ' ').trim().slice(0, 60);
@@ -1858,7 +1997,7 @@ export class LoginController {
           }, function () { /* refused: nothing else happens */ });
         } catch (e) { /* the authorization goes on regardless */ }
       });
-    })();${attempt ? continueBeaconScript(attempt) : ''}${nextStep && telegram ? autoContinueScript(attempt) : ''}
+    })();${attempt ? continueBeaconScript(attempt) : ''}${attempt ? pausedPageLinksBeaconScript(attempt) : ''}${nextStep && telegram ? autoContinueScript(attempt) : ''}${CONTINUE_ONCE_SCRIPT}
     </script>`;
     return renderAuthPage({
       title: nextStep ? `One more step: go back to ${params.clientName}` : `${params.clientName} is connected`,
@@ -2021,6 +2160,7 @@ export class LoginController {
       signed: true,
     });
 
+    this.recordStepViewed(req, 'servers');
     res.setHeader('Content-Type', 'text/html');
     res.send(
       this.renderServerPicker({
@@ -2106,13 +2246,7 @@ export class LoginController {
       JSON.stringify({ id: user.id, email: user.email, name: user.name, username: user.email }),
     ).toString('base64url');
     const isSecure = this.isSecureRequest(req);
-    res.cookie('login_user', encoded, {
-      httpOnly: true,
-      secure: isSecure,
-      maxAge: 60 * 1000,
-      sameSite: isSecure ? 'none' : 'lax',
-      signed: true,
-    });
+    setLoginUserCookie(req, res, encoded, { maxAge: 60 * 1000, secure: isSecure });
     res.clearCookie('login_csrf');
     res.clearCookie(PENDING_GRANT_COOKIE);
     const social = (req as Request & { signedCookies?: Record<string, unknown> })
@@ -2143,6 +2277,117 @@ export class LoginController {
    */
   // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   /**
+   * For the dashboard, which cannot read the httpOnly cookies: is an
+   * authorization waiting in this browser, and what is missing? It shows a
+   * "finish connecting" bar on its pages from the answer, so someone who
+   * wandered off (sign-up, a new tab to add an app, the card-trial page, a
+   * password reset) has a way back. Tells this browser about its own pending
+   * authorization only: the client's name and the next step.
+   */
+  @Get('pending')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async pendingAuthorization(@Req() req: Request, @Res() res: Response) {
+    res.setHeader('Cache-Control', 'no-store');
+    const consent = await this.loadConsentContext(req);
+    if (!consent) return res.json({ pending: false });
+    return res.json({
+      pending: true,
+      client: String(consent.clientName).slice(0, 40),
+      // 'continue': allowed, only /callback is missing. 'allow': not yet.
+      step: this.pendingLoginUserId(req) ? 'continue' : 'allow',
+    });
+  }
+
+  /**
+   * The page after approving into an empty workspace, at an address of its
+   * own (see FIRST_OFFER_COOKIE). Everything it needs comes from signed
+   * cookies set when the person allowed access; nothing is decided again
+   * here. Without them: no open authorization → the "no longer open" page;
+   * not signed in for it → back to the sign-in page; nothing to show → on to
+   * the callback.
+   */
+  @Get('next')
+  @Throttle({ default: { limit: 60, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async showPausedPage(@Req() req: Request, @Res() res: Response) {
+    res.setHeader('Cache-Control', 'no-store');
+    const consent = await this.loadConsentContext(req);
+    if (!consent) {
+      if (this.deployment.isCloud()) {
+        void this.productEvents
+          ?.log({
+            event: ProductEvents.AUTHORIZE_REQUEST_CLOSED,
+            metadata: { device: deviceOf(req.headers['user-agent']), via: 'next' },
+          })
+          .catch(() => undefined);
+      }
+      res.setHeader('Content-Type', 'text/html');
+      res.send(renderClosedRequestPage({ trust: this.trust(), dashboardUrl: this.frontendUrl() }));
+      return;
+    }
+    if (!this.pendingLoginUserId(req)) return res.redirect('/auth/login');
+    const offer = this.firstOffer(req);
+    const callbackUrl = `${this.getBaseUrl(req)}/callback`;
+    if (!offer || !this.deployment.isCloud()) return res.redirect(callbackUrl);
+
+    const signed = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies ?? {};
+    const pickerCsrf = this.setupProvider() && typeof signed[FIRST_APP_CSRF_COOKIE] === 'string' ? (signed[FIRST_APP_CSRF_COOKIE] as string) : '';
+    const picked = QUICK_SETUP_APPS.find((a) => a.slug === signed[FIRST_APP_PICKED_COOKIE]);
+    const dashboard = (this.configService.get<string>('FRONTEND_URL') || '').replace(/\/+$/, '');
+    // Someone who signed in here with Google, Microsoft or GitHub has no
+    // dashboard session: this page is the only place they signed in. A plain
+    // link would land them on the sign-in form in the new tab, where most
+    // stopped (card-trial page reached by 11.6% of them in their first 16
+    // hours, against 20% of email sign-ups, 21-22 Oct 2026). The dashboard
+    // signs them in with the same provider on its own and goes on to the page.
+    const dashboardLink = (path: string) =>
+      offer.s
+        ? `${dashboard}/login?continueWith=${encodeURIComponent(offer.s)}&redirect=${encodeURIComponent(path)}`
+        : `${dashboard}${path}`;
+    res.setHeader('Content-Type', 'text/html');
+    // Never framed: the page finishes an authorization with one click.
+    res.setHeader('Content-Security-Policy', "frame-ancestors 'none'");
+    res.send(
+      this.renderFirstConnectorOffer({
+        clientName: consent.clientName,
+        redirectHost: consent.redirectHost,
+        onPhone: isPhoneUserAgent(req.headers['user-agent']),
+        callbackUrl,
+        arm: consent.connectedArm,
+        attempt: attemptKey(consent.expiresAt),
+        welcomeUrl: dashboardLink('/welcome'),
+        ...(pickerCsrf ? { pickerCsrf } : {}),
+        ...(pickerCsrf && offer.g ? { telegramOneTap: true } : {}),
+        ...(picked ? { picked } : {}),
+        ...(offer.x ? { trialEnded: true } : {}),
+        ...(offer.t
+          ? { cardTrial: { endsAt: new Date(offer.t), url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}&return=%2Fcallback`) } }
+          : {}),
+      }),
+    );
+  }
+
+  /** What the page after approving was offered with (FIRST_OFFER_COOKIE), or null. */
+  private firstOffer(req: Request): FirstOffer | null {
+    const raw = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.[FIRST_OFFER_COOKIE];
+    if (typeof raw !== 'string' || !raw) return null;
+    try {
+      const data = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as Partial<FirstOffer>;
+      if (typeof data?.o !== 'string' || !data.o) return null;
+      return {
+        o: data.o,
+        ...(typeof data.s === 'string' && /^[a-z]{2,20}$/.test(data.s) ? { s: data.s } : {}),
+        ...(typeof data.t === 'number' && Number.isFinite(data.t) && data.t > 0 ? { t: data.t } : {}),
+        ...(data.g === 1 ? { g: 1 as const } : {}),
+        ...(data.x === 1 ? { x: 1 as const } : {}),
+      };
+    } catch {
+      return null;
+    }
+  }
+
+  /**
    * What the pages of the flow report about a click the server never sees:
    * "Continue" on the page shown to an empty workspace (the link goes to the
    * OAuth library's /callback), the same page going on by itself after the
@@ -2164,7 +2409,8 @@ export class LoginController {
     if (!this.deployment.isCloud() || !this.productEvents) return;
     try {
       const kind = body?.e;
-      if (kind !== 'continue' && kind !== 'auto_continue' && kind !== 'copy_continue' && kind !== 'create_account') return;
+      const kinds = ['continue', 'auto_continue', 'copy_continue', 'create_account', 'open_dashboard', 'payment_method'];
+      if (typeof kind !== 'string' || !kinds.includes(kind)) return;
       const consent = await this.loadConsentContext(req);
       const attempt = consent ? attemptKey(consent.expiresAt) : undefined;
       if (!consent || !attempt || body?.a !== attempt) return;
@@ -2179,6 +2425,16 @@ export class LoginController {
       const userId = this.pendingLoginUserId(req);
       if (!userId) return;
       const account = await this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+      if (kind === 'open_dashboard' || kind === 'payment_method') {
+        // The two ways off the page that are not Continue.
+        await this.productEvents.log({
+          event: ProductEvents.AUTHORIZE_ACTION,
+          userId,
+          organizationId: account?.organizationId ?? null,
+          metadata: { ...this.attemptMeta(req, consent), button: kind },
+        });
+        return;
+      }
       await this.productEvents.log({
         event: ProductEvents.POST_APPROVE_CONTINUE_CLICKED,
         userId,
@@ -2199,7 +2455,8 @@ export class LoginController {
     @Res() res: Response,
   ) {
     if (!this.deployment.isCloud()) return res.status(404).json({ ok: false, error: 'Not found.' });
-    const expired = 'This page has expired. Continue, and add the app in the chat.';
+    // No "Continue" here: with the authorization gone it would not work either.
+    const expired = 'This page has expired. Go back to your AI assistant and press Connect again.';
     if (!this.verifySignedToken(req, FIRST_APP_CSRF_COOKIE, body?.csrf)) {
       this.logger.warn('Rejected a first-app pick with a missing/invalid CSRF token');
       return res.status(403).json({ ok: false, error: expired });
@@ -2282,6 +2539,15 @@ export class LoginController {
             redirectHost: consent.redirectHost,
           })
         : null;
+    // So a reload of the page shows the app as added, not the picker anew.
+    const pickedSecure = this.isSecureRequest(req);
+    res.cookie(FIRST_APP_PICKED_COOKIE, app.slug, {
+      httpOnly: true,
+      secure: pickedSecure,
+      maxAge: FIRST_CONNECTOR_PAUSE_MAX_MS,
+      sameSite: pickedSecure ? 'none' : 'lax',
+      signed: true,
+    });
     return res.json({
       ok: true,
       adapter: app.slug,
@@ -2468,8 +2734,9 @@ export class LoginController {
 
   /** The user id in the signed login cookie of a paused authorization, or null. */
   private pendingLoginUserId(req: Request): string | null {
-    const raw = (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.login_user;
-    if (typeof raw !== 'string' || !raw) return null;
+    // Only a sign-in made for the authorization this browser is in (login-user-cookie.ts).
+    const raw = boundLoginUser(req);
+    if (!raw) return null;
     try {
       const profile = JSON.parse(Buffer.from(raw, 'base64url').toString('utf8')) as { id?: unknown };
       return typeof profile?.id === 'string' && profile.id ? profile.id : null;
@@ -2525,6 +2792,10 @@ export class LoginController {
         redirectHost,
         scopeText,
         ...(typeof session.expiresAt === 'number' ? { expiresAt: session.expiresAt } : {}),
+        sessionId,
+        ...(typeof (session as { oauthState?: unknown }).oauthState === 'string'
+          ? { clientState: (session as { oauthState: string }).oauthState }
+          : {}),
         connectedArm: connectedPageArm(sessionId, {
           cloud: this.deployment.isCloud(),
           setting: this.configService.get<string>(CONNECTED_PAGE_TEST_ENV),
@@ -2607,6 +2878,24 @@ export class LoginController {
       req.headers['x-forwarded-proto'] === 'https' ||
       this.configService.get<string>('NODE_ENV') === 'production'
     );
+  }
+
+  /**
+   * The authorization response for "Cancel": the client's redirect address
+   * with `error=access_denied`, its own `state` and the issuer (RFC 9207, as
+   * on the code redirect). Null when the address cannot be parsed.
+   */
+  private deniedRedirect(req: Request, consent: ConsentContext): string | null {
+    try {
+      const url = new URL(consent.redirectUri);
+      url.searchParams.set('error', 'access_denied');
+      url.searchParams.set('error_description', 'The request was cancelled on the consent page');
+      if (consent.clientState) url.searchParams.set('state', consent.clientState);
+      url.searchParams.set('iss', this.getBaseUrl(req));
+      return url.toString();
+    } catch {
+      return null;
+    }
   }
 
   private getBaseUrl(req: Request): string {
@@ -2721,9 +3010,32 @@ export class LoginController {
     <form method="POST" action="/auth/select-servers">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}" />
       ${groups}
+      <p class="error" id="pick-error" role="alert" hidden>Choose at least one server, or a whole workspace.</p>
       <button type="submit">Connect</button>
     </form>
-    <p class="note">You can change this later from Settings, without reconnecting.</p>`;
+    <p class="note">You can change this later from Settings, without reconnecting.</p>
+    <script>
+    // "Everything in this workspace" and single servers exclude each other
+    // (the server reads the workspace first): ticking one unticks the other,
+    // so what is ticked is what is granted. An empty choice is stopped here
+    // instead of going back to the sign-in page.
+    (function () {
+      var form = document.querySelector('form[action="/auth/select-servers"]');
+      var error = document.getElementById('pick-error');
+      if (!form || !error || !form.querySelectorAll) return;
+      var servers = form.querySelectorAll('input[name="servers"]');
+      var whole = form.querySelectorAll('input[name="workspace"]');
+      var untick = function (list) { for (var i = 0; i < list.length; i++) list[i].checked = false; };
+      var any = function (list) { for (var i = 0; i < list.length; i++) if (list[i].checked) return true; return false; };
+      for (var i = 0; i < servers.length; i++) servers[i].addEventListener('change', function (e) { if (e.target.checked) untick(whole); error.hidden = true; });
+      for (var j = 0; j < whole.length; j++) whole[j].addEventListener('change', function (e) { if (e.target.checked) untick(servers); error.hidden = true; });
+      form.addEventListener('submit', function (e) {
+        if (any(servers) || any(whole)) return;
+        e.preventDefault();
+        error.hidden = false;
+      });
+    })();
+    </script>`;
 
     return renderAuthPage({
       title: 'Choose what to connect',
@@ -2731,6 +3043,7 @@ export class LoginController {
       trust: this.trust(),
       extraStyles: `
   .sub strong { color: var(--text); font-weight: 600; }
+  .error[hidden] { display: none; }
   fieldset { border: 1px solid var(--border); border-radius: 12px; margin: 0 0 14px; padding: 8px 10px 10px; min-width: 0; }
   legend { font-size: 12px; text-transform: uppercase; letter-spacing: .06em; color: var(--text-3); padding: 0 4px; overflow-wrap: anywhere; }
   .pick { display: flex; align-items: center; gap: 10px; padding: 9px 6px; border-radius: 8px; cursor: pointer; margin: 0; font-weight: 400; }

@@ -2,7 +2,11 @@
 jest.mock('openid-client', () => ({}));
 
 import { LoginController } from './login.controller';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
 import type { Request, Response } from 'express';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * The sign-in form's CSRF token (`login_csrf`): bound to the pending
@@ -34,8 +38,9 @@ function makeRes() {
       this._sent = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };
@@ -139,19 +144,25 @@ describe('LoginController: the sign-in form token', () => {
       expect(other.cookie.split('.')[1]).not.toBe(first.cookie.split('.')[1]);
     });
 
-    it('never reuses a token outside a pending authorization, or one issued outside it', async () => {
+    it('shows no form and issues no token outside a pending authorization', async () => {
       const { controller } = makeController();
-      const bare = await showForm(controller, makeReq());
-      expect(bare.cookie).toBe(bare.field);
-      // Outside: a new one on every render, as before.
-      const bareAgain = await showForm(controller, makeReq({ signedCookies: { login_csrf: bare.cookie } }));
-      expect(bareAgain.field).not.toBe(bare.field);
-      // A token issued outside an authorization is not carried into one.
+      const res = makeRes();
+      await controller.showLoginPage(undefined as any, undefined as any, makeReq(), res);
+      // The "no longer open" page: signing in here could only end in a refused callback.
+      expect(res._sent).toContain('This connection request is no longer open');
+      expect(res._sent).not.toContain('name="csrf"');
+      expect(res._cookies.login_csrf).toBeUndefined();
+    });
+
+    it('does not carry a token issued outside an authorization into one', async () => {
+      const { controller } = makeController();
+      // A bare token, as cookies issued before the binding existed were.
+      const bare = 'bare-token-from-before';
       const inside = await showForm(
         controller,
-        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: bare.cookie } }),
+        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: bare } }),
       );
-      expect(inside.field).not.toBe(bare.field);
+      expect(inside.field).not.toBe(bare);
     });
   });
 

@@ -3,6 +3,10 @@
 jest.mock('openid-client', () => ({}));
 
 import { LoginController, WRONG_WORKSPACE_MESSAGE } from './login.controller';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * #1609: a client that asked for one MCP server by URL gets no token for an

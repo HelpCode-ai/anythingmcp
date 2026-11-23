@@ -2,8 +2,12 @@
 jest.mock('openid-client', () => ({}));
 
 import { LoginController } from './login.controller';
+import { followPausedPage, followPausedPageInPlace } from './paused-page.spec-helper';
 import { SocialAuthError } from './social/social-auth.service';
 import type { Request, Response } from 'express';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 function makeRes() {
   const res: any = {
@@ -31,8 +35,9 @@ function makeRes() {
       this._sent = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };
@@ -240,11 +245,15 @@ describe('LoginController — dashboard links after a social sign-in on the cons
     };
     return controller;
   }
-  const offer = (controller: any, provider?: string) => {
+  const offer = async (controller: any, provider?: string) => {
     const res = makeRes();
-    return controller
-      .maybeOfferFirstConnector(makeReq({ cookies: { oauth_session: 's1' } }), res, 'u1', 'enc', 'https://cloud.example/callback', provider)
-      .then((shown: boolean) => ({ shown, html: String(res._sent ?? '') }));
+    const req = makeReq({ cookies: { oauth_session: 's1' }, headers: { host: 'cloud.example', 'x-forwarded-proto': 'https' } } as any);
+    const enc = Buffer.from(JSON.stringify({ id: 'u1', email: 'ann@example.com' })).toString('base64url');
+    const shown: boolean = await controller.maybeOfferFirstConnector(req, res, 'u1', enc, 'https://cloud.example/callback', provider);
+    // The page has an address of its own: the offer answers with a redirect to it.
+    expect(res._redirect).toBe('/auth/next');
+    await followPausedPage(controller, res, req);
+    return { shown, html: String(res._sent ?? '') };
   };
 
   it('signs in with the same provider on the way to the dashboard', async () => {
