@@ -186,7 +186,9 @@ describe('LoginController: File Search plugin setup after Approve', () => {
   it('keeps the first-connector page for every other client', async () => {
     const { login } = setup();
     const res = await login();
-    expect(res._sent).toContain('ChatGPT is connected');
+    // The page after approving (no visible heading: one line and the button).
+    expect(res._sent).toContain('Continue to ChatGPT');
+    expect(res._sent).toContain('id="continue"');
     expect(res._sent).not.toContain('Connect a folder');
   });
 
