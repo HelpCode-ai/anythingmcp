@@ -116,19 +116,49 @@ function StartTrialContent() {
   // Set when the user came from "Connect" in an AI client: every way out of
   // this page goes back to that authorization.
   const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
+  // `?return=` is stored once per page load: stored again after leaving, it
+  // would send a later visit to an authorization that is long finished.
+  const returnStored = useRef(false);
+
+  // Set once the browser is on its way to the authorization. The stored
+  // return is spent by then, so a second call (the effect below runs again
+  // when the session refreshes) would send the same person to the dashboard.
+  const leavingForAuthorization = useRef(false);
+  useEffect(() => {
+    // Back on this page through the Back button (restored as it was left):
+    // the ways out work again.
+    const reset = (event: PageTransitionEvent) => {
+      if (event.persisted) leavingForAuthorization.current = false;
+    };
+    window.addEventListener('pageshow', reset);
+    return () => window.removeEventListener('pageshow', reset);
+  }, []);
 
   /** Leave for the waiting authorization (a backend page) or for `fallback`. */
   const leave = useCallback(
     (fallback: string) => {
+      if (leavingForAuthorization.current) return;
       const target = takeAuthorizationReturn(fallback);
-      if (isBackendAuthorizationPath(target)) window.location.assign(target);
-      else router.replace(target);
+      if (isBackendAuthorizationPath(target)) {
+        leavingForAuthorization.current = true;
+        window.location.assign(target);
+      } else router.replace(target);
     },
     [router],
   );
 
   useEffect(() => {
     if (isLoading || !deploymentModeLoaded) return;
+    // Opened from the page after approving an AI client
+    // (`?return=/callback`): every way out finishes that authorization. Stored
+    // before anything below can leave the page, so the exits for someone the
+    // offer is not for (not an admin, no running trial, a licence that could
+    // not be read) go back to the client too, instead of to the dashboard.
+    if (deploymentMode === 'cloud' && !returnStored.current) {
+      returnStored.current = true;
+      const returnTo = new URLSearchParams(window.location.search).get('return');
+      if (isAuthorizationPath(returnTo)) saveAuthorizationReturn(returnTo);
+    }
     if (!token || !user) {
       // Keep ?source= through the sign-in (the offer email links here).
       router.replace(`/login?redirect=${encodeURIComponent(`/start-trial${window.location.search}`)}`);
@@ -152,10 +182,6 @@ function StartTrialContent() {
         const pageKind = cardTrial && trialKind !== 'none' ? trialKind : 'ending';
         setKind(pageKind);
         setFreeTrialEnd(lic.expiresAt ?? null);
-        // Opened from the page after approving an AI client
-        // (`?return=/callback`): every way out finishes that authorization.
-        const returnTo = new URLSearchParams(window.location.search).get('return');
-        if (isAuthorizationPath(returnTo)) saveAuthorizationReturn(returnTo);
         setAuthorizationReturn(readAuthorizationReturn());
         setTrialEnd(cardTrialDisplayEnd(lic.expiresAt));
         const intent = readPlanIntent();
