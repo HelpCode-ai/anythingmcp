@@ -712,28 +712,6 @@ describe('McpConnectionGrantService on a server URL', () => {
       expect(prisma.mcpConnectionGrant.upsert).not.toHaveBeenCalled();
     });
   });
-
-  describe('extendForAuthorization (the SSO sign-in)', () => {
-    it('adds the server to the grant of the client that is being authorized', async () => {
-      const { svc, row } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
-      await expect(svc.extendForAuthorization('sess-1', 'user-1', 'srv-B')).resolves.toBe(true);
-      expect(row()?.serverIds).toEqual(['srv-A', 'srv-B']);
-    });
-
-    it('writes no grant for a client that has none', async () => {
-      const { svc, row } = store(null);
-      await expect(svc.extendForAuthorization('sess-1', 'user-1', 'srv-B')).resolves.toBe(false);
-      expect(row()).toBeNull();
-    });
-
-    it('does nothing without a pending authorization', async () => {
-      const { svc, row, prisma } = store({ organizationId: null, serverIds: ['srv-A'], revokedAt: null });
-      await expect(svc.extendForAuthorization(undefined, 'user-1', 'srv-B')).resolves.toBe(false);
-      await expect(svc.extendForAuthorization('sess-gone', 'user-1', 'srv-B')).resolves.toBe(false);
-      expect(row()?.serverIds).toEqual(['srv-A']);
-      expect(prisma.mcpConnectionGrant.updateMany).not.toHaveBeenCalled();
-    });
-  });
 });
 
 describe('grantServerScopeMode (MCP_GRANT_SERVER_SCOPE)', () => {

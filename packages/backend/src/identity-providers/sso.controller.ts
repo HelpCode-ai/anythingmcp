@@ -1,4 +1,3 @@
-import { setLoginUserCookie } from '../auth/login-user-cookie';
 import {
   Controller,
   Get,
@@ -12,6 +11,7 @@ import {
   HttpCode,
   HttpStatus,
   Logger,
+  Optional,
   UseGuards,
   BadRequestException,
   NotFoundException,
@@ -30,10 +30,10 @@ import { AuthGuard } from '@nestjs/passport';
 import { Throttle } from '@nestjs/throttler';
 import { IsString, IsOptional } from 'class-validator';
 import { ConfigService } from '@nestjs/config';
+import { ModuleRef } from '@nestjs/core';
 import type { Request, Response } from 'express';
+import { LoginController } from '../auth/login.controller';
 import { SsoService, SsoError } from './sso.service';
-import { MCP_RESOURCE_COOKIE } from '../auth/resource-indicator.middleware';
-import { McpConnectionGrantService } from '../mcp-servers/mcp-connection-grant.service';
 import { SecurityEventService, SecurityEvents } from '../audit/security-event.service';
 import {
   CONNECT_PAGE_PATH,
@@ -103,6 +103,8 @@ const INSTANCE_FAILURE_REASONS = new Map<string, string>([
   ],
 ]);
 
+const SIGN_IN_FAILED = 'Sign-in failed. Please try again or contact your administrator.';
+
 @ApiTags('SSO')
 // Whole surface, not only the admin API: the sign-in entry point, the callback
 // and the identity-linking routes are all part of the same self-hosted-only
@@ -117,8 +119,53 @@ export class SsoController {
     private readonly sso: SsoService,
     private readonly config: ConfigService,
     private readonly securityEvents: SecurityEventService,
-    @Optional() private readonly grants?: McpConnectionGrantService,
+    @Optional() private readonly moduleRef?: ModuleRef,
   ) {}
+
+  /**
+   * The MCP authorization pages (/auth/login and what follows), which live in
+   * the auth module. Resolved lazily: that module imports this one.
+   */
+  private authorizationPages(): LoginController {
+    const pages = this.moduleRef?.get(LoginController, { strict: false });
+    if (!pages) throw new Error('the authorization pages are not available');
+    return pages;
+  }
+
+  /**
+   * After a sign-in for the MCP authorization page: the identity is settled,
+   * and the rest is the path every other sign-in on that page takes
+   * (LoginController.completeSignIn): the refusal for a server of another
+   * workspace, the grant or the server picker, the page after approving, and
+   * only then /callback. It used to go straight to /callback, past all of it.
+   *
+   * A failure here is not a sign-in failure (the provider's part succeeded),
+   * so it is not audited as one: back to the authorization page, no cookie.
+   */
+  private async continueAuthorization(
+    req: Request,
+    res: Response,
+    profile: { id: string; email: string; name: string | null },
+  ): Promise<void> {
+    try {
+      await this.authorizationPages().completeSsoSignIn(req, res, profile);
+    } catch (error) {
+      this.logger.error(
+        `Could not continue the authorization after single sign-on: ${(error as Error)?.message ?? error}`,
+      );
+      if (res.headersSent) return;
+      res.redirect(303, `/auth/login?error=${encodeURIComponent(SIGN_IN_FAILED)}`);
+    }
+  }
+
+  /** Whether an MCP authorization is pending in this browser. False when that cannot be told. */
+  private async authorizationPending(req: Request): Promise<boolean> {
+    try {
+      return await this.authorizationPages().hasPendingAuthorization(req);
+    } catch {
+      return false;
+    }
+  }
 
   private frontendUrl(): string {
     return (
@@ -186,29 +233,8 @@ export class SsoController {
       }
 
       if (result.kind === 'MCP') {
-        // Hand the OAuth strategy exactly what the password path hands it: a
-        // short-lived, signed, httpOnly profile cookie, then the redirect to
-        // /callback. Everything downstream is identical, so SSO and password
-        // authorization converge on one code path.
-        const isSecure =
-          (req.headers['x-forwarded-proto'] as string) === 'https' || req.secure;
-        // This sign-in writes no connection grant. A client that already has
-        // one and now asks for a further server by its URL gets that server
-        // added, as on the password path: otherwise the endpoint would keep
-        // refusing it (MCP_GRANT_SERVER_SCOPE) however often the person
-        // signs in. Never creates a grant, and never stops the sign-in.
-        const requestedServerId = (req as any).signedCookies?.[MCP_RESOURCE_COOKIE];
-        if (this.grants && typeof requestedServerId === 'string' && requestedServerId) {
-          await this.grants
-            .extendForAuthorization((req as any).cookies?.oauth_session, result.profile.id, requestedServerId)
-            .catch((err: any) => this.logger.warn(`Could not extend a connection grant: ${err?.message ?? err}`));
-        }
-        setLoginUserCookie(req, res, Buffer.from(JSON.stringify(result.profile)).toString('base64url'), {
-          maxAge: 60 * 1000,
-          secure: isSecure,
-        });
-        res.clearCookie('login_csrf');
-        return res.redirect(303, `${this.mcpBaseUrl(req)}/callback`);
+        // Same path as a password or dashboard-session sign-in on that page.
+        return await this.continueAuthorization(req, res, result.profile);
       }
 
       if (result.kind === 'LINK') {
@@ -232,7 +258,14 @@ export class SsoController {
       return res.redirect(303, target.href);
     } catch (error) {
       const reason = error instanceof SsoError ? error.reason : 'unexpected';
+      const surface = error instanceof SsoError ? error.surface : null;
       await this.logFailure(error, req, {});
+      // A sign-in started on the MCP authorization page goes back to it: the
+      // dashboard sign-in has no way back to the authorization, so the person
+      // was left there with the AI client still waiting.
+      if (surface === 'MCP') {
+        return res.redirect(303, `/auth/login?error=${encodeURIComponent(this.failureMessage(reason))}`);
+      }
       // A sign-in started on a connect page goes back to it: on a server
       // whose dashboard is not public, /login would not even load.
       const connect = readSignedJsonCookie<ConnectSsoCookie>(req, CONNECT_SSO_COOKIE);
@@ -255,9 +288,13 @@ export class SsoController {
           `${frontend}/settings?linkError=${encodeURIComponent(LINK_FAILURE_REASONS.get(reason)!)}`,
         );
       }
-      const message =
-        INSTANCE_FAILURE_REASONS.get(reason) ??
-        'Sign-in failed. Please try again or contact your administrator.';
+      const message = this.failureMessage(reason);
+      // The surface is unknown when the attempt is (the round trip took more
+      // than five minutes, or its address was loaded twice). With an MCP
+      // authorization still pending in this browser, the way on is its page.
+      if (surface === null && (await this.authorizationPending(req))) {
+        return res.redirect(303, `/auth/login?error=${encodeURIComponent(message)}`);
+      }
       return res.redirect(`${frontend}/login?error=${encodeURIComponent(message)}`);
     }
   }
@@ -342,22 +379,9 @@ export class SsoController {
     }
   }
 
-  /**
-   * Base URL for the MCP authorization leg.
-   *
-   * Mirrors `LoginController.getBaseUrl`: it trusts `x-forwarded-host` because
-   * the MCP flow must work behind a tunnel or reverse proxy, and `/callback`
-   * has to land on the same origin the client is talking to. This is only used
-   * to continue an already-bound flow — the OIDC `redirect_uri` is still built
-   * from server-side config alone, where a spoofed header would matter.
-   */
-  private mcpBaseUrl(req: Request): string {
-    const proto =
-      (req.headers['x-forwarded-proto'] as string) ||
-      (req.secure ? 'https' : 'http');
-    const host =
-      (req.headers['x-forwarded-host'] as string) || req.headers.host;
-    return host ? `${proto}://${host}` : this.frontendUrl();
+  /** What a failed sign-in is told: the cause only where it describes the instance, not the person. */
+  private failureMessage(reason: string): string {
+    return INSTANCE_FAILURE_REASONS.get(reason) ?? SIGN_IN_FAILED;
   }
 
   private async logFailure(

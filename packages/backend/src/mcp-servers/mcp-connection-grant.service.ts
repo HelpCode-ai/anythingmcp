@@ -291,25 +291,6 @@ export class McpConnectionGrantService {
   }
 
   /**
-   * {@link grantRequestedServer} with `onlyExisting`, for a sign-in that knows
-   * the pending authorization (`oauth_sessions.session_id`) instead of the
-   * client.
-   */
-  async extendForAuthorization(
-    oauthSessionId: string | undefined,
-    userId: string,
-    serverId: string,
-  ): Promise<boolean> {
-    if (!oauthSessionId || !userId || !serverId) return false;
-    const session = await this.prisma.oAuthSession.findUnique({
-      where: { sessionId: oauthSessionId },
-      select: { clientId: true },
-    });
-    if (!session?.clientId) return false;
-    return this.grantRequestedServer(session.clientId, userId, serverId, { onlyExisting: true });
-  }
-
-  /**
    * Grant the whole of one workspace — every tool of that organization, which
    * is what `/mcp` served before grants existed. Refuses when the user is not a
    * member, so a forged form value cannot mint access to another tenant.

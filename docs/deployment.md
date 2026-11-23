@@ -498,7 +498,7 @@ The events of one attempt carry the same `attempt` value, the `device` (`mobile`
 |-------|--------------|--------------|
 | `authorize_page_viewed` | the sign-in page is opened inside an authorization | `lang`: the browser's first language if it is one of `en`, `de`, `it`, `es`, `zh`, `ja`, `ru`, else `other` |
 | `authorize_action` | a button of the sign-in page is used, or one of the two links of the page after approving that are not Continue | `button`: `google`, `microsoft`, `github`, `sso`, `password`, `session`, `cancel`, `create_account`; `open_dashboard` ("Or add an app here first"), `payment_method` ("Add a payment method") |
-| `authorization_signed_in` | the identity is settled and access allowed | `method`: the provider, `password`, `session`, `email_code`; `account`: `new` (created in the last 30 minutes) or `existing` |
+| `authorization_signed_in` | the identity is settled and access allowed | `method`: the provider, `sso` (organization sign-in, self-hosted, see [single sign-on](sso.md#connecting-an-ai-client)), `password`, `session`, `email_code`; `account`: `new` (created in the last 30 minutes) or `existing` |
 | `empty_workspace_prompt` | the page of the test is shown | |
 | `post_approve_app_picked` | an app is picked on it | |
 | `post_approve_continue_clicked` | Continue is pressed on it | `button`: `continue`, `copy_continue` when "Copy & continue" pressed it, or `auto_continue` when the page went on by itself |
