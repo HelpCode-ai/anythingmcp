@@ -2,10 +2,14 @@
 jest.mock('openid-client', () => ({}));
 
 import { autoContinueScript, continueBeaconScript, LoginController } from './login.controller';
+import { followPausedPageInPlace, rawEntryPoints } from './paused-page.spec-helper';
 import { attemptKey } from './authorization-attempt';
 import { ProductEventService } from '../audit/product-event.service';
 import { TELEGRAM_ONE_TAP } from '../adapters/telegram-managed-bot';
 import type { Request, Response } from 'express';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * The measurement of the authorization pages and the split test of the page
@@ -26,7 +30,9 @@ function makeRes() {
     clearCookie() {
       return this;
     },
-    setHeader() {
+    _headers: {} as Record<string, string>,
+    setHeader(name: string, value: string) {
+      this._headers[name] = value;
       return this;
     },
     status(code: number) {
@@ -45,8 +51,9 @@ function makeRes() {
       this._json = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };
@@ -276,7 +283,7 @@ describe('POST /auth/beacon', () => {
   const beacon = async (
     controller: LoginController,
     body: Record<string, unknown>,
-    request: Request = req({ signedCookies: { login_user: LOGIN_USER } }),
+    request: Request = req({ signedCookies: { login_user: LOGIN_USER, login_bind: 's1' } }),
   ) => {
     const res = makeRes();
     await controller.pageBeacon(request, body as any, res);
@@ -284,7 +291,7 @@ describe('POST /auth/beacon', () => {
     return res;
   };
 
-  it.each(['continue', 'auto_continue'])('records %s on the page shown to an empty workspace', async (kind) => {
+  it.each(['continue', 'auto_continue', 'copy_continue'])('records %s on the page shown to an empty workspace', async (kind) => {
     const { controller, events } = build({ setting: 'next_step' });
     const res = await beacon(controller, { e: kind, a: ATTEMPT });
     expect(res._status).toBe(204);
@@ -328,7 +335,7 @@ describe('POST /auth/beacon', () => {
     // Continue without the signed login cookie of the paused authorization: nothing.
     await beacon(controller, { e: 'continue', a: ATTEMPT }, req({ signedCookies: {} }));
     // No pending authorization at all.
-    await beacon(controller, { e: 'continue', a: ATTEMPT }, req({ cookies: {}, signedCookies: { login_user: LOGIN_USER } }));
+    await beacon(controller, { e: 'continue', a: ATTEMPT }, req({ cookies: {}, signedCookies: { login_user: LOGIN_USER, login_bind: 's1' } }));
     expect(events()).toEqual([]);
   });
 
@@ -359,6 +366,7 @@ describe('the page shown to an empty workspace, as a split test', () => {
     for (const opts of [{ setting: 'control' }, { setting: 'off' }]) {
       const html = await page(opts);
       expect(html).toContain('<h1>Claude is connected</h1>');
+      expect(html).toContain('<button type="button" class="copy" id="copy-request">Copy</button>');
       expect(html).toContain('<title>Claude is connected</title>');
       expect(html).toContain('Your workspace has no apps yet, so Claude has nothing to work with.');
       expect(html).not.toContain('One more step');
@@ -369,20 +377,27 @@ describe('the page shown to an empty workspace, as a split test', () => {
 
   it('says what is still to do on the next_step arm, with Continue as the one primary button', async () => {
     const html = await page({ setting: 'next_step' });
-    expect(html).toContain('<h1>One more step: go back to Claude</h1>');
+    // No visible heading: it stays for screen readers and the tab title.
+    expect(html).toContain('<h1 class="vh">One more step: go back to Claude</h1>');
+    expect(html).toContain('h1.vh { position: absolute; width: 1px; height: 1px;');
     expect(html).toContain('<title>One more step: go back to Claude</title>');
     expect(html).not.toContain('Claude is connected</h1>');
-    expect(html).toContain('Claude is connected once you press <strong>Continue to Claude</strong>.');
+    expect(html).toContain('<p class="sub" id="first-sub">Press <strong>Continue to Claude</strong> to finish connecting.</p>');
+    expect(html).not.toContain('You are signed in');
     // On a phone Continue follows that sentence; the example request comes after it.
     expect(html).toContain('<div class="flow next">');
+    // On a phone: the picker, the request to copy, then Continue.
     expect(html).toContain('.flow.next > .quick { order: 1; margin-bottom: 12px; }');
-    expect(html).toContain('.flow.next > #continue { order: 3; }');
+    expect(html).toContain('.flow.next > .example { order: 3; margin-bottom: 12px; padding: 10px 12px; }');
+    expect(html).toContain('.flow.next > #continue { order: 6; }');
+    // The copy button also goes on.
+    expect(html).toContain('<button type="button" class="copy" id="copy-request" data-continue="1">Copy &amp; continue</button>');
     expect(html).toContain('id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>');
     // The same link, the same picker, and nothing else that looks like the way on.
     expect(html).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
     expect(html.match(/class="button"/g)).toHaveLength(1);
     expect(html).toContain('id="quick-apps"');
-    expect(html.indexOf('<h1>')).toBeLessThan(html.indexOf('id="continue"'));
+    expect(html.indexOf('<h1 class="vh">')).toBeLessThan(html.indexOf('id="continue"'));
   });
 
   it('escapes the client name in the new heading', async () => {
@@ -390,7 +405,7 @@ describe('the page shown to an empty workspace, as a split test', () => {
     void config;
     (controller as any).oauthStore.getClient = jest.fn(async () => ({ client_id: 'c1', client_name: '<img src=x>' }));
     const res = await post(controller, { action: 'approve', email: 'a@b.com', password: 'pw' });
-    expect(res._sent).toContain('One more step: go back to &lt;img src=x&gt;');
+    expect(res._sent).toContain('<h1 class="vh">One more step: go back to &lt;img src=x&gt;</h1>');
     expect(res._sent).not.toContain('<img src=x>');
   });
 
@@ -410,7 +425,7 @@ describe('the page shown to an empty workspace, as a split test', () => {
   it('reports the click on Continue on both arms, with the attempt of this authorization', async () => {
     for (const setting of ['control', 'next_step']) {
       const script = scriptOf(await page({ setting }));
-      expect(script).toContain(`navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: 'continue', a: '${ATTEMPT}' }))`);
+      expect(script).toContain(`navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: via, a: '${ATTEMPT}' }))`);
     }
     // Nothing on the page opens a window, whatever the arm.
     for (const html of [await page({ setting: 'control', telegram: true }), await page({ setting: 'next_step', telegram: true })]) {
@@ -419,10 +434,84 @@ describe('the page shown to an empty workspace, as a split test', () => {
     }
   });
 
+  describe('the copy button', () => {
+    // Runs the page's first script block parts that concern the copy button.
+    const run = async (opts: { setting: string; clipboard: 'ok' | 'refused' | 'silent' }) => {
+      const html = await page({ setting: opts.setting });
+      const script = scriptOf(html);
+      const clicks: string[] = [];
+      const attrs: Record<string, string> = {};
+      const listeners: Record<string, Array<() => void>> = { copy: [], cont: [] };
+      const button: any = {
+        hidden: false,
+        textContent: '',
+        getAttribute: (n: string) => (n === 'data-continue' && html.includes('id="copy-request" data-continue="1"') ? '1' : null),
+        addEventListener: (_t: string, f: () => void) => listeners.copy.push(f),
+      };
+      const cont: any = {
+        getAttribute: (n: string) => attrs[n] ?? (n === 'href' ? 'http://mcp.test/callback' : n === 'data-client' ? 'Claude' : null),
+        setAttribute: (n: string, v: string) => (attrs[n] = v),
+        addEventListener: (_t: string, f: () => void) => listeners.cont.push(f),
+        click: () => clicks.push(attrs['data-via'] ?? 'plain'),
+      };
+      const timers: Array<() => void> = [];
+      const writeText = jest.fn(() =>
+        opts.clipboard === 'ok' ? Promise.resolve() : opts.clipboard === 'refused' ? Promise.reject(new Error('denied')) : new Promise<void>(() => undefined),
+      );
+      const elements: Record<string, unknown> = {
+        'copy-request': button,
+        'example-request': { textContent: 'Connect my Telegram bot to AnythingMCP.' },
+        continue: cont,
+      };
+      require('vm').runInNewContext(script, {
+        document: { getElementById: (id: string) => elements[id] ?? null, querySelectorAll: () => [] },
+        navigator: { clipboard: { writeText } },
+        window: { setTimeout: (f: () => void) => timers.push(f), URLSearchParams },
+        URLSearchParams,
+      });
+      listeners.copy[0]();
+      await flush();
+      return { clicks, timers, writeText, button };
+    };
+
+    it('copies the request and presses Continue once on the next_step page', async () => {
+      const { clicks, timers, writeText, button } = await run({ setting: 'next_step', clipboard: 'ok' });
+      expect(writeText).toHaveBeenCalledWith('Connect my Telegram bot to AnythingMCP.');
+      expect(button.textContent).toBe('Copied');
+      expect(clicks).toEqual(['copy']);
+      // The safety timer finds it already gone: /callback is never asked for twice.
+      timers.forEach((t) => t());
+      expect(clicks).toEqual(['copy']);
+    });
+
+    it('goes on when the clipboard refuses, and when it never answers', async () => {
+      const refused = await run({ setting: 'next_step', clipboard: 'refused' });
+      expect(refused.clicks).toEqual(['copy']);
+      const silent = await run({ setting: 'next_step', clipboard: 'silent' });
+      expect(silent.clicks).toEqual([]);
+      silent.timers.forEach((t) => t());
+      expect(silent.clicks).toEqual(['copy']);
+    });
+
+    it('only copies on the control page', async () => {
+      const { clicks, timers, button } = await run({ setting: 'control', clipboard: 'ok' });
+      expect(button.textContent).toBe('Copied');
+      timers.forEach((t) => t());
+      expect(clicks).toEqual([]);
+    });
+  });
+
   describe('the beacon on Continue', () => {
+    const via: { current: string | null } = { current: null };
+    afterEach(() => {
+      via.current = null;
+    });
     const run = (navigator: object, withUrlSearchParams = true) => {
       const listeners: Array<(e: unknown) => unknown> = [];
-      const cont = { addEventListener: (_t: string, f: (e: unknown) => unknown) => listeners.push(f) };
+      const cont = {
+        addEventListener: (_t: string, f: (e: unknown) => unknown) => listeners.push(f),
+        getAttribute: (name: string) => (name === 'data-via' ? via.current : null),
+      };
       require('vm').runInNewContext(continueBeaconScript(ATTEMPT), {
         document: { getElementById: (id: string) => (id === 'continue' ? cont : null) },
         navigator,
@@ -446,6 +535,15 @@ describe('the page shown to an empty workspace, as a split test', () => {
       expect(event.stopPropagation).not.toHaveBeenCalled();
       expect(event.stopImmediatePropagation).not.toHaveBeenCalled();
       expect(event.returnValue).toBe(true);
+    });
+
+    it('says so when "Copy & continue" pressed Continue', () => {
+      const sendBeacon = jest.fn(() => true);
+      const [listener] = run({ sendBeacon });
+      via.current = 'copy';
+      listener(tap());
+      const [, body] = sendBeacon.mock.calls[0] as unknown as [string, URLSearchParams];
+      expect(body.toString()).toBe(`e=copy_continue&a=${ATTEMPT}`);
     });
 
     it('changes nothing when the browser refuses or throws', () => {
@@ -703,5 +801,251 @@ describe('the sign-in page test (A3/A4)', () => {
     expect(html).toContain('>Annulla</button>');
     // No value line for someone already signed in.
     expect(html).not.toContain('sub value');
+  });
+});
+
+describe('the page after approving, at its own address (GET /auth/next)', () => {
+  const approve = async (opts: Parameters<typeof build>[0] = { setting: 'next_step' }, request: Request = req()) => {
+    const built = build(opts);
+    const res = makeRes();
+    // The entry point as it is (the helper would follow the redirect in place).
+    await rawEntryPoints.handleLogin!.call(built.controller, request, { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' }, res);
+    await flush();
+    return { ...built, res };
+  };
+  const signedFrom = (res: ReturnType<typeof makeRes>) =>
+    Object.fromEntries(
+      Object.entries(res._cookies as Record<string, { value: string; options: any }>)
+        .filter(([, c]) => c.options?.signed)
+        .map(([n, c]) => [n, c.value]),
+    );
+  const next = async (controller: LoginController, signedCookies: Record<string, unknown>, cookies: Record<string, string> = { oauth_session: 's1' }) => {
+    const res = makeRes();
+    await controller.showPausedPage(req({ cookies, signedCookies }), res as any);
+    await flush();
+    return res;
+  };
+
+  it('answers the sign-in with a redirect, not with the page', async () => {
+    const { res, events } = await approve();
+    expect(res._redirect).toBe('/auth/next');
+    expect(res._sent).toBeUndefined();
+    // Signed in for THIS authorization, and what the page needs travels in signed cookies.
+    expect(res._cookies.login_user.options.signed).toBe(true);
+    expect(res._cookies.login_bind).toEqual(expect.objectContaining({ value: 's1' }));
+    expect(res._cookies.first_offer.options).toEqual(expect.objectContaining({ signed: true, httpOnly: true }));
+    expect(res._cookies.first_offer.options.maxAge).toBe(res._cookies.login_user.options.maxAge);
+    // Counted once, when the person is sent to the page.
+    expect(events().filter((e) => e.event === 'empty_workspace_prompt')).toHaveLength(1);
+  });
+
+  it('shows the page again on every load: reload, Back and a restored tab all work', async () => {
+    const { controller, res, events } = await approve();
+    const cookies = signedFrom(res);
+    const first = await next(controller, cookies);
+    const second = await next(controller, cookies);
+    for (const page of [first, second]) {
+      expect(page._redirect).toBeUndefined();
+      expect(page._sent).toContain('id="continue" href="http://mcp.test/callback"');
+      expect(page._sent).toContain('id="quick-apps"');
+      expect(page._headers['Cache-Control']).toBe('no-store');
+    }
+    // Reloads do not count as new prompts.
+    expect(events().filter((e) => e.event === 'empty_workspace_prompt')).toHaveLength(1);
+  });
+
+  it('keeps the picked app shown as added after a reload', async () => {
+    const { controller, res } = await approve();
+    const page = await next(controller, { ...signedFrom(res), first_app_picked: 'etsy' });
+    expect(page._sent).toContain('data-picked="etsy"');
+    expect(page._sent).toContain('data-picked-request="Finish setting up my Etsy connector."');
+    // A slug that is not one of the quick apps is ignored.
+    const other = await next(controller, { ...signedFrom(res), first_app_picked: '"><script>' });
+    expect(other._sent).not.toContain('data-picked=');
+  });
+
+  it('says "no longer open" when the authorization is gone, and counts it', async () => {
+    const { controller, res, events } = await approve();
+    const cookies = signedFrom(res);
+    (controller as any).oauthStore.getOAuthSession = jest.fn(async () => undefined);
+    const page = await next(controller, cookies);
+    expect(page._sent).toContain('This connection request is no longer open');
+    expect(page._sent).not.toContain('id="continue"');
+    expect(events().find((e) => e.event === 'authorize_request_closed').metadata).toEqual({ device: 'desktop', via: 'next' });
+  });
+
+  it('sends someone who is not signed in for this authorization back to the sign-in page', async () => {
+    const { controller, res } = await approve();
+    const cookies = signedFrom(res);
+    // No sign-in cookie at all.
+    expect((await next(controller, { first_offer: cookies.first_offer }))._redirect).toBe('/auth/login');
+    // A sign-in made for another authorization of this browser does not count.
+    expect((await next(controller, { ...cookies, login_bind: 'another-session' }))._redirect).toBe('/auth/login');
+  });
+
+  it('goes on to the callback when there is nothing to show', async () => {
+    const { controller, res } = await approve();
+    const { first_offer: _dropped, ...rest } = signedFrom(res) as Record<string, unknown>;
+    expect((await next(controller, rest))._redirect).toBe('http://mcp.test/callback');
+    // A forged or broken offer cookie is nothing to show either.
+    expect((await next(controller, { ...rest, first_offer: 'not-json' }))._redirect).toBe('http://mcp.test/callback');
+  });
+
+  it('never shows the page for ChatGPT\'s database plugin, which has no setup tools', async () => {
+    const { res } = await approve({ setting: 'next_step' }, req({ signedCookies: { login_csrf: 'tok', mcp_directory: 'chatgpt-app' } }));
+    expect(res._redirect).toBe('http://mcp.test/callback');
+    expect(res._cookies.first_offer).toBeUndefined();
+  });
+});
+
+describe('the page after approving: small things', () => {
+  it('reports the two ways off the page that are not Continue', async () => {
+    const { controller, events } = build({ setting: 'next_step' });
+    const html = (controller as any).renderFirstConnectorOffer({
+      clientName: 'Claude', callbackUrl: 'http://mcp.test/callback', arm: 'next_step', attempt: ATTEMPT,
+      welcomeUrl: 'https://cloud.example/welcome', cardTrial: { endsAt: new Date('2026-11-30T00:00:00Z'), url: 'https://cloud.example/start-trial' },
+    }) as string;
+    expect(html).toContain('<a id="open-dashboard" href="https://cloud.example/welcome"');
+    expect(html).toContain("report('open-dashboard', 'open_dashboard');");
+    expect(html).toContain("report('card-trial-link', 'payment_method');");
+    for (const kind of ['open_dashboard', 'payment_method']) {
+      const res = makeRes();
+      await controller.pageBeacon(req({ signedCookies: { login_user: LOGIN_USER, login_bind: 's1' } }), { e: kind, a: ATTEMPT } as any, res as any);
+      await flush();
+    }
+    expect(events().filter((e) => e.event === 'authorize_action').map((e) => e.metadata.button)).toEqual(['open_dashboard', 'payment_method']);
+  });
+
+  it('leaves out the picker and the request when the free trial has ended', async () => {
+    const { controller } = build({ setting: 'next_step' });
+    const html = (controller as any).renderFirstConnectorOffer({
+      clientName: 'Claude', callbackUrl: 'http://mcp.test/callback', arm: 'next_step', attempt: ATTEMPT,
+      welcomeUrl: 'https://cloud.example/welcome', trialEnded: true,
+    }) as string;
+    expect(html).toContain('Your free trial has ended. Claude will show you how to reactivate the workspace');
+    expect(html).not.toContain('you can add them right in the chat');
+    expect(html).not.toContain('id="copy-request"');
+    expect(html).toContain('id="continue"');
+  });
+});
+
+describe('GET /auth/pending', () => {
+  const ask = async (controller: LoginController, request: Request) => {
+    const res = makeRes();
+    await controller.pendingAuthorization(request, res as any);
+    return res._json;
+  };
+
+  it('says nothing is pending without an open authorization', async () => {
+    const { controller } = build({ session: false });
+    expect(await ask(controller, req())).toEqual({ pending: false });
+  });
+
+  it('says "allow" before the person allowed access, and "continue" after', async () => {
+    const { controller } = build({ setting: 'next_step' });
+    expect(await ask(controller, req())).toEqual({ pending: true, client: 'Claude', step: 'allow' });
+    expect(await ask(controller, req({ signedCookies: { login_user: LOGIN_USER, login_bind: 's1' } }))).toEqual({
+      pending: true,
+      client: 'Claude',
+      step: 'continue',
+    });
+    // A sign-in made for another authorization is not "continue" for this one.
+    expect(await ask(controller, req({ signedCookies: { login_user: LOGIN_USER, login_bind: 'other' } }))).toEqual({
+      pending: true,
+      client: 'Claude',
+      step: 'allow',
+    });
+  });
+
+  it('caps the client name the client chose itself', async () => {
+    const { controller } = build({ setting: 'next_step' });
+    (controller as any).oauthStore.getClient = jest.fn(async () => ({ client_id: 'c1', client_name: 'x'.repeat(200) }));
+    expect((await ask(controller, req())).client).toHaveLength(40);
+  });
+});
+
+describe('Cancel on the consent page', () => {
+  it('tells the client, with its own state and the issuer, and ends the authorization', async () => {
+    const { controller } = build({ setting: 'next_step' });
+    const removed = jest.fn(async () => undefined);
+    (controller as any).oauthStore.removeOAuthSession = removed;
+    (controller as any).oauthStore.getOAuthSession = jest.fn(async () => ({
+      sessionId: 's1', state: 'x', clientId: 'c1', redirectUri: 'https://claude.ai/api/mcp/auth_callback', oauthState: 'client-state-1', expiresAt: EXPIRES,
+    }));
+    const res = await post(controller, { action: 'deny' });
+    const back = new URL(res._redirect as string);
+    expect(`${back.origin}${back.pathname}`).toBe('https://claude.ai/api/mcp/auth_callback');
+    expect(back.searchParams.get('error')).toBe('access_denied');
+    expect(back.searchParams.get('state')).toBe('client-state-1');
+    expect(back.searchParams.get('iss')).toBe('http://mcp.test');
+    expect(back.searchParams.has('code')).toBe(false);
+    expect(removed).toHaveBeenCalledWith('s1');
+    expect(res._sent).toBeUndefined();
+  });
+
+  it('still shows "Request Cancelled" when there is no authorization to answer', async () => {
+    const { controller } = build({ session: false });
+    const res = await post(controller, { action: 'deny' });
+    expect(res._redirect).toBeUndefined();
+    expect(res._sent).toContain('Request Cancelled');
+  });
+});
+
+describe('a provider error before the attempt is known', () => {
+  it('goes to the authorization page when one is pending, not to the dashboard sign-in', async () => {
+    const { controller } = build({ setting: 'next_step' });
+    const { SocialAuthError } = jest.requireActual('./social/social-auth.service');
+    (controller as any).social.complete = jest.fn(async () => {
+      throw new SocialAuthError('state_expired', 'This sign-in link has expired. Please try again.');
+    });
+    const res = makeRes();
+    await controller.socialCallback('google', req(), res as any);
+    expect(res._redirect).toBe('/auth/login?error=linkExpired');
+  });
+
+  it('keeps going to the dashboard sign-in when nothing is pending', async () => {
+    const { controller } = build({ session: false });
+    const { SocialAuthError } = jest.requireActual('./social/social-auth.service');
+    (controller as any).social.complete = jest.fn(async () => {
+      throw new SocialAuthError('state_expired', 'This sign-in link has expired. Please try again.');
+    });
+    const res = makeRes();
+    await controller.socialCallback('google', req(), res as any);
+    expect(res._redirect).toBe(`https://cloud.example/login?error=${encodeURIComponent('This sign-in link has expired. Please try again.')}`);
+  });
+});
+
+describe('"Choose what to connect"', () => {
+  it('stops an empty choice on the page and keeps servers and "everything" apart', () => {
+    const { controller } = build({ setting: 'next_step' });
+    const html = (controller as any).renderServerPicker({
+      clientName: 'Claude', csrfToken: 'tok',
+      targets: [{ organizationId: 'o1', organizationName: 'Acme', servers: [{ id: 'srv1', name: 'Main', connectorCount: 2 }] }],
+    }) as string;
+    expect(html).toContain('<p class="error" id="pick-error" role="alert" hidden>Choose at least one server, or a whole workspace.</p>');
+    const script = html.slice(html.lastIndexOf('<script>') + 8, html.lastIndexOf('</script>'));
+    // Run it against a minimal form.
+    const mk = (name: string) => ({ name, checked: false, listeners: [] as Array<(e: any) => void>, addEventListener(_t: string, f: (e: any) => void) { this.listeners.push(f); } });
+    const server = mk('servers');
+    const whole = mk('workspace');
+    const error = { hidden: true };
+    let submit: (e: any) => void = () => undefined;
+    const form = {
+      querySelectorAll: (sel: string) => (sel.includes('servers') ? [server] : [whole]),
+      addEventListener: (_t: string, f: (e: any) => void) => { submit = f; },
+    };
+    require('vm').runInNewContext(script, { document: { querySelector: () => form, getElementById: () => error } });
+    const empty = { preventDefault: jest.fn() };
+    submit(empty);
+    expect(empty.preventDefault).toHaveBeenCalled();
+    expect(error.hidden).toBe(false);
+    whole.checked = true;
+    server.checked = true;
+    server.listeners[0]({ target: server });
+    expect(whole.checked).toBe(false);
+    expect(error.hidden).toBe(true);
+    const chosen = { preventDefault: jest.fn() };
+    submit(chosen);
+    expect(chosen.preventDefault).not.toHaveBeenCalled();
   });
 });

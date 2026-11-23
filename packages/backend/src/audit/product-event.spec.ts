@@ -462,7 +462,7 @@ describe('ProductEventService — the authorization attempt events', () => {
   });
 
   it('keeps every value the pages send, and drops any other', async () => {
-    for (const button of ['google', 'microsoft', 'github', 'sso', 'password', 'session', 'cancel', 'create_account', 'continue', 'auto_continue']) {
+    for (const button of ['google', 'microsoft', 'github', 'sso', 'password', 'session', 'cancel', 'create_account', 'continue', 'auto_continue', 'copy_continue']) {
       expect(await stored([{ event: 'authorize_action', metadata: { button } }])).toEqual([{ button }]);
     }
     for (const method of ['google', 'microsoft', 'github', 'sso', 'password', 'session', 'email_code']) {

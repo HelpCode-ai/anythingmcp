@@ -1,4 +1,4 @@
-import { RestEngine, parseRetryAfterMs, serializeRepeatedParams } from './rest.engine';
+import { RestEngine, isExhaustedQuotaBody, parseRetryAfterMs, serializeRepeatedParams } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 import { LoginTokenService } from './login-token.service';
 import axios, { AxiosError } from 'axios';
@@ -831,6 +831,35 @@ describe('RestEngine', () => {
         mockedAxios.mockRejectedValue(limited(429, '60'));
         await expect(call()).rejects.toBeInstanceOf(AxiosError);
         expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it('does not retry a 429 whose body says the daily quota is used up', async () => {
+        const daily = (data: unknown) =>
+          new AxiosError('limited', undefined, undefined, {}, { status: 429, data, headers: {} } as any);
+        mockedAxios.mockRejectedValueOnce(daily({ error: 'Exceeded daily rate limit' }));
+        await expect(call()).rejects.toBeInstanceOf(AxiosError);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+
+        mockedAxios.mockClear();
+        mockedAxios.mockRejectedValueOnce(
+          daily('{"code":429,"message":"You have run out of API credits for the day.","status":"error"}'),
+        );
+        await expect(call()).rejects.toBeInstanceOf(AxiosError);
+        expect(mockedAxios).toHaveBeenCalledTimes(1);
+      });
+
+      it('still retries a per-minute limit once', async () => {
+        mockedAxios
+          .mockRejectedValueOnce(
+            new AxiosError('limited', undefined, undefined, {}, {
+              status: 429,
+              data: { message: 'You have run out of API credits for the current minute.' },
+              headers: {},
+            } as any),
+          )
+          .mockResolvedValueOnce({ data: { ok: true } });
+        await expect(call()).resolves.toEqual({ ok: true });
+        expect(mockedAxios).toHaveBeenCalledTimes(2);
       });
 
       it('treats a 503 with a long Retry-After the same way', async () => {
@@ -2366,5 +2395,21 @@ describe('parseRetryAfterMs', () => {
     expect(parseRetryAfterMs(undefined)).toBeNull();
     expect(parseRetryAfterMs('')).toBeNull();
     expect(parseRetryAfterMs('soon')).toBeNull();
+  });
+});
+
+describe('isExhaustedQuotaBody', () => {
+  it('spots daily and monthly quotas in strings, buffers and objects', () => {
+    expect(isExhaustedQuotaBody({ error: 'Exceeded daily rate limit' })).toBe(true);
+    expect(isExhaustedQuotaBody(Buffer.from('Daily limit reached'))).toBe(true);
+    expect(isExhaustedQuotaBody('You have run out of API credits for the month')).toBe(true);
+    expect(isExhaustedQuotaBody({ message: 'Monthly quota exceeded' })).toBe(true);
+  });
+
+  it('leaves short-window limits and unrelated bodies alone', () => {
+    expect(isExhaustedQuotaBody('Daily limit reached, 10 requests per second')).toBe(false);
+    expect(isExhaustedQuotaBody({ message: 'Too Many Requests' })).toBe(false);
+    expect(isExhaustedQuotaBody(undefined)).toBe(false);
+    expect(isExhaustedQuotaBody(42)).toBe(false);
   });
 });

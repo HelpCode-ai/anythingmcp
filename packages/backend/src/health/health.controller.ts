@@ -15,6 +15,7 @@ import { RedisService } from '../common/redis.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
 import { SocialProviderRegistry } from '../auth/social/social-providers';
+import { anonymousSignInProviders } from '../identity-providers/sign-in-providers';
 
 @ApiTags('Health')
 @Controller('health')
@@ -44,15 +45,14 @@ export class HealthController {
     // could read off every customer's provider names and entry links. There,
     // users reach sign-in through the opaque /sso/<initiateId> link their
     // admin distributes, which is exactly why that id is opaque.
-    const ssoProviders = this.deployment.isSelfHosted()
-      ? (
-          await this.prisma.identityProvider.findMany({
-            where: { isActive: true },
-            select: { name: true, type: true, initiateId: true },
-            orderBy: { createdAt: 'asc' },
-          })
-        ).map((p) => ({ name: p.name, type: p.type, startUrl: `/sso/${p.initiateId}` }))
-      : [];
+    //
+    // The rule lives in anonymousSignInProviders, shared with the MCP
+    // authorization page, so the two pages always show the same providers.
+    const ssoProviders = (await anonymousSignInProviders(this.prisma, this.deployment)).map((p) => ({
+      name: p.name,
+      type: p.type,
+      startUrl: `/sso/${p.initiateId}`,
+    }));
 
     // Cloud social sign-in buttons (Google, Microsoft, GitHub). Platform
     // configuration, the same for everyone, so listing it reveals nothing

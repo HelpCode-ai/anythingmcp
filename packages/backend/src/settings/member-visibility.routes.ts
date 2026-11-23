@@ -134,6 +134,8 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
   ),
   'LoginController.pickFirstApp': noSession('OAuth consent flow'),
   'LoginController.pageBeacon': noSession('OAuth consent flow'),
+  'LoginController.showPausedPage': noSession('OAuth consent flow'),
+  'LoginController.pendingAuthorization': noSession('OAuth consent flow'),
   'LoginController.telegramOneTapQr': noSession('one-time code'),
   'LoginController.telegramOneTapStatus': noSession('one-time code'),
   'LoginController.telegramOneTapToken': noSession('one-time code'),

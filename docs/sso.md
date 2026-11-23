@@ -316,6 +316,70 @@ immediately — Entra provisioning fails until the new one is pasted in.
 
 ---
 
+## Connecting an AI client
+
+When a member connects Claude, ChatGPT or another MCP client, the client opens
+AnythingMCP's authorization page (`/auth/login`). On a self-hosted instance with
+an active provider that page has a button for it, above the email and password
+fields:
+
+- **On the shared URL (`/mcp`) and on a server's own URL (`/mcp/<serverId>`).**
+  The page shows the providers the dashboard sign-in page shows, no more: every
+  active provider of the instance. For a server's own URL the providers of that
+  server's workspace come first.
+- **After the provider.** The person continues exactly as after a password
+  sign-in on that page:
+  - The client asked for one server by URL: that server is granted. If the
+    account is not an active member of that server's workspace, the page says
+    so and no access is given.
+  - The client asked for the shared URL and the person can reach one server:
+    that server is granted, without a question.
+  - The client asked for the shared URL and the person can reach several
+    servers that have connectors (or belongs to several workspaces): the page **Choose what to
+    connect** is shown once per connection.
+  - What was granted is listed under **Settings → Connections** and can be
+    changed or revoked there, without reconnecting.
+- **If the provider answers with an error**, the person is back on the
+  authorization page with a message and can try again.
+
+With **Require single sign-on** on (§4), the authorization page refuses a
+password for every member of the workspace, as the dashboard does, before the
+password is looked at: *This workspace requires single sign-on. Use your
+organization sign-in on this page.* The provider's button is on that page. An
+account whose own password sign-in is disabled is refused in the same way.
+
+A member who is already signed in to the dashboard in that browser is offered
+**Allow access** instead of a sign-in. This follows the dashboard: a session
+that was opened with a password before **Require single sign-on** was turned on
+stays valid until it expires or is revoked, there and here. To end those
+sessions when you turn the requirement on, use **Settings → General → Security
+→ Sign everyone out** (see [Signing people out](#signing-people-out)).
+
+Recovery codes (§5) work on the dashboard sign-in page only. With a recovery
+code, sign in to the dashboard first, then connect the client in the same
+browser and choose **Allow access**.
+
+### Upgrading an instance that already uses single sign-on
+
+Before this behaviour, the button was shown only for a server's own URL, and a
+sign-in through the provider went straight back to the client. What changes:
+
+| Situation | Before | Now |
+|---|---|---|
+| Connections that already exist | Work | Work unchanged, until the client signs in again |
+| A client that uses a server's own URL | Connected to that server | The same. The connection is now also listed under **Settings → Connections** |
+| A client that uses the shared URL | No button: only a password or an open dashboard session got through | The button is there. One reachable server, or only one that has connectors: connected without a question. Several with connectors: **Choose what to connect**, once |
+| A member of a workspace that requires single sign-on types a password on the authorization page | Accepted | Refused with the message above; the button gets them through |
+| A sign-in for a server of a workspace the person is not (or no longer) an active member of | A token was issued and every call with it was refused | Refused on the page, with the reason |
+| The provider answers with an error | The dashboard sign-in page, with no way back to the client | The authorization page, with a message |
+
+A connection through the shared URL reaches the connectors **on the granted
+server**. A connector that is on no server is not part of it: put it on the
+server (**MCP Servers → the server → Connectors**), or grant the whole workspace
+under **Settings → Connections**.
+
+---
+
 ## Turning SSO off
 
 | Goal | How |
@@ -419,6 +483,8 @@ deactivated keys cannot be restored.
 | `ROLE_SYNC_SKIPPED` with `reason: overage` | The user is in too many groups; switch the claim to *Groups assigned to the application* |
 | Cannot enable **Require single sign-on** | Complete one dashboard sign-in through the provider, and generate recovery codes |
 | Every SSO route returns 404 | You are on AnythingMCP Cloud. SSO is self-hosted only |
+| *This workspace requires single sign-on* when connecting an AI client | The workspace has **Require single sign-on** on. Use the provider's button on the same page |
+| A member lands on **Choose what to connect** when connecting an AI client | They can reach more than one MCP server that has connectors. They pick once; the choice is kept for that client |
 | Entra's **Get started** for provisioning is greyed out | The app came from *App registrations*. Provisioning needs a second, non-gallery app — see §6 |
 | **Test connection** fails | The Tenant URL must end in `/api/scim/v2` and be reachable from Microsoft's network; the token must be the current one. A rotation invalidates the old token immediately |
 | Provisioned, but the user has no tools | No mapped group matched, so the fallback applied. Assign MCP roles to the `from SCIM` row under *Role mappings*, or check role sync is on and reading **groups** |

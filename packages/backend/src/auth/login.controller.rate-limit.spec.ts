@@ -6,6 +6,10 @@ import { ThrottlerException, ThrottlerGuard, ThrottlerStorageService } from '@ne
 import type { ExecutionContext } from '@nestjs/common';
 import type { Request, Response } from 'express';
 import { LoginController, loginPostKind, loginPostLimit, loginPostThrottleKey } from './login.controller';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * POST /auth/login: password attempts keep their 5 a minute per address; the

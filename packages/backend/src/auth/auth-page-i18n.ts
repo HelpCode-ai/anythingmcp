@@ -6,6 +6,14 @@ import type { PageLanguage } from './authorization-attempt';
  * `buttons_first` arm of the sign-in page test only; the control page stays
  * in English.
  *
+ * The other pages of the flow have their dictionaries next to this file:
+ * `auth-page-i18n.steps.ts` (code step, server picker, the messages shown on
+ * the sign-in page), `auth-page-i18n.connected.ts` (the page after
+ * approving), `auth-page-i18n.telegram.ts` (its one-tap Telegram panel) and
+ * `auth-page-i18n.pages.ts` (request closed, rate limit, cancelled, File
+ * Search). Every language object is typed with its interface, so a key
+ * missing in one language does not compile.
+ *
  * Placeholders in braces are replaced by `fill`. Every value put into a
  * placeholder must already be HTML-escaped by the caller; the texts
  * themselves contain only the markup written here (<strong>, <b>).
@@ -306,3 +314,60 @@ export function signInTexts(lang: PageLanguage | null | undefined): SignInTexts 
 export function fill(text: string, values: Record<string, string>): string {
   return text.replace(/\{(\w+)\}/g, (match, key: string) => (key in values ? values[key] : match));
 }
+
+/** The dictionary of one page group for a language, English when the language is not ours. */
+export function textsFor<T>(table: Record<PageLanguage, T>): (lang: PageLanguage | null | undefined) => T {
+  return (lang) => (lang && table[lang]) || table.en;
+}
+
+/** The locale used for dates and plural rules of a page language. */
+export const PAGE_LOCALES: Record<PageLanguage, string> = {
+  en: 'en-US',
+  de: 'de-DE',
+  it: 'it-IT',
+  es: 'es-ES',
+  zh: 'zh-CN',
+  ja: 'ja-JP',
+  ru: 'ru-RU',
+};
+
+/** The four plural forms a dictionary carries (Russian needs all of them). */
+export interface PluralTexts {
+  one: string;
+  few: string;
+  many: string;
+  other: string;
+}
+
+/** The plural form of `n` in a page language, with `{n}` filled in. */
+export function plural(forms: PluralTexts, lang: PageLanguage, n: number): string {
+  const category = new Intl.PluralRules(PAGE_LOCALES[lang]).select(n);
+  const form = category === 'one' || category === 'few' || category === 'many' ? forms[category] : forms.other;
+  return fill(form, { n: String(n) });
+}
+
+/**
+ * Texts for an inline `<script>`, as a JavaScript object literal: JSON, with
+ * the characters that could end the script element or a line of it written
+ * as escapes (`<`, `>`, `&`, U+2028, U+2029). This is the only way a
+ * dictionary text gets into script source; a script never has one
+ * concatenated into it. The texts are plain: the scripts put them into
+ * `textContent`, with their placeholders filled by SCRIPT_FILL.
+ */
+export function scriptTexts(texts: Record<string, string>): string {
+  return JSON.stringify(texts).replace(
+    /[<>&\u2028\u2029]/g,
+    (c) => `\\u${c.charCodeAt(0).toString(16).padStart(4, '0')}`,
+  );
+}
+
+/**
+ * `fill` for the page scripts (written for old browsers, like the scripts).
+ * Values are whatever the page holds (the client's name from `data-client`,
+ * an app's name): the result only ever goes into `textContent`.
+ */
+export const SCRIPT_FILL = `var fill = function (text, values) {
+        return String(text).replace(/\\{(\\w+)\\}/g, function (match, key) {
+          return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : match;
+        });
+      };`;

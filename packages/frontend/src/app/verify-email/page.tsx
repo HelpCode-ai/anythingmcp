@@ -9,6 +9,8 @@ import { Card } from '@/components/ui/card';
 import { buttonVariants } from '@/components/ui/button';
 import { cn } from '@/lib/utils';
 import { pushSignUpVerified } from '@/lib/conversion';
+import { useAuth } from '@/lib/auth-context';
+import { fetchPendingAuthorization, type PendingAuthorization } from '@/lib/pending-authorization';
 
 const API_BASE = '';
 
@@ -32,6 +34,24 @@ function VerifyEmailContent() {
   const [status, setStatus] = useState<'loading' | 'success' | 'error'>('loading');
   const [errorMessage, setErrorMessage] = useState('');
   const t = useTranslations('verifyEmail');
+  const { deploymentMode, deploymentModeLoaded } = useAuth();
+  const isCloud = deploymentMode === 'cloud';
+  // Cloud only: an AI client's authorization waiting in this browser (the
+  // link was opened where "Connect" was pressed). undefined: not asked yet.
+  const [asked, setAsked] = useState<PendingAuthorization | null | undefined>(undefined);
+  const waiting = isCloud ? asked : null;
+  const actionKnown = deploymentModeLoaded && waiting !== undefined;
+
+  useEffect(() => {
+    if (status !== 'success' || !deploymentModeLoaded || !isCloud) return;
+    let live = true;
+    void fetchPendingAuthorization().then((answer) => {
+      if (live) setAsked(answer);
+    });
+    return () => {
+      live = false;
+    };
+  }, [status, deploymentModeLoaded, isCloud]);
 
   useEffect(() => {
     if (!token) {
@@ -87,12 +107,34 @@ function VerifyEmailContent() {
               &#10003;
             </div>
             <p className="text-sm font-medium text-[var(--text)]">{t('success')}</p>
-            <Link
-              href="/login?emailVerified=true"
-              className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
-            >
-              {t('goToSignIn')}
-            </Link>
+            {!actionKnown ? (
+              // Holds the button's place until it is known which one it is.
+              <div className="h-10" aria-hidden />
+            ) : waiting ? (
+              // After signing in, straight on to the authorization page to
+              // allow access.
+              <Link
+                href="/login?emailVerified=true&redirect=%2Fauth%2Flogin"
+                data-testid="continue-connecting"
+                className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'h-auto min-h-10 w-full whitespace-normal py-2')}
+              >
+                {waiting.client
+                  ? t('continueConnecting', { client: waiting.client })
+                  : t('continueConnectingGeneric')}
+              </Link>
+            ) : (
+              <>
+                <Link
+                  href="/login?emailVerified=true"
+                  className={cn(buttonVariants({ variant: 'primary', size: 'lg' }), 'w-full')}
+                >
+                  {t('goToSignIn')}
+                </Link>
+                {/* The link was opened away from where the sign-up waits
+                    (a phone, another tab): that page can simply go on. */}
+                <p className="text-xs leading-relaxed text-[var(--text-3)]">{t('otherDevice')}</p>
+              </>
+            )}
           </div>
         )}
 

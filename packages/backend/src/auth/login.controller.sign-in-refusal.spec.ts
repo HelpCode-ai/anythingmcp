@@ -3,7 +3,12 @@ jest.mock('openid-client', () => ({}));
 
 import * as bcrypt from 'bcrypt';
 import { LoginController } from './login.controller';
+import { loginErrorText } from './auth-page-i18n.steps';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
 import type { Request, Response } from 'express';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * An e-mail and password that do not sign in get one answer, whatever the
@@ -31,8 +36,9 @@ function makeRes() {
       this._sent = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };
@@ -93,11 +99,12 @@ describe('LoginController: an e-mail and password that do not sign in', () => {
       const { res } = await signIn(CLOUD, rows);
       answers.add(res._redirect as string);
     }
-    expect([...answers]).toEqual([
-      `/auth/login?error=${encodeURIComponent(
-        'That email and password do not match. If you signed up with Google, Microsoft or GitHub, use that button instead. New here? Create an account first.',
-      )}`,
-    ]);
+    // The redirect carries the key of the message; the sign-in page writes
+    // the text, with the provider buttons it has.
+    expect([...answers]).toEqual(['/auth/login?error=signInFailed']);
+    expect(loginErrorText('signInFailed', 'en', THREE)).toBe(
+      'That email and password do not match. If you signed up with Google, Microsoft or GitHub, use that button instead. New here? Create an account first.',
+    );
     // Nothing of the address typed is in the answer.
     expect([...answers][0]).not.toContain('a%40b.com');
     expect([...answers][0]).not.toContain('a@b.com');
@@ -109,8 +116,9 @@ describe('LoginController: an e-mail and password that do not sign in', () => {
   ])('names only the provider buttons the page has', async (providers, sentence) => {
     for (const rows of Object.values(ACCOUNTS)) {
       const { res } = await signIn(CLOUD, rows, providers);
-      expect(decodeURIComponent(res._redirect as string)).toBe(
-        `/auth/login?error=That email and password do not match. ${sentence} New here? Create an account first.`,
+      expect(res._redirect).toBe('/auth/login?error=signInFailed');
+      expect(loginErrorText('signInFailed', 'en', providers)).toBe(
+        `That email and password do not match. ${sentence} New here? Create an account first.`,
       );
     }
   });
@@ -122,9 +130,12 @@ describe('LoginController: an e-mail and password that do not sign in', () => {
     ] as const) {
       for (const rows of Object.values(ACCOUNTS)) {
         const { res } = await signIn(deployment, rows, [...providers]);
-        expect(res._redirect).toBe(`/auth/login?error=${encodeURIComponent('Invalid email or password')}`);
+        expect(res._redirect).toBe('/auth/login?error=invalidCredentials');
       }
     }
+    expect(loginErrorText('invalidCredentials', 'en', [])).toBe('Invalid email or password');
+    // The long text needs buttons to name: without any, the page says the short one too.
+    expect(loginErrorText('signInFailed', 'en', [])).toBe('Invalid email or password');
   });
 
   it.each(Object.entries(ACCOUNTS))('spends exactly one password check on %s', async (_what, rows) => {
@@ -160,7 +171,7 @@ describe('LoginController: an e-mail and password that do not sign in', () => {
           { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' },
           res,
         );
-        expect(res._redirect).toBe(`/auth/login?error=${encodeURIComponent('Invalid email or password')}`);
+        expect(res._redirect).toBe('/auth/login?error=invalidCredentials');
         // No sign-in cookie: the callback has nothing to issue a code for.
         expect(res._set).not.toContain('login_user');
       }
