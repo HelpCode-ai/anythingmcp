@@ -265,3 +265,41 @@ export function renderAuthPage(opts: {
 </body>
 </html>`;
 }
+
+/**
+ * The page for a connection request that is no longer open: it expired (30
+ * minutes), was already used, or never existed in this browser (a bookmark).
+ *
+ * Shown wherever the flow used to end in a bare sign-in form that could not
+ * work (`/auth/login` without a pending authorization) or in the OAuth
+ * library's raw JSON 400 (`/callback` without one). It cannot say which of
+ * the cases it is, so it says what to do in all of them. A second press on
+ * Continue lands here too, after the first one already went through: that is
+ * why it does not say the connection failed.
+ */
+export function renderClosedRequestPage(opts: {
+  trust: TrustRowOptions;
+  /** A message from the step that sent the person here (already plain text). */
+  message?: string;
+  /** The dashboard, for someone who only wanted to sign in. */
+  dashboardUrl?: string;
+}): string {
+  const message = opts.message ? `<div class="error" role="alert">${escapeHtml(opts.message)}</div>` : '';
+  const dashboard = opts.dashboardUrl
+    ? `
+    <p class="links">Looking for the dashboard? <a href="${escapeHtml(opts.dashboardUrl)}">Open AnythingMCP</a></p>`
+    : '';
+  return renderAuthPage({
+    title: 'This connection request is no longer open',
+    card: `
+    <div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK_SVG}</div></div>
+    <h1>This connection request is no longer open</h1>
+    ${message}
+    <p class="sub" id="closed-what">A connection request stays open for 30 minutes and works once.</p>
+    <p class="sub" id="closed-next" style="margin-bottom:0"><strong>Go back to your AI assistant.</strong> If AnythingMCP is not shown as connected there, press <strong>Connect</strong> again.</p>${dashboard}`,
+    trust: opts.trust,
+    extraStyles: `
+  .sub strong { color: var(--text); font-weight: 600; }`,
+  });
+}
+

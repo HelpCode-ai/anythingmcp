@@ -105,9 +105,12 @@ export class ResourceIndicatorMiddleware implements NestMiddleware {
       res.cookie(MCP_RESOURCE_COOKIE, serverId, {
         httpOnly: true,
         secure: isSecure,
-        // Long enough to survive the hop to the login page and back, short
-        // enough that a stale value cannot influence a later flow.
-        maxAge: 10 * 60 * 1000,
+        // As long as the authorization it belongs to (30 min, like the two
+        // cookies above). At ten minutes a per-server connection that took
+        // longer (a sign-up, an e-mail code) was treated as a shared one:
+        // no wrong-workspace check, and another server could be granted.
+        // Every /authorize sets or clears it, so no stale value survives.
+        maxAge: 30 * 60 * 1000,
         sameSite: isSecure ? 'none' : 'lax',
         signed: true,
       });

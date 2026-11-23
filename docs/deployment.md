@@ -487,7 +487,7 @@ The page shown after approving an AI client into an empty workspace says "Claude
 | Arm | What the person sees |
 |-----|----------------------|
 | `control` | The page as before: "Claude is connected" |
-| `next_step` | "One more step: go back to Claude", with the sentence that the client is connected once Continue is pressed. The picker, the example request and the Continue link are the same. After the one-tap Telegram bot is connected the page goes on by itself (see [After the bot is connected](#after-the-bot-is-connected)) |
+| `next_step` | No visible heading (the tab title is "One more step: go back to Claude"): one line ("Press Continue to Claude to finish connecting."), then the picker, the example request and the Continue link. The copy button is "Copy & continue": it copies the request and presses Continue. After the one-tap Telegram bot is connected the page goes on by itself (see [After the bot is connected](#after-the-bot-is-connected)) |
 
 The arm is chosen per pending authorization (a hash of its session, never stored) and stays the same through reloads, the round trip to Google and the sign-up detour. A new connection attempt from the AI client can get the other arm.
 
@@ -496,17 +496,30 @@ The events of one attempt carry the same `attempt` value, the `device` (`mobile`
 | Event | Written when | Extra fields |
 |-------|--------------|--------------|
 | `authorize_page_viewed` | the sign-in page is opened inside an authorization | `lang`: the browser's first language if it is one of `en`, `de`, `it`, `es`, `zh`, `ja`, `ru`, else `other` |
-| `authorize_action` | a button of the sign-in page is used | `button`: `google`, `microsoft`, `github`, `sso`, `password`, `session`, `cancel`, `create_account` |
+| `authorize_action` | a button of the sign-in page is used, or one of the two links of the page after approving that are not Continue | `button`: `google`, `microsoft`, `github`, `sso`, `password`, `session`, `cancel`, `create_account`; `open_dashboard` ("Or add an app here first"), `payment_method` ("Add a payment method") |
 | `authorization_signed_in` | the identity is settled and access allowed | `method`: the provider, `password`, `session`, `email_code`; `account`: `new` (created in the last 30 minutes) or `existing` |
 | `empty_workspace_prompt` | the page of the test is shown | |
 | `post_approve_app_picked` | an app is picked on it | |
-| `post_approve_continue_clicked` | Continue is pressed on it | `button`: `continue`, or `auto_continue` when the page went on by itself |
+| `post_approve_continue_clicked` | Continue is pressed on it | `button`: `continue`, `copy_continue` when "Copy & continue" pressed it, or `auto_continue` when the page went on by itself |
+| `authorize_step_viewed` | a step between sign-in and the code is shown | `step`: `email-code` (code step for an unverified address), `servers` ("Choose what to connect"), `wrong-workspace` (the client asked for a server this account cannot reach) |
+| `authorize_request_closed` | a browser reaches the flow without an open authorization and gets the "no longer open" page | `via`: `login`, `next` or `callback`; `device`. No account, no attempt |
 | `authorization_code_issued` | the code is handed to the client's redirect | |
 | `authorization_code_exchanged` | the client presents the code | `client` only: no browser is present |
 
 `post_approve_continue_clicked` and the `create_account` button are reported by the page with `navigator.sendBeacon` to `POST /auth/beacon`, which never delays the click. That route writes one event, only for the pending authorization of the browser that names its own attempt, and always answers 204.
 
 To read the test, compare the arms on attempts that have an `empty_workspace_prompt`: the share with an `authorization_code_issued` in the same attempt (the person came back to the client), and the share of those codes followed by an `authorization_code_exchanged` of the same user (the client really connected).
+
+### What the flow does when something is off
+
+- **The page after approving has its own address**, `GET /auth/next`. The request that finishes the sign-in answers with a redirect to it, and the page is rendered from signed cookies that live as long as the pause. Reload, the Back button and a tab restored by a phone show the page again; an app picked on it stays shown as added.
+- **A request that is no longer open** (it expired after 30 minutes, its code was already issued, or the address was opened from a bookmark) gets one page on `/auth/login`, `/auth/next` and `/callback`: "This connection request is no longer open", with what to do (go back to the AI client; press Connect again if it is not shown as connected). `/callback` answers it with status 400, as the OAuth library's JSON did.
+- **Continue works once.** A second press within five seconds is dropped on the page; the sign-in cookie is cleared as soon as the code is on its way to the client.
+- **The sign-in is bound to one authorization.** `/callback` accepts the sign-in cookie only for the pending authorization it was issued for; another authorization started in the same browser asks for consent itself.
+- **Cancel tells the client**: a redirect to its registered address with `error=access_denied`, its `state` and `iss`.
+- **The rate limit answers a person with a page** ("Too many attempts", status 429); the routes that scripts call keep the JSON answer.
+- **`GET /auth/pending`** tells the dashboard (same origin, Cloud) whether an authorization is waiting in this browser and whether "Allow" or only "Continue" is missing, so it can show a way back.
+- ChatGPT's database plugin never gets the page after approving (it has no setup tools). A workspace whose free trial has ended gets it without the app picker and the example request.
 
 ### Sign-in page test
 
