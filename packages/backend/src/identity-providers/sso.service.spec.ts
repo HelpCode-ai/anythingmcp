@@ -590,6 +590,64 @@ describe('SsoService', () => {
     });
   });
 
+  describe('where a failed round trip started', () => {
+    // The callback sends a failure back to the page the sign-in was started
+    // on; it learns which one from the error.
+    const url = new URL('http://localhost:3000/auth/sso/callback?code=c&state=st-1');
+    const attempt = (surface: string) => ({
+      id: 'a1',
+      state: 'st-1',
+      nonce: 'n',
+      codeVerifier: 'v',
+      surface,
+      oauthSessionId: 'sess-1',
+      returnTo: '/',
+      provider: { ...provider, clientId: 'c' },
+    });
+
+    it('is unknown while the attempt is: no state, or one that was used or has expired', async () => {
+      await expect(service.complete(new URL('http://localhost:3000/auth/sso/callback'), {})).rejects.toMatchObject({
+        reason: 'missing_state',
+        surface: null,
+      });
+      prisma.ssoLoginAttempt.updateMany.mockResolvedValue({ count: 0 });
+      await expect(service.complete(url, {})).rejects.toMatchObject({
+        reason: 'state_replayed_or_expired',
+        surface: null,
+      });
+    });
+
+    it.each(['MCP', 'DASHBOARD', 'LINK', 'CONNECT'])('is the surface of the attempt once it is known (%s)', async (surface) => {
+      prisma.ssoLoginAttempt.updateMany.mockResolvedValue({ count: 1 });
+      prisma.ssoLoginAttempt.findUnique.mockResolvedValue(attempt(surface));
+      // No client secret: the first refusal after the attempt is loaded.
+      await expect(service.complete(url, {})).rejects.toMatchObject({
+        reason: 'provider_missing_secret',
+        surface,
+      });
+    });
+
+    it('also marks a failure that is not a refusal (the provider cannot be reached)', async () => {
+      prisma.ssoLoginAttempt.updateMany.mockResolvedValue({ count: 1 });
+      prisma.ssoLoginAttempt.findUnique.mockResolvedValue(attempt('MCP'));
+      service.providers.getClientSecret = jest.fn(async () => 'secret');
+      service.discoverFor = jest.fn(async () => {
+        throw new Error('getaddrinfo ENOTFOUND login.example');
+      });
+
+      const error = await service.complete(url, {}).catch((e: unknown) => e);
+
+      expect(error).toBeInstanceOf(SsoError);
+      // Audited by the controller as before, with the message kept for the log.
+      expect(error).toMatchObject({
+        reason: 'unexpected_error',
+        surface: 'MCP',
+        audited: false,
+        message: 'getaddrinfo ENOTFOUND login.example',
+      });
+    });
+  });
+
   describe('starting a link', () => {
     it('refuses a provider belonging to another workspace', async () => {
       // `identityProvider.id` is a cuid, not the opaque initiateId, so it is

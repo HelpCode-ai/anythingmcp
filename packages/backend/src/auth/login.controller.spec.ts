@@ -88,6 +88,7 @@ describe('LoginController', () => {
   let sso: { startMcp: jest.Mock };
   let grants: {
     grantServers: jest.Mock;
+    grantRequestedServer: jest.Mock;
     grantWholeOrganization: jest.Mock;
     listSelectableTargets: jest.Mock;
     resolve: jest.Mock;
@@ -108,6 +109,7 @@ describe('LoginController', () => {
     sso = { startMcp: jest.fn() };
     grants = {
       grantServers: jest.fn().mockResolvedValue([]),
+      grantRequestedServer: jest.fn().mockResolvedValue(true),
       grantWholeOrganization: jest.fn().mockResolvedValue(true),
       listSelectableTargets: jest.fn().mockResolvedValue([]),
       // No grant: the user's own organization, as before grants existed.
@@ -950,6 +952,9 @@ describe('LoginController', () => {
       const res = await login({ mcp_resource: 'srv-1' });
 
       expect(res._redirect).toBe('http://mcp.test/callback');
+      // Added to what the client was already allowed, never a replacement.
+      expect(grants.grantRequestedServer).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'srv-1');
+      expect(grants.grantServers).not.toHaveBeenCalled();
     });
 
     it('never shows on self-hosted', async () => {
@@ -1143,6 +1148,73 @@ describe('LoginController', () => {
 
         expect(res._sent).toContain('href="https://cloud.example/welcome"');
         expect(res._sent).not.toContain('continueWith');
+      });
+    });
+
+    // Every invited member gets an empty default server: a workspace with
+    // two people has two servers, and "Choose what to connect" had nothing
+    // to offer there.
+    describe('one workspace whose servers leave nothing to choose', () => {
+      const twoServers = (first: number, second: number) =>
+        grants.listSelectableTargets.mockResolvedValue([
+          {
+            organizationId: 'org-1',
+            organizationName: 'Primary',
+            servers: [
+              { id: 'srv-admin', name: 'Default (Ada)', connectorCount: first },
+              { id: 'srv-own', name: 'Default (A)', connectorCount: second },
+            ],
+          },
+        ]);
+
+      beforeEach(() => {
+        (grants as any).firstOwnServerId = jest.fn().mockResolvedValue('srv-own');
+        (grants as any).hasActiveGrant = jest.fn().mockResolvedValue(false);
+      });
+
+      it('connects an editor of an empty workspace to the whole workspace and shows the page after approving', async () => {
+        arrange({ role: 'EDITOR' });
+        twoServers(0, 0);
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-1' });
+        const res = await login();
+
+        expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-abc', 'u1', 'org-1');
+        expect(grants.grantServers).not.toHaveBeenCalled();
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).not.toContain('Choose what to connect');
+        expect(res._cookies['pending_grant']).toBeUndefined();
+      });
+
+      it('sends a viewer of an empty workspace straight to /callback', async () => {
+        arrange({ role: 'VIEWER' });
+        twoServers(0, 0);
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-1' });
+        const res = await login();
+
+        expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-abc', 'u1', 'org-1');
+        expect(res._redirect).toBe('http://mcp.test/callback');
+        expect(res._sent).toBeUndefined();
+      });
+
+      it('connects the one server with connectors and the member\'s own, without a page', async () => {
+        arrange({ role: 'EDITOR', connectors: 2 });
+        twoServers(2, 0);
+        grants.grantServers.mockResolvedValue(['srv-admin', 'srv-own']);
+        const res = await login();
+
+        expect(grants.grantServers).toHaveBeenCalledWith('client-abc', 'u1', ['srv-admin', 'srv-own']);
+        expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+        expect(res._redirect).toBe('http://mcp.test/callback');
+      });
+
+      it('still asks when both servers have connectors', async () => {
+        arrange({ connectors: 3 });
+        twoServers(2, 1);
+        const res = await login();
+
+        expect(res._sent).toContain('Choose what to connect');
+        expect(grants.grantServers).not.toHaveBeenCalled();
+        expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
       });
     });
 

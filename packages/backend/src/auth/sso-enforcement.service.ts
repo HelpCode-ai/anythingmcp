@@ -3,6 +3,14 @@ import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
 
 /**
+ * What the MCP authorization page (/auth/login) answers to a password when a
+ * workspace of the account requires single sign-on. The page has no recovery
+ * code field, so unlike the dashboard's message it names only the button.
+ */
+export const SSO_REQUIRED_MESSAGE =
+  'This workspace requires single sign-on. Use your organization sign-in on this page.';
+
+/**
  * Answers one question: may this user still sign in with a password?
  *
  * The check spans EVERY organization the user belongs to, not just the active
