@@ -2248,24 +2248,39 @@ ${
 
     // A server without connectors is not a choice. In one workspace where at
     // most one server has connectors, nothing is asked:
-    // - none has: the whole workspace, as when there is no server, so what
-    //   is added later is picked up without reconnecting;
+    // - none has, and the workspace has no connector at all: the whole
+    //   workspace, as when there is no server, so what is added later is
+    //   picked up without reconnecting;
     // - one has: that server, as when it is the only one, plus the user's
     //   own first server when that is another one (the connectors they add
     //   later are put there);
     // - a restricted member: the whole workspace, as with one server above.
-    // Two servers with connectors, or several workspaces: the picker.
+    // The picker stays for two servers with connectors, for several
+    // workspaces, for connectors that are on no server (only "everything"
+    // reaches them, and that is the person's call), and for a client that
+    // already has a grant: what was chosen for it before, here or under
+    // Settings → Connections, is not replaced without asking.
     const withConnectors = servers.filter((s) => s.connectorCount > 0);
-    if (targets.length === 1 && withConnectors.length <= 1) {
+    if (
+      targets.length === 1 &&
+      withConnectors.length <= 1 &&
+      !(await this.grants.hasActiveGrant(consent.clientId, userId))
+    ) {
       const organizationId = targets[0].organizationId;
-      if (withConnectors.length === 0 || (await this.grants.restrictedIn(userId, organizationId))) {
+      if (await this.grants.restrictedIn(userId, organizationId)) {
         await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId);
-      } else {
+        return false;
+      }
+      if (withConnectors.length === 1) {
         const only = withConnectors[0].id;
         const own = await this.grants.firstOwnServerId(userId, organizationId);
         await this.grants.grantServers(consent.clientId, userId, own && own !== only ? [only, own] : [only]);
+        return false;
       }
-      return false;
+      if ((await this.prisma.connector.count({ where: { organizationId } })) === 0) {
+        await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId);
+        return false;
+      }
     }
 
     // More than one. Hold the verified identity in a signed, httpOnly cookie

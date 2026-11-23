@@ -190,12 +190,17 @@ export class RefreshTokenRevocationMiddleware implements NestMiddleware {
       }
       // Reachable, but outside what this client was allowed (or the connection
       // was revoked): the endpoint refuses every call, so no new token for it.
-      // The marker is kept, as above. A lookup error refuses nothing.
+      // A lookup error refuses nothing. Unlike above, a marker is used up by
+      // this refusal: the same registration may serve another server URL that
+      // IS granted, whose refresh carries no `resource` either and would be
+      // refused with it for fifteen minutes. The endpoint sets the marker
+      // again on the next refused call.
       if (reach === 'reachable' && clientId && this.grants && grantServerScopeMode() === 'enforce') {
         const scope = await this.grants
           .serverScopeById(clientId, userId, serverId)
           .catch(() => 'no-grant' as const);
         if (scope === 'outside' || scope === 'revoked') {
+          if (via === 'marker') await this.refusals?.clear(userId, clientId).catch(() => undefined);
           return this.deny(res, payload, userId, 'outside_grant', { serverId, via });
         }
       }

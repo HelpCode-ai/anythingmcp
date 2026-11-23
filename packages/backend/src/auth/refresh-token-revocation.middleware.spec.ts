@@ -630,10 +630,19 @@ describe('RefreshTokenRevocationMiddleware — server outside the connection gra
     expect(grants.serverScopeById).toHaveBeenCalledWith(CLIENT, USER_ID, SRV_B);
   });
 
-  it('refuses via the marker the endpoint left, and keeps the marker', async () => {
+  it('refuses via the marker the endpoint left, and uses the marker up', async () => {
+    // The same registration may serve another server URL that is granted: its
+    // refresh carries no `resource` either and must not be refused with it.
     await store.mark(USER_ID, CLIENT, SRV_B);
     await middleware.use(refresh(), res, next);
     expectOutsideGrant('marker');
+    await expect(store.peek(USER_ID, CLIENT)).resolves.toBeNull();
+  });
+
+  it('keeps the marker when the refusal came from the resource the client sent', async () => {
+    await store.mark(USER_ID, CLIENT, SRV_B);
+    await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
+    expectOutsideGrant('resource');
     await expect(store.peek(USER_ID, CLIENT)).resolves.toBe(SRV_B);
   });
 

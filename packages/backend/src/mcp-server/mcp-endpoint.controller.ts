@@ -1357,6 +1357,9 @@ export class McpEndpointController {
     return true;
   }
 
+  /** `MCP_GRANT_SERVER_SCOPE=report`: until when each (client, user, server) stays reported. */
+  private readonly reportedOutsideGrant = new Map<string, number>();
+
   /**
    * Applies the connection grant on a server's own URL.
    *
@@ -1372,8 +1375,9 @@ export class McpEndpointController {
    *
    * Only OAuth tokens have a grant. API keys, app JWTs and the static
    * credentials pass, and so does a client without a grant row (tokens from
-   * before grants existed, the SSO sign-in). `MCP_GRANT_SERVER_SCOPE=report`
-   * logs instead of refusing, `off` skips the check.
+   * before grants existed). `MCP_GRANT_SERVER_SCOPE=report` logs instead of
+   * refusing, once per client, user and server in ten minutes, and `off`
+   * skips the check.
    *
    * Call it only after the caller is known to be a member of the server's
    * workspace. Returns true when it has answered.
@@ -1390,6 +1394,11 @@ export class McpEndpointController {
     if (user?.authMethod !== 'jwt' || !user?.sub) return false;
     const clientId = oauthClientId(user);
     if (!clientId) return false;
+
+    // Report only: what was just reported is not looked up or logged again,
+    // so a busy client outside its grant costs one lookup in ten minutes.
+    const reportKey = `${clientId}\u0000${user.sub}\u0000${serverId}`;
+    if (mode === 'report' && (this.reportedOutsideGrant.get(reportKey) ?? 0) > Date.now()) return false;
 
     // A lookup that fails refuses nothing, as on the refresh grant: this check
     // must not be what takes a working connection down.
@@ -1417,6 +1426,8 @@ export class McpEndpointController {
       this.logger.warn(
         `MCP grant scope (report only): a request to server ${serverId} would be refused, ${why} (${who})`,
       );
+      if (this.reportedOutsideGrant.size >= 5000) this.reportedOutsideGrant.clear();
+      this.reportedOutsideGrant.set(reportKey, Date.now() + 10 * 60 * 1000);
       return false;
     }
     this.logger.warn(`MCP request refused: server ${serverId}, ${why} (${who})`);

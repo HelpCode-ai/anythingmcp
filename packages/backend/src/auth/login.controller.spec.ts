@@ -1169,6 +1169,7 @@ describe('LoginController', () => {
 
       beforeEach(() => {
         (grants as any).firstOwnServerId = jest.fn().mockResolvedValue('srv-own');
+        (grants as any).hasActiveGrant = jest.fn().mockResolvedValue(false);
       });
 
       it('connects an editor of an empty workspace to the whole workspace and shows the page after approving', async () => {

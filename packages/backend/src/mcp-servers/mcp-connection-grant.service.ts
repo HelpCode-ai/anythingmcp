@@ -68,7 +68,7 @@ export function grantServerScopeMode(
  * What a client's grant says about one server opened by its own URL.
  *
  * - `no-grant`: the client has no grant row (tokens from before grants
- *   existed, the SSO sign-in). Nothing to apply.
+ *   existed). Nothing to apply.
  * - `granted`: the grant names the server, or its whole workspace.
  * - `outside`: the grant does not include the server.
  * - `revoked`: the user revoked this connection.
@@ -219,6 +219,21 @@ export class McpConnectionGrantService {
   }
 
   /**
+   * Whether this client already holds a grant the user has not revoked: what
+   * they chose for it before, on the server choice or under Settings →
+   * Connections. An authorization that would otherwise decide by itself must
+   * not put something else in its place.
+   */
+  async hasActiveGrant(clientId: string | undefined, userId: string | undefined): Promise<boolean> {
+    if (!clientId || !userId) return false;
+    const row = await this.prisma.mcpConnectionGrant.findUnique({
+      where: { clientId_userId: { clientId, userId } },
+      select: { revokedAt: true },
+    });
+    return !!row && !row.revokedAt;
+  }
+
+  /**
    * Grant the one server a client asked for by its URL (RFC 8707 `resource`).
    *
    * A client registration can be used for more than one server URL, and each
@@ -237,16 +252,12 @@ export class McpConnectionGrantService {
    * server goes through the same checks as {@link grantServers}: an id the
    * user cannot reach or may not see is dropped and nothing is written.
    *
-   * `onlyExisting` never creates a grant: for the SSO sign-in, which writes
-   * none, so a client that has one can still be allowed a further server.
-   *
    * Returns whether the grant now includes the server.
    */
   async grantRequestedServer(
     clientId: string,
     userId: string,
     serverId: string,
-    opts: { onlyExisting?: boolean } = {},
   ): Promise<boolean> {
     const [server] = await this.keepVisible(userId, await this.validateServers(userId, [serverId]));
     if (!server) {
@@ -258,7 +269,6 @@ export class McpConnectionGrantService {
       where: { clientId_userId: { clientId, userId } },
       select: { organizationId: true, serverIds: true, revokedAt: true },
     });
-    if (!existing && opts.onlyExisting) return false;
 
     if (existing && !existing.revokedAt) {
       if (existing.organizationId === server.organizationId) return true;

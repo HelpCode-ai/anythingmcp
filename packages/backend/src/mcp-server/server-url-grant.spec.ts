@@ -301,6 +301,24 @@ describe('McpEndpointController — connection grant on a server URL', () => {
     ]);
   });
 
+  it('report: looks a client, user and server up once, then serves without lookup or line', async () => {
+    process.env.MCP_GRANT_SERVER_SCOPE = 'report';
+    grants.serverScope.mockResolvedValue('outside');
+    await controller.handlePost('srv-A', request(oauthUser()), makeRes(), {});
+    const second = makeRes();
+    await controller.handlePost('srv-A', request(oauthUser()), second, {});
+    expectServed(second);
+    expect(grants.serverScope).toHaveBeenCalledTimes(1);
+    expect(warnings()).toHaveLength(1);
+
+    // Enforcing never skips the lookup, whatever was reported before.
+    process.env.MCP_GRANT_SERVER_SCOPE = 'enforce';
+    const refused = makeRes();
+    await controller.handlePost('srv-A', request(oauthUser()), refused, {});
+    expect(grants.serverScope).toHaveBeenCalledTimes(2);
+    expect(refused.status).toHaveBeenCalledWith(401);
+  });
+
   it('report: logs nothing for a request inside the grant', async () => {
     process.env.MCP_GRANT_SERVER_SCOPE = 'report';
     const res = makeRes();

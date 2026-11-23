@@ -403,6 +403,31 @@ describe('McpConnectionGrantService.clientRedirectUris', () => {
   });
 });
 
+describe('McpConnectionGrantService.hasActiveGrant', () => {
+  const service = (row: { revokedAt: Date | null } | null) => {
+    const findUnique = jest.fn(async (_args: any) => row);
+    return { svc: new McpConnectionGrantService({ mcpConnectionGrant: { findUnique } } as any), findUnique };
+  };
+
+  it('is true for a grant the user has not revoked', async () => {
+    const { svc, findUnique } = service({ revokedAt: null });
+    await expect(svc.hasActiveGrant('client-1', 'user-1')).resolves.toBe(true);
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { clientId_userId: { clientId: 'client-1', userId: 'user-1' } },
+      select: { revokedAt: true },
+    });
+  });
+
+  it('is false without a grant, for a revoked one, and without a client or user', async () => {
+    await expect(service(null).svc.hasActiveGrant('client-1', 'user-1')).resolves.toBe(false);
+    await expect(service({ revokedAt: new Date() }).svc.hasActiveGrant('client-1', 'user-1')).resolves.toBe(false);
+    const { svc, findUnique } = service({ revokedAt: null });
+    await expect(svc.hasActiveGrant(undefined, 'user-1')).resolves.toBe(false);
+    await expect(svc.hasActiveGrant('client-1', undefined)).resolves.toBe(false);
+    expect(findUnique).not.toHaveBeenCalled();
+  });
+});
+
 describe('McpConnectionGrantService.firstOwnServerId', () => {
   it('asks for the user\'s oldest active server of that workspace, as attachToDefaultServer does', async () => {
     const findFirst = jest.fn(async (_args: any) => ({ id: 'srv-own' }));
@@ -701,15 +726,6 @@ describe('McpConnectionGrantService on a server URL', () => {
       );
       await expect(svc.grantRequestedServer('client-1', 'user-1', 'srv-B')).resolves.toBe(false);
       expect(row()?.serverIds).toEqual(['srv-A']);
-    });
-
-    it('with onlyExisting never creates a grant', async () => {
-      const { svc, row, prisma } = store(null);
-      await expect(
-        svc.grantRequestedServer('client-1', 'user-1', 'srv-A', { onlyExisting: true }),
-      ).resolves.toBe(false);
-      expect(row()).toBeNull();
-      expect(prisma.mcpConnectionGrant.upsert).not.toHaveBeenCalled();
     });
   });
 });

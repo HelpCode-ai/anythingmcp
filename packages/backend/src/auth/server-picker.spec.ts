@@ -22,6 +22,10 @@ function build(
     restricted?: boolean;
     /** The user's own first server in the workspace, where connectors they add go. */
     ownServerId?: string | null;
+    /** This client already holds a grant the user has not revoked. */
+    hasGrant?: boolean;
+    /** Connectors of the workspace, on a server or not. */
+    workspaceConnectors?: number;
   } = {},
 ) {
   const grants = {
@@ -31,6 +35,7 @@ function build(
     listSelectableTargets: jest.fn().mockResolvedValue(opts.targets ?? []),
     restrictedIn: jest.fn().mockResolvedValue(!!opts.restricted),
     firstOwnServerId: jest.fn().mockResolvedValue(opts.ownServerId ?? null),
+    hasActiveGrant: jest.fn().mockResolvedValue(!!opts.hasGrant),
   };
   const store = {
     getOAuthSession: jest.fn().mockResolvedValue(
@@ -42,7 +47,10 @@ function build(
   };
   const controller = new LoginController(
     { comparePassword: jest.fn() } as any,
-    { user: { findUnique: jest.fn() } } as any,
+    {
+      user: { findUnique: jest.fn() },
+      connector: { count: jest.fn().mockResolvedValue(opts.workspaceConnectors ?? 0) },
+    } as any,
     { get: jest.fn() } as any,
     store as any,
     { startMcp: jest.fn() } as any,
@@ -301,6 +309,43 @@ describe('servers without connectors are not a choice', () => {
     expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-1', 'u1', 'org-A');
     expect(grants.grantServers).not.toHaveBeenCalled();
     expect(res.send).not.toHaveBeenCalled();
+  });
+
+  // What was chosen for this client before is not replaced without asking.
+  it.each([
+    ['one server has connectors', 3],
+    ['no server has connectors', 0],
+  ])('still asks when the client already has a grant (%s)', async (_label, count) => {
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-admin', 'Default (Ada)', count), server('srv-own', 'Default (Vera)', 0)]),
+      ],
+      ownServerId: 'srv-own',
+      hasGrant: true,
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    expect(grants.hasActiveGrant).toHaveBeenCalledWith('client-1', 'u1');
+    expect(res.send.mock.calls[0][0]).toContain('Default (Vera)');
+    expect(grants.grantServers).not.toHaveBeenCalled();
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+  });
+
+  it('still asks when no server has connectors but the workspace has some on no server', async () => {
+    // Only "everything in this workspace" reaches those: the person's call.
+    const { controller, grants, req, res } = build({
+      targets: [
+        workspace('org-A', 'Acme', [server('srv-admin', 'Default (Ada)', 0), server('srv-own', 'Default (Vera)', 0)]),
+      ],
+      ownServerId: 'srv-own',
+      workspaceConnectors: 2,
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+    expect(grants.grantServers).not.toHaveBeenCalled();
   });
 
   it('still asks when two servers have connectors, and lists the empty one too', async () => {
