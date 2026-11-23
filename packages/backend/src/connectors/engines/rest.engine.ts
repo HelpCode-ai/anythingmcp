@@ -398,10 +398,12 @@ export class RestEngine {
         ? loginTokenHeaderCollision(axiosConfig.headers, config.authConfig as unknown as LoginTokenAuthConfig)
         : undefined;
     // Set only for LOGIN_TOKEN with `tokenPlacement: "body"`: the token is
-    // then `${loginToken}` in the tool's bodyTemplate instead of a header.
-    const loginBodyToken = await this.injectAuth(axiosConfig, config);
+    // then `${loginToken}` in the tool's bodyTemplate (or `$loginToken` in
+    // bodyMapping) instead of a header. `aud` is `${loginAud}` / `$loginAud`,
+    // for a login that returns a second value the later calls also send.
+    const loginBodyAuth = await this.injectAuth(axiosConfig, config);
     // Renders the body again with a new token, for the retry after a re-login.
-    let renderTokenBody: ((token: string) => unknown) | undefined;
+    let renderTokenBody: ((token: string, aud?: string) => unknown) | undefined;
     // Headers that carry the connector's credentials stay behind when a
     // redirect leaves the origin: whatever auth added, plus the connector's
     // own headers and templated ones, which often hold a key.
@@ -458,11 +460,12 @@ export class RestEngine {
     if (REQUEST_BODY_METHODS.has(httpMethod)) {
       if (endpointMapping.bodyTemplate && xmlBody) {
         const template = endpointMapping.bodyTemplate;
-        if (loginBodyToken === undefined) {
+        if (loginBodyAuth === undefined) {
           axiosConfig.data = renderXmlBodyTemplate(template, params);
         } else {
-          renderTokenBody = (token) => renderXmlBodyTemplate(template, params, { loginToken: token });
-          axiosConfig.data = renderTokenBody(loginBodyToken);
+          renderTokenBody = (token, aud) =>
+            renderXmlBodyTemplate(template, params, { loginToken: token, loginAud: aud ?? '' });
+          axiosConfig.data = renderTokenBody(loginBodyAuth.token, loginBodyAuth.aud);
         }
       } else if (endpointMapping.bodyTemplate) {
         const template = endpointMapping.bodyTemplate;
@@ -488,11 +491,12 @@ export class RestEngine {
           assertNoPrototypePollution(parsed);
           return parsed;
         };
-        if (loginBodyToken === undefined) {
+        if (loginBodyAuth === undefined) {
           axiosConfig.data = renderJson(params);
         } else {
-          renderTokenBody = (token) => renderJson({ ...params, loginToken: token });
-          axiosConfig.data = renderTokenBody(loginBodyToken);
+          renderTokenBody = (token, aud) =>
+            renderJson({ ...params, loginToken: token, loginAud: aud ?? '' });
+          axiosConfig.data = renderTokenBody(loginBodyAuth.token, loginBodyAuth.aud);
         }
       } else if (endpointMapping.bodyMapping) {
         let bodyMapping = endpointMapping.bodyMapping;
@@ -506,16 +510,31 @@ export class RestEngine {
           bodyMapping = expanded.template;
           bodyParams = { ...params, ...expanded.values };
         }
+        // `$loginToken` / `$loginAud` in a bodyMapping. The engine's values
+        // win over anything the caller passed under those names. Every
+        // encoding (JSON, __raw, form-urlencoded, form-data) rebuilds the
+        // body with them after a re-login, and that body is marked as
+        // carrying credentials so a cross-origin redirect is refused.
+        const paramsBeforeToken = bodyParams;
+        const withLoginToken = (token: string, aud?: string): Record<string, unknown> => ({
+          ...paramsBeforeToken,
+          loginToken: token,
+          loginAud: aud ?? '',
+        });
+        if (loginBodyAuth) {
+          bodyParams = withLoginToken(loginBodyAuth.token, loginBodyAuth.aud);
+        }
         // Handle __raw body mapping (non-JSON body, e.g. XML/SOAP)
         if ('__raw' in bodyMapping) {
           // Resolved on its own rather than through mapParams so an XML body
           // can escape what `${param}` puts into it. A whole-value `$param`
           // is the caller's own body and goes out as given.
-          axiosConfig.data = this.resolveValue(
-            bodyMapping['__raw'],
-            bodyParams,
-            xmlBody ? escapeXmlValue : undefined,
-          );
+          const raw = bodyMapping['__raw'];
+          const escape = xmlBody ? escapeXmlValue : undefined;
+          axiosConfig.data = this.resolveValue(raw, bodyParams, escape);
+          if (loginBodyAuth) {
+            renderTokenBody = (token, aud) => this.resolveValue(raw, withLoginToken(token, aud), escape);
+          }
         } else {
           const mapped = this.mapParams(bodyMapping, bodyParams);
           // `{ "__json": … }`: the field goes out as the JSON text of its
@@ -528,9 +547,9 @@ export class RestEngine {
           // form-data tool download a URL of its choosing.
           const fileKeys = configuredFileKeys(bodyMapping);
 
-          if (encoding === 'form-urlencoded') {
+          const encodeUrlForm = (mappedBody: Record<string, unknown>): string => {
             const urlParams = new URLSearchParams();
-            for (const [k, v] of spreadFormEntries(mapped)) {
+            for (const [k, v] of spreadFormEntries(mappedBody)) {
               if (isFileMarker(v)) {
                 throw new Error(
                   `bodyMapping.${k} uses the __file marker, but this tool's ` +
@@ -540,7 +559,18 @@ export class RestEngine {
               }
               appendFormParam((key, val) => urlParams.append(key, val), k, v);
             }
-            axiosConfig.data = urlParams.toString();
+            return urlParams.toString();
+          };
+          if (encoding === 'form-urlencoded') {
+            axiosConfig.data = encodeUrlForm(mapped);
+            if (loginBodyAuth) {
+              const mapping = bodyMapping;
+              renderTokenBody = (token, aud) => {
+                const remapped = this.mapParams(mapping, withLoginToken(token, aud));
+                stringifyJsonMarkers(remapped, mapping);
+                return encodeUrlForm(remapped);
+              };
+            }
             // URLSearchParams percent-encodes UTF-8 bytes, but the charset of a
             // form body is not implied by the media type: a server that assumes
             // latin-1 reads "Bev%C3%B6lkerung" as mojibake and, in the Destatis
@@ -554,7 +584,7 @@ export class RestEngine {
               };
             }
           } else if (encoding === 'form-data') {
-            const plainEntries: Array<[string, unknown]> = [];
+            let plainEntries: Array<[string, unknown]> = [];
             const fileEntries: Array<{ key: string; file: FetchedFile }> = [];
             for (const [k, v] of spreadFormEntries(mapped)) {
               if (isFileMarker(v)) {
@@ -608,8 +638,34 @@ export class RestEngine {
               ...form.getHeaders(),
             };
             buildBody = buildForm;
+            if (loginBodyAuth) {
+              const mapping = bodyMapping;
+              // The retry after a re-login calls this, then rebuildBody, which
+              // reads buildBody. Updating the entries the builder closes over
+              // is what puts the new token on that second stream. Files stay
+              // as fetched on the first build.
+              renderTokenBody = (token, aud) => {
+                const remapped = this.mapParams(mapping, withLoginToken(token, aud));
+                stringifyJsonMarkers(remapped, mapping);
+                const nextPlain: Array<[string, unknown]> = [];
+                for (const [k, v] of spreadFormEntries(remapped)) {
+                  if (isFileMarker(v)) continue;
+                  nextPlain.push([k, v]);
+                }
+                plainEntries = nextPlain;
+                return buildForm();
+              };
+            }
           } else {
             axiosConfig.data = mapped;
+            if (loginBodyAuth) {
+              const mapping = bodyMapping;
+              renderTokenBody = (token, aud) => {
+                const remapped = this.mapParams(mapping, withLoginToken(token, aud));
+                stringifyJsonMarkers(remapped, mapping);
+                return remapped;
+              };
+            }
           }
         }
       }
@@ -762,7 +818,7 @@ export class RestEngine {
           { proxyUrl: config.proxyUrl, connectorHeaders: Object.keys(config.headers ?? {}) },
         );
         injectLoginTokenHeaders(axiosConfig, authConfig, bundle.token, bundle.aud);
-        if (renderTokenBody) axiosConfig.data = renderTokenBody(bundle.token);
+        if (renderTokenBody) axiosConfig.data = renderTokenBody(bundle.token, bundle.aud);
         rebuildBody(axiosConfig, buildBody);
         const retryResponse = await outboundRequest(axiosConfig, outbound);
         return withMeta(retryResponse);
@@ -1021,7 +1077,7 @@ export class RestEngine {
       proxyUrl?: string;
       headers?: Record<string, string>;
     },
-  ): Promise<string | undefined> {
+  ): Promise<{ token: string; aud?: string } | undefined> {
     if (!config.authConfig) return undefined;
 
     switch (config.authType) {
@@ -1113,8 +1169,11 @@ export class RestEngine {
         );
         if (replaced) this.warnLoginHeaderCollision(config.connectorId, replaced);
         // `tokenPlacement: "body"`: the caller renders the token into the
-        // tool's bodyTemplate as `${loginToken}`.
-        if (config.authConfig.tokenPlacement === 'body') return bundle.token;
+        // tool's body as `${loginToken}` / `$loginToken`, and `aud` as
+        // `${loginAud}` / `$loginAud`.
+        if (config.authConfig.tokenPlacement === 'body') {
+          return { token: bundle.token, aud: bundle.aud };
+        }
         break;
       }
       case 'OAUTH1':

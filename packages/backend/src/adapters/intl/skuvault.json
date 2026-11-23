@@ -1,0 +1,368 @@
+{
+  "slug": "skuvault",
+  "name": "SkuVault",
+  "aliases": ["Sku Vault", "Linnworks"],
+  "description": "Read a SkuVault (Linnworks) warehouse: products and quantities, inventory by location, warehouses, and sales waiting to ship. Signs in with the account email and password. Read-only.",
+  "region": "intl",
+  "category": "inventory",
+  "icon": "skuvault",
+  "docsUrl": "https://dev.skuvault.com/",
+  "prerequisites": "A SkuVault account and the email and password of a user who is allowed to call the API. About 2 minutes. A disabled user receives no tokens.",
+  "instructions": "## SkuVault\nThis connector reads one SkuVault warehouse account (now part of Linnworks) through the SkuVault REST API at `https://app.skuvault.com/api`. Every call is a POST with a JSON body. It does not create or change products, stock, or sales.\n\n**Setup**\n1. `SKUVAULT_EMAIL` and `SKUVAULT_PASSWORD` are the email and password of a SkuVault user who may use the API.\n2. The connector calls `POST /gettokens` with that login. SkuVault returns `TenantToken` (one per account) and `UserToken` (one per user). Both go in the JSON body of every later call. The tokens do not expire on their own. The connector keeps them for 30 days, signs in again before that, and signs in again after an HTTP 401.\n3. A wrong email or password makes `gettokens` answer HTTP 200 with both tokens null. The connector reports that the token was null. Check the email and password, and that the user is not disabled.\n\n**Where to start**: `skuvault_get_warehouses` checks the sign-in and returns each warehouse id and code. Then `skuvault_get_products` for the catalog and quantities, `skuvault_get_inventory_by_location` for the bin of each SKU, and `skuvault_get_sales` for orders waiting to ship.\n\n**Products**: `skuvault_get_products` returns products, not kits. With no `product_codes` and no `product_skus`, alternate SKUs come back as their own rows (`is_alternate_sku` true) and each product is listed under its primary code. `page_size` is 1000 to 10000 and defaults to 1000, the smallest page SkuVault accepts. `page_number` starts at 0. Pass `modified_after` or `modified_before` as UTC, for example `2026-01-15T00:00:00Z`, to read only what changed.\n\n**Locations**: `skuvault_get_inventory_by_location` returns a map. Each key is a SKU, or a product code when `is_return_by_codes` is true, and each value is the locations that hold it: location code, warehouse code, quantity, and whether the location is reserve stock. Filter by SKU only with `is_return_by_codes` false. Filter by product code only with `is_return_by_codes` true. The page size rules match products.\n\n**Warehouses**: id and code. `page_number` starts at 0. This call is limited to 1 per minute, so use it to check the sign-in and then keep the codes.\n\n**Sales**: `skuvault_get_sales` returns up to 10000 sales. `status` is `ReadyToShip` (the default) or `Pending`. `order_ids` (up to 10000) returns those orders and ignores `status`. An order id that came from the API matches only sales that were created through the API. The full SkuVault id matches a sale from any channel. The published request has no page parameter. Money fields are objects with `a` (the amount) and `s` (the currency symbol). Street address, phone, and email are left out of the answer.\n\n**Limits**: `gettokens` allows 200 calls a minute. Products, inventory by location, and sales allow 5 a minute. Warehouses allow 1 a minute. HTTP 429 includes `X-RateLimit-Limit`, `X-RateLimit-Remaining`, and `X-RateLimit-Reset` (milliseconds to wait).\n\n**Errors**: HTTP 401 means the tokens were refused or the user is disabled. HTTP 404 means the tenant or the user was not found. A 200 body whose `Errors` list is not empty is reported as a failed call.\n\n**Reachability**: `app.skuvault.com` is a public HTTPS API. This connector works the same on AnythingMCP Cloud and on a self-hosted instance.\n\n**Out of scope**: creating or editing products, changing quantities, kits, purchase orders, shipments, and every other write.",
+  "requiredEnvVars": ["SKUVAULT_EMAIL", "SKUVAULT_PASSWORD"],
+  "envVarMeta": {
+    "SKUVAULT_EMAIL": {
+      "label": "SkuVault email",
+      "kind": "credential",
+      "help": "Email address of a SkuVault user who may call the API. It is sent only to POST /gettokens.",
+      "example": "warehouse@example.com",
+      "pattern": "^[^@\\s]+@[^@\\s.]+(\\.[^@\\s.]+)+$",
+      "patternMessage": "The email address you sign in to SkuVault with.",
+      "link": "https://dev.skuvault.com/reference/gettokens"
+    },
+    "SKUVAULT_PASSWORD": {
+      "label": "SkuVault password",
+      "kind": "credential",
+      "secret": true,
+      "help": "Password of that SkuVault user. A wrong password makes gettokens return both tokens as null.",
+      "link": "https://dev.skuvault.com/reference/gettokens"
+    }
+  },
+  "verifyHints": {
+    "401": "SkuVault refused the tokens (HTTP 401) or the login returned null tokens. Check the email and password, and that the user is not disabled. The connector signs in again once after a 401.",
+    "404": "SkuVault did not recognize the tenant or the user (HTTP 404). Check the email and password and sign in again.",
+    "400": "SkuVault rejected the request. Page size must be from 1000 to 10000. Filter inventory by SKU with is_return_by_codes false, or by product code with it true.",
+    "rate_limited": "SkuVault throttled this call. Warehouses allow 1 call a minute. Products, inventory by location, and sales allow 5. Wait for the X-RateLimit-Reset header, in milliseconds."
+  },
+  "probe": {
+    "tool": "skuvault_get_warehouses",
+    "params": { "page_number": 0 }
+  },
+  "connector": {
+    "name": "SkuVault API",
+    "type": "REST",
+    "baseUrl": "https://app.skuvault.com/api",
+    "authType": "LOGIN_TOKEN",
+    "authConfig": {
+      "loginUrl": "https://app.skuvault.com/api/gettokens",
+      "loginMethod": "POST",
+      "loginHeaders": {
+        "Content-Type": "application/json",
+        "Accept": "application/json"
+      },
+      "loginBody": {
+        "Email": "${username}",
+        "Password": "${password}"
+      },
+      "username": "{{SKUVAULT_EMAIL}}",
+      "password": "{{SKUVAULT_PASSWORD}}",
+      "tokenJsonPath": "TenantToken",
+      "audJsonPath": "UserToken",
+      "tokenTTLSeconds": 2592000,
+      "proactiveRefreshSeconds": 86400,
+      "refreshOn401": true,
+      "tokenPlacement": "body"
+    },
+    "headers": {
+      "Accept": "application/json",
+      "Content-Type": "application/json",
+      "User-Agent": "AnythingMCP"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "Errors[0]",
+          "matches": ".+",
+          "messagePath": "Errors",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "skuvault_get_products",
+      "description": "List SkuVault products (not kits) with code, SKU, description, prices, brand, supplier, and quantities (on hand, available, on hold, picked, pending, incoming, inbound, in stock). Without product_codes and product_skus, alternate SKUs are separate rows (is_alternate_sku true) and products are returned under the primary code. page_number starts at 0. page_size is 1000 to 10000. Use this to look up a SKU or to see what changed since modified_after.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_skus": {
+            "type": "array",
+            "description": "Only these SKUs. Leave out, together with product_codes, to page through the catalog. Example: [\"WIDGET-1\"].",
+            "items": { "type": "string" }
+          },
+          "product_codes": {
+            "type": "array",
+            "description": "Only these product codes. Alternate codes must be listed here or the product is returned under its primary code. Example: [\"CODE-1\"].",
+            "items": { "type": "string" }
+          },
+          "modified_after": {
+            "type": "string",
+            "description": "Only products modified after this UTC time, for example 2026-01-15T00:00:00Z. Omit for no lower bound."
+          },
+          "modified_before": {
+            "type": "string",
+            "description": "Only products modified before this UTC time, for example 2026-02-01T00:00:00Z. Omit for no upper bound."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page to return. The first page is 0."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 10000,
+            "default": 1000,
+            "description": "Products per page, from 1000 to 10000. Default 1000, which is the smallest page SkuVault accepts."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/products/getProducts",
+        "bodyMapping": {
+          "TenantToken": "$loginToken",
+          "UserToken": "$loginAud",
+          "ProductSKUs": "$product_skus",
+          "ProductCodes": "$product_codes",
+          "ModifiedAfterDateTimeUtc": "$modified_after",
+          "ModifiedBeforeDateTimeUtc": "$modified_before",
+          "PageNumber": "$page_number",
+          "PageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "maxBytes": 1200000,
+          "select": {
+            "errors": "Errors",
+            "products": {
+              "$from": "$.Products",
+              "$select": {
+                "id": "Id",
+                "code": "Code",
+                "sku": "Sku",
+                "primary_sku": "PrimarySku",
+                "part_number": "PartNumber",
+                "description": "Description",
+                "cost": "Cost",
+                "retail_price": "RetailPrice",
+                "sale_price": "SalePrice",
+                "brand": "Brand",
+                "supplier": "Supplier",
+                "classification": "Classification",
+                "quantity_on_hand": "QuantityOnHand",
+                "quantity_available": "QuantityAvailable",
+                "quantity_on_hold": "QuantityOnHold",
+                "quantity_picked": "QuantityPicked",
+                "quantity_pending": "QuantityPending",
+                "quantity_incoming": "QuantityIncoming",
+                "quantity_inbound": "QuantityInbound",
+                "quantity_in_stock": "QuantityInStock",
+                "created_at": "CreatedDateUtc",
+                "modified_at": "ModifiedDateUtc",
+                "variation_parent_sku": "VariationParentSku",
+                "is_alternate_sku": "IsAlternateSKU",
+                "is_alternate_code": "IsAlternateCode",
+                "statuses": "Statuses"
+              }
+            }
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "skuvault_get_inventory_by_location",
+      "description": "Stock of SkuVault products by warehouse location. Returns items, a map whose key is the SKU (or the product code when is_return_by_codes is true) and whose value is the locations holding it: location code, warehouse code, quantity, and reserve (true when that location is held back from sale). Filter by SKU with is_return_by_codes false, or by product code with it true. page_number starts at 0 and page_size is 1000 to 10000. Use after skuvault_get_warehouses when you need the bin, not just the total quantity.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_skus": {
+            "type": "array",
+            "description": "Only these SKUs. Requires is_return_by_codes false. Example: [\"WIDGET-1\"].",
+            "items": { "type": "string" }
+          },
+          "product_codes": {
+            "type": "array",
+            "description": "Only these product codes. Requires is_return_by_codes true. Example: [\"CODE-1\"].",
+            "items": { "type": "string" }
+          },
+          "is_return_by_codes": {
+            "type": "boolean",
+            "default": false,
+            "description": "false (default): keys of items are SKUs. true: keys are product codes. Match this to the filter you send."
+          },
+          "page_number": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page to return. The first page is 0. SkuVault returns up to page_size products per page."
+          },
+          "page_size": {
+            "type": "integer",
+            "minimum": 1000,
+            "maximum": 10000,
+            "default": 1000,
+            "description": "Products per page, from 1000 to 10000. Default 1000."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory/getInventoryByLocation",
+        "bodyMapping": {
+          "TenantToken": "$loginToken",
+          "UserToken": "$loginAud",
+          "ProductSKUs": "$product_skus",
+          "ProductCodes": "$product_codes",
+          "IsReturnByCodes": "$is_return_by_codes",
+          "PageNumber": "$page_number",
+          "PageSize": "$page_size"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "maxBytes": 1200000,
+          "select": {
+            "errors": "Errors",
+            "items": "Items"
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "skuvault_get_warehouses",
+      "description": "List the regular SkuVault warehouses as id and code. No filter other than page_number, which starts at 0. Call this first to check the sign-in and to learn the warehouse codes used by skuvault_get_inventory_by_location. Limited to 1 call per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "page_number": {
+            "type": "integer",
+            "minimum": 0,
+            "default": 0,
+            "description": "Page to return. The first page is 0."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/inventory/getWarehouses",
+        "bodyMapping": {
+          "TenantToken": "$loginToken",
+          "UserToken": "$loginAud",
+          "PageNumber": "$page_number"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "maxBytes": 200000,
+          "select": {
+            "warehouses": {
+              "$from": "$.Warehouses",
+              "$select": {
+                "id": "Id",
+                "code": "Code"
+              }
+            }
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    },
+    {
+      "name": "skuvault_get_sales",
+      "description": "List SkuVault sales, up to 10000 per call, with id, seller sale id, marketplace, status, sale date, line items (SKU, quantity, unit price, tax), kits, shipping cost and charge, ship-to city, region, country and postal code, contact name and company, carrier, class, notes, charges, and promotions. status is ReadyToShip (default) or Pending. order_ids returns those orders and ignores status; an API order id matches only API sales, while the full SkuVault id matches any channel. Money amounts are objects {a, s}. Street address, phone, and email are omitted. The published request has no page parameter.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "status": {
+            "type": "string",
+            "enum": ["ReadyToShip", "Pending"],
+            "default": "ReadyToShip",
+            "description": "Which sales to list when order_ids is omitted. ReadyToShip (default) or Pending."
+          },
+          "order_ids": {
+            "type": "array",
+            "maxItems": 10000,
+            "description": "Only these order ids, up to 10000. When set, SkuVault ignores status. Example: [\"10001\"].",
+            "items": { "type": "string" }
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/sales/getSales",
+        "bodyMapping": {
+          "TenantToken": "$loginToken",
+          "UserToken": "$loginAud",
+          "Status": "$status",
+          "OrderIds": "$order_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "mode": "select",
+          "maxBytes": 1200000,
+          "select": {
+            "sales": {
+              "$from": "$.Sales",
+              "$select": {
+                "id": "Id",
+                "seller_sale_id": "SellerSaleId",
+                "marketplace_id": "MarketplaceId",
+                "channel_id": "ChannelId",
+                "status": "Status",
+                "sale_date": "SaleDate",
+                "marketplace": "Marketplace",
+                "shipping_carrier": "ShippingCarrier",
+                "shipping_class": "ShippingClass",
+                "shipping_cost": "ShippingCost",
+                "shipping_charge": "ShippingCharge",
+                "notes": "Notes",
+                "printed_status": "PrintedStatus",
+                "charges": "Charges",
+                "promotions": "Promotions",
+                "shipping": {
+                  "city": "ShippingInfo.City",
+                  "region": "ShippingInfo.Region",
+                  "country": "ShippingInfo.Country",
+                  "postal_code": "ShippingInfo.PostalCode"
+                },
+                "contact": {
+                  "first_name": "ContactInfo.FirstName",
+                  "last_name": "ContactInfo.LastName",
+                  "company": "ContactInfo.Company"
+                },
+                "items": {
+                  "$from": "SaleItems",
+                  "$select": {
+                    "sku": "Sku",
+                    "quantity": "Quantity",
+                    "unit_price": "UnitPrice",
+                    "taxes": "Taxes"
+                  }
+                },
+                "kits": {
+                  "$from": "SaleKits",
+                  "$select": {
+                    "sku": "Sku",
+                    "quantity": "Quantity",
+                    "unit_price": "UnitPrice"
+                  }
+                }
+              }
+            }
+          }
+        }
+      },
+      "annotations": { "readOnlyHint": true }
+    }
+  ]
+}

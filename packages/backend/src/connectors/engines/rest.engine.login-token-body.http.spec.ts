@@ -220,3 +220,58 @@ describe('LOGIN_TOKEN over HTTP: XML login, token in the body, re-login on an ex
     }
   });
 });
+
+describe('LOGIN_TOKEN bodyMapping is not followed to another origin', () => {
+  // The token is in the body for every encoding, so a 307 to another origin
+  // must be refused. The first hop still carries the engine's token, not a
+  // value the caller passed as loginToken.
+  const endpoints = [
+    { name: 'JSON', mapping: { method: 'POST', path: '/q', bodyMapping: { token: '$loginToken', aud: '$loginAud', sku: '$sku' } } },
+    { name: 'form-urlencoded', mapping: { method: 'POST', path: '/q', bodyEncoding: 'form-urlencoded', bodyMapping: { token: '$loginToken', aud: '$loginAud', sku: '$sku' } } },
+    { name: 'form-data', mapping: { method: 'POST', path: '/q', bodyEncoding: 'form-data', bodyMapping: { token: '$loginToken', aud: '$loginAud', sku: '$sku' } } },
+    { name: '__raw', mapping: { method: 'POST', path: '/q', bodyMapping: { __raw: 'token=${loginToken}&aud=${loginAud}&sku=${sku}' } } },
+  ];
+
+  for (const { name, mapping } of endpoints) {
+    it(`does not resend a ${name} bodyMapping that carries $loginToken after a cross-origin 307`, async () => {
+      const seen: string[] = [];
+      let elsewhereHits = 0;
+      const elsewhere = await listen((_req, res) => {
+        elsewhereHits += 1;
+        res.end('nope');
+      });
+      const redirecting = await listen((_req, res, body) => {
+        seen.push(body);
+        res.statusCode = 307;
+        res.setHeader('Location', `${elsewhere.url}/q`);
+        res.end();
+      });
+      try {
+        const login = {
+          getToken: async () => ({ token: 'old-token', aud: 'old-aud', expiresAt: Date.now() + 600_000 }),
+          forceRelogin: async () => ({ token: 'new-token', aud: 'new-aud', expiresAt: Date.now() + 600_000 }),
+        } as unknown as LoginTokenService;
+        await expect(
+          new RestEngine({} as OAuth2TokenService, login).execute(
+            {
+              baseUrl: redirecting.url,
+              authType: 'LOGIN_TOKEN',
+              authConfig: { loginUrl: `${redirecting.url}/auth`, tokenJsonPath: 'token', tokenPlacement: 'body' },
+              connectorId: 'conn-redirect',
+            },
+            mapping,
+            { sku: 'A', loginToken: 'spoofed-token', loginAud: 'spoofed-aud' },
+          ),
+        ).rejects.toThrow(/its body carries credentials and is not sent to another origin/);
+        expect(seen).toHaveLength(1);
+        expect(seen[0]).toContain('old-token');
+        expect(seen[0]).toContain('old-aud');
+        expect(seen[0]).not.toContain('spoofed');
+        expect(elsewhereHits).toBe(0);
+      } finally {
+        await close(redirecting.server);
+        await close(elsewhere.server);
+      }
+    });
+  }
+});

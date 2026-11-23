@@ -1,4 +1,5 @@
 import axios, { AxiosError } from 'axios';
+import FormData from 'form-data';
 import { ConfigService } from '@nestjs/config';
 import { RestEngine, bodyReports401, renderXmlBodyTemplate } from './rest.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
@@ -125,6 +126,102 @@ describe('RestEngine: LOGIN_TOKEN with the token in the request body', () => {
     expect(sentAt(0).headers['X-Shop']).toBe('S1');
     expect(headerNames(sentAt(0))).not.toContain('authorization');
   });
+
+  it('puts ${loginAud} in a JSON bodyTemplate and ignores a caller-supplied value', async () => {
+    const login = loginStub(['tenant-1', 'tenant-2']);
+    mockedAxios.mockResolvedValueOnce({ status: 200, data: { ok: true }, headers: {} });
+    await new RestEngine({} as OAuth2TokenService, login).execute(
+      { baseUrl: BASE, authType: 'LOGIN_TOKEN', authConfig: authConfig({ audJsonPath: 'UserToken' }) },
+      {
+        method: 'POST',
+        path: '/q',
+        bodyTemplate: '{"TenantToken":"${loginToken}","UserToken":"${loginAud}","PageNumber":${page}}',
+      },
+      { page: 0, loginToken: 'spoofed', loginAud: 'also-spoofed' },
+    );
+    expect(sentAt(0).data).toEqual({ TenantToken: 'tenant-1', UserToken: 'S1', PageNumber: 0 });
+    expect(headerNames(sentAt(0))).not.toContain('authorization');
+  });
+
+  it('puts $loginToken and $loginAud in a JSON bodyMapping and drops omitted fields', async () => {
+    const login = {
+      getToken: jest.fn().mockResolvedValue({ token: 'tenant-1', aud: 'user-1', expiresAt: Date.now() + 600_000 }),
+      forceRelogin: jest.fn().mockResolvedValue({ token: 'tenant-2', aud: 'user-2', expiresAt: Date.now() + 600_000 }),
+    };
+    mockedAxios
+      .mockRejectedValueOnce(httpError(401, { Warehouses: [] }, { 'content-type': 'application/json' }))
+      .mockResolvedValueOnce({ status: 200, data: { Warehouses: [] }, headers: {} });
+    await new RestEngine({} as OAuth2TokenService, login as unknown as LoginTokenService).execute(
+      {
+        baseUrl: BASE,
+        authType: 'LOGIN_TOKEN',
+        authConfig: authConfig({ refreshOn401: true }),
+        connectorId: 'conn-1',
+      },
+      {
+        method: 'POST',
+        path: '/inventory/getWarehouses',
+        bodyMapping: {
+          TenantToken: '$loginToken',
+          UserToken: '$loginAud',
+          PageNumber: '$page_number',
+          ProductCodes: '$product_codes',
+        },
+      },
+      { page_number: 0, loginToken: 'spoofed', loginAud: 'spoofed' },
+    );
+    expect(sentAt(0).data).toEqual({ TenantToken: 'tenant-1', UserToken: 'user-1', PageNumber: 0 });
+    expect(sentAt(0).data.ProductCodes).toBeUndefined();
+    expect(login.forceRelogin).toHaveBeenCalledTimes(1);
+    expect(sentAt(1).data).toEqual({ TenantToken: 'tenant-2', UserToken: 'user-2', PageNumber: 0 });
+  });
+
+  // JSON sets renderTokenBody already. __raw, form-urlencoded and form-data
+  // must do the same: the retry after a re-login carries the new token, not
+  // the one from the refused call. A caller-supplied loginToken is ignored.
+  const bodyText = (data: unknown): string => {
+    if (data instanceof FormData) return data.getBuffer().toString('utf8');
+    return typeof data === 'string' ? data : JSON.stringify(data);
+  };
+  const carried = [
+    ['JSON', { method: 'POST', path: '/q', bodyMapping: { token: '$loginToken', aud: '$loginAud', sku: '$sku' } }],
+    ['form-urlencoded', { method: 'POST', path: '/q', bodyEncoding: 'form-urlencoded', bodyMapping: { token: '$loginToken', aud: '$loginAud', sku: '$sku' } }],
+    ['form-data', { method: 'POST', path: '/q', bodyEncoding: 'form-data', bodyMapping: { token: '$loginToken', aud: '$loginAud', sku: '$sku' } }],
+    ['__raw', { method: 'POST', path: '/q', bodyMapping: { __raw: 'token=${loginToken}&aud=${loginAud}&sku=${sku}' } }],
+  ] as const;
+  for (const [encoding, endpoint] of carried) {
+    it(`retries a ${encoding} bodyMapping that carries $loginToken with the new token`, async () => {
+      const login = {
+        getToken: jest.fn().mockResolvedValue({ token: 'old-token', aud: 'old-aud', expiresAt: Date.now() + 600_000 }),
+        forceRelogin: jest.fn().mockResolvedValue({ token: 'new-token', aud: 'new-aud', expiresAt: Date.now() + 600_000 }),
+      };
+      mockedAxios
+        .mockRejectedValueOnce(httpError(401, { error: 'expired' }, { 'content-type': 'application/json' }))
+        .mockResolvedValueOnce({ status: 200, data: { ok: true }, headers: {} });
+      await new RestEngine({} as OAuth2TokenService, login as unknown as LoginTokenService).execute(
+        {
+          baseUrl: BASE,
+          authType: 'LOGIN_TOKEN',
+          authConfig: authConfig({ refreshOn401: true }),
+          connectorId: 'conn-1',
+        },
+        endpoint,
+        { sku: 'A', loginToken: 'spoofed-token', loginAud: 'spoofed-aud' },
+      );
+      const first = bodyText(sentAt(0).data);
+      const second = bodyText(sentAt(1).data);
+      expect(first).toContain('old-token');
+      expect(first).toContain('old-aud');
+      expect(first).not.toContain('spoofed');
+      expect(second).toContain('new-token');
+      expect(second).toContain('new-aud');
+      expect(second).not.toContain('old-token');
+      expect(second).toContain('sku');
+      expect(login.forceRelogin).toHaveBeenCalledTimes(1);
+      expect(headerNames(sentAt(0))).not.toContain('authorization');
+      expect(headerNames(sentAt(1))).not.toContain('authorization');
+    });
+  }
 
   it('without tokenPlacement the token goes in the header and ${loginToken} is an ordinary, missing parameter', async () => {
     mockedAxios.mockResolvedValueOnce({ status: 200, data: offers, headers: XML });
