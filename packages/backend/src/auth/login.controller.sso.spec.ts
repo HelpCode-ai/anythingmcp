@@ -95,6 +95,8 @@ function build(opts: {
   const auth = { comparePassword: jest.fn(async () => true), verifyToken: jest.fn(() => { throw new Error('no session'); }) };
   const grants = {
     grantServers: jest.fn(async (_c: string, _u: string, ids: string[]) => ids),
+    grantRequestedServer: jest.fn(async () => true),
+    firstOwnServerId: jest.fn(async () => null),
     grantWholeOrganization: jest.fn(async () => true),
     listSelectableTargets: jest.fn(async () => opts.targets ?? []),
     restrictedIn: jest.fn(async () => false),
@@ -322,7 +324,9 @@ describe('authorization page: after an organization sign-in', () => {
     const res = makeRes();
     await b.controller.completeSsoSignIn(b.req(), res, PERSON);
 
-    expect(b.grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-2']);
+    // Added to what this client was already allowed, not put in its place.
+    expect(b.grants.grantRequestedServer).toHaveBeenCalledWith('client-1', 'u1', 'srv-2');
+    expect(b.grants.grantServers).not.toHaveBeenCalled();
     expect(b.grants.listSelectableTargets).not.toHaveBeenCalled();
     expect(res._redirect).toBe('http://mcp.example.test/callback');
   });
@@ -335,6 +339,7 @@ describe('authorization page: after an organization sign-in', () => {
     expect(res._redirect).toBe(`/auth/login?switch=1&error=${encodeURIComponent(WRONG_WORKSPACE_MESSAGE)}`);
     expect(res._cookies['login_user']).toBeUndefined();
     expect(b.grants.grantServers).not.toHaveBeenCalled();
+    expect(b.grants.grantRequestedServer).not.toHaveBeenCalled();
   });
 
   it('records the sign-in with method sso', async () => {

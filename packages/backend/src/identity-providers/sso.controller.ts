@@ -15,7 +15,6 @@ import {
   UseGuards,
   BadRequestException,
   NotFoundException,
-  Optional,
 } from '@nestjs/common';
 import { SelfHostedOnlyGuard } from '../common/self-hosted-only.guard';
 import {
