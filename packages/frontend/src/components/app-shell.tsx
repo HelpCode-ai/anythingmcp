@@ -95,7 +95,9 @@ export function AppShell({
   const headerTitle = title ?? breadcrumbs?.[breadcrumbs.length - 1]?.label;
 
   return (
-    <div className="flex h-dvh items-stretch overflow-hidden">
+    // One screen tall, less the "finish connecting" bar when it shows above
+    // (PendingAuthorizationBar publishes its height; 0 otherwise).
+    <div className="flex h-[calc(100dvh-var(--pending-authorization-bar-h,0px))] items-stretch overflow-hidden">
       <CommandPalette open={paletteOpen} onOpenChange={setPaletteOpen} />
       <AppSidebar mobileOpen={mobileOpen} onClose={() => setMobileOpen(false)} />
 
