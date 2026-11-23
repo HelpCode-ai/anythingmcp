@@ -1,5 +1,6 @@
 import { Strategy } from 'passport-strategy';
 import { Request } from 'express';
+import { boundLoginUser } from './login-user-cookie';
 
 /**
  * Custom Passport strategy for local username/password authentication
@@ -70,9 +71,12 @@ export class LocalOAuthStrategy extends Strategy {
     // We REQUIRE the cookie to be HMAC-signed (req.signedCookies). Unsigned
     // values in req.cookies are rejected to prevent an attacker forging a
     // base64-encoded profile to bypass authentication.
-    const loginUserCookie = isCallback
-      ? (req as any).signedCookies?.login_user
-      : undefined;
+    //
+    // And it must have been issued for THIS pending authorization
+    // (login-user-cookie.ts): a sign-in that paused on the page after
+    // approving stays valid for up to 30 minutes, and must not finish another
+    // authorization started in the same browser in the meantime.
+    const loginUserCookie = isCallback ? boundLoginUser(req) : undefined;
 
     if (loginUserCookie) {
       try {

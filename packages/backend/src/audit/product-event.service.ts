@@ -140,7 +140,19 @@ export const ProductEvents = {
    * - post_approve_continue_clicked: "Continue" on the page shown to an empty
    *   workspace (reported by the page with a beacon that cannot delay the
    *   click). metadata.button = 'continue', or 'auto_continue' when the page
-   *   went on by itself after the one-tap Telegram bot was connected.
+   *   went on by itself after the one-tap Telegram bot was connected, or
+   *   'copy_continue' when "Copy & continue" pressed it;
+   * - authorize_action from the page after approving: metadata.button =
+   *   'open_dashboard' ("Or add an app here first") or 'payment_method'
+   *   ("Add a payment method"), both reported by the page with a beacon;
+   * - authorize_step_viewed: a step between sign-in and the code was shown.
+   *   metadata.step = 'email-code' (the code step for an unverified address),
+   *   'servers' ("Choose what to connect") or 'wrong-workspace' (the client
+   *   asked for a server this account cannot reach);
+   * - authorize_request_closed: a browser reached the flow without an open
+   *   authorization (expired after 30 minutes, already used, or a bookmark)
+   *   and was shown the "no longer open" page. metadata.via = 'login',
+   *   'callback' or 'next' (where), metadata.device. No account, no attempt.
    */
   AUTHORIZE_PAGE_VIEWED: 'authorize_page_viewed',
   AUTHORIZE_ACTION: 'authorize_action',
@@ -148,6 +160,8 @@ export const ProductEvents = {
   AUTHORIZATION_CODE_ISSUED: 'authorization_code_issued',
   AUTHORIZATION_CODE_EXCHANGED: 'authorization_code_exchanged',
   POST_APPROVE_CONTINUE_CLICKED: 'post_approve_continue_clicked',
+  AUTHORIZE_STEP_VIEWED: 'authorize_step_viewed',
+  AUTHORIZE_REQUEST_CLOSED: 'authorize_request_closed',
   MCP_TOOLS_LISTED: 'mcp_tools_listed',
   /**
    * An install asked for from a chat or the picker that added no connector,
@@ -536,6 +550,8 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.AUTHORIZATION_CODE_ISSUED,
   ProductEvents.AUTHORIZATION_CODE_EXCHANGED,
   ProductEvents.POST_APPROVE_CONTINUE_CLICKED,
+  ProductEvents.AUTHORIZE_STEP_VIEWED,
+  ProductEvents.AUTHORIZE_REQUEST_CLOSED,
   ProductEvents.MCP_TOOLS_LISTED,
   ProductEvents.SETUP_INSTALL_FAILED,
   ProductEvents.DIRECTORY_SIGNUP,
@@ -734,6 +750,7 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   // The authorization pages (auth/authorization-attempt.ts, login.controller.ts).
   button: new Set([
     'google', 'microsoft', 'github', 'sso', 'password', 'session', 'cancel', 'create_account', 'continue', 'auto_continue',
+    'copy_continue', 'open_dashboard', 'payment_method',
   ]),
   method: new Set(['google', 'microsoft', 'github', 'sso', 'password', 'session', 'email_code']),
   account: new Set(['new', 'existing']),

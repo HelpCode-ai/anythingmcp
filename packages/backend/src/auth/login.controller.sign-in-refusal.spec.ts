@@ -3,7 +3,11 @@ jest.mock('openid-client', () => ({}));
 
 import * as bcrypt from 'bcrypt';
 import { LoginController } from './login.controller';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
 import type { Request, Response } from 'express';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * An e-mail and password that do not sign in get one answer, whatever the
@@ -31,8 +35,9 @@ function makeRes() {
       this._sent = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };

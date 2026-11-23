@@ -40,6 +40,7 @@ import {
 import { ResourceIndicatorMiddleware } from './auth/resource-indicator.middleware';
 import { AuthorizationIssuerMiddleware } from './auth/authorization-issuer.middleware';
 import { AuthorizationAttemptMiddleware } from './auth/authorization-attempt.middleware';
+import { CallbackGuardMiddleware } from './auth/callback-guard.middleware';
 import { IdentityProvidersModule } from './identity-providers/identity-providers.module';
 import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
@@ -256,6 +257,9 @@ export class AppModule implements NestModule {
       // Statistics only: lets the `authorization_code_issued` event carry the
       // device and the page arm of the attempt (authorization-attempt.ts).
       consumer.apply(AuthorizationAttemptMiddleware).forRoutes('callback');
+      // A browser without an open authorization gets a page instead of the
+      // library's JSON 400, and the sign-in cookie ends with the code.
+      consumer.apply(CallbackGuardMiddleware).forRoutes('callback');
     }
 
     // Apply legacy auth middleware for MCP endpoint. In 'both' it passes every

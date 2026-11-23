@@ -88,6 +88,8 @@
     "title": "Crea il tuo account",
     "cloudTitle": "Crea il tuo account gratuito",
     "cloudSubtitle": "7 giorni di prova gratuita · nessuna carta di credito · collega Claude, ChatGPT, Copilot, Cursor o Meta Muse ai tuoi strumenti.",
+    "authorizationStep": "<strong>Passo 1 di 2.</strong> Crea il tuo account, poi torni subito a completare il collegamento con {client}.",
+    "authorizationStepGeneric": "<strong>Passo 1 di 2.</strong> Crea il tuo account, poi torni subito a completare il collegamento con il tuo assistente AI.",
     "socialConsent": "Continuando accetti i <terms>Termini di utilizzo</terms> e l’<privacy>Informativa sulla privacy</privacy>.",
     "continueWithEmail": "Continua con l'email",
     "name": "Nome",
@@ -140,9 +142,13 @@
     "resendIn": "Invia di nuovo tra {seconds} s",
     "resent": "Un nuovo codice è stato inviato alla tua email",
     "skip": "Salta per ora",
+    "openedLink": "Ho aperto il link nell'email",
+    "checkingLink": "Controllo in corso…",
+    "notVerifiedYet": "Questo indirizzo non è ancora verificato. Apri il link nell'email oppure inserisci il codice.",
     "errors": {
       "invalid": "Codice di verifica non valido",
-      "resendFailed": "Impossibile inviare di nuovo il codice"
+      "resendFailed": "Impossibile inviare di nuovo il codice",
+      "checkFailed": "Non è stato possibile controllare adesso. Riprova."
     }
   },
   "checkInbox": {
@@ -280,9 +286,27 @@
     "success": "La tua email è stata verificata con successo!",
     "goToSignIn": "Vai all'accesso",
     "backToSignIn": "Torna all'accesso",
+    "continueConnecting": "Continua a collegare {client}",
+    "continueConnectingGeneric": "Continua a collegare il tuo assistente AI",
+    "otherDevice": "Hai iniziato su un altro dispositivo o in un'altra scheda? Torna lì e scegli «Ho aperto il link nell'email».",
     "errors": {
       "noToken": "Nessun token di verifica fornito",
       "failed": "Verifica non riuscita"
+    }
+  },
+  "pendingAuthorization": {
+    "label": "Collegamento non completato",
+    "allow": {
+      "text": "{client} ti sta aspettando.",
+      "action": "Torna a collegare {client}",
+      "textGeneric": "Il tuo assistente AI ti sta aspettando.",
+      "actionGeneric": "Torna a collegare il tuo assistente AI"
+    },
+    "continue": {
+      "text": "{client} non è ancora collegato.",
+      "action": "Completa il collegamento con {client}",
+      "textGeneric": "Il tuo assistente AI non è ancora collegato.",
+      "actionGeneric": "Completa il collegamento con il tuo assistente AI"
     }
   },
   "acceptInvite": {

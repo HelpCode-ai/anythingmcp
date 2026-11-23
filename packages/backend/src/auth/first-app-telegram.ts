@@ -277,7 +277,7 @@ export const TELEGRAM_PANEL_SCRIPT = `
         if (!out || typeof out.ok !== 'boolean') return;
         if (out.ok !== true || out.state === 'none' || out.state === 'expired') {
           if (!connected) {
-            status.textContent = 'This link has expired. Continue, and finish Telegram in ' + clientName + '.';
+            status.textContent = 'This link has expired. Go back to ' + clientName + ' and press Connect again.';
             link.hidden = true;
           }
           return stop();
