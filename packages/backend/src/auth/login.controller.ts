@@ -26,6 +26,8 @@ import { findUserByEmail } from '../common/email.util';
 import type { User } from '../generated/prisma/client';
 import { PrismaOAuthStore } from './prisma-oauth.store';
 import { SsoService } from '../identity-providers/sso.service';
+import { anonymousSignInProviders } from '../identity-providers/sign-in-providers';
+import { SSO_REQUIRED_MESSAGE, SsoEnforcementService } from './sso-enforcement.service';
 import {
   MCP_APP_COOKIE,
   MCP_DIRECTORY_COOKIE,
@@ -506,6 +508,8 @@ export class LoginController {
     @Optional() private readonly moduleRef?: ModuleRef,
     @Optional() private readonly recentSignIn?: RecentSignInService,
     @Optional() private readonly emailVerification?: EmailVerificationService,
+    // Not @Optional: Nest refuses to boot without it. Missing only in specs that build the controller by hand.
+    private readonly ssoEnforcement?: SsoEnforcementService,
   ) {}
 
   /**
@@ -848,6 +852,23 @@ export class LoginController {
     }
   }
 
+  /**
+   * Where the organization sign-in (SSO, self-hosted) hands over after the
+   * round trip to the identity provider: SsoController's callback, surface
+   * MCP. From here it is the path of every other sign-in on this page
+   * (completeSignIn): the wrong-workspace refusal, the grant or the server
+   * picker, and the page after approving. Not a route.
+   */
+  async completeSsoSignIn(req: Request, res: Response, user: SessionUser): Promise<void> {
+    this.logger.log(`Authorization signed in with single sign-on: ${maskEmail(user.email)}`);
+    return this.completeSignIn(req, res, user, undefined, 'sso');
+  }
+
+  /** Whether an authorization is pending in this browser. For the SSO callback's failure redirect. Not a route. */
+  async hasPendingAuthorization(req: Request): Promise<boolean> {
+    return (await this.loadConsentContext(req)) !== null;
+  }
+
   // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('login')
   @HttpCode(200) // a page (or a redirect), not a created resource: Nest's default for POST is 201
@@ -979,6 +1000,15 @@ export class LoginController {
       return res.redirect(
         `/auth/login?error=${encodeURIComponent('Password sign-in is disabled for this account. Use your organization sign-in.')}`,
       );
+    }
+
+    // The same for a workspace that requires single sign-on, as the
+    // dashboard sign-in does (any workspace this person belongs to). Before
+    // the password is compared, so the answer never says whether it was right.
+    // The provider that requires it is active, so its button is on this page.
+    if (await this.ssoEnforcement?.isPasswordLoginBlocked(user.id)) {
+      this.logger.warn(`Password login refused, the workspace requires single sign-on: ${maskEmail(email)}`);
+      return res.redirect(`/auth/login?error=${encodeURIComponent(SSO_REQUIRED_MESSAGE)}`);
     }
 
     // Nullable for IdP-provisioned users — never hand null to bcrypt.
@@ -1300,7 +1330,7 @@ export class LoginController {
     /** Set when the user signed in on this page with Google, Microsoft or GitHub. */
     socialProvider?: string,
     /** How the identity was settled, when not with a provider or the password form (for the event only). */
-    via?: 'session' | 'email_code',
+    via?: 'session' | 'email_code' | 'sso',
   ): Promise<void> {
     // The client asked for one server by URL, and this account cannot reach
     // it: no token. It would be refused on every call, and clients do not
@@ -2922,42 +2952,45 @@ ${
   /**
    * The identity providers offered on this page.
    *
-   * Scoped to the ONE workspace this authorization is for, resolved from the
-   * `mcp_resource` cookie that `ResourceIndicatorMiddleware` captured from the
-   * client's RFC 8707 `resource` parameter at /authorize.
+   * The page is unauthenticated, so it shows exactly what the dashboard's own
+   * sign-in page shows an anonymous visitor (anonymousSignInProviders, also
+   * behind /health/server-info): every active provider on a self-hosted
+   * instance, none on Cloud. Nothing is revealed here that is not already
+   * public there.
    *
-   * Deliberately not "every active provider": this page is unauthenticated, so
-   * an unscoped list would let anyone read off every customer's workspace and
-   * directory — the same enumeration oracle that keeps the provider list off
-   * /health/server-info in cloud. Scoping to the resource leaks nothing,
-   * because reaching here already required that tenant's own server id.
+   * This holds for the shared `/mcp` endpoint too. It used to show a button
+   * only when the client asked for one server by URL, so a person whose
+   * account or workspace allows no password had no way to sign in on it.
    *
-   * Returns nothing when the client sent no `resource`, which leaves the page
-   * exactly as it is today: password only.
+   * When the client did ask for one server (the `mcp_resource` cookie that
+   * `ResourceIndicatorMiddleware` captured at /authorize), the providers of
+   * that server's workspace come first. The cookie is client input: it only
+   * orders the buttons.
    */
   private async loadSsoProviders(
     req: Request,
   ): Promise<{ id: string; name: string; type: string }[]> {
-    // SIGNED cookie, so it lives in `signedCookies` — reading `req.cookies`
-    // here silently yields undefined and the buttons never render.
-    // Self-hosted only, like the rest of SSO. Cloud has no providers to find,
-    // so this would return an empty list anyway — but saying so here means the
-    // MCP authorization page never queries for them.
+    // Self-hosted only, like the rest of SSO: on Cloud the page never queries.
     if (this.deployment.isCloud()) return [];
 
-    const serverId = (req as any).signedCookies?.[MCP_RESOURCE_COOKIE];
-    if (!serverId) return [];
     try {
-      const server = await this.prisma.mcpServerConfig.findUnique({
-        where: { id: serverId },
-        select: { organizationId: true },
-      });
-      if (!server?.organizationId) return [];
-      return await this.prisma.identityProvider.findMany({
-        where: { organizationId: server.organizationId, isActive: true },
-        select: { id: true, name: true, type: true },
-        orderBy: { createdAt: 'asc' },
-      });
+      let providers = await anonymousSignInProviders(this.prisma, this.deployment);
+      // SIGNED cookie, so it lives in `signedCookies`, not in `req.cookies`.
+      const serverId = (req as any).signedCookies?.[MCP_RESOURCE_COOKIE];
+      if (providers.length > 1 && typeof serverId === 'string' && serverId) {
+        const server = await this.prisma.mcpServerConfig.findUnique({
+          where: { id: serverId },
+          select: { organizationId: true },
+        });
+        const own = server?.organizationId;
+        if (own) {
+          providers = [
+            ...providers.filter((p) => p.organizationId === own),
+            ...providers.filter((p) => p.organizationId !== own),
+          ];
+        }
+      }
+      return providers.map((p) => ({ id: p.id, name: p.name, type: p.type }));
     } catch (error: any) {
       // Never let this break the password path — it is only an extra option.
       this.logger.warn(`Could not load SSO providers: ${error?.message}`);

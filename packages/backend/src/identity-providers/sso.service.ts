@@ -26,6 +26,13 @@ import { EditionService } from '../ee/licensing/edition.service';
  * an auditor reading the trail would double-count every refusal.
  */
 export class SsoError extends Error {
+  /**
+   * Where the failed sign-in started ('DASHBOARD', 'LINK', 'MCP', 'CONNECT'),
+   * once the attempt is known: the callback sends the person back there.
+   * Null while unknown (no state, or a state that was used or has expired).
+   */
+  surface: string | null = null;
+
   constructor(
     readonly reason: string,
     message = 'Sign-in failed',
@@ -33,6 +40,20 @@ export class SsoError extends Error {
   ) {
     super(message);
   }
+}
+
+/** Marks a failure of `complete` with the surface its attempt was started on. */
+function withSurface(error: unknown, surface: string | null): unknown {
+  if (error instanceof SsoError) {
+    error.surface = surface;
+    return error;
+  }
+  if (!surface) return error;
+  // Anything else (the provider cannot be reached, a database error) keeps
+  // its message for the log and is audited as before, as `unexpected_error`.
+  const wrapped = new SsoError('unexpected_error', (error as Error)?.message ?? 'Sign-in failed');
+  wrapped.surface = surface;
+  return wrapped;
 }
 
 /**
@@ -359,6 +380,20 @@ export class SsoService {
     currentUrl: URL,
     ctx: { ip?: string; userAgent?: string; oauthSessionId?: string; connectBinding?: string },
   ): Promise<SsoCompletion> {
+    const seen: { surface: string | null } = { surface: null };
+    try {
+      return await this.completeRoundTrip(currentUrl, ctx, seen);
+    } catch (error) {
+      throw withSurface(error, seen.surface);
+    }
+  }
+
+  /** `complete` itself. Notes in `seen` which surface the attempt was started on, as soon as it is known. */
+  private async completeRoundTrip(
+    currentUrl: URL,
+    ctx: { ip?: string; userAgent?: string; oauthSessionId?: string; connectBinding?: string },
+    seen: { surface: string | null },
+  ): Promise<SsoCompletion> {
     const state = currentUrl.searchParams.get('state');
     if (!state) throw new SsoError('missing_state');
 
@@ -387,6 +422,7 @@ export class SsoService {
       },
     });
     if (!attempt) throw new SsoError('attempt_vanished');
+    seen.surface = attempt.surface;
     const provider = attempt.provider;
 
     const clientSecret = await this.providers.getClientSecret(
