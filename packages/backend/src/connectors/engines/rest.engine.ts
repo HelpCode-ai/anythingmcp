@@ -511,26 +511,30 @@ export class RestEngine {
           bodyParams = { ...params, ...expanded.values };
         }
         // `$loginToken` / `$loginAud` in a bodyMapping. The engine's values
-        // win over anything the caller passed under those names. Kept so a
-        // re-login can rebuild the body without the caller's arguments.
+        // win over anything the caller passed under those names. Every
+        // encoding (JSON, __raw, form-urlencoded, form-data) rebuilds the
+        // body with them after a re-login, and that body is marked as
+        // carrying credentials so a cross-origin redirect is refused.
         const paramsBeforeToken = bodyParams;
+        const withLoginToken = (token: string, aud?: string): Record<string, unknown> => ({
+          ...paramsBeforeToken,
+          loginToken: token,
+          loginAud: aud ?? '',
+        });
         if (loginBodyAuth) {
-          bodyParams = {
-            ...bodyParams,
-            loginToken: loginBodyAuth.token,
-            loginAud: loginBodyAuth.aud ?? '',
-          };
+          bodyParams = withLoginToken(loginBodyAuth.token, loginBodyAuth.aud);
         }
         // Handle __raw body mapping (non-JSON body, e.g. XML/SOAP)
         if ('__raw' in bodyMapping) {
           // Resolved on its own rather than through mapParams so an XML body
           // can escape what `${param}` puts into it. A whole-value `$param`
           // is the caller's own body and goes out as given.
-          axiosConfig.data = this.resolveValue(
-            bodyMapping['__raw'],
-            bodyParams,
-            xmlBody ? escapeXmlValue : undefined,
-          );
+          const raw = bodyMapping['__raw'];
+          const escape = xmlBody ? escapeXmlValue : undefined;
+          axiosConfig.data = this.resolveValue(raw, bodyParams, escape);
+          if (loginBodyAuth) {
+            renderTokenBody = (token, aud) => this.resolveValue(raw, withLoginToken(token, aud), escape);
+          }
         } else {
           const mapped = this.mapParams(bodyMapping, bodyParams);
           // `{ "__json": … }`: the field goes out as the JSON text of its
@@ -543,9 +547,9 @@ export class RestEngine {
           // form-data tool download a URL of its choosing.
           const fileKeys = configuredFileKeys(bodyMapping);
 
-          if (encoding === 'form-urlencoded') {
+          const encodeUrlForm = (mappedBody: Record<string, unknown>): string => {
             const urlParams = new URLSearchParams();
-            for (const [k, v] of spreadFormEntries(mapped)) {
+            for (const [k, v] of spreadFormEntries(mappedBody)) {
               if (isFileMarker(v)) {
                 throw new Error(
                   `bodyMapping.${k} uses the __file marker, but this tool's ` +
@@ -555,7 +559,18 @@ export class RestEngine {
               }
               appendFormParam((key, val) => urlParams.append(key, val), k, v);
             }
-            axiosConfig.data = urlParams.toString();
+            return urlParams.toString();
+          };
+          if (encoding === 'form-urlencoded') {
+            axiosConfig.data = encodeUrlForm(mapped);
+            if (loginBodyAuth) {
+              const mapping = bodyMapping;
+              renderTokenBody = (token, aud) => {
+                const remapped = this.mapParams(mapping, withLoginToken(token, aud));
+                stringifyJsonMarkers(remapped, mapping);
+                return encodeUrlForm(remapped);
+              };
+            }
             // URLSearchParams percent-encodes UTF-8 bytes, but the charset of a
             // form body is not implied by the media type: a server that assumes
             // latin-1 reads "Bev%C3%B6lkerung" as mojibake and, in the Destatis
@@ -569,7 +584,7 @@ export class RestEngine {
               };
             }
           } else if (encoding === 'form-data') {
-            const plainEntries: Array<[string, unknown]> = [];
+            let plainEntries: Array<[string, unknown]> = [];
             const fileEntries: Array<{ key: string; file: FetchedFile }> = [];
             for (const [k, v] of spreadFormEntries(mapped)) {
               if (isFileMarker(v)) {
@@ -623,17 +638,30 @@ export class RestEngine {
               ...form.getHeaders(),
             };
             buildBody = buildForm;
+            if (loginBodyAuth) {
+              const mapping = bodyMapping;
+              // The retry after a re-login calls this, then rebuildBody, which
+              // reads buildBody. Updating the entries the builder closes over
+              // is what puts the new token on that second stream. Files stay
+              // as fetched on the first build.
+              renderTokenBody = (token, aud) => {
+                const remapped = this.mapParams(mapping, withLoginToken(token, aud));
+                stringifyJsonMarkers(remapped, mapping);
+                const nextPlain: Array<[string, unknown]> = [];
+                for (const [k, v] of spreadFormEntries(remapped)) {
+                  if (isFileMarker(v)) continue;
+                  nextPlain.push([k, v]);
+                }
+                plainEntries = nextPlain;
+                return buildForm();
+              };
+            }
           } else {
             axiosConfig.data = mapped;
             if (loginBodyAuth) {
               const mapping = bodyMapping;
-              const base = paramsBeforeToken;
               renderTokenBody = (token, aud) => {
-                const remapped = this.mapParams(mapping, {
-                  ...base,
-                  loginToken: token,
-                  loginAud: aud ?? '',
-                });
+                const remapped = this.mapParams(mapping, withLoginToken(token, aud));
                 stringifyJsonMarkers(remapped, mapping);
                 return remapped;
               };

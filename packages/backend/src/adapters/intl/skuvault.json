@@ -16,7 +16,7 @@
       "kind": "credential",
       "help": "Email address of a SkuVault user who may call the API. It is sent only to POST /gettokens.",
       "example": "warehouse@example.com",
-      "pattern": "^[^@\\s]+@[^@\\s]+\\.[^@\\s]+$",
+      "pattern": "^[^@\\s]+@[^@\\s.]+(\\.[^@\\s.]+)+$",
       "patternMessage": "The email address you sign in to SkuVault with.",
       "link": "https://dev.skuvault.com/reference/gettokens"
     },
