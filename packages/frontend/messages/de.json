@@ -366,6 +366,8 @@
     "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
     "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
     "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
+    "trialShort": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Vorher wird nichts abgebucht.",
+    "trialShortNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Vorher wird nichts abgebucht.",
     "authorizationReturn": "So oder so geht es danach direkt zurück, um die Verbindung Ihres KI-Clients abzuschließen.",
     "chargesToday": "Diese Adresse hatte bereits ein Abonnement, daher berechnet der Checkout heute {amount}.",
     "start": {
@@ -384,6 +386,7 @@
     "notReadyCard": "Noch keine Zahlungsmethode hinterlegen?",
     "keepFree": "Kostenlose Testphase weiter nutzen",
     "tryFree": "Kostenlos ohne Zahlungsdaten testen",
+    "skipNote": "Ohne Zahlungsdaten hat die Testphase ein niedrigeres Connector-Limit. Sie können jederzeit eine Zahlungsmethode hinterlegen.",
     "methods": {
       "trial": "Heute 0 € · Karte, PayPal und weitere Methoden",
       "pay": "Karte, PayPal und weitere Methoden"
@@ -1102,6 +1105,7 @@
   "setupGuide": {
     "stuck": "Nicht weitergekommen? Fragen Sie uns",
     "intro": {
+      "back": "Zurück",
       "title": "{name} mit Ihrer KI verbinden",
       "steps": "{count, plural, one {# Schritt} other {# Schritte}}",
       "examples": "Danach können Sie Ihre KI zum Beispiel fragen",

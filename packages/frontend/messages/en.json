@@ -366,6 +366,8 @@
     "returningNoDate": "This email address has had an AnythingMCP subscription before, so a new free trial with a payment method is not available. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
     "trial": "Every feature, free until <strong>{date}</strong>. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
     "trialNoDate": "Every feature, free until your trial ends. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
+    "trialShort": "Every feature, free until <strong>{date}</strong>. Nothing is charged before then.",
+    "trialShortNoDate": "Every feature, free until your trial ends. Nothing is charged before then.",
     "authorizationReturn": "Either way, you go straight back to finish connecting your AI client.",
     "chargesToday": "This address already had a subscription, so the checkout will charge {amount} today.",
     "start": {
@@ -384,6 +386,7 @@
     "notReadyCard": "Not ready to add a payment method?",
     "keepFree": "Keep using the free trial",
     "tryFree": "Try free without payment details",
+    "skipNote": "Without payment details the trial has a lower connector limit. You can add a payment method any time.",
     "methods": {
       "trial": "€0 today · card, PayPal and other methods",
       "pay": "Card, PayPal and other methods"
@@ -1102,6 +1105,7 @@
   "setupGuide": {
     "stuck": "Stuck? Ask us",
     "intro": {
+      "back": "Back",
       "title": "Connect {name} to your AI",
       "steps": "{count, plural, one {# step} other {# steps}}",
       "examples": "Then ask your AI things like",

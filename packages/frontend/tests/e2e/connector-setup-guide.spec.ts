@@ -348,6 +348,21 @@ test('the guide can be left for the one-page form, and back', async ({ page }) =
   await expect(page.getByRole('heading', { name: 'Connect Etsy to your AI' })).toBeVisible();
 });
 
+test('the intro has a way back to the welcome wizard it was picked in', async ({ page }) => {
+  await setup(page);
+  await page.goto('/connectors/setup/etsy?back=welcome');
+  await expect(page.getByRole('heading', { name: 'Connect Etsy to your AI' })).toBeVisible();
+  await page.getByRole('button', { name: '← Back' }).click();
+  await expect(page).toHaveURL(/\/welcome$/);
+});
+
+test('opened from elsewhere, Back on the intro goes to the dashboard', async ({ page }) => {
+  await setup(page);
+  await page.goto('/connectors/setup/etsy');
+  await page.getByRole('button', { name: '← Back' }).click();
+  await expect(page).toHaveURL((url) => url.pathname === '/');
+});
+
 test('WooCommerce: the link into the shop is built from the address of the step before', async ({ page }) => {
   const calls = await setup(page);
   await page.goto('/connectors/setup/woocommerce');

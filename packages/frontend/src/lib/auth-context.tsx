@@ -63,6 +63,35 @@ interface AuthContextType {
   deploymentModeLoaded: boolean;
 }
 
+/** Pages anyone may open without a session. */
+const PUBLIC_PATHS = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
+
+/**
+ * Pages that decide themselves whether a sign-in is needed, so the guard
+ * below leaves them alone without a session:
+ * - /f/<token>: File Share links.
+ * - /s/<token>: setup links first try the sign-in the browser just made to
+ *   connect an AI client, then send to /login themselves.
+ * - /setup/file-search: the File Search plugin's hand-off, the same way.
+ * - /reactivate/<token>: the no-login page an AI client links to once the
+ *   trial ended; the token stands in for a session.
+ * - /upload/<token>: one-time upload link from an AI client; the token is the credential.
+ */
+function decidesOwnSignIn(pathname: string): boolean {
+  return (
+    pathname.startsWith('/f/') ||
+    pathname.startsWith('/s/') ||
+    pathname.startsWith('/reactivate/') ||
+    pathname.startsWith('/upload/') ||
+    pathname === '/setup/file-search'
+  );
+}
+
+/** Where to sign in again, coming back to the page (and its query) afterwards. */
+function signInPathFor(pathname: string, search: string): string {
+  return `/login?redirect=${encodeURIComponent(pathname + search)}`;
+}
+
 const AuthContext = createContext<AuthContextType>({
   token: null,
   user: null,
@@ -101,7 +130,8 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     } catch {}
   }, []);
 
-  const logout = useCallback(() => {
+  /** Forgets the session in this browser, without going anywhere. */
+  const endSession = useCallback(() => {
     clearCommandPaletteCache();
     // Signing out also forgets the authorization page's recent sign-in, or
     // the sign-in page would offer "Continue as …" right after.
@@ -113,8 +143,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     storage.remove('amcp_token');
     storage.remove('amcp_user');
     document.cookie = 'amcp_token=; path=/; max-age=0';
+  }, []);
+
+  /** "Sign out" chosen by the user: on to the sign-in page. */
+  const logout = useCallback(() => {
+    endSession();
     router.push('/login');
-  }, [router]);
+  }, [endSession, router]);
 
   // On mount: restore saved token and validate it against the backend
   useEffect(() => {
@@ -188,34 +223,29 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     return () => window.removeEventListener('storage', onStorage);
   }, []);
 
-  // Listen for 401 events from api.ts to auto-logout
+  // A 401 on an authenticated request: the saved session is no longer valid
+  // (expired, or its account was deleted). Forget it, but keep the page and
+  // its address. Sending everyone to a bare /login dropped `?redirect=` and
+  // `?mode=register` from the sign-up an AI client's authorization page opens
+  // ("Create an account"), so a browser holding an old session finished that
+  // sign-up on the dashboard instead of back in the authorization.
+  // - a public page (/login, sign-up, …) stays where it is;
+  // - a page that decides its own sign-in goes to /login and comes back;
+  // - any other page is sent there by the guard below, which comes back too.
   useEffect(() => {
-    const handleAuthExpired = () => logout();
+    const handleAuthExpired = () => {
+      endSession();
+      const { pathname: path, search } = window.location;
+      if (decidesOwnSignIn(path)) router.push(signInPathFor(path, search));
+    };
     window.addEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
     return () => window.removeEventListener(AUTH_EXPIRED_EVENT, handleAuthExpired);
-  }, [logout]);
+  }, [endSession, router]);
 
   useEffect(() => {
-    const publicPaths = ['/login', '/register', '/forgot-password', '/reset-password', '/accept-invite', '/verify-email'];
-    // /f/<token>: File Share links decide themselves whether a sign-in is needed.
-    // /s/<token>: setup links first try the sign-in the browser just made to
-    // connect an AI client, then send to /login themselves.
-    // /setup/file-search: the File Search plugin's hand-off, the same way.
-    if (
-      !isLoading &&
-      !token &&
-      !publicPaths.includes(pathname) &&
-      !pathname.startsWith('/f/') &&
-      !pathname.startsWith('/s/') &&
-      // /reactivate/<token>: the no-login page an AI client links to once the
-      // trial ended; the token stands in for a session.
-      !pathname.startsWith('/reactivate/') &&
-      // /upload/<token>: one-time upload link from an AI client; the token is the credential.
-      !pathname.startsWith('/upload/') &&
-      pathname !== '/setup/file-search'
-    ) {
-      const currentUrl = typeof window !== 'undefined' ? window.location.pathname + window.location.search : pathname;
-      router.push(`/login?redirect=${encodeURIComponent(currentUrl)}`);
+    if (!isLoading && !token && !PUBLIC_PATHS.includes(pathname) && !decidesOwnSignIn(pathname)) {
+      const search = typeof window !== 'undefined' ? window.location.search : '';
+      router.push(signInPathFor(pathname, search));
     }
   }, [isLoading, token, pathname, router]);
 

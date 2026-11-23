@@ -1,5 +1,6 @@
 import {
   Controller,
+  ExecutionContext,
   Get,
   Post,
   Query,
@@ -14,7 +15,7 @@ import { ConfigService } from '@nestjs/config';
 import { ModuleRef } from '@nestjs/core';
 import { Throttle } from '@nestjs/throttler';
 import { Request, Response } from 'express';
-import { randomBytes, timingSafeEqual } from 'crypto';
+import { createHash, randomBytes, timingSafeEqual } from 'crypto';
 import { AuthService } from './auth.service';
 import { PrismaService } from '../common/prisma.service';
 import { resolveDashboardSessionUser, type SessionUser } from './dashboard-session.util';
@@ -67,6 +68,21 @@ import {
   TELEGRAM_SLUG,
   type TelegramOneTap,
 } from '../adapters/telegram-managed-bot';
+import { fill, signInTexts } from './auth-page-i18n';
+import {
+  attemptKey,
+  connectedPageArm,
+  CONNECTED_PAGE_TEST_ENV,
+  pageLanguageFor,
+  signInPageArm,
+  SIGNIN_PAGE_TEST_ENV,
+  type SignInPageArm,
+  type PageLanguage,
+  deviceOf,
+  isPhoneUserAgent,
+  languageBucket,
+  type ConnectedPageArm,
+} from './authorization-attempt';
 import {
   TELEGRAM_PANEL_SCRIPT,
   TELEGRAM_PANEL_STYLES,
@@ -133,6 +149,14 @@ interface ConsentContext {
   scopeText: string;
   /** When the paused authorization expires (epoch ms), if the store says. */
   expiresAt?: number;
+  /**
+   * The arm of the test of the page shown to an empty workspace, for this
+   * pending authorization (authorization-attempt.ts). Null when the test
+   * does not run: the page is then the control, and no arm is recorded.
+   */
+  connectedArm: ConnectedPageArm | null;
+  /** The arm of the sign-in page test (A3/A4); null when it does not run. */
+  signinArm: SignInPageArm | null;
 }
 
 /** The longest an authorization may stay paused on the first-connector page. */
@@ -228,13 +252,164 @@ export function fileSearchWizardPathFor(optionId: string, serverIds: readonly st
   return `/connectors/new/file-search?${q.toString()}`;
 }
 
+// Kept here for the callers that import it from this file (authorization-attempt.ts has it now).
+export { isPhoneUserAgent };
+
 /**
- * Whether the request comes from a phone or tablet browser, by its user agent.
- * Used only to decide whether Continue may open a second tab.
+ * A bcrypt hash (cost 12, as AuthService.hashPassword) of a random value that
+ * was thrown away: no password matches it and no account uses it. See
+ * LoginController.spendPasswordCheck.
  */
-export function isPhoneUserAgent(userAgent: string | string[] | undefined): boolean {
-  const ua = Array.isArray(userAgent) ? userAgent.join(' ') : (userAgent ?? '');
-  return /Android|iPhone|iPad|iPod|Mobile/i.test(ua);
+const NO_ACCOUNT_PASSWORD_HASH = '$2b$12$IiJXBx6uVaTbVBrwh5VRKe7P./mbaxLHXjX7kyOgJwdFSnENFxHSi';
+
+/**
+ * What a post of the sign-in form asks for. `password` is every post that can
+ * reach the password check in handleLogin: "Sign in & allow", and anything
+ * this function does not recognise. `button` is a post that handleLogin
+ * answers before it looks at a password: a provider button, the single
+ * sign-on button, "Allow access" with the dashboard session, and Cancel.
+ */
+export function loginPostKind(body: unknown): 'password' | 'button' {
+  const action = (body as { action?: unknown } | null | undefined)?.action;
+  if (typeof action !== 'string') return 'password';
+  return action === 'deny' ||
+    action === 'approve-session' ||
+    action.startsWith('sso:') ||
+    action.startsWith('social:')
+    ? 'button'
+    : 'password';
+}
+
+/**
+ * Posts of the sign-in form allowed per address in a minute. Password
+ * attempts keep the limit of 5 they always had. The buttons that check no
+ * password used to share those 5, so one address with several people behind
+ * it, or one person pressing a provider button again, was refused (127 times
+ * from 16 to 22 November 2026): they are counted on their own, 30 a minute,
+ * the limit of the provider's return address.
+ */
+export function loginPostLimit(context: ExecutionContext): number {
+  return loginPostKind(context.switchToHttp().getRequest<Request>().body) === 'password' ? 5 : 30;
+}
+
+/**
+ * The counter a post of the sign-in form is added to: one per address for
+ * password attempts (the key the throttler builds by default, so nothing
+ * changes for them) and a second one per address for the buttons. The kind
+ * comes from the same function the limit uses, and a post counted as a
+ * button never reaches the password check.
+ */
+export function loginPostThrottleKey(context: ExecutionContext, tracker: string, throttlerName: string): string {
+  const kind = loginPostKind(context.switchToHttp().getRequest<Request>().body);
+  const prefix = `${context.getClass().name}-${context.getHandler().name}-${throttlerName}`;
+  return createHash('sha256')
+    .update(kind === 'password' ? `${prefix}-${tracker}` : `${prefix}-${tracker}-button`)
+    .digest('hex');
+}
+
+/**
+ * What ties the sign-in form's CSRF token to the pending authorization: a
+ * digest of the `oauth_session` cookie the authorize endpoint set. Null
+ * outside a pending authorization.
+ */
+function loginCsrfBinding(req: Request): string | null {
+  const sessionId = req.cookies?.oauth_session;
+  if (typeof sessionId !== 'string' || !sessionId) return null;
+  return createHash('sha256').update(sessionId).digest('base64url').slice(0, 22);
+}
+
+/**
+ * The `login_csrf` cookie: `<token>.<binding>` when it was issued inside a
+ * pending authorization, the bare token otherwise (and for cookies issued
+ * before the binding existed; they live ten minutes). Tokens are base64url,
+ * so the last dot is the separator.
+ */
+function parseLoginCsrf(cookie: unknown): { token: string; binding: string | null } | null {
+  if (typeof cookie !== 'string' || !cookie) return null;
+  const dot = cookie.lastIndexOf('.');
+  const token = dot === -1 ? cookie : cookie.slice(0, dot);
+  if (!token) return null;
+  return { token, binding: dot === -1 ? null : cookie.slice(dot + 1) };
+}
+
+/**
+ * Reports the click on "Continue" (`post_approve_continue_clicked`). Its own
+ * listener, so it works where the clipboard does not. `sendBeacon` queues the
+ * request and returns at once: the listener never waits, never prevents the
+ * default action and opens nothing, so the browser follows the link exactly
+ * as it does without it (phones were lost on this button once, see
+ * renderFirstConnectorOffer). `attempt` is a base-36 number.
+ */
+export function continueBeaconScript(attempt: string): string {
+  return `
+    (function () {
+      var cont = document.getElementById('continue');
+      if (!cont || !navigator.sendBeacon || !window.URLSearchParams) return;
+      cont.addEventListener('click', function () {
+        try {
+          navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: 'continue', a: '${attempt}' }));
+        } catch (e) { /* the authorization goes on regardless */ }
+      });
+    })();`;
+}
+
+/**
+ * The 'next_step' arm only: once the one-tap Telegram bot is connected (the
+ * panel sets `data-telegram="done"` on the picker), the page goes on through
+ * Continue by itself: the same address as the link, in the same tab, and
+ * nothing is opened. A quarter of the people who started the one-tap bot
+ * never came back to press Continue (89 of 349 attempts, 16 to 21 November
+ * 2026).
+ *
+ * It counts down five seconds first, only while the tab is visible, and
+ * "Stay on this page" stops it. A click on Continue stops it too, so the
+ * callback is never asked for twice.
+ */
+export function autoContinueScript(attempt: string): string {
+  return `
+    (function () {
+      var picker = document.getElementById('quick-apps');
+      var cont = document.getElementById('continue');
+      var note = document.getElementById('auto-continue');
+      var text = document.getElementById('auto-continue-text');
+      var stay = document.getElementById('auto-continue-stay');
+      if (!picker || !cont || !note || !text || !stay || !window.setInterval || !window.location) return;
+      var target = cont.getAttribute('href');
+      if (!target) return;
+      var clientName = cont.getAttribute('data-client') || 'your assistant';
+      var left = 5;
+      var stopped = false;
+      var timer = null;
+      var stop = function () {
+        stopped = true;
+        if (timer) window.clearInterval(timer);
+        timer = null;
+      };
+      cont.addEventListener('click', function () { stop(); });
+      stay.addEventListener('click', function () {
+        stop();
+        text.textContent = 'Press Continue to ' + clientName + ' when you are ready.';
+        stay.hidden = true;
+      });
+      timer = window.setInterval(function () {
+        if (stopped || picker.getAttribute('data-telegram') !== 'done') return;
+        // Never from a tab in the background: the person is in Telegram.
+        if (document.visibilityState && document.visibilityState !== 'visible') return;
+        if (left > 0) {
+          text.textContent = 'Telegram is connected. Going back to ' + clientName + ' in ' + left + ' s…';
+          note.hidden = false;
+          left -= 1;
+          return;
+        }
+        stop();
+        try {
+          if (navigator.sendBeacon && window.URLSearchParams) {
+            navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: 'auto_continue', a: '${attempt}' }));
+          }
+        } catch (e) { /* the page goes on regardless */ }
+        window.location.assign(target);
+      }, 1000);
+    })();`;
 }
 
 @ApiTags('MCP client sign-in')
@@ -351,6 +526,83 @@ export class LoginController {
     return (await serverReachability(this.prisma, userId, serverId)) === 'unreachable';
   }
 
+  /**
+   * What every event of one authorization attempt carries: the client, the
+   * device, the attempt and the arm of the page test (see
+   * authorization-attempt.ts). All of it passes the event store's allow-list.
+   */
+  private attemptMeta(req: Request, consent: ConsentContext): Record<string, string> {
+    const attempt = attemptKey(consent.expiresAt);
+    return {
+      client: consent.clientName,
+      // 'mobile', not 'phone': the only values the event store keeps for `device`.
+      device: deviceOf(req.headers['user-agent']),
+      // Reloads and the return from a social sign-in show the page again: the
+      // same attempt, counted once by this value. It is the moment the pending
+      // authorization expires, set once when it starts; nothing of the session
+      // itself is stored.
+      ...(attempt ? { attempt } : {}),
+      ...(consent.connectedArm ? { connectedArm: consent.connectedArm } : {}),
+      ...(consent.signinArm ? { signinArm: consent.signinArm } : {}),
+    };
+  }
+
+  /**
+   * `authorize_action`: which button of the sign-in page was used. Never
+   * awaited and never throws: the form post must not wait for a statistic.
+   */
+  private recordAuthorizeAction(req: Request, button: string): void {
+    if (!this.productEvents) return;
+    void this.loadConsentContext(req)
+      .then((consent) =>
+        consent
+          ? this.productEvents?.log({
+              event: ProductEvents.AUTHORIZE_ACTION,
+              metadata: { ...this.attemptMeta(req, consent), button },
+            })
+          : undefined,
+      )
+      .catch(() => undefined);
+  }
+
+  /** The button behind a sign-in form post, as `authorize_action` names it. */
+  private buttonOf(action: string | undefined): string {
+    if (action === 'deny') return 'cancel';
+    if (action === 'approve-session') return 'session';
+    if (action?.startsWith('sso:')) return 'sso';
+    if (action?.startsWith('social:')) return action.slice('social:'.length);
+    return 'password';
+  }
+
+  /**
+   * `authorization_signed_in`: the identity is settled and access allowed,
+   * with the way the person signed in and whether the account is new (made in
+   * the last 30 minutes, which is how long an authorization can stay open).
+   * Never awaited and never throws.
+   */
+  private recordSignedIn(req: Request, userId: string, method: string): void {
+    if (!this.productEvents) return;
+    void (async () => {
+      const consent = await this.loadConsentContext(req);
+      if (!consent) return;
+      const account = await this.prisma.user.findUnique({
+        where: { id: userId },
+        select: { createdAt: true, organizationId: true },
+      });
+      const created = account?.createdAt instanceof Date ? account.createdAt.getTime() : null;
+      await this.productEvents?.log({
+        event: ProductEvents.AUTHORIZATION_SIGNED_IN,
+        userId,
+        organizationId: account?.organizationId ?? null,
+        metadata: {
+          ...this.attemptMeta(req, consent),
+          method,
+          ...(created ? { account: Date.now() - created < 30 * 60 * 1000 ? 'new' : 'existing' } : {}),
+        },
+      });
+    })().catch(() => undefined);
+  }
+
   @Get('login')
   async showLoginPage(
     @Query('error') error: string,
@@ -372,31 +624,18 @@ export class LoginController {
         ?.log({
           event: ProductEvents.AUTHORIZE_PAGE_VIEWED,
           metadata: {
-            client: consent.clientName,
-            // 'mobile', not 'phone': the only values the event store keeps for `device`.
-            device: isPhoneUserAgent(req.headers['user-agent']) ? 'mobile' : 'desktop',
-            // Reloads and the return from a social sign-in show the page
-            // again: the same attempt, counted once by this value. It is
-            // the moment the pending authorization expires, set once when
-            // it starts; nothing of the session itself is stored.
-            ...(consent.expiresAt ? { attempt: consent.expiresAt.toString(36) } : {}),
+            ...this.attemptMeta(req, consent),
+            // The browser's first language, as one of seven buckets or 'other'.
+            lang: languageBucket(req.headers['accept-language']),
           },
         })
         .catch(() => undefined);
     }
 
-    // Issue a CSRF token bound to this render (double-submit, HMAC-signed
-    // cookie + matching hidden field). Prevents login CSRF / silent
-    // credential submission from a cross-site context.
-    const csrfToken = randomBytes(32).toString('base64url');
-    const isSecure = this.isSecureRequest(req);
-    res.cookie('login_csrf', csrfToken, {
-      httpOnly: true,
-      secure: isSecure,
-      maxAge: 10 * 60 * 1000, // 10 minutes — long enough to fill the form
-      sameSite: isSecure ? 'none' : 'lax',
-      signed: true,
-    });
+    // Issue the form's CSRF token (double-submit, HMAC-signed cookie +
+    // matching hidden field). Prevents login CSRF / silent credential
+    // submission from a cross-site context.
+    const csrfToken = this.issueLoginCsrf(req, res);
 
     // Already signed in to the dashboard in this browser? Then the consent
     // screen only needs an explicit "Approve", not the password again. Only
@@ -428,6 +667,7 @@ export class LoginController {
         socialProviders,
         sessionUser,
         requestedServer,
+        lang: pageLanguageFor(req.headers['accept-language']),
       }),
     );
   }
@@ -495,7 +735,7 @@ export class LoginController {
 
   // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
   @Post('login')
-  @Throttle({ default: { limit: 5, ttl: 60_000 } })
+  @Throttle({ default: { limit: loginPostLimit, ttl: 60_000, generateKey: loginPostThrottleKey } })
   @ApiExcludeEndpoint()
   async handleLogin(
     @Req() req: Request,
@@ -522,6 +762,9 @@ export class LoginController {
       );
     }
 
+    // Which button this was, for the funnel of the page. Not awaited.
+    this.recordAuthorizeAction(req, this.buttonOf(body.action));
+
     // The user explicitly declined on the consent screen: abort the flow and
     // drop the OAuth session cookies so no authorization code can be issued.
     if (body.action === 'deny') {
@@ -543,7 +786,8 @@ export class LoginController {
           providerId,
           oauthSessionId,
         );
-        res.clearCookie('login_csrf');
+        // The form's token stays valid (see issueLoginCsrf): the back button
+        // from the provider's page shows this form again, as it was.
         return res.redirect(authorizationUrl);
       } catch (error: any) {
         this.logger.warn(`MCP SSO start failed: ${error?.reason ?? error}`);
@@ -573,7 +817,7 @@ export class LoginController {
         );
       }
       this.logger.log(`Authorization approved from dashboard session: ${maskEmail(sessionUser.email)}`);
-      return this.completeSignIn(req, res, sessionUser);
+      return this.completeSignIn(req, res, sessionUser, undefined, 'session');
     }
 
     const { email, password } = body;
@@ -590,8 +834,9 @@ export class LoginController {
 
     if (!user) {
       this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
+      await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
+        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
       );
     }
 
@@ -609,8 +854,9 @@ export class LoginController {
     // Nullable for IdP-provisioned users — never hand null to bcrypt.
     if (!user.passwordHash) {
       this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
+      await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
+        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
       );
     }
 
@@ -623,7 +869,7 @@ export class LoginController {
     if (!passwordValid) {
       this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
       return res.redirect(
-        `/auth/login?error=${encodeURIComponent('Invalid email or password')}`,
+        `/auth/login?error=${encodeURIComponent(this.signInFailedMessage())}`,
       );
     }
 
@@ -646,6 +892,39 @@ export class LoginController {
     return this.completeSignIn(req, res, user);
   }
 
+  /**
+   * The one answer to an e-mail and password that did not sign in, whatever
+   * the reason: no account with that address, an account that has no
+   * password (made with a provider button, or by an identity provider), or a
+   * wrong password. The text never depends on the address, so it cannot be
+   * used to find out which addresses have an account or how they were made.
+   * Where provider buttons exist it says what the two usual cases do next:
+   * 58 people typed an address that had no account and 9 a password for an
+   * account made with a provider (16 to 21 November 2026).
+   */
+  private signInFailedMessage(): string {
+    const providers = this.socialProviders().map((p) => p.name);
+    if (providers.length === 0) return 'Invalid email or password';
+    const list =
+      providers.length === 1
+        ? providers[0]
+        : `${providers.slice(0, -1).join(', ')} or ${providers[providers.length - 1]}`;
+    return `That email and password do not match. If you signed up with ${list}, use that button instead. New here? Create an account first.`;
+  }
+
+  /**
+   * One password check against a hash no password matches, for a sign-in
+   * that has no hash to check (no such account, or an account without a
+   * password). The refusal then takes as long as a wrong password does.
+   */
+  private async spendPasswordCheck(password: string): Promise<void> {
+    try {
+      await this.authService.comparePassword(String(password), NO_ACCOUNT_PASSWORD_HASH);
+    } catch {
+      // Only the time matters; the sign-in is refused either way.
+    }
+  }
+
   /** "Continue with Google / Microsoft / GitHub" from a CSRF-checked form of this flow. */
   private async startSocialSignIn(req: Request, res: Response, provider: string): Promise<void> {
     if (!this.social || this.socialProviders().length === 0) {
@@ -658,7 +937,8 @@ export class LoginController {
         oauthSessionId: req.cookies?.oauth_session,
       });
       setSocialBindCookie(req, res, bindingToken);
-      res.clearCookie('login_csrf');
+      // The form's token stays valid (see issueLoginCsrf): the back button
+      // from the provider's page shows this form again, as it was.
       return res.redirect(authorizationUrl);
     } catch (error: any) {
       this.logger.warn(`MCP social sign-in start failed: ${error?.reason ?? error}`);
@@ -789,7 +1069,7 @@ export class LoginController {
     if (!user.emailVerified) return false;
     this.clearEmailCodeStep(res);
     this.logger.log(`Authorization continues after email verification: ${maskEmail(user.email)}`);
-    await this.completeSignIn(req, res, user);
+    await this.completeSignIn(req, res, user, undefined, 'email_code');
     return true;
   }
 
@@ -821,7 +1101,7 @@ export class LoginController {
 
     this.clearEmailCodeStep(res);
     this.logger.log(`Email verified on the authorization page: ${maskEmail(user.email)}`);
-    return this.completeSignIn(req, res, user);
+    return this.completeSignIn(req, res, user, undefined, 'email_code');
   }
 
   /** "Send a new code" of the code step: at most one a minute, five an hour. */
@@ -884,6 +1164,8 @@ export class LoginController {
     user: SessionUser,
     /** Set when the user signed in on this page with Google, Microsoft or GitHub. */
     socialProvider?: string,
+    /** How the identity was settled, when not with a provider or the password form (for the event only). */
+    via?: 'session' | 'email_code',
   ): Promise<void> {
     // The client asked for one server by URL, and this account cannot reach
     // it: no token. It would be refused on every call, and clients do not
@@ -899,6 +1181,8 @@ export class LoginController {
         `/auth/login?switch=1&error=${encodeURIComponent(WRONG_WORKSPACE_MESSAGE)}`,
       );
     }
+    // For the funnel of the pages: who signed in, and how. Not awaited.
+    this.recordSignedIn(req, user.id, socialProvider ?? via ?? 'password');
     // Remembered for the setup links the AI client will hand out, so they open
     // the dashboard without asking for this sign-in again (recent-sign-in.util).
     setRecentSignInCookie(res, user.id, this.isSecureRequest(req));
@@ -1266,8 +1550,8 @@ export class LoginController {
       });
     }
 
-    // An admin on the free trial is told when it ends and that a card keeps
-    // the workspace running, as a small line under "Continue". Never before
+    // An admin on the free trial is offered a payment method, as a secondary
+    // button under "Continue" that comes back through /callback. Never before
     // Approve: a payment step there halved the connections (#842, #843).
     const trial =
       member?.role === 'ADMIN'
@@ -1283,7 +1567,7 @@ export class LoginController {
         event: ProductEvents.EMPTY_WORKSPACE_PROMPT,
         userId,
         organizationId,
-        metadata: { client: consent.clientName, ...(trialEndsAt ? { cardTrialOffered: true } : {}) },
+        metadata: { ...this.attemptMeta(req, consent), ...(trialEndsAt ? { cardTrialOffered: true } : {}) },
       })
       .catch(() => undefined);
 
@@ -1305,10 +1589,12 @@ export class LoginController {
         redirectHost: consent.redirectHost,
         onPhone: isPhoneUserAgent(req.headers['user-agent']),
         callbackUrl,
+        arm: consent.connectedArm,
+        attempt: attemptKey(consent.expiresAt),
         welcomeUrl: dashboardLink('/welcome'),
         ...(pickerCsrf ? { pickerCsrf } : {}),
         ...(telegramOneTap ? { telegramOneTap } : {}),
-        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}`) } } : {}),
+        ...(trialEndsAt ? { cardTrial: { endsAt: trialEndsAt, url: dashboardLink(`/start-trial?source=${POST_APPROVE_SOURCE}&return=%2Fcallback`) } } : {}),
       }),
     );
     return true;
@@ -1364,6 +1650,10 @@ export class LoginController {
     /** A phone or tablet browser: Continue must not open a second tab there. */
     onPhone?: boolean;
     callbackUrl: string;
+    /** The arm of the page test (authorization-attempt.ts); null or absent: the control page. */
+    arm?: ConnectedPageArm | null;
+    /** The attempt, for the page's beacons; without it the page reports nothing. */
+    attempt?: string;
     welcomeUrl: string;
     cardTrial?: { endsAt: Date; url: string };
     /** CSRF token of the optional app picker; no picker without it. */
@@ -1378,15 +1668,15 @@ export class LoginController {
           params.cardTrial.endsAt.toLocaleDateString('en-US', { month: 'long', day: 'numeric', timeZone: 'UTC' }),
         ).replace(' ', '&nbsp;')
       : '';
-    // Back in Claude, a new chat opens with the request typed in. Only for a
-    // code sent to claude.ai itself, where /new?q= is known to work, and never
-    // on a phone: there the new tab (or the Claude app it opens) takes over
-    // and the authorization in this tab is never finished. From 2 November
-    // 2026, when the chat tab was added, to 15 November about 200
-    // authorization codes a day were never exchanged, against about 10 before,
-    // nearly all from phones.
-    const host = (params.redirectHost ?? '').toLowerCase();
-    const opensChat = host === 'claude.ai' && !params.onPhone;
+    // Continue only goes back through the authorization, on every device. It
+    // used to open a new Claude chat in a second tab as well (2 November
+    // 2026). On phones that tab took over and the authorization in this tab
+    // was never finished: about 200 authorization codes a day were never
+    // exchanged, against about 10 before, until phones lost the tab on 15
+    // November. From 18 November the same happened on computers (19 % of the
+    // codes issued from this page never exchanged, against 3 % without the
+    // page), so no device opens a second tab now. The same click copies the
+    // request instead, to paste in a new chat.
     const telegram = !!params.pickerCsrf && !!params.telegramOneTap;
     // Hidden until the script shows it: without JavaScript the page is the
     // same as before, and never more than one click from the chat.
@@ -1407,20 +1697,51 @@ export class LoginController {
       }
     </section>`
       : '';
+    // The 'next_step' arm of the page test. No code exists while this page is
+    // shown: the client is connected only after Continue, and the control's
+    // heading says it already is. 7 % of sign-in attempts ended here, signed
+    // in and never connected (16 to 21 November 2026).
+    const nextStep = params.arm === 'next_step';
+    // A base-36 number (attemptKey); checked again here because it is written into the script.
+    const attempt = params.attempt && /^[0-9a-z]{6,12}$/.test(params.attempt) ? params.attempt : '';
+    const heading = nextStep ? `One more step: go back to ${client}` : `${client} is connected`;
+    // On the next_step page the sentence about Continue stands alone, so on a
+    // phone the button can follow it directly (see the order in the styles);
+    // the example request comes after the button there.
+    const sub = nextStep
+      ? `You are signed in. ${client} is connected once you press <strong>Continue to ${client}</strong>.`
+      : `Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:`;
+    const sub2 = nextStep
+      ? `<p class="sub sub2" id="first-sub2">Your workspace has no apps yet: you can add them right in the chat. For example, ask:</p>`
+      : '';
     const card = `
+    <div class="flow${nextStep ? ' next' : ''}">
     ${clientTilePair(params.clientName, params.redirectHost ?? '')}
-    <h1>${client} is connected</h1>
-    <p class="sub" id="first-sub">Your workspace has no apps yet, so ${client} has nothing to work with. You can add them right in the chat. For example, ask:</p>
+    <h1>${heading}</h1>
+    <p class="sub" id="first-sub">${sub}</p>${sub2}
     <div class="example"><span>“<span id="example-request">${this.escapeHtml(FIRST_CONNECTOR_EXAMPLE)}</span>”</span><button type="button" class="copy" id="copy-request">Copy</button></div>
-    <p class="copied" id="request-copied" role="status" aria-live="polite"${params.onPhone ? ' data-phone="1"' : ''} hidden></p>
-    <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}
-    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}"${opensChat ? ' data-open-chat="https://claude.ai/new"' : ''} data-client="${client}">Continue to ${client}</a>
-    <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>${
-      params.cardTrial
+    <p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>
+    <p class="body" id="first-body">${client} finds the connector and sets it up with you. Passwords and keys are never typed into the chat: you get a link to enter them here.</p>${picker}${
+      nextStep && telegram
         ? `
-    <p class="trial">Your free trial runs until ${trialEnd}. To keep the workspace running after that, you can <a href="${this.escapeHtml(params.cardTrial.url)}" target="_blank" rel="noopener noreferrer">add a payment method now (new tab)</a>. Nothing is charged before ${trialEnd}.</p>`
+    <p class="auto" id="auto-continue" role="status" aria-live="polite" hidden><span id="auto-continue-text"></span> <button type="button" class="stay" id="auto-continue-stay">Stay on this page</button></p>`
         : ''
     }
+    <a class="button" id="continue" href="${this.escapeHtml(params.callbackUrl)}" data-client="${client}">Continue to ${client}</a>${
+      // Optional, under Continue and never in its place. Same tab: every way
+      // out of the card-trial page (checkout done, cancelled, skipped) comes
+      // back through /callback, which finishes this authorization (the
+      // sign-in cookie lasts as long as it). Never before Approve (#842/#843).
+      params.cardTrial
+        ? `
+    <div class="trial" id="card-trial">
+      <a class="button secondary-link" id="card-trial-link" href="${this.escapeHtml(params.cardTrial.url)}">Add a payment method (optional)</a>
+      <p>Your free trial runs until ${trialEnd}. With a payment method your plan carries on after it; nothing is charged before ${trialEnd}. Either way you come straight back to ${client}.</p>
+    </div>`
+        : ''
+    }
+    <p class="links"><a href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">Or add an app here first (new tab)</a></p>
+    </div>
     <script>
     // Copy the example request, to paste into the chat after "Continue":
     // easier than retyping it. The quotes are left out of the copy.
@@ -1494,40 +1815,18 @@ export class LoginController {
       });
       picker.hidden = false;
     })();${telegram ? TELEGRAM_PANEL_SCRIPT : ''}
-    // Continue still goes back through the authorization; for Claude, the
-    // same click also opens a new chat with the request typed in.
-    (function () {
-      var cont = document.getElementById('continue');
-      var request = document.getElementById('example-request');
-      var chat = cont && cont.getAttribute('data-open-chat');
-      if (!chat || !request) return;
-      // A touch device that did not say so in its user agent (an iPad asking
-      // for the desktop site): no second tab there either.
-      try {
-        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) return;
-      } catch (e) { /* no media queries: treated as a desktop */ }
-      cont.addEventListener('click', function () {
-        try {
-          window.open(chat + '?q=' + encodeURIComponent(request.textContent || ''), '_blank', 'noopener');
-        } catch (e) { /* the authorization goes on regardless */ }
-      });
-    })();
-    // A phone gets no chat tab (see above), so the same tap copies the
-    // request instead, to paste in a new chat. Best effort and nothing more:
-    // the listener returns at once, never waits for the clipboard, never
-    // prevents the default action and opens nothing, so the browser follows
-    // the link exactly as it does without it. A refused clipboard changes
-    // nothing on the page.
+    // Continue goes back through the authorization and opens nothing else
+    // (see the comment above the card). The same click copies the
+    // request, to paste in a new chat. Best effort and nothing more: the
+    // listener returns at once, never waits for the clipboard, never prevents
+    // the default action and opens nothing, so the browser follows the link
+    // exactly as it does without it. A refused clipboard changes nothing on
+    // the page.
     (function () {
       var cont = document.getElementById('continue');
       var request = document.getElementById('example-request');
       var note = document.getElementById('request-copied');
       if (!cont || !request || !note || !navigator.clipboard || !navigator.clipboard.writeText) return;
-      var phone = note.getAttribute('data-phone') === '1';
-      try {
-        if (window.matchMedia && window.matchMedia('(pointer: coarse)').matches) phone = true;
-      } catch (e) { /* no media queries: what the server saw decides */ }
-      if (!phone) return;
       var clientName = cont.getAttribute('data-client') || 'your assistant';
       cont.addEventListener('click', function () {
         try {
@@ -1537,10 +1836,10 @@ export class LoginController {
           }, function () { /* refused: nothing else happens */ });
         } catch (e) { /* the authorization goes on regardless */ }
       });
-    })();
+    })();${attempt ? continueBeaconScript(attempt) : ''}${nextStep && telegram ? autoContinueScript(attempt) : ''}
     </script>`;
     return renderAuthPage({
-      title: `${params.clientName} is connected`,
+      title: nextStep ? `One more step: go back to ${params.clientName}` : `${params.clientName} is connected`,
       card,
       trust: this.trust(),
       extraStyles: `
@@ -1568,8 +1867,36 @@ export class LoginController {
              font: inherit; font-size: 14px; background: #fff; color: var(--text); margin: 0 0 8px; }
   .quick-status { font-size: 13px; color: var(--text-2); margin: 0 0 8px; line-height: 1.45; }
   .quick-status:empty { margin: 0; }
-  .trial { font-size: 13px; color: var(--text-2); margin: 18px 0 0; padding-top: 14px; border-top: 1px solid var(--border); line-height: 1.5; }
-  .trial a { color: var(--brand); }${telegram ? TELEGRAM_PANEL_STYLES : ''}`,
+  .trial { font-size: 13px; color: var(--text-2); margin: 12px 0 0; line-height: 1.5; }
+  .trial p { margin: 8px 0 0; text-align: center; }
+  .trial a.secondary-link { background: #fff; color: var(--text); border: 1px solid var(--border-strong); }
+  .trial a.secondary-link:hover { border-color: var(--brand); color: var(--brand); }
+  .sub2 { margin-top: -8px; }
+  /* On a phone the first screen holds what matters: heading, one sentence,
+     the app picker, Continue (and the optional payment method). The example
+     request and the rest follow. Claude's in-app browser leaves about 640 px
+     of height; with the picker shown Continue still ends above 500 px. */
+  @media (max-width: 480px) {
+    .flow.next { display: flex; flex-direction: column; }
+    .flow.next > .pair { margin-bottom: 12px; }
+    .flow.next > .pair .tile { width: 40px; height: 40px; border-radius: 10px; }
+    .flow.next > #first-sub { margin-bottom: 12px; }
+    .flow.next > .quick { order: 1; margin-bottom: 12px; }
+    .flow.next > .auto { order: 2; }
+    .flow.next > #continue { order: 3; }
+    .flow.next > #card-trial { order: 4; }
+    .flow.next > .sub2 { order: 5; margin: 20px 0 10px; }
+    .flow.next > .example { order: 6; }
+    .flow.next > .copied { order: 7; }
+    .flow.next > .body { order: 8; }
+    .flow.next > .links { order: 9; }
+  }
+
+  .auto { font-size: 13.5px; font-weight: 500; color: var(--text); line-height: 1.45; margin: 0 0 12px; }
+  .auto[hidden] { display: none; }
+  .auto button.stay { width: auto; min-height: 28px; padding: 0 10px; margin-left: 4px; font-size: 12.5px; font-weight: 500;
+             background: #fff; color: var(--text); border-color: var(--border-strong); }
+  .auto button.stay:focus-visible { outline: 2px solid var(--brand); outline-offset: 2px; }${telegram ? TELEGRAM_PANEL_STYLES : ''}`,
     });
   }
 
@@ -1789,6 +2116,54 @@ export class LoginController {
    * this answers JSON, and "Continue" goes to the callback as before.
    */
   // A form post of the sign-in pages (CSRF token + signed cookies), not an API: kept out of the OpenAPI doc.
+  /**
+   * What the pages of the flow report about a click the server never sees:
+   * "Continue" on the page shown to an empty workspace (the link goes to the
+   * OAuth library's /callback), the same page going on by itself after the
+   * one-tap Telegram bot, and "Create an account" on the sign-in page (a link
+   * to the dashboard). Sent with `navigator.sendBeacon`, which never delays
+   * the click it reports.
+   *
+   * Cloud only, like the pages that send it. A statistic and nothing else: it
+   * reads the pending authorization, writes one event and always answers 204.
+   * It counts only inside the authorization it names: the attempt in the
+   * body must be the one of this browser's pending authorization, a value
+   * another site cannot know.
+   */
+  @Post('beacon')
+  @Throttle({ default: { limit: 20, ttl: 60_000 } })
+  @ApiExcludeEndpoint()
+  async pageBeacon(@Req() req: Request, @Body() body: { e?: unknown; a?: unknown }, @Res() res: Response) {
+    res.status(204).end();
+    if (!this.deployment.isCloud() || !this.productEvents) return;
+    try {
+      const kind = body?.e;
+      if (kind !== 'continue' && kind !== 'auto_continue' && kind !== 'create_account') return;
+      const consent = await this.loadConsentContext(req);
+      const attempt = consent ? attemptKey(consent.expiresAt) : undefined;
+      if (!consent || !attempt || body?.a !== attempt) return;
+      if (kind === 'create_account') {
+        await this.productEvents.log({
+          event: ProductEvents.AUTHORIZE_ACTION,
+          metadata: { ...this.attemptMeta(req, consent), button: 'create_account' },
+        });
+        return;
+      }
+      // Continue exists only for a signed-in person on the paused authorization.
+      const userId = this.pendingLoginUserId(req);
+      if (!userId) return;
+      const account = await this.prisma.user.findUnique({ where: { id: userId }, select: { organizationId: true } });
+      await this.productEvents.log({
+        event: ProductEvents.POST_APPROVE_CONTINUE_CLICKED,
+        userId,
+        organizationId: account?.organizationId ?? null,
+        metadata: { ...this.attemptMeta(req, consent), button: kind },
+      });
+    } catch {
+      // A lost statistic: nothing to tell the page.
+    }
+  }
+
   @Post('first-app')
   @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiExcludeEndpoint()
@@ -1858,8 +2233,8 @@ export class LoginController {
         userId,
         organizationId,
         metadata: {
+          ...this.attemptMeta(req, consent),
           adapterSlug: app.slug,
-          client: consent.clientName,
           status: out.isError ? 'failed' : 'added',
           ...(typeof reason === 'string' ? { error: reason.slice(0, 160) } : {}),
         },
@@ -2124,6 +2499,14 @@ export class LoginController {
         redirectHost,
         scopeText,
         ...(typeof session.expiresAt === 'number' ? { expiresAt: session.expiresAt } : {}),
+        connectedArm: connectedPageArm(sessionId, {
+          cloud: this.deployment.isCloud(),
+          setting: this.configService.get<string>(CONNECTED_PAGE_TEST_ENV),
+        }),
+        signinArm: signInPageArm(sessionId, {
+          cloud: this.deployment.isCloud(),
+          setting: this.configService.get<string>(SIGNIN_PAGE_TEST_ENV),
+        }),
       };
     } catch (e) {
       this.logger.warn('Failed to load OAuth consent context', e as Error);
@@ -2131,8 +2514,52 @@ export class LoginController {
     }
   }
 
+  /**
+   * The sign-in form's CSRF token for this render: a signed, httpOnly
+   * `login_csrf` cookie that the form's hidden field has to match.
+   *
+   * Inside a pending authorization the cookie also carries a digest of that
+   * authorization, and the same token is handed out again for as long as the
+   * browser holds both unchanged. A reload, a second click, or the back
+   * button from a provider's page then posts a form that still matches;
+   * before, each of them ended in "Your session expired" (46 a day in
+   * November 2026, three quarters within a minute of loading the page). The
+   * token is never good for another pending authorization, and the consent
+   * decision still ends it (completeSignIn).
+   */
+  private issueLoginCsrf(req: Request, res: Response): string {
+    const binding = loginCsrfBinding(req);
+    const current = binding
+      ? parseLoginCsrf((req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.login_csrf)
+      : null;
+    const token =
+      current && current.binding === binding ? current.token : randomBytes(32).toString('base64url');
+    const isSecure = this.isSecureRequest(req);
+    res.cookie('login_csrf', binding ? `${token}.${binding}` : token, {
+      httpOnly: true,
+      secure: isSecure,
+      maxAge: 10 * 60 * 1000, // 10 minutes — long enough to fill the form
+      sameSite: isSecure ? 'none' : 'lax',
+      signed: true,
+    });
+    return token;
+  }
+
+  /**
+   * Double submit for the sign-in form: the token in the signed `login_csrf`
+   * cookie must equal `formToken`, and a cookie issued inside a pending
+   * authorization only counts while that authorization is the browser's.
+   */
   private verifyCsrf(req: Request, formToken: unknown): boolean {
-    return this.verifySignedToken(req, 'login_csrf', formToken);
+    const current = parseLoginCsrf(
+      (req as Request & { signedCookies?: Record<string, unknown> }).signedCookies?.login_csrf,
+    );
+    if (!current || typeof formToken !== 'string') return false;
+    if (current.binding !== null && current.binding !== loginCsrfBinding(req)) return false;
+    const a = Buffer.from(current.token);
+    const b = Buffer.from(formToken);
+    if (a.length !== b.length) return false;
+    return timingSafeEqual(a, b);
   }
 
   /** Double submit: the signed cookie `cookieName` must equal `formToken`. */
@@ -2302,9 +2729,17 @@ export class LoginController {
     sessionUser?: SessionUser | null;
     /** The MCP server the client asked for, when the signed-in user may see its name. */
     requestedServer?: string | null;
+    /** The browser's language, if one of ours (buttons_first arm only). */
+    lang?: PageLanguage | null;
   }): string {
     const { error, serverName, consent, csrfToken, ssoProviders, sessionUser, requestedServer } =
       params;
+    // The sign-in page test (A3/A4): the buttons_first arm speaks the
+    // browser's language and leads with the provider buttons. The control
+    // uses the English texts, which are the page as before.
+    const buttonsFirst = consent?.signinArm === 'buttons_first';
+    const lang: PageLanguage = buttonsFirst && params.lang ? params.lang : 'en';
+    const T = signInTexts(lang);
     const socialProviders = params.socialProviders ?? [];
     const server = this.escapeHtml(serverName);
     const client = consent ? this.escapeHtml(consent.clientName) : '';
@@ -2343,12 +2778,15 @@ export class LoginController {
             (p) =>
               `<button type="submit" name="action" value="social:${this.escapeHtml(p.id)}" formnovalidate class="sso">` +
               providerMarkSvg(p.id) +
-              `<span>Continue with ${this.escapeHtml(p.name)}</span>` +
+              `<span>${fill(T.continueWith, { provider: this.escapeHtml(p.name) })}</span>` +
               `</button>`,
           )
           .join('') +
-        `<p class="links">New here? Continuing creates your account and accepts the <a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener">Terms</a> and <a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener">Privacy Policy</a>.</p>` +
-        '<div class="divider"><span>or use your email</span></div>'
+        `<p class="links">${fill(T.terms, {
+          terms: `<a href="https://anythingmcp.com/en/agb" target="_blank" rel="noopener">${T.termsLabel}</a>`,
+          privacy: `<a href="https://anythingmcp.com/datenschutz" target="_blank" rel="noopener">${T.privacyLabel}</a>`,
+        })}</p>` +
+        `<div class="divider"><span>${T.orEmail}</span></div>`
       : '';
 
     // The pair of tiles shows the client's logo only when the code goes back
@@ -2357,12 +2795,15 @@ export class LoginController {
       ? clientTilePair(consent.clientName, consent.redirectHost)
       : `<div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK}</div></div>`;
 
-    const heading = consent ? `Connect ${client} to ${server}` : 'Sign in';
-    const sub = consent
-      ? sessionUser
-        ? `${client} will use the tools your role allows on ${server}. You stay in control and can disconnect at any time.`
-        : `Sign in to let ${client} use your ${server} tools. You stay in control and can disconnect at any time.`
-      : `Authorize access to ${server} MCP Server`;
+    const heading = consent ? fill(T.heading, { client, server }) : 'Sign in';
+    // A4: on buttons_first a signed-out person reads what they get instead
+    // of the general sentence, so the buttons stay high on a phone.
+    const valueFirst = buttonsFirst && !sessionUser && !!consent;
+    const sub = valueFirst
+      ? fill(T.value, { client })
+      : consent
+        ? fill(sessionUser ? T.subSignedIn : T.subSignedOut, { client, server })
+        : `Authorize access to ${server} MCP Server`;
 
     // Claude's and ChatGPT's directories list AnythingMCP Cloud, so the
     // badge appears only there. Each assistant's users see only its own
@@ -2372,34 +2813,34 @@ export class LoginController {
 
     const DEFAULT_SCOPE = "Access to your organization's MCP tools and connected servers.";
     const toolsLine = requestedServer
-      ? `Use the tools on <b>${this.escapeHtml(requestedServer)}</b> that your role allows`
-      : `Use the tools on your MCP server that your role allows`;
+      ? fill(T.toolsOn, { server: `<b>${this.escapeHtml(requestedServer)}</b>` })
+      : T.tools;
     // The destination is the security-relevant part: a code sent anywhere
     // else than the client the user means to connect is a stolen session.
     // Unknown destinations are shown in amber.
     const consentHtml = consent
       ? `
     <div class="consent">
-      <h2>${client} will be able to</h2>
+      <h2>${fill(T.canDo, { client })}</h2>
       <div class="row"><span class="ok">&#10003;</span><span>${toolsLine}</span></div>
-      <div class="row"><span class="ok">&#10003;</span><span>Read your name and email address</span></div>
-      <div class="row muted"><span class="no">&ndash;</span><span>It never sees your connector passwords or API keys</span></div>${
+      <div class="row"><span class="ok">&#10003;</span><span>${T.readProfile}</span></div>
+      <div class="row muted"><span class="no">&ndash;</span><span>${T.noSecrets}</span></div>${
         consent.scopeText && consent.scopeText !== DEFAULT_SCOPE
           ? `
-      <div class="row muted"><span class="no">&middot;</span><span>Requested scope: <span class="host">${this.escapeHtml(consent.scopeText)}</span></span></div>`
+      <div class="row muted"><span class="no">&middot;</span><span>${T.scope} <span class="host">${this.escapeHtml(consent.scopeText)}</span></span></div>`
           : ''
       }
-      <div class="returns${known ? '' : ' unknown'}">${sessionUser ? 'If you allow it, access' : 'After you sign in, access'} is sent to <span class="host">${this.escapeHtml(consent.redirectHost)}</span>
-        <p class="warn">Only continue if you started this and recognise this destination. If you did not, choose <strong>Cancel</strong>.</p>
+      <div class="returns${known ? '' : ' unknown'}">${fill(sessionUser ? T.sentIfAllow : T.sentAfterSignIn, { host: `<span class="host">${this.escapeHtml(consent.redirectHost)}</span>` })}
+        <p class="warn">${fill(T.warn, { cancel: T.cancel })}</p>
       </div>
     </div>`
       : '';
 
     const denyButton = consent
-      ? `<button type="submit" name="action" value="deny" formnovalidate class="secondary">Cancel</button>`
+      ? `<button type="submit" name="action" value="deny" formnovalidate class="secondary">${T.cancel}</button>`
       : '';
 
-    const submitLabel = consent ? 'Sign in &amp; allow' : 'Sign in';
+    const submitLabel = consent ? T.signInAllow : 'Sign in';
 
     // Someone arriving here from an AI client (e.g. the Claude directory)
     // without an account would otherwise hit a dead end: the only way off this
@@ -2423,20 +2864,24 @@ export class LoginController {
       '/login?mode=register&amp;redirect=%2Fauth%2Flogin' + (signupClient ? `&amp;client=${signupClient}` : '');
     const offerSignup = !sessionUser && this.deployment.isCloud();
     const signupHtml =
-      offerSignup && !error
+      offerSignup && !error && !buttonsFirst
         ? `
     <div class="signup">
       <p class="signup-lead"><strong>New to ${server}?</strong> Create your account first.
         You come straight back here to finish connecting${consent ? ` ${client}` : ''}.</p>
       <a class="signup-btn" href="${signupHref}">Create an account</a>
     </div>
-    <div class="divider"><span>Already have an account? Sign in</span></div>`
+    <div class="divider signup-divider"><span>Already have an account? Sign in</span></div>`
         : '';
     const preAuthLinks = sessionUser
       ? ''
       : `
-      <p class="links"><a href="/forgot-password">Forgot your password?</a></p>` +
-        (offerSignup && error
+      <p class="links"><a href="/forgot-password">${T.forgot}</a></p>` +
+        (offerSignup && buttonsFirst
+          ? `
+      <p class="links">${T.noAccount} <a id="signup-link" href="${signupHref}">${T.createWithEmail}</a></p>`
+          : '') +
+        (offerSignup && error && !buttonsFirst
           ? `
       <p class="links">New to ${server}? <a href="${signupHref}">Create an account</a></p>`
           : '');
@@ -2451,31 +2896,92 @@ export class LoginController {
     // shows the password form instead.
     const formHtml = sessionUser
       ? `
-      <div class="acct"><span>Signed in as <strong>${this.escapeHtml(sessionUser.email)}</strong></span><a href="/auth/login?switch=1">Switch account</a></div>
-      ${buttons('<button type="submit" name="action" value="approve-session" autofocus>Allow access</button>')}`
+      <div class="acct"><span>${fill(T.signedInAs, { email: `<strong>${this.escapeHtml(sessionUser.email)}</strong>` })}</span><a href="/auth/login?switch=1">${T.switchAccount}</a></div>
+      ${buttons(`<button type="submit" name="action" value="approve-session" autofocus>${T.allow}</button>`)}`
       : `
       ${socialHtml}${ssoHtml}
-      <label for="email">Email</label>
-      <input type="email" id="email" name="email" required autofocus autocomplete="email" placeholder="you@company.com">
-      <label for="password">Password</label>
-      <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="Your password">
+      <label for="email">${T.email}</label>
+      <input type="email" id="email" name="email" required${
+        // With provider buttons above it, focusing the field scrolled a phone
+        // past the heading and the buttons on load.
+        socialProviders.length ? '' : ' autofocus'
+      } autocomplete="email" placeholder="you@company.com">
+      <label for="password">${T.password}</label>
+      <input type="password" id="password" name="password" required autocomplete="current-password" placeholder="${T.passwordPlaceholder}">
       ${buttons(`<button type="submit" name="action" value="approve">${submitLabel}</button>`)}
       ${preAuthLinks}`;
 
+    // On a phone the consent box moves under the buttons, and this short
+    // form of its last part (where access goes, and to cancel otherwise)
+    // stays right above them: the destination warning is never below the
+    // button it is about.
+    const returnsCompact = consent
+      ? `
+    <p class="returns-compact${known ? '' : ' unknown'}">${fill(sessionUser ? T.sentIfAllow : T.sentAfterSignIn, { host: `<span class="host">${this.escapeHtml(consent.redirectHost)}</span>` })}. ${fill(T.warn, { cancel: T.cancel })}</p>`
+      : '';
+    // The click on "Create an account" (authorize_action create_account):
+    // a beacon that never delays the link.
+    const attempt = consent ? attemptKey(consent.expiresAt) : undefined;
+    const signupBeacon =
+      offerSignup && attempt && /^[0-9a-z]{6,12}$/.test(attempt)
+        ? `
+    <script>
+    (function () {
+      var links = document.querySelectorAll('.signup-btn, #signup-link');
+      if (!links.length || !navigator.sendBeacon || !window.URLSearchParams) return;
+      for (var i = 0; i < links.length; i++) links[i].addEventListener('click', function () {
+        try { navigator.sendBeacon('/auth/beacon', new URLSearchParams({ e: 'create_account', a: '${attempt}' })); } catch (e) {}
+      });
+    })();
+    </script>`
+        : '';
+
     const card = `
+    <div class="flow login${buttonsFirst ? ' bf' : ''}">
     ${top}
     <h1>${heading}</h1>
-    <p class="sub">${sub}</p>${directoryPill}${signupHtml}
+    <p class="sub${valueFirst ? ' value' : ''}">${sub}</p>${directoryPill}${signupHtml}
     ${errorHtml}
-    ${consentHtml}
+    ${consentHtml}${returnsCompact}
     <form method="POST" action="/auth/login">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">${formHtml}
-    </form>`;
+    </form>
+    </div>${signupBeacon}`;
 
     return renderAuthPage({
-      title: `${sessionUser ? 'Authorize' : 'Sign In'} — ${serverName}`,
+      title: `${sessionUser ? T.titleAuthorize : T.titleSignIn} — ${serverName}`,
+      lang,
       card,
       trust: this.trust(),
+      // On a phone (Claude's in-app browser leaves about 640 px) the buttons
+      // come right after the heading: "Allow access", or the provider
+      // buttons. The consent box, the sign-up box and the directory badge
+      // follow the form.
+      extraStyles: `
+  .returns-compact { display: none; font-size: 12.5px; color: var(--text-2); line-height: 1.45; margin: 0 0 12px; text-align: center; }
+  .returns-compact .host { font-family: ui-monospace, SFMono-Regular, Menlo, monospace; font-weight: 600; color: var(--text); }
+  .returns-compact.unknown { color: #92400e; }
+  .returns-compact.unknown .host { color: #b45309; }
+  @media (max-width: 480px) {
+    .flow.login { display: flex; flex-direction: column; }
+    .flow.login > .pair { margin-bottom: 12px; }
+    .flow.login > .sub { margin-bottom: 12px; }
+    .flow.login > .returns-compact { display: block; }
+    .flow.login > form { order: 1; }
+    .flow.login > .signup-divider { display: none; }
+    .flow.login > .signup { order: 2; margin-top: 18px; }
+    .flow.login > .consent { order: 3; margin: 18px 0 0; }
+    .flow.login > .consent .returns { display: none; }
+    .flow.login > .verified { order: 4; margin: 16px auto 0; }
+  }
+  .sub.value { color: var(--text); }
+  /* buttons_first arm (A3): the phone order on every screen. */
+  .flow.login.bf { display: flex; flex-direction: column; }
+  .flow.login.bf > .returns-compact { display: block; }
+  .flow.login.bf > form { order: 1; }
+  .flow.login.bf > .consent { order: 3; margin: 18px 0 0; }
+  .flow.login.bf > .consent .returns { display: none; }
+  .flow.login.bf > .verified { order: 4; margin: 16px auto 0; }`,
     });
   }
 

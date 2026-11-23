@@ -351,9 +351,11 @@ test.describe('card-trial offer (cloud)', () => {
     // Starter is preselected without an intent from the pricing page.
     await expect(page.getByRole('radio', { name: /Starter/ })).toHaveAttribute('aria-checked', 'true');
 
-    // The skip is a small link, not a button styled as one.
+    // Going on without payment details is a real button, in the corner and under the plans.
+    await expect(page.getByRole('button', { name: 'Try free without payment details' })).toBeVisible();
+    await expect(page.getByText('Without payment details the trial has a lower connector limit.', { exact: false })).toBeVisible();
     const skip = page.getByRole('button', { name: 'Continue without payment details' });
-    await expect(skip).toHaveClass(/text-xs/);
+    await expect(skip).toHaveClass(/border/);
     await skip.click();
 
     // On to the normal onboarding, and not offered again.
@@ -361,6 +363,48 @@ test.describe('card-trial offer (cloud)', () => {
     expect(await page.evaluate(() => localStorage.getItem('amcp_card_trial_prompt:u1'))).toBe('skipped');
     await page.goto('/');
     await expect(page).toHaveURL(/\/welcome$/, { timeout: 15_000 });
+  });
+
+  test('on a phone the plans and both ways on are on the first screen', async ({ page }) => {
+    await page.setViewportSize({ width: 390, height: 844 });
+    await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
+    await page.goto('/start-trial?source=signup_prompt');
+    await expect(page.getByRole('heading', { name: 'Your free trial' })).toBeVisible();
+    // One sentence instead of the paragraph about the connector limit.
+    await expect(page.getByTestId('trial-intro-short')).toBeVisible();
+    await expect(page.getByText(/connector limit, and you can add/)).toBeHidden();
+    await expect(page.getByTestId('skip-corner')).toBeInViewport();
+    await expect(page.getByRole('radio', { name: /Starter/ })).toBeInViewport();
+  });
+
+  test('opened after approving an AI client, skipping finishes that authorization through /callback', async ({ page }) => {
+    await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
+    let callbackHit = false;
+    await page.route('**/callback', (route) => {
+      callbackHit = true;
+      return route.fulfill({ status: 200, contentType: 'text/html', body: '<h1>back to the client</h1>' });
+    });
+    await page.goto('/start-trial?source=post_approve&return=%2Fcallback');
+    await expect(page.getByText('Either way, you go straight back')).toBeVisible();
+    await page.getByRole('button', { name: 'Try free without payment details' }).click();
+    await expect.poll(() => callbackHit).toBe(true);
+    await expect(page).toHaveURL(/\/callback$/);
+    // Spent: a later visit does not send anyone to /callback again.
+    expect(await page.evaluate(() => localStorage.getItem('amcp_card_trial_return'))).toBeNull();
+  });
+
+  test('a return address that is not an authorization is ignored', async ({ page }) => {
+    await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
+    await page.goto('/start-trial?source=post_approve&return=https%3A%2F%2Fevil.example%2F');
+    await expect(page.getByRole('heading', { name: 'Your free trial' })).toBeVisible();
+    expect(await page.evaluate(() => localStorage.getItem('amcp_card_trial_return'))).toBeNull();
+  });
+
+  test('a skip from the button under the plans counts like the corner one', async ({ page }) => {
+    await cloudSession(page, { seed: { 'amcp_card_trial_prompt:u1': 'shown' } });
+    await page.goto('/start-trial?source=signup_prompt');
+    await page.getByRole('button', { name: 'Try free without payment details' }).click();
+    await expect.poll(() => page.evaluate(() => localStorage.getItem('amcp_card_trial_prompt:u1'))).toBe('skipped');
   });
 
   test('Start free trial opens Checkout for the chosen plan with a trial', async ({ page }) => {
