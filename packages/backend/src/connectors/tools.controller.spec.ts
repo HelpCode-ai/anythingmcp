@@ -58,6 +58,15 @@ function buildController(
 const req = (role = 'ADMIN') => ({ user: { sub: 'u1', organizationId: 'org1', role } });
 
 describe('ToolsController — response mapping validation', () => {
+  it('rejects an unknown renderer before storing the tool', async () => {
+    const { controller, prisma } = buildController();
+    await expect(controller.create(req(), 'c1', {
+      name: 'preview', description: 'Preview', parameters: {},
+      endpointMapping: { method: 'GET', path: '/x' }, responseMapping: { render: 'browser' },
+    } as any)).rejects.toThrow('render must be onenote-page');
+    expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+  });
+
   it('rejects a malformed transform on create instead of degrading at call time', async () => {
     const { controller, prisma } = buildController();
     await expect(
@@ -111,6 +120,12 @@ describe('ToolsController — response mapping validation', () => {
     } as any);
     const data = prisma.mcpTool.updateMany.mock.calls[0][0].data;
     expect(data.outputSchema).toBeUndefined();
+  });
+
+  it('drops a stale outputSchema when a renderer is enabled', async () => {
+    const { controller, prisma } = buildController();
+    await controller.update(req(), 't1', 'c1', { responseMapping: { render: 'onenote-page' } } as any);
+    expect(prisma.mcpTool.updateMany.mock.calls[0][0].data.outputSchema).toBeNull();
   });
 });
 
@@ -263,6 +278,20 @@ describe('ToolsController — test endpoint', () => {
     expect(res.mapped).toEqual(MAPPED);
     expect(res.mappingApplied).toBe(true);
     expect(res.bytesSavedPct).toBeGreaterThan(0);
+  });
+
+  it('passes rendering to the engine and returns tile metadata without picture bytes', async () => {
+    const { controller, prisma, connectorsService } = buildController();
+    prisma.mcpTool.findUnique.mockResolvedValue(tool({ render: 'onenote-page' }));
+    connectorsService.executeConnectorCall.mockResolvedValue({
+      __amcpOneNotePage: 1, text: 'Notes', width: 20, height: 30, warnings: [],
+      tiles: [{ x: 0, y: 0, width: 20, height: 30, bytes: 7, data: 'picture-bytes' }],
+    });
+    const result: any = await controller.testTool('c1', 't1', req(), {});
+    expect(connectorsService.executeConnectorCall.mock.calls[0][5]).toMatchObject({ responseMapping: { render: 'onenote-page' } });
+    expect(result.ok).toBe(true);
+    expect(result.result.tiles[0]).not.toHaveProperty('data');
+    expect(JSON.stringify(result)).not.toContain('picture-bytes');
   });
 
   it('reports mappingApplied=false and mapped=raw for a tool without a mapping', async () => {

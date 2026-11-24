@@ -1516,6 +1516,7 @@ the API actually returned.
 | `cacheTtl` | Seconds to cache the **raw** upstream response; shaping happens on read |
 | `images` | Paths to base64 images in the response, returned to the client as MCP image content (see below) |
 | `binary` | How a file the API returns as raw bytes is handed over: `{ "as": "auto" \| "base64", "maxBytes": n }` (see below) |
+| `render` | `"onenote-page"` renders a Graph page's ink and positioned images as PNG tiles, with typed text kept separately; see [OneNote page previews](connectors/onenote-page-previews.md). |
 
 ### Images in the response (`images`)
 

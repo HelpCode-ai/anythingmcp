@@ -133,6 +133,8 @@ export type AnyEndpointMapping =
  *               `transform.include`.
  */
 export interface ResponseMapping {
+  /** Opt-in authenticated OneNote page rendering, before response shaping. */
+  render?: 'onenote-page';
   cacheTtl?: number;
   type?: string;
   fields?: string[];

@@ -159,6 +159,7 @@ describe('microsoft-onenote adapter: static spec conformance', () => {
     expect(readOnly.sort()).toEqual([
       'microsoft_onenote_get_page',
       'microsoft_onenote_get_page_content',
+      'microsoft_onenote_get_page_image',
       'microsoft_onenote_list_notebook_section_groups',
       'microsoft_onenote_list_notebook_sections',
       'microsoft_onenote_list_notebooks',

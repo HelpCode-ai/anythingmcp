@@ -60,7 +60,10 @@ function build(tool: RegisteredTool, opts: { engineResult?: unknown; cached?: st
   };
   const audit = { logInvocation: jest.fn().mockResolvedValue(undefined) };
   const engineResult = opts.engineResult ?? RAW;
-  const restEngine = { execute: jest.fn().mockResolvedValue(engineResult) };
+  const restEngine = {
+    execute: jest.fn().mockResolvedValue(engineResult),
+    executeWithMeta: jest.fn().mockResolvedValue({ body: engineResult, headers: {} }),
+  };
   const mcpClientEngine = { execute: jest.fn().mockResolvedValue(engineResult) };
   const graphqlEngine = { execute: jest.fn().mockRejectedValue(new Error('Unexpected GraphQL call')) };
   const soapEngine = { execute: jest.fn().mockRejectedValue(new Error('Unexpected SOAP call')) };
@@ -766,6 +769,50 @@ describe('DynamicMcpTools: images in the response', () => {
     const res = await executor.executeTool('list_devices', {});
     expect(res.content).toHaveLength(1);
     expect(res.content[0].text).toBe(JSON.stringify(GENERATED, null, 2));
+  });
+});
+
+describe('DynamicMcpTools: OneNote page previews', () => {
+  const PNG = Buffer.from([137, 80, 78, 71, 13, 10, 26, 10]).toString('base64');
+  const PAGE = {
+    __amcpOneNotePage: 1, text: 'Typed notes', width: 20, height: 30, warnings: [],
+    tiles: [{ x: 0, y: 0, width: 20, height: 30, bytes: 8, data: PNG }],
+  };
+
+  it.each([false, true])('returns previews as MCP images and keeps their bytes out of audit rows (cloud=%s)', async (cloud) => {
+    const { executor, audit, redis, restEngine } = build(makeTool({ render: 'onenote-page', cacheTtl: 60 }), { engineResult: PAGE, cloud });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.isError).toBeUndefined();
+    expect(res.content[1]).toEqual({ type: 'image', data: PNG, mimeType: 'image/png' });
+    expect(JSON.parse(res.content[0].text)).toMatchObject({ text: 'Typed notes', tiles: [{ bytes: 8 }] });
+    expect(JSON.stringify(res.structured)).not.toContain(PNG);
+    expect(JSON.stringify(audit.logInvocation.mock.calls[0][0].output)).not.toContain(PNG);
+    expect(restEngine.executeWithMeta).toHaveBeenCalledWith(expect.anything(), expect.anything(), expect.anything(), expect.objectContaining({ render: 'onenote-page' }));
+    // Cache reads must still reproduce the picture, not just the audit summary.
+    expect(redis.set.mock.calls[0][1]).toContain(PNG);
+  });
+
+  it('renders the cached preview without calling Graph again', async () => {
+    const { executor, restEngine } = build(makeTool({ render: 'onenote-page', cacheTtl: 60 }), { cached: JSON.stringify(PAGE) });
+    const res = await executor.executeTool('list_devices', {});
+    expect(res.content[1]).toEqual({ type: 'image', data: PNG, mimeType: 'image/png' });
+    expect(restEngine.executeWithMeta).not.toHaveBeenCalled();
+    expect(restEngine.execute).not.toHaveBeenCalled();
+  });
+
+  it('does not reuse an HTML cache entry after enabling page rendering', async () => {
+    const cache = new Map<string, string>();
+    const raw = build(makeTool({ cacheTtl: 60 }), { engineResult: { html: 'original body' } });
+    const preview = build(makeTool({ render: 'onenote-page', cacheTtl: 60 }), { engineResult: PAGE });
+    for (const { redis } of [raw, preview]) {
+      redis.get.mockImplementation(async (key) => cache.get(key) ?? null);
+      redis.set.mockImplementation(async (key, value) => { cache.set(key, value); });
+    }
+    await raw.executor.executeTool('list_devices', {});
+    const result = await preview.executor.executeTool('list_devices', {});
+    expect(preview.restEngine.executeWithMeta).toHaveBeenCalledTimes(1);
+    expect(result.content[1]).toMatchObject({ type: 'image', data: PNG });
+    expect(cache.size).toBe(2);
   });
 });
 

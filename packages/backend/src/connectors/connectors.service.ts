@@ -1261,7 +1261,7 @@ export class ConnectorsService implements OnApplicationBootstrap {
      * `userId`: who runs it. A connector with per-user credentials runs with
      * that user's own sign-in, as their MCP calls do, and refuses without one.
      */
-    options: { useProxy?: boolean; userId?: string } = {},
+    options: { useProxy?: boolean; userId?: string; responseMapping?: { render?: unknown } } = {},
   ): Promise<unknown> {
     // Inject env vars as parameter defaults
     const envVars = connector.envVars as Record<string, string> | undefined;
@@ -1427,6 +1427,9 @@ export class ConnectorsService implements OnApplicationBootstrap {
 
     switch (connector.type) {
       case 'REST': {
+        if (options.responseMapping?.render !== undefined && options.responseMapping.render !== null) {
+          return this.restEngine.execute(config, endpointMapping, mergedParams, options.responseMapping);
+        }
         // The in-app "Run Test" must show what a model will see, so a tool
         // that asked for response headers gets them here as well.
         const wanted = (endpointMapping as { exposeHeaders?: string[] }).exposeHeaders;
