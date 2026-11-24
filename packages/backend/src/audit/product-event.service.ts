@@ -704,14 +704,14 @@ export class ProductEventService {
 // `attempt`: authorize_page_viewed, the value that makes reloads of one
 // authorization count once: a short lower-case base-36 number (the time the
 // pending authorization expires), and nothing else is kept.
-// `button`, `method`, `account`, `lang`, `connectedArm`, `signinArm`: the
+// `button`, `method`, `account`, `lang`, `connectedArm`, `signinArm`, `trialOfferArm`: the
 // authorization pages (authorize_action, authorization_signed_in,
 // authorize_page_viewed and the page tests), each from a fixed set.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'step', 'index', 'field', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
   'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer', 'attempt', 'code',
-  'button', 'method', 'account', 'lang', 'connectedArm', 'signinArm',
+  'button', 'method', 'account', 'lang', 'connectedArm', 'signinArm', 'trialOfferArm',
 ] as const;
 /** A provider's error code: a short identifier, never a sentence or a pasted value. */
 const PROVIDER_CODE = /^[A-Za-z][A-Za-z_]{2,39}$/;
@@ -757,6 +757,7 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   lang: new Set(['en', 'de', 'it', 'es', 'zh', 'ja', 'ru', 'other']),
   connectedArm: new Set(['control', 'next_step']),
   signinArm: new Set(['control', 'buttons_first']),
+  trialOfferArm: new Set(['control', 'panel']),
 };
 /**
  * Keys kept only when the value has a fixed shape; anything else is dropped.

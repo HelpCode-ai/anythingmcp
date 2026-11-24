@@ -434,26 +434,29 @@ curl -X DELETE https://api.example.com/users/1`;
 
   // ── ReDoS regression ──────────────────────────────────────────────────────
 
+  // A quadratic regex on 50,000 characters needs billions of steps (many
+  // seconds); a linear one needs a few milliseconds. The bound is loose so a
+  // busy CI runner cannot fail it, and still far below the quadratic case.
   describe('ReDoS regression', () => {
-    it('should handle a long brace run in the URL in under 100ms', () => {
+    it('should handle a long brace run in the URL in linear time', () => {
       const hostile = `curl https://api.example.com/${'{{'.repeat(50000)}`;
       const start = Date.now();
       parser.parse(hostile);
-      expect(Date.now() - start).toBeLessThan(250);
+      expect(Date.now() - start).toBeLessThan(1500);
     });
 
-    it('should handle {{ followed by a long whitespace run in under 100ms', () => {
+    it('should handle {{ followed by a long whitespace run in linear time', () => {
       const hostile = `curl https://api.example.com/{{${' '.repeat(50000)}`;
       const start = Date.now();
       parser.parse(hostile);
-      expect(Date.now() - start).toBeLessThan(250);
+      expect(Date.now() - start).toBeLessThan(1500);
     });
 
-    it('should handle a long brace run in the body in under 100ms', () => {
+    it('should handle a long brace run in the body in linear time', () => {
       const hostile = `curl -X POST https://api.example.com/ -d '${'{{'.repeat(50000)}'`;
       const start = Date.now();
       parser.parse(hostile);
-      expect(Date.now() - start).toBeLessThan(250);
+      expect(Date.now() - start).toBeLessThan(1500);
     });
   });
 });

@@ -202,6 +202,7 @@ x-backend: &backend
     # unset = an equal split, 'off' or the name of one arm (see .env.example).
     - AUTHORIZE_CONNECTED_PAGE_TEST=${AUTHORIZE_CONNECTED_PAGE_TEST:-}
     - AUTHORIZE_SIGNIN_PAGE_TEST=${AUTHORIZE_SIGNIN_PAGE_TEST:-}
+    - AUTHORIZE_TRIAL_OFFER_TEST=${AUTHORIZE_TRIAL_OFFER_TEST:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).
