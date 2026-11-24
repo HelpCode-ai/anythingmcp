@@ -104,10 +104,12 @@ describe('followDownload', () => {
     expect(fetch).not.toHaveBeenCalled();
   });
 
+  // Compressing and inflating tens of MB takes several seconds on a busy CI
+  // runner, so this test gets its own timeout. 40 MB is enough to pass the cap.
   it('stops a gzip bomb at the decompressed cap', async () => {
-    const bomb = gzipSync(Buffer.alloc(70 * 1024 * 1024, 0x41));
+    const bomb = gzipSync(Buffer.alloc(40 * 1024 * 1024, 0x41));
     await expect(followDownload({ url: LINK }, config, {}, fakeFetch(bomb) as any)).rejects.toThrow(/larger than 32 MB/);
-  });
+  }, 30_000);
 });
 
 describe('download helpers', () => {

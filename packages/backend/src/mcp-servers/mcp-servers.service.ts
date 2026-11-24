@@ -393,10 +393,10 @@ export class McpServersService {
       ),
     ]);
 
-    // A server's connector assignment changed: live stateful sessions must
-    // pick up added/removed tools. Fire-and-forget; never fail the assignment.
+    // A server's connector assignment changed: live stateful sessions on it
+    // must pick up added/removed tools. Fire-and-forget; never fail the assignment.
     this.sessionManager
-      .notifyToolsChanged()
+      .notifyToolsChanged([serverId])
       .catch((e) =>
         this.logger.warn(`MCP session notify failed: ${e.message}`),
       );
@@ -431,7 +431,7 @@ export class McpServersService {
       });
 
       this.sessionManager
-        .notifyToolsChanged()
+        .notifyToolsChanged([server.id])
         .catch((e) =>
           this.logger.warn(`MCP session notify failed: ${e.message}`),
         );

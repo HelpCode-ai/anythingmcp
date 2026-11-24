@@ -362,12 +362,26 @@ export class McpServerService implements OnModuleInit {
     // Push tools/list_changed to any live stateful MCP sessions whose surface
     // this affects. Fire-and-forget: must never block or fail a tool reload.
     if (notifySessions) {
-      this.sessionManager
-        .notifyToolsChanged()
-        .catch((e) =>
-          this.logger.warn(`MCP session notify failed: ${e.message}`),
-        );
+      this.notifySessionsOfConnector(connectorId, !!connector).catch((e) =>
+        this.logger.warn(`MCP session notify failed: ${e.message}`),
+      );
     }
+  }
+
+  /**
+   * Only sessions on servers that carry the connector can see its tools, so
+   * only those rebuild (each rebuild runs several queries; telling every
+   * session in every workspace made one connector save an N+1). A deleted
+   * connector has no server rows left, so every session is told.
+   */
+  private async notifySessionsOfConnector(connectorId: string, exists: boolean): Promise<void> {
+    if (!this.sessionManager.hasSessions()) return;
+    if (!exists) return this.sessionManager.notifyToolsChanged();
+    const rows = await this.prisma.mcpServerConnector.findMany({
+      where: { connectorId },
+      select: { mcpServerId: true },
+    });
+    await this.sessionManager.notifyToolsChanged(rows.map((r) => r.mcpServerId));
   }
 
   /**

@@ -5,7 +5,8 @@ import { join } from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import * as Sentry from '@sentry/nestjs';
-import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
+import { SentryModule } from '@sentry/nestjs/setup';
+import { AppExceptionFilter } from './common/app-exception.filter';
 import { MCP_STRATEGY } from '@rekog/mcp-nest';
 import { McpAuthModule } from '@rekog/mcp-nest-auth';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
@@ -201,8 +202,9 @@ if (useOAuth) {
   providers: [
     // Reports exceptions Nest turns into a 500 response, which otherwise never
     // reach Sentry. HttpExceptions (4xx, auth failures) are expected and are
-    // not reported. Must stay the first APP_FILTER.
-    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    // not reported, and client errors of the HTTP stack (an aborted upload)
+    // are logged as a warning. Must stay the first APP_FILTER.
+    { provide: APP_FILTER, useClass: AppExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: SentryContextInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },

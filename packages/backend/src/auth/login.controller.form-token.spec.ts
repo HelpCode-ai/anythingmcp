@@ -70,9 +70,9 @@ function makeController(deployment = CLOUD) {
     prisma as any,
     { get: jest.fn((k: string) => (k === 'FRONTEND_URL' ? 'https://cloud.example' : undefined)) } as any,
     {
-      // Two pending authorizations exist: `oauth_session` cookies 's1' and 's2'.
+      // Two pending authorizations exist: `oauth_session` cookies 'pending-authorization-1' and 's2'.
       getOAuthSession: jest.fn(async (id: string) =>
-        id === 's1' || id === 's2'
+        id === 'pending-authorization-1' || id === 's2'
           ? { sessionId: id, state: 'x', clientId: 'c1', redirectUri: 'https://claude.ai/api/mcp/auth_callback', expiresAt: Date.now() + 60_000 }
           : undefined,
       ),
@@ -109,13 +109,13 @@ describe('LoginController: the sign-in form token', () => {
   describe('GET /auth/login', () => {
     it('binds the cookie to the pending authorization and keeps the binding out of the form', async () => {
       const { controller } = makeController();
-      const { res, cookie, field } = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const { res, cookie, field } = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       const [token, binding] = cookie.split('.');
       expect(field).toBe(token);
       expect(token).toMatch(/^[A-Za-z0-9_-]{43}$/);
       expect(binding).toMatch(/^[A-Za-z0-9_-]{22}$/);
       // The digest names the authorization without holding its id.
-      expect(cookie).not.toContain('s1');
+      expect(cookie).not.toContain('pending-authorization-1');
       expect(res._sent).not.toContain(binding);
       expect(res._cookies.login_csrf.options).toEqual(
         expect.objectContaining({ httpOnly: true, signed: true, maxAge: 10 * 60 * 1000 }),
@@ -124,11 +124,11 @@ describe('LoginController: the sign-in form token', () => {
 
     it('hands out the same token again while the browser holds the same authorization', async () => {
       const { controller } = makeController();
-      const first = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const first = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       // A reload, a second tab, or the page coming back after an error.
       const again = await showForm(
         controller,
-        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: first.cookie } }),
+        makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: first.cookie } }),
       );
       expect(again.field).toBe(first.field);
       expect(again.cookie).toBe(first.cookie);
@@ -136,7 +136,7 @@ describe('LoginController: the sign-in form token', () => {
 
     it('issues a new token for another pending authorization', async () => {
       const { controller } = makeController();
-      const first = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const first = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       const other = await showForm(
         controller,
         makeReq({ cookies: { oauth_session: 's2' }, signedCookies: { login_csrf: first.cookie } }),
@@ -161,7 +161,7 @@ describe('LoginController: the sign-in form token', () => {
       const bare = 'bare-token-from-before';
       const inside = await showForm(
         controller,
-        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: bare } }),
+        makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: bare } }),
       );
       expect(inside.field).not.toBe(bare);
     });
@@ -182,10 +182,10 @@ describe('LoginController: the sign-in form token', () => {
 
     it('accepts the form of the pending authorization it was issued for', async () => {
       const { controller, social } = makeController();
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       const res = await post(
         controller,
-        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: form.cookie } }),
+        makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: form.cookie } }),
         { csrf: form.field, action: 'social:google' },
       );
       expect(social.start).toHaveBeenCalledTimes(1);
@@ -194,7 +194,7 @@ describe('LoginController: the sign-in form token', () => {
 
     it('refuses the same form once the browser holds another pending authorization', async () => {
       const { controller, social, prisma } = makeController();
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       for (const action of ['social:google', 'approve-session', 'approve']) {
         refused(
           await post(
@@ -210,7 +210,7 @@ describe('LoginController: the sign-in form token', () => {
 
     it('refuses it when the pending authorization is gone', async () => {
       const { controller, social } = makeController();
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       refused(
         await post(controller, makeReq({ signedCookies: { login_csrf: form.cookie } }), {
           csrf: form.field,
@@ -228,11 +228,11 @@ describe('LoginController: the sign-in form token', () => {
       ['no string', () => ['x'] as unknown as string],
     ])('refuses a form that posts %s', async (_what, forge) => {
       const { controller, social } = makeController();
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       refused(
         await post(
           controller,
-          makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: form.cookie } }),
+          makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: form.cookie } }),
           { csrf: forge(form), action: 'social:google' },
         ),
       );
@@ -241,12 +241,12 @@ describe('LoginController: the sign-in form token', () => {
 
     it('refuses a cookie that carries a binding and no token', async () => {
       const { controller, social } = makeController();
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       const binding = form.cookie.split('.')[1];
       refused(
         await post(
           controller,
-          makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: `.${binding}` } }),
+          makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: `.${binding}` } }),
           { csrf: '', action: 'social:google' },
         ),
       );
@@ -255,17 +255,17 @@ describe('LoginController: the sign-in form token', () => {
 
     it('refuses a form without the cookie, whatever it posts', async () => {
       const { controller, social } = makeController();
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       refused(
-        await post(controller, makeReq({ cookies: { oauth_session: 's1' } }), { csrf: form.field, action: 'social:google' }),
+        await post(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }), { csrf: form.field, action: 'social:google' }),
       );
       expect(social.start).not.toHaveBeenCalled();
     });
 
     it('keeps the form valid after a provider button: back from the provider, the second click still works', async () => {
       const { controller, social, sso } = makeController();
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
-      const req = () => makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: form.cookie } });
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
+      const req = () => makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: form.cookie } });
 
       const first = await post(controller, req(), { csrf: form.field, action: 'social:google' });
       expect(first._redirect).toBe('https://accounts.google.com/auth?x');
@@ -277,12 +277,12 @@ describe('LoginController: the sign-in form token', () => {
       const viaSso = await post(controller, req(), { csrf: form.field, action: 'sso:idp-1' });
       expect(viaSso._redirect).toBe('https://idp.example/authorize?x');
       expect(viaSso._cleared).not.toContain('login_csrf');
-      expect(sso.startMcp).toHaveBeenCalledWith('idp-1', 's1');
+      expect(sso.startMcp).toHaveBeenCalledWith('idp-1', 'pending-authorization-1');
     });
 
     it('still ends the token with the consent decision', async () => {
       const { controller, auth, prisma } = makeController(SELF_HOSTED);
-      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 's1' } }));
+      const form = await showForm(controller, makeReq({ cookies: { oauth_session: 'pending-authorization-1' } }));
       prisma.user.findMany.mockResolvedValue([
         { id: 'u1', email: 'a@b.com', name: 'A', passwordHash: 'hash', emailVerified: true },
       ]);
@@ -291,7 +291,7 @@ describe('LoginController: the sign-in form token', () => {
         controller,
         makeReq({
           headers: { host: 'mcp.test' },
-          cookies: { oauth_session: 's1' },
+          cookies: { oauth_session: 'pending-authorization-1' },
           signedCookies: { login_csrf: form.cookie },
         }),
         { csrf: form.field, action: 'approve', email: 'a@b.com', password: 'pw' },
@@ -301,7 +301,7 @@ describe('LoginController: the sign-in form token', () => {
       // Denying ends it too.
       const denied = await post(
         controller,
-        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: form.cookie } }),
+        makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: form.cookie } }),
         { csrf: form.field, action: 'deny' },
       );
       expect(denied._cleared).toEqual(expect.arrayContaining(['login_csrf', 'oauth_session', 'oauth_state']));
@@ -311,7 +311,7 @@ describe('LoginController: the sign-in form token', () => {
       const { controller, social } = makeController();
       const res = await post(
         controller,
-        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: 'tok' } }),
+        makeReq({ cookies: { oauth_session: 'pending-authorization-1' }, signedCookies: { login_csrf: 'tok' } }),
         { csrf: 'tok', action: 'social:google' },
       );
       expect(social.start).toHaveBeenCalledTimes(1);
