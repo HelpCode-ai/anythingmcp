@@ -75,4 +75,22 @@ describe('McpSessionManager', () => {
     expect(good.rebuild).toHaveBeenCalled();
     expect(bad.rebuild).toHaveBeenCalled();
   });
+
+  it('notifyToolsChanged(serverIds) rebuilds only the sessions on those servers', async () => {
+    const mgr = new McpSessionManager();
+    const onA = makeEntry('a1', { serverId: 'srv-a' });
+    const onA2 = makeEntry('a2', { serverId: 'srv-a' });
+    const onB = makeEntry('b1', { serverId: 'srv-b' });
+    mgr.add(onA);
+    mgr.add(onA2);
+    mgr.add(onB);
+    await mgr.notifyToolsChanged(['srv-a', 'srv-a', 'srv-unknown']);
+    expect(onA.rebuild).toHaveBeenCalledTimes(1);
+    expect(onA2.rebuild).toHaveBeenCalledTimes(1);
+    expect(onB.rebuild).not.toHaveBeenCalled();
+
+    await mgr.notifyToolsChanged([]);
+    expect(onB.rebuild).not.toHaveBeenCalled();
+    expect(mgr.hasSessions()).toBe(true);
+  });
 });
