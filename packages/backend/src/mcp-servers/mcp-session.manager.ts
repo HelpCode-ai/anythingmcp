@@ -123,15 +123,36 @@ export class McpSessionManager implements OnModuleDestroy {
     );
   }
 
+  /** True while at least one stateful session is open. */
+  hasSessions(): boolean {
+    return this.sessions.size > 0;
+  }
+
   /**
-   * Tool surfaces changed somewhere (a connector reloaded, or a server's
-   * connector assignment changed). Ask every live session to reconcile; each
-   * session's rebuild() is a no-op unless ITS own tool set actually changed,
-   * so a broad notify is cheap and avoids tracking connector→server maps here.
+   * Tool surfaces changed (a connector reloaded, or a server's connector
+   * assignment changed). Ask the live sessions to reconcile; each session's
+   * rebuild() emits nothing unless ITS own tool set actually changed.
+   *
+   * A rebuild still runs several database queries, so callers that know
+   * which servers are affected pass their ids and only those sessions
+   * rebuild. Without ids every session rebuilds (registry catch-up, deleted
+   * connectors).
    */
-  async notifyToolsChanged(): Promise<void> {
+  async notifyToolsChanged(serverIds?: Iterable<string>): Promise<void> {
     if (this.sessions.size === 0) return;
-    const entries = Array.from(this.sessions.values());
+    let entries: McpSessionEntry[];
+    if (serverIds === undefined) {
+      entries = Array.from(this.sessions.values());
+    } else {
+      entries = [];
+      for (const serverId of new Set(serverIds)) {
+        for (const sid of this.byServer.get(serverId) ?? []) {
+          const entry = this.sessions.get(sid);
+          if (entry) entries.push(entry);
+        }
+      }
+      if (entries.length === 0) return;
+    }
     await Promise.all(
       entries.map((e) =>
         e.rebuild().catch((err) =>
