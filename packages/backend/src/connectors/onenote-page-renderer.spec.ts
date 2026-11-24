@@ -141,4 +141,66 @@ describe('OneNote page rasterization', () => {
     }
     await expect(renderOneNotePage(page, '/me', fetchResource, deadline())).resolves.toMatchObject({ text: '' });
   });
+
+  it.each([
+    ['abort', 'resolve'], ['abort', 'reject'],
+    ['timeout', 'resolve'], ['timeout', 'reject'],
+  ] as const)('holds native slots after %s until unfinished renders %s', async (cancel, completion) => {
+    jest.useFakeTimers();
+    type Rendered = Awaited<ReturnType<typeof import('@resvg/resvg-js')['renderAsync']>>;
+    const deferred = () => {
+      let resolve!: (image: Rendered) => void;
+      let reject!: (error: Error) => void;
+      const promise = new Promise<Rendered>((yes, no) => { resolve = yes; reject = no; });
+      return { promise, resolve, reject };
+    };
+    const tasks = [deferred(), deferred()];
+    let started!: () => void;
+    const bothStarted = new Promise<void>((resolve) => { started = resolve; });
+    const native = jest.requireActual<typeof import('@resvg/resvg-js')>('@resvg/resvg-js');
+    let taskIndex = 0;
+    const render = jest.spyOn(native, 'renderAsync').mockImplementation((_svg, _options, signal) => {
+      const task = tasks[taskIndex++];
+      if (taskIndex === 2) started();
+      // napi-rs rejects its public promise on abort even when the native
+      // computation is still running. The deferred represents that work.
+      return signal ? Promise.race([
+        task.promise,
+        new Promise<never>((_resolve, reject) => signal.addEventListener('abort', () => reject(new Error('AbortError')), { once: true })),
+      ]) : task.promise;
+    });
+    const controller = new AbortController();
+    const page = document(html(''), ink('0 0, 10 10'));
+    const calls = Promise.allSettled([1, 2].map(() => renderOneNotePage(
+      page, '/me', jest.fn(), Date.now() + 1000, { signal: controller.signal },
+    )));
+    try {
+      await bothStarted;
+      if (cancel === 'abort') controller.abort();
+      else jest.advanceTimersByTime(1000);
+      const outcomes = await calls;
+      expect(outcomes.map((outcome) => outcome.status === 'rejected' ? outcome.reason.message : 'resolved'))
+        .toEqual(['OneNote page rendering timed out', 'OneNote page rendering timed out']);
+      expect(jest.getTimerCount()).toBe(0);
+      const nextPage = jest.fn().mockRejectedValue(new Error('must not fetch while native slots are occupied'));
+      await expect(renderOneNotePage(nextPage, '/me', jest.fn(), deadline())).rejects.toThrow('busy');
+      expect(nextPage).not.toHaveBeenCalled();
+
+      const image = new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>').render();
+      if (completion === 'resolve') tasks[0].resolve(image);
+      else tasks[0].reject(new Error('native render failed after caller disconnected'));
+      await tasks[0].promise.catch(() => undefined);
+      await expect(renderOneNotePage(document(html('<p>Next</p>')), '/me', jest.fn(), deadline()))
+        .resolves.toMatchObject({ text: 'Next' });
+      expect(render).toHaveBeenCalledTimes(2);
+    } finally {
+      controller.abort();
+      const image = new Resvg('<svg xmlns="http://www.w3.org/2000/svg" width="1" height="1"/>').render();
+      tasks.forEach((task) => task.resolve(image));
+      await Promise.allSettled(tasks.map((task) => task.promise));
+      await calls;
+      render.mockRestore();
+      jest.useRealTimers();
+    }
+  });
 });

@@ -52,6 +52,8 @@ for your account and OneNote client.
 - A page's request timeout covers its image fetches and rasterization too.
   At most two previews run concurrently per backend process; additional
   calls receive a retryable busy message rather than waiting without a bound.
+  After a timeout or cancellation, unfinished native rasterization keeps its
+  slot until it completes; rejecting the call does not stop the native task.
 
 Page resources are requested under the same OneNote owner on
 `https://graph.microsoft.com/v1.0`. Resource IDs are extracted and encoded

@@ -129,6 +129,7 @@ export async function renderOneNotePage(
   ownerIdentity(ownerPath);
   if (activeRenders >= MAX_ACTIVE_RENDERS) throw new Error('OneNote renderer is busy; retry the tool call');
   activeRenders++;
+  let nativeRender: Promise<unknown> | undefined;
   try {
     const remaining = () => {
       const ms = deadline - Date.now();
@@ -208,19 +209,27 @@ export async function renderOneNotePage(
         const imageSvg = visible.map((image) => `<use href="#${image.resourceId}" transform="translate(${safeNumber(image.x)} ${safeNumber(image.y)}) scale(${safeNumber(image.width)} ${safeNumber(image.height)})"/>`).join('');
         const svg = `<svg xmlns="http://www.w3.org/2000/svg" width="${tileWidth}" height="${tileHeight}" viewBox="${x} ${y} ${tileWidth} ${tileHeight}"><defs>${definitions}</defs>${imageSvg}${inkSvg}</svg>`;
         const milliseconds = remaining();
-        // napi-rs binds an AbortSignal to one task: sharing the signal across
-        // tiles makes the second render fail. Forward cancellation to a fresh
-        // child per tile, and remove its listener/timer on completion.
-        const tileController = new AbortController();
-        const cancelTile = () => tileController.abort();
+        if (options.signal?.aborted) throw new Error('OneNote page rendering timed out');
+        let cancelled = false;
+        let cancelTile!: () => void;
+        const cancellation = new Promise<never>((_resolve, reject) => {
+          cancelTile = () => {
+            cancelled = true;
+            reject(new Error('OneNote page rendering timed out'));
+          };
+        });
         const timer = setTimeout(cancelTile, milliseconds);
         options.signal?.addEventListener('abort', cancelTile, { once: true });
         let rendered: Awaited<ReturnType<typeof renderAsync>>;
         try {
-          if (options.signal?.aborted) cancelTile();
-          rendered = await renderAsync(svg, { background: 'white', font: { loadSystemFonts: false }, logLevel: 'off' }, tileController.signal);
+          // napi-rs abort rejects the promise without stopping an executing
+          // native task. Keep its completion promise separate from the
+          // caller's cancellation so the admission slot cannot be reused early.
+          const task = renderAsync(svg, { background: 'white', font: { loadSystemFonts: false }, logLevel: 'off' });
+          nativeRender = task;
+          rendered = await Promise.race([task, cancellation]);
         } catch {
-          if (tileController.signal.aborted) throw new Error('OneNote page rendering timed out');
+          if (cancelled) throw new Error('OneNote page rendering timed out');
           throw new Error('Could not rasterize the OneNote page preview');
         } finally {
           clearTimeout(timer);
@@ -235,6 +244,13 @@ export async function renderOneNotePage(
     }
     return result;
   } finally {
-    activeRenders--;
+    if (nativeRender) {
+      const release = () => { activeRenders--; };
+      // A cancelled caller gets its error promptly; unfinished native work
+      // continues to hold the slot until it resolves or rejects.
+      void nativeRender.then(release, release);
+    } else {
+      activeRenders--;
+    }
   }
 }
