@@ -30,6 +30,13 @@ describe('OneNote resource URL boundary', () => {
     expect(() => oneNoteResourcePath('https://www.onenote.com/other/image-id', '/me')).toThrow();
   });
 
+  it('compares owner identities rather than their percent-encoding', () => {
+    const owner = '/sites/company.sharepoint.com%2Csite-guid%2Cweb-guid';
+    expect(oneNoteResourcePath('https://graph.microsoft.com/v1.0/sites/company.sharepoint.com,site-guid,web-guid/onenote/resources/image-id/content', owner)).toBe(`${owner}/onenote/resources/image-id/content`);
+    expect(oneNoteResourcePath('https://graph.microsoft.com/v1.0/users/person@example.com/onenote/resources/image-id/content', '/users/person%40example.com')).toBe('/users/person%40example.com/onenote/resources/image-id/content');
+    expect(() => oneNoteResourcePath('https://graph.microsoft.com/v1.0/sites/other-site/onenote/resources/image-id/content', owner)).toThrow('different notebook owner');
+  });
+
   it.each([
     'https://attacker.example/image',
     'http://graph.microsoft.com/v1.0/me/onenote/resources/a/content',

@@ -37,6 +37,15 @@ function parseXml(source: string, html = false): XmlNode[] {
   // doctype carries neither; Graph can include it in the presentation part.
   source = source.replace(/<!DOCTYPE\s+html\s*>/gi, '');
   if (/<!\s*(?:DOCTYPE|ENTITY)\b/i.test(source)) throw new Error('OneNote documents must not contain DTDs or entities');
+  // Count before allocating the parser's tree. A post-parse walk alone
+  // cannot bound the memory used by millions of small, flat elements.
+  // Deliberately conservative: markup-like text in comments/CDATA counts too.
+  let openings = 0;
+  for (let at = source.indexOf('<'); at >= 0; at = source.indexOf('<', at + 1)) {
+    if (!['/', '!', '?'].includes(source[at + 1]) && ++openings > MAX_NODES) {
+      throw new Error('OneNote document has too many elements');
+    }
+  }
   return new XMLParser({
     preserveOrder: true,
     ignoreAttributes: false,

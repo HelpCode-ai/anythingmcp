@@ -24,6 +24,14 @@ export interface OneNotePageResult {
 export type OneNoteFetch = (path: string, remainingMs: number, maxBytes: number) => Promise<{ body: Buffer; contentType: string }>;
 type OneNoteDocument = { body: Buffer; contentType: string };
 
+function ownerIdentity(path: string): string {
+  const owner = /^\/(me|users|sites|groups)(?:\/([^/?#]+))?$/.exec(path);
+  if (!owner || (owner[1] === 'me') !== (owner[2] === undefined)) throw new Error('Invalid OneNote owner path');
+  let id: string;
+  try { id = owner[2] === undefined ? '' : decodeURIComponent(owner[2]); } catch { throw new Error('Invalid OneNote owner id'); }
+  return JSON.stringify([owner[1], id]);
+}
+
 /** A resource is reconstructed under the original owner, never fetched by URL. */
 export function oneNoteResourcePath(source: string, ownerPath: string): string {
   let url: URL;
@@ -33,10 +41,11 @@ export function oneNoteResourcePath(source: string, ownerPath: string): string {
   }
   let id: string | undefined;
   if (url.origin === 'https://graph.microsoft.com') {
-    const prefix = `/v1.0${ownerPath}/onenote/resources/`;
-    const suffix = url.pathname.endsWith('/content') ? '/content' : url.pathname.endsWith('/$value') ? '/$value' : undefined;
-    if (!url.pathname.startsWith(prefix) || !suffix) throw new Error('OneNote image belongs to a different notebook owner');
-    id = url.pathname.slice(prefix.length, -suffix.length);
+    const resource = /^\/v1\.0(\/(?:me|(?:users|sites|groups)\/[^/]+))\/onenote\/resources\/([^/]+)\/(?:content|\$value)$/.exec(url.pathname);
+    // Equivalent owner ids can have different percent-encoding in the HTML
+    // and the request (commas in a site id, or @ in a user principal name).
+    if (!resource || ownerIdentity(resource[1]) !== ownerIdentity(ownerPath)) throw new Error('OneNote image belongs to a different notebook owner');
+    id = resource[2];
   } else if (url.origin === 'https://www.onenote.com') {
     // Microsoft's output-HTML documentation also shows these legacy URIs.
     // Only their id is used: the credential never goes to this origin.
@@ -117,7 +126,7 @@ export async function renderOneNotePage(
   deadline: number,
   options: { maxTileBytes?: number; signal?: AbortSignal } = {},
 ): Promise<OneNotePageResult> {
-  if (!/^\/(?:me|users\/[^/]+|sites\/[^/]+|groups\/[^/]+)$/.test(ownerPath)) throw new Error('Invalid OneNote owner path');
+  ownerIdentity(ownerPath);
   if (activeRenders >= MAX_ACTIVE_RENDERS) throw new Error('OneNote renderer is busy; retry the tool call');
   activeRenders++;
   try {

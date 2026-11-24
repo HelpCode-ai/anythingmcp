@@ -1,4 +1,5 @@
 import { parseOneNoteHtml, parseOneNoteInk, parseOneNoteMultipart } from './onenote-page-parser';
+import { XMLParser } from 'fast-xml-parser';
 
 const INK_NS = 'http://www.w3.org/2003/InkML';
 const ink = (traces: string, definitions = '') => `<inkml:ink xmlns:inkml="${INK_NS}"><inkml:definitions>${definitions}</inkml:definitions>${traces}</inkml:ink>`;
@@ -43,6 +44,16 @@ describe('OneNote multipart parsing', () => {
 });
 
 describe('OneNote ink coordinates', () => {
+  it('rejects too many elements before the XML parser can allocate a tree', () => {
+    const parser = jest.spyOn(XMLParser.prototype, 'parse');
+    try {
+      expect(() => parseOneNoteInk(ink('<trace/>'.repeat(20_001)))).toThrow('too many elements');
+      expect(parser).not.toHaveBeenCalled();
+    } finally {
+      parser.mockRestore();
+    }
+  });
+
   it('scales himetric to CSS pixels and honors channel order and group references', () => {
     const definitions = context('<channel name="F"/><channel name="Y" units="himetric"/><channel name="X" units="himetric"/>')
       + '<brush xml:id="blue"><brushProperty name="width" value="254" units="himetric"/><brushProperty name="color" value="#1234ab"/><brushProperty name="transparency" value="128"/></brush>';

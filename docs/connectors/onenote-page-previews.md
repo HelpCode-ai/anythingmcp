@@ -41,6 +41,8 @@ for your account and OneNote client.
 
 - Page HTML plus InkML: at most 10 MiB, or the tool's smaller upstream limit.
 - XML nesting: 32 levels; at most 20,000 elements and 100,000 stroke samples.
+  Markup is capped before allocating the parse tree; the preflight also
+  counts markup-like text inside comments or CDATA conservatively.
 - Typed text: at most 100,000 characters, with a warning when it is cut.
 - Page images: at most 20 placements, 4 MiB per file, 12 MiB of downloaded
   image data, 8 million pixels per image and 16 million across placements.
