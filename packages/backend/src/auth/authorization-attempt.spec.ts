@@ -4,6 +4,8 @@ import {
   connectedPageArm,
   signInPageArm,
   SIGNIN_PAGE_ARMS,
+  trialOfferArm,
+  TRIAL_OFFER_ARMS,
   deviceOf,
   languageBucket,
   pageLanguageFor,
@@ -118,6 +120,34 @@ describe('authorization attempt', () => {
     it('gives everyone the arm the setting names', () => {
       for (const arm of SIGNIN_PAGE_ARMS) {
         for (let i = 0; i < 30; i++) expect(signInPageArm(`s-${i}`, { cloud: true, setting: arm })).toBe(arm);
+      }
+    });
+  });
+
+  describe('the arm of the card-trial offer test', () => {
+    it('splits pending authorizations into equal parts when unset, independently of the sign-in test', () => {
+      const counts: Record<string, number> = { control: 0, panel: 0 };
+      let same = 0;
+      for (let i = 0; i < 4000; i++) {
+        const arm = trialOfferArm(`session-${i}`, { cloud: true }) as string;
+        counts[arm] += 1;
+        if ((arm === 'control') === (signInPageArm(`session-${i}`, { cloud: true }) === 'control')) same += 1;
+      }
+      expect(counts.control).toBeGreaterThan(1800);
+      expect(counts.panel).toBeGreaterThan(1800);
+      expect(same).toBeGreaterThan(1600);
+      expect(same).toBeLessThan(2400);
+    });
+
+    it("is off with 'off', on self-hosted and without a pending authorization", () => {
+      expect(trialOfferArm('s', { cloud: true, setting: 'off' })).toBeNull();
+      expect(trialOfferArm('s', { cloud: false })).toBeNull();
+      expect(trialOfferArm(undefined, { cloud: true })).toBeNull();
+    });
+
+    it('gives everyone the arm the setting names', () => {
+      for (const arm of TRIAL_OFFER_ARMS) {
+        for (let i = 0; i < 30; i++) expect(trialOfferArm(`s-${i}`, { cloud: true, setting: arm })).toBe(arm);
       }
     });
   });

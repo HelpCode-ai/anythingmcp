@@ -104,7 +104,7 @@ describe('LoginController', () => {
       }),
     };
     prisma = { user: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) } };
-    config = { get: jest.fn((key: string) => (key === 'AUTHORIZE_SIGNIN_PAGE_TEST' ? 'off' : undefined)) as any };
+    config = { get: jest.fn((key: string) => (key === 'AUTHORIZE_SIGNIN_PAGE_TEST' || key === 'AUTHORIZE_TRIAL_OFFER_TEST' ? 'off' : undefined)) as any };
     store = { getOAuthSession: jest.fn(), getClient: jest.fn() };
     sso = { startMcp: jest.fn() };
     grants = {
@@ -731,7 +731,7 @@ describe('LoginController', () => {
       // The page test (authorization-attempt.ts) is held on its control arm
       // here: the tests of the arms set it themselves.
       config.get.mockImplementation((key: string) =>
-        key === 'FRONTEND_URL' ? 'https://cloud.example/' : key === 'AUTHORIZE_CONNECTED_PAGE_TEST' ? 'control' : key === 'AUTHORIZE_SIGNIN_PAGE_TEST' ? 'off' : undefined,
+        key === 'FRONTEND_URL' ? 'https://cloud.example/' : key === 'AUTHORIZE_CONNECTED_PAGE_TEST' ? 'control' : key === 'AUTHORIZE_SIGNIN_PAGE_TEST' || key === 'AUTHORIZE_TRIAL_OFFER_TEST' ? 'off' : undefined,
       );
       cloud = new LoginController(
         authService as unknown as AuthService,
