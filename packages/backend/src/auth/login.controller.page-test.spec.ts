@@ -79,6 +79,8 @@ function build(
     setting?: string;
     /** `AUTHORIZE_SIGNIN_PAGE_TEST`; 'off' unless a test sets it. */
     signin?: string;
+    /** `AUTHORIZE_TRIAL_OFFER_TEST`; 'off' unless a test sets it. */
+    offer?: string;
     session?: boolean;
     createdAt?: Date;
     telegram?: boolean;
@@ -110,7 +112,9 @@ function build(
           ? opts.setting
           : key === 'AUTHORIZE_SIGNIN_PAGE_TEST'
             ? (opts.signin ?? 'off')
-            : undefined,
+            : key === 'AUTHORIZE_TRIAL_OFFER_TEST'
+              ? (opts.offer ?? 'off')
+              : undefined,
     ),
   };
   const store = {
@@ -276,6 +280,23 @@ describe('LoginController: what a sign-in attempt leaves behind', () => {
       expect(events().length).toBeGreaterThan(0);
       for (const e of events()) expect(e.metadata).not.toHaveProperty('connectedArm');
     }
+  });
+
+  it('carries the arm of the card-trial offer test on the events of the attempt', async () => {
+    for (const offer of ['panel', 'control'] as const) {
+      const { controller, events } = build({ setting: 'next_step', offer });
+      await post(controller, { action: 'approve', email: 'a@b.com', password: 'pw' }, req({}, IPHONE));
+      expect(events().find((e) => e.event === 'empty_workspace_prompt').metadata).toEqual(
+        expect.objectContaining({ trialOfferArm: offer, connectedArm: 'next_step' }),
+      );
+    }
+    // Unset: the equal split, so one of the two arms; self-hosted: none.
+    const split = build({ setting: 'next_step', offer: '' });
+    await post(split.controller, { action: 'approve', email: 'a@b.com', password: 'pw' });
+    expect(['control', 'panel']).toContain(split.events().find((e) => e.event === 'empty_workspace_prompt').metadata.trialOfferArm);
+    const selfHosted = build({ deployment: SELF_HOSTED, setting: 'next_step', offer: 'panel' });
+    await post(selfHosted.controller, { action: 'approve', email: 'a@b.com', password: 'pw' });
+    for (const e of selfHosted.events()) expect(e.metadata).not.toHaveProperty('trialOfferArm');
   });
 });
 
@@ -895,6 +916,46 @@ describe('the page after approving, at its own address (GET /auth/next)', () => 
     const { res } = await approve({ setting: 'next_step' }, req({ signedCookies: { login_csrf: 'tok', mcp_directory: 'chatgpt-app' } }));
     expect(res._redirect).toBe('http://mcp.test/callback');
     expect(res._cookies.first_offer).toBeUndefined();
+  });
+});
+
+describe('the page after approving: the card-trial offer test', () => {
+  const render = (trialOffer: 'control' | 'panel' | null, withTrial = true) =>
+    (build({ setting: 'next_step' }).controller as any).renderFirstConnectorOffer({
+      clientName: 'Claude', callbackUrl: 'http://mcp.test/callback', arm: 'next_step', attempt: ATTEMPT, trialOffer,
+      welcomeUrl: 'https://cloud.example/welcome',
+      ...(withTrial ? { cardTrial: { endsAt: new Date('2026-11-30T00:00:00Z'), url: 'https://cloud.example/start-trial?source=post_approve' } } : {}),
+    }) as string;
+
+  it("'panel' shows the box under Continue, with the date, what it gives and its own button", () => {
+    const html = render('panel');
+    expect(html).toContain('<div class="trial offer" id="card-trial">');
+    expect(html).toContain('<p class="offer-title">Free until November&nbsp;30. Keep it running after?</p>');
+    expect(html).toContain('the higher connector limit');
+    expect(html).toContain('Nothing is charged before November&nbsp;30;');
+    expect(html).toContain('<a class="button offer-button" id="card-trial-link" href="https://cloud.example/start-trial?source=post_approve">Add a payment method · €0 today</a>');
+    expect(html).toContain('You come straight back to Claude.');
+    expect(html).not.toContain('Add a payment method (optional)');
+    // Under Continue, never before it, and the same beacon for both arms.
+    expect(html.indexOf('id="continue"')).toBeLessThan(html.indexOf('id="card-trial"'));
+    expect(html).toContain("report('card-trial-link', 'payment_method');");
+  });
+
+  it("'control' and no arm keep the link and its line, as before", () => {
+    for (const arm of ['control', null] as const) {
+      const html = render(arm);
+      expect(html).toContain('<div class="trial" id="card-trial">');
+      expect(html).toContain('>Add a payment method (optional)</a>');
+      expect(html).not.toContain('<p class="offer-title">');
+    }
+  });
+
+  it('shows no offer at all without a trial that can take a payment method, whatever the arm', () => {
+    for (const arm of ['control', 'panel', null] as const) {
+      const html = render(arm, false);
+      expect(html).not.toContain('id="card-trial"');
+      expect(html).not.toContain('<p class="offer-title">');
+    }
   });
 });
 

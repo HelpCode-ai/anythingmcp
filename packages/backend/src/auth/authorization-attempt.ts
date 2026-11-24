@@ -119,6 +119,30 @@ export function signInPageArm(
 }
 
 /**
+ * The card-trial offer on the page after approving, for an admin on the free
+ * trial who can still add a payment method:
+ * - `control`: the secondary link "Add a payment method (optional)" and one
+ *   line under it, as since #1832;
+ * - `panel`: a box under Continue that says what the payment method gives
+ *   (the trial's higher connector limit, no interruption when it ends) and
+ *   when the first charge would be, with its own button.
+ * Both are under "Continue" and never in its place: the test must show the
+ * offer brings trials without taking connections.
+ */
+export const TRIAL_OFFER_ARMS = ['control', 'panel'] as const;
+export type TrialOfferArm = (typeof TRIAL_OFFER_ARMS)[number];
+
+/** `AUTHORIZE_TRIAL_OFFER_TEST`: unset for the equal split, 'off', or one arm for everyone. */
+export const TRIAL_OFFER_TEST_ENV = 'AUTHORIZE_TRIAL_OFFER_TEST';
+
+export function trialOfferArm(
+  sessionId: string | null | undefined,
+  opts: { cloud: boolean; setting?: string | null },
+): TrialOfferArm | null {
+  return testArm('authorize-trial-offer-v1', TRIAL_OFFER_ARMS, sessionId, opts);
+}
+
+/**
  * The seven languages of the trial pages, as a bucket for the events: the
  * first language of the browser that is one of them, 'other' for any other
  * language, undefined when the browser names none.
@@ -171,6 +195,7 @@ export interface AuthorizationAttemptContext {
   attempt: Promise<string | undefined>;
   connectedArm?: ConnectedPageArm;
   signinArm?: SignInPageArm;
+  trialOfferArm?: TrialOfferArm;
 }
 
 export const authorizationAttemptContext = new AsyncLocalStorage<AuthorizationAttemptContext>();

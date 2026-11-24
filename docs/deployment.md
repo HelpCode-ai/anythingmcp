@@ -419,6 +419,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `TELEGRAM_MANAGED_BOT_ORG_IDS` | No | Comma-separated organization ids the one-tap Telegram bot is offered to. Empty (default): every organization. Set it to try the feature on one workspace first: every other organization sees the page as before |
 | `AUTHORIZE_CONNECTED_PAGE_TEST` | No | Cloud only: the page shown after approving an AI client into an empty workspace (see [Authorization page tests](#authorization-page-tests)). Unset: `next_step` for everyone. `split`: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `next_step`: that arm for everyone. Ignored on a self-hosted instance, which always shows the page as before |
 | `AUTHORIZE_SIGNIN_PAGE_TEST` | No | Cloud only: the split test of the sign-in page inside an authorization (see [Sign-in page test](#sign-in-page-test)). Unset: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `buttons_first`: that arm for everyone. Ignored on a self-hosted instance |
+| `AUTHORIZE_TRIAL_OFFER_TEST` | No | Cloud only: the split test of the card-trial offer on the page after approving (see [Card-trial offer test](#card-trial-offer-test)). Unset: an equal split. `off`: the offer as before for everyone, no arm recorded. `control` or `panel`: that arm for everyone. Ignored on a self-hosted instance |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 | `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](#license-verification); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
@@ -538,6 +539,17 @@ Unset: an equal split. `off`: the page as before, no arm recorded. `control` or 
 The arm also sets the language of every page of that attempt after the sign-in page: the e-mail code step, "Choose what to connect", the page after approving (its app picker, the one-tap Telegram panel, the texts its scripts write, and what `POST /auth/first-app` and the Telegram status and token routes answer to the page), the File Search folder page, and the messages shown on the sign-in page. On `buttons_first` they are in the browser's language; on `control`, with the test `off`, and on a self-hosted instance (which has no arm) they are in English. One attempt never mixes languages: every page derives its language the same way, from the arm of the pending authorization and the browser's `Accept-Language`. Dates are written in the page's language.
 
 Still English in every language: the trust row and the footer under the card, the directory badge, the messages the Telegram bot itself sends in Telegram, a refusal worded by Telegram or by an adapter's own credential check, and the answers of `POST /auth/file-search/session` (shown by the dashboard, which has its own language). The texts are in `packages/backend/src/auth/auth-page-i18n*.ts`, one typed object per language, so a key missing in one language does not compile. Texts of the page scripts are embedded as one JSON object literal per script (`scriptTexts`: `<`, `>`, `&`, U+2028 and U+2029 written as escapes) and only ever written with `textContent`.
+
+### Card-trial offer test
+
+An admin on the free trial who can still add a payment method sees an offer under **Continue** on the page after approving. It is never above Continue and never in its place. A third split test, independent of the other two, sets how it looks, with `AUTHORIZE_TRIAL_OFFER_TEST`:
+
+| Arm | What the person sees |
+|-----|----------------------|
+| `control` | The secondary button "Add a payment method (optional)" and one line under it, as before |
+| `panel` | A box: "Free until {date}. Keep it running after?", the button "Add a payment method · €0 today", what it gives (the trial's higher connector limit, no interruption when the trial ends), when the first charge would be, and that the person comes straight back to the client |
+
+Both lead to the same `/start-trial?source=post_approve` page, which returns through `/callback`. Unset: an equal split. `off`: the offer as before, no arm recorded. `control` or `panel`: that arm for everyone. The arm is recorded as `trialOfferArm` on the events of the attempt (`empty_workspace_prompt`, `authorize_action`, `post_approve_continue_clicked`, `authorization_code_issued`). To read it, compare the arms on `empty_workspace_prompt` with `cardTrialOffered`: the share with a completed `post_approve` checkout (Stripe, by the workspace), and the share with an `authorization_code_issued`, which must not drop.
 
 ## External Services
 
