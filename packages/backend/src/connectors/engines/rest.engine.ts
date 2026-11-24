@@ -900,13 +900,15 @@ export class RestEngine {
       || endpoint.method.toUpperCase() !== 'GET' || endpoint.download) {
       throw new Error('OneNote rendering requires a Graph v1.0 page-content GET');
     }
-    const path = (endpoint.path ?? '').replace(/\{([^}]+)\}/g, (_match, key: string) => {
+    // Exclude opening braces too: an unmatched nested opening must not
+    // rescan the rest of the template at every subsequent opening brace.
+    const path = (endpoint.path ?? '').replace(/\{([^{}]+)\}/g, (_match, key: string) => {
       const value = params[key];
       if (typeof value !== 'string' || !value || value === '.' || value === '..') throw new Error('OneNote rendering needs a valid page and owner id');
       return encodeURIComponent(value);
     });
     const match = /^(\/(?:me|users\/[^/?#]+|sites\/[^/?#]+|groups\/[^/?#]+))\/onenote\/pages\/[^/?#]+\/content$/.exec(path);
-    if (!match || new URL(`https://graph.microsoft.com/v1.0${path}`).pathname !== `/v1.0${path}`) {
+    if (path.includes('{') || path.includes('}') || !match || new URL(`https://graph.microsoft.com/v1.0${path}`).pathname !== `/v1.0${path}`) {
       throw new Error('OneNote rendering requires a page-content path');
     }
     const fetchBody = async (mapping: Parameters<RestEngine['executeWithMeta']>[1], callParams: Record<string, unknown> = {}) => {

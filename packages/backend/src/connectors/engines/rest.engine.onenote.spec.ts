@@ -92,6 +92,16 @@ describe('REST OneNote rendering', () => {
     expect(oauth.renewAfterRejection).toHaveBeenCalledWith(config.authConfig, 'connector-1', expect.any(Number));
   });
 
+  it.each([
+    `/me/onenote/pages/${'{{|'.repeat(100_000)}/content`,
+    '/me/onenote/pages/{{page_id}}/content',
+    '/me/onenote/pages/page}/content',
+  ])('rejects malformed placeholders before sending a page request', async (path) => {
+    const { engine } = setup();
+    await expect(engine.execute(config, { ...endpoint, path }, { page_id: 'page' }, { render: 'onenote-page' })).rejects.toThrow('requires a page-content path');
+    expect(request).not.toHaveBeenCalled();
+  });
+
   it('surfaces a refused resource instead of returning an incomplete drawing', async () => {
     const { engine } = setup();
     request.mockImplementation(async (call) => {
