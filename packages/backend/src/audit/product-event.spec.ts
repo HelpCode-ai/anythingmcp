@@ -471,6 +471,9 @@ describe('ProductEventService — the authorization attempt events', () => {
     for (const signinArm of ['control', 'buttons_first']) {
       expect(await stored([{ event: 'authorize_page_viewed', metadata: { signinArm } }])).toEqual([{ signinArm }]);
     }
+    for (const trialOfferArm of ['control', 'panel']) {
+      expect(await stored([{ event: 'empty_workspace_prompt', metadata: { trialOfferArm } }])).toEqual([{ trialOfferArm }]);
+    }
     for (const lang of ['en', 'de', 'it', 'es', 'zh', 'ja', 'ru', 'other']) {
       expect(await stored([{ event: 'authorize_page_viewed', metadata: { lang } }])).toEqual([{ lang }]);
     }
@@ -487,6 +490,7 @@ describe('ProductEventService — the authorization attempt events', () => {
             lang: 'fr-FR',
             connectedArm: 'treatment',
             signinArm: 'treatment',
+            trialOfferArm: 'treatment',
           },
         },
       ]),

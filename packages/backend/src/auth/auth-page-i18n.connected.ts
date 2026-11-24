@@ -37,6 +37,11 @@ export interface ConnectedPageTexts {
   continueTo: string; // {client}
   addPayment: string;
   trialNote: string; // {date} {client}
+  /** The `panel` arm of the trial offer test (authorization-attempt.ts). */
+  offerTitle: string; // {date}
+  offerBody: string; // {date}
+  offerButton: string;
+  offerFine: string; // {client}
   addHere: string;
   /** The request the page suggests typing into the chat (plain text). */
   example: string;
@@ -86,6 +91,11 @@ const EN: ConnectedPageTexts = {
   addPayment: 'Add a payment method (optional)',
   trialNote:
     'Your free trial runs until {date}. With a payment method your plan carries on after it; nothing is charged before {date}. Either way you come straight back to {client}.',
+  offerTitle: 'Free until {date}. Keep it running after?',
+  offerBody:
+    'Add a payment method now: your trial gets the higher connector limit, and nothing stops when it ends. Nothing is charged before {date}; cancel before then and you pay nothing.',
+  offerButton: 'Add a payment method · €0 today',
+  offerFine: 'Card, PayPal and other methods. You come straight back to {client}.',
   addHere: 'Or add an app here first (new tab)',
   example: 'Connect my Telegram bot to AnythingMCP.',
   finishRequest: 'Finish setting up my {app} connector.',
@@ -132,6 +142,11 @@ const DE: ConnectedPageTexts = {
   addPayment: 'Zahlungsmethode hinterlegen (optional)',
   trialNote:
     'Ihre kostenlose Testphase läuft bis zum {date}. Mit einer Zahlungsmethode läuft Ihr Tarif danach weiter; vor dem {date} wird nichts abgebucht. In beiden Fällen kommen Sie direkt zu {client} zurück.',
+  offerTitle: 'Kostenlos bis zum {date}. Danach einfach weiter?',
+  offerBody:
+    'Hinterlegen Sie jetzt eine Zahlungsmethode: Ihre Testphase erhält das höhere Connector-Limit, und nach ihrem Ende läuft alles ohne Unterbrechung weiter. Vor dem {date} wird nichts abgebucht; kündigen Sie vorher, zahlen Sie nichts.',
+  offerButton: 'Zahlungsmethode hinterlegen · heute 0 €',
+  offerFine: 'Karte, PayPal und weitere Methoden. Danach geht es direkt zurück zu {client}.',
   addHere: 'Oder zuerst hier eine App hinzufügen (neuer Tab)',
   example: 'Verbinde meinen Telegram-Bot mit AnythingMCP.',
   finishRequest: 'Schließe die Einrichtung meines {app}-Connectors ab.',
@@ -185,6 +200,11 @@ const IT: ConnectedPageTexts = {
   // "il giorno" keeps the article right before any day (l’8, l’11).
   trialNote:
     'La tua prova gratuita dura fino al giorno {date}. Con un metodo di pagamento il tuo piano prosegue dopo la prova; nessun addebito prima del giorno {date}. In ogni caso torni subito a {client}.',
+  offerTitle: 'Gratis fino al giorno {date}. Vuoi che poi continui?',
+  offerBody:
+    'Aggiungi ora un metodo di pagamento: la prova ottiene il limite di connettori più alto e alla fine non si interrompe nulla. Nessun addebito prima del giorno {date}; se disdici prima, non paghi niente.',
+  offerButton: 'Aggiungi un metodo di pagamento · 0 € oggi',
+  offerFine: 'Carta, PayPal e altri metodi. Poi torni subito a {client}.',
   addHere: 'Oppure aggiungi prima un’app qui (nuova scheda)',
   example: 'Collega il mio bot Telegram ad AnythingMCP.',
   finishRequest: 'Completa la configurazione del mio connettore {app}.',
@@ -234,6 +254,11 @@ const ES: ConnectedPageTexts = {
   addPayment: 'Añadir un método de pago (opcional)',
   trialNote:
     'Tu prueba gratuita dura hasta el {date}. Con un método de pago, tu plan continúa después; no se cobra nada antes del {date}. En cualquier caso, vuelves directamente a {client}.',
+  offerTitle: 'Gratis hasta el {date}. ¿Quieres que siga después?',
+  offerBody:
+    'Añade ahora un método de pago: tu prueba obtiene el límite de conectores más alto y nada se detiene cuando termina. No se cobra nada antes del {date}; si cancelas antes, no pagas nada.',
+  offerButton: 'Añadir un método de pago · 0 € hoy',
+  offerFine: 'Tarjeta, PayPal y otros métodos. Después vuelves directamente a {client}.',
   addHere: 'O añade antes una app aquí (pestaña nueva)',
   example: 'Conecta mi bot de Telegram a AnythingMCP.',
   finishRequest: 'Termina de configurar mi conector de {app}.',
@@ -282,6 +307,11 @@ const ZH: ConnectedPageTexts = {
   addPayment: '添加付款方式（可选）',
   trialNote:
     '你的免费试用到 {date} 结束。添加付款方式后，套餐会在试用结束后自动延续；{date} 之前不会扣款。无论如何，你都会直接回到 {client}。',
+  offerTitle: '{date} 前免费。之后要继续使用吗？',
+  offerBody:
+    '现在添加付款方式：试用期可获得更高的连接器上限，试用结束后也不会中断。{date} 之前不会扣款；在此之前取消则无需付费。',
+  offerButton: '添加付款方式 · 今天 €0',
+  offerFine: '支持银行卡、PayPal 等方式。完成后直接回到 {client}。',
   addHere: '或先在这里添加应用（新标签页）',
   example: '把我的 Telegram 机器人连接到 AnythingMCP。',
   finishRequest: '帮我完成 {app} 连接器的设置。',
@@ -329,6 +359,11 @@ const JA: ConnectedPageTexts = {
   addPayment: 'お支払い方法を登録（任意）',
   trialNote:
     '無料トライアルは {date} までです。お支払い方法を登録すると、その後もプランが継続します。{date} より前に請求されることはありません。どちらの場合も、すぐに {client} に戻ります。',
+  offerTitle: '{date} まで無料。その後も続けますか？',
+  offerBody:
+    '今お支払い方法を登録すると、トライアル中のコネクタ上限が引き上げられ、終了後も中断なく使えます。{date} より前に請求されることはなく、それまでに解約すれば料金はかかりません。',
+  offerButton: 'お支払い方法を登録 · 本日 €0',
+  offerFine: 'カード、PayPal などに対応。登録後はすぐに {client} に戻ります。',
   addHere: 'または、先にここでアプリを追加（新しいタブ）',
   example: 'Telegram ボットを AnythingMCP に接続してください。',
   finishRequest: '{app} コネクタの設定を完了してください。',
@@ -377,6 +412,11 @@ const RU: ConnectedPageTexts = {
   addPayment: 'Способ оплаты (необязательно)',
   trialNote:
     'Ваш бесплатный пробный период действует до {date}. Со способом оплаты тариф продолжится после него; до {date} ничего не спишется. В любом случае вы сразу вернётесь в {client}.',
+  offerTitle: 'Бесплатно до {date}. Продолжить и после?',
+  offerBody:
+    'Добавьте способ оплаты сейчас: в пробный период лимит коннекторов будет выше, а после его окончания ничего не прервётся. До {date} ничего не спишется; отмените раньше — и ничего не заплатите.',
+  offerButton: 'Добавить способ оплаты · сегодня 0 €',
+  offerFine: 'Карта, PayPal и другие способы. Затем вы сразу вернётесь в {client}.',
   addHere: 'Или сначала добавьте приложение здесь (новая вкладка)',
   example: 'Подключи моего Telegram-бота к AnythingMCP.',
   finishRequest: 'Заверши настройку моего коннектора {app}.',

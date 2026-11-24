@@ -6,11 +6,14 @@ describe('AuthorizationAttemptMiddleware', () => {
   const MAC = 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36';
   const IPHONE = 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 Mobile/15E148 Safari/604.1';
 
-  const build = (opts: { cloud?: boolean; setting?: string; findUnique?: jest.Mock } = {}) => {
+  const build = (opts: { cloud?: boolean; setting?: string; offer?: string; findUnique?: jest.Mock } = {}) => {
     const findUnique = opts.findUnique ?? jest.fn().mockResolvedValue({ expiresAt: BigInt(EXPIRES) });
     const middleware = new AuthorizationAttemptMiddleware(
       { oAuthSession: { findUnique } } as any,
-      { get: (key: string) => (key === 'AUTHORIZE_CONNECTED_PAGE_TEST' ? opts.setting : undefined) } as any,
+      {
+        get: (key: string) =>
+          key === 'AUTHORIZE_CONNECTED_PAGE_TEST' ? opts.setting : key === 'AUTHORIZE_TRIAL_OFFER_TEST' ? opts.offer : undefined,
+      } as any,
       { isCloud: () => opts.cloud !== false } as any,
     );
     return { middleware, findUnique };
@@ -44,12 +47,21 @@ describe('AuthorizationAttemptMiddleware', () => {
     expect(device).toBe('desktop');
   });
 
+  it('carries the arm of the card-trial offer test, so the issued code counts per arm', async () => {
+    const { middleware } = build({ setting: 'next_step', offer: 'panel' });
+    const context = await seenBy(middleware, { cookies: { oauth_session: 's1' }, headers: {} });
+    expect(context?.trialOfferArm).toBe('panel');
+    const off = build({ setting: 'next_step', offer: 'off' });
+    expect(await seenBy(off.middleware, { cookies: { oauth_session: 's1' }, headers: {} })).not.toHaveProperty('trialOfferArm');
+  });
+
   it('names no arm where the test does not run', async () => {
     for (const opts of [{ cloud: false }, { setting: 'off' }]) {
       const { middleware } = build(opts);
       const context = await seenBy(middleware, { cookies: { oauth_session: 's1' }, headers: {} });
       expect(context).toBeDefined();
       expect(context).not.toHaveProperty('connectedArm');
+      if (opts.cloud === false) expect(context).not.toHaveProperty('trialOfferArm');
     }
   });
 
