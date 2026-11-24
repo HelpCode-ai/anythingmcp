@@ -576,6 +576,26 @@ describe('SoapEngine', () => {
       const headers = mockedAxios.post.mock.calls[0][2]?.headers as Record<string, string>;
       expect(headers['X-Key']).toBe('sk-123');
     });
+
+    it('refuses an API key header name that would write to the prototype', async () => {
+      mockedAxios.post.mockResolvedValue({
+        status: 200,
+        data: '<Envelope><Body><Resp/></Body></Envelope>',
+      });
+
+      await expect(
+        engine.execute(
+          {
+            ...baseConfig,
+            authType: 'API_KEY',
+            authConfig: { headerName: '__proto__', apiKey: 'sk-123' },
+          },
+          baseMapping,
+          { userId: '1' },
+        ),
+      ).rejects.toThrow(/Invalid API key header name/);
+      expect(mockedAxios.post).not.toHaveBeenCalled();
+    });
   });
 
   describe('WS-Security UsernameToken', () => {
