@@ -141,6 +141,8 @@ services:
       - OPENAI_API_KEY=${OPENAI_API_KEY:-}
       - OPENROUTER_API_KEY=${OPENROUTER_API_KEY:-}
       - ANTHROPIC_API_KEY=${ANTHROPIC_API_KEY:-}
+      # Proxies allowed to set the client address (X-Forwarded-For); empty = private networks only (docs/deployment.md).
+      - TRUST_PROXY=${TRUST_PROXY:-}
       # Prometheus /metrics — a separate listener, off by default (docs/operations/observability.md).
       # METRICS_TOKEN is required once METRICS_ENABLED=true; the listener refuses to start without it.
       - METRICS_ENABLED=${METRICS_ENABLED:-false}

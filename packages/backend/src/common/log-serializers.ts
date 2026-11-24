@@ -22,6 +22,8 @@ interface SerializedRequestInput {
   url?: string;
   headers?: Record<string, string | string[] | undefined>;
   remoteAddress?: string;
+  /** The Express request: its `ip` honours the `trust proxy` setting. */
+  raw?: { ip?: unknown };
 }
 
 export interface LoggedRequest {
@@ -48,14 +50,16 @@ function header(
 
 export function serializeRequest(req: SerializedRequestInput): LoggedRequest {
   const url = typeof req?.url === 'string' ? req.url.split('?')[0] : undefined;
-  // The first X-Forwarded-For hop is the client as the reverse proxy saw it.
-  const forwarded = header(req?.headers, 'x-forwarded-for')?.split(',')[0]?.trim();
+  // Express's req.ip: the client as the trusted proxies saw it (main.ts,
+  // trust-proxy.util.ts). The raw X-Forwarded-For header is never read here:
+  // its leftmost entry is whatever the client sent.
+  const expressIp = typeof req?.raw?.ip === 'string' && req.raw.ip ? req.raw.ip : undefined;
   const out: LoggedRequest = { id: req?.id, method: req?.method, url };
   const mcpMethod = header(req?.headers, 'mcp-method');
   if (mcpMethod) out.mcpMethod = mcpMethod;
   const userAgent = header(req?.headers, 'user-agent');
   if (userAgent) out.userAgent = userAgent;
-  const ip = forwarded || req?.remoteAddress;
+  const ip = expressIp || req?.remoteAddress;
   if (ip) out.ip = ip;
   return out;
 }
