@@ -101,6 +101,9 @@ import {
   isPhoneUserAgent,
   languageBucket,
   type ConnectedPageArm,
+  trialOfferArm,
+  TRIAL_OFFER_TEST_ENV,
+  type TrialOfferArm,
 } from './authorization-attempt';
 import {
   TELEGRAM_PANEL_STYLES,
@@ -170,6 +173,8 @@ interface ConsentContext {
   connectedArm: ConnectedPageArm | null;
   /** The arm of the sign-in page test (A3/A4); null when it does not run. */
   signinArm: SignInPageArm | null;
+  /** The arm of the card-trial offer test on the page after approving; null when it does not run. */
+  trialOfferArm: TrialOfferArm | null;
   /** The pending authorization's id, and the `state` the client sent with it. */
   sessionId: string;
   clientState?: string;
@@ -667,6 +672,7 @@ export class LoginController {
       ...(attempt ? { attempt } : {}),
       ...(consent.connectedArm ? { connectedArm: consent.connectedArm } : {}),
       ...(consent.signinArm ? { signinArm: consent.signinArm } : {}),
+      ...(consent.trialOfferArm ? { trialOfferArm: consent.trialOfferArm } : {}),
     };
   }
 
@@ -1866,6 +1872,8 @@ export class LoginController {
     attempt?: string;
     welcomeUrl: string;
     cardTrial?: { endsAt: Date; url: string };
+    /** The arm of the card-trial offer test; the link and its line unless 'panel'. */
+    trialOffer?: TrialOfferArm | null;
     /** CSRF token of the optional app picker; no picker without it. */
     pickerCsrf?: string;
     /** Picking Telegram offers a bot created in one tap (first-app-telegram.ts). */
@@ -1961,13 +1969,26 @@ ${
       // out of the card-trial page (checkout done, cancelled, skipped) comes
       // back through /callback, which finishes this authorization (the
       // sign-in cookie lasts as long as it). Never before Approve (#842/#843).
-      params.cardTrial
+      // The 'panel' arm says what the payment method gives and when the
+      // first charge would be, in a box with its own button right under its
+      // title, so on a phone the button is on the first screen under
+      // Continue. The link's id stays, so its beacon (payment_method) counts
+      // both arms the same way.
+      params.cardTrial && params.trialOffer === 'panel'
         ? `
+    <div class="trial offer" id="card-trial">
+      <p class="offer-title">${fill(T.offerTitle, { date: trialEnd })}</p>
+      <a class="button offer-button" id="card-trial-link" href="${this.escapeHtml(params.cardTrial.url)}">${T.offerButton}</a>
+      <p class="offer-body">${fill(T.offerBody, { date: trialEnd })}</p>
+      <p class="offer-fine">${fill(T.offerFine, { client })}</p>
+    </div>`
+        : params.cardTrial
+          ? `
     <div class="trial" id="card-trial">
       <a class="button secondary-link" id="card-trial-link" href="${this.escapeHtml(params.cardTrial.url)}">${T.addPayment}</a>
       <p>${fill(T.trialNote, { date: trialEnd, client })}</p>
     </div>`
-        : ''
+          : ''
     }
     <p class="links"><a id="open-dashboard" href="${this.escapeHtml(params.welcomeUrl)}" target="_blank" rel="noopener noreferrer">${T.addHere}</a></p>
     </div>
@@ -2148,6 +2169,15 @@ ${
   .trial p { margin: 8px 0 0; text-align: center; }
   .trial a.secondary-link { background: #fff; color: var(--text); border: 1px solid var(--border-strong); }
   .trial a.secondary-link:hover { border-color: var(--brand); color: var(--brand); }
+  .trial.offer { margin: 16px 0 0; padding: 14px 16px 12px; border: 1px solid var(--border); border-radius: 12px;
+             background: var(--surface-2); text-align: left; }
+  .trial.offer p { text-align: left; }
+  .trial.offer .offer-title { margin: 0; font-size: 14.5px; font-weight: 600; color: var(--text); }
+  .trial.offer a.offer-button { margin-top: 10px; }
+  .trial.offer .offer-body { margin: 10px 0 0; font-size: 13px; color: var(--text-2); }
+  .trial.offer a.offer-button { background: #fff; color: var(--brand-strong); border: 1px solid var(--brand); font-weight: 600; }
+  .trial.offer a.offer-button:hover { background: var(--tint); }
+  .trial.offer .offer-fine { margin: 8px 0 0; font-size: 12px; color: var(--text-3); text-align: center; }
   .sub2 { margin-top: -8px; }
   /* The next_step page has no visible heading: the sentence and the button
      say it all. The heading stays for screen readers and the tab title. */
@@ -2513,6 +2543,7 @@ ${
         onPhone: isPhoneUserAgent(req.headers['user-agent']),
         callbackUrl,
         arm: consent.connectedArm,
+        trialOffer: consent.trialOfferArm,
         attempt: attemptKey(consent.expiresAt),
         lang: this.pageLanguage(req, consent),
         welcomeUrl: dashboardLink('/welcome'),
@@ -2970,6 +3001,10 @@ ${
         signinArm: signInPageArm(sessionId, {
           cloud: this.deployment.isCloud(),
           setting: this.configService.get<string>(SIGNIN_PAGE_TEST_ENV),
+        }),
+        trialOfferArm: trialOfferArm(sessionId, {
+          cloud: this.deployment.isCloud(),
+          setting: this.configService.get<string>(TRIAL_OFFER_TEST_ENV),
         }),
       };
     } catch (e) {

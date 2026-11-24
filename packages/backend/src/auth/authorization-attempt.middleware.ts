@@ -12,6 +12,8 @@ import {
   type AuthorizationAttemptContext,
   signInPageArm,
   SIGNIN_PAGE_TEST_ENV,
+  trialOfferArm,
+  TRIAL_OFFER_TEST_ENV,
 } from './authorization-attempt';
 
 /**
@@ -65,11 +67,16 @@ export class AuthorizationAttemptMiddleware implements NestMiddleware {
       cloud: this.deployment.isCloud(),
       setting: this.config.get<string>(SIGNIN_PAGE_TEST_ENV),
     });
+    const offerArm = trialOfferArm(sessionId, {
+      cloud: this.deployment.isCloud(),
+      setting: this.config.get<string>(TRIAL_OFFER_TEST_ENV),
+    });
     return {
       device: deviceOf(req.headers['user-agent']),
       attempt,
       ...(arm ? { connectedArm: arm } : {}),
       ...(signinArm ? { signinArm } : {}),
+      ...(offerArm ? { trialOfferArm: offerArm } : {}),
     };
   }
 }
