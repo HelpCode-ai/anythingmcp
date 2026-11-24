@@ -664,7 +664,7 @@
           },
           "include_ids": {
             "type": "boolean",
-            "description": "Add the generated id of every element (needed to target paragraphs, lists and tables with microsoft_onenote_update_page)."
+            "description": "Include generated element ids in the returned HTML. These tools only read shared pages; microsoft_onenote_update_page targets personal notebooks."
           }
         },
         "required": [
@@ -921,7 +921,7 @@
           },
           "include_ids": {
             "type": "boolean",
-            "description": "Add the generated id of every element (needed to target paragraphs, lists and tables with microsoft_onenote_update_page)."
+            "description": "Include generated element ids in the returned HTML. These tools only read shared pages; microsoft_onenote_update_page targets personal notebooks."
           }
         },
         "required": [
