@@ -25,6 +25,8 @@ const mcpRequest = () => ({
   } as Record<string, string>,
   remoteAddress: '::ffff:172.18.0.6',
   remotePort: 32852,
+  // What Express made of the header with the default trust proxy setting.
+  raw: { ip: '160.79.106.167' },
 });
 
 describe('log serializers', () => {
@@ -41,6 +43,13 @@ describe('log serializers', () => {
 
   it('never writes a credential, whatever header or query parameter carries it', () => {
     expect(JSON.stringify(serializeRequest(mcpRequest()))).not.toMatch(/secret/);
+  });
+
+  it('never takes the address from the client-supplied X-Forwarded-For header', () => {
+    const req = mcpRequest();
+    req.headers['x-forwarded-for'] = '10.10.10.10, 160.79.106.167';
+    expect(serializeRequest(req).ip).toBe('160.79.106.167');
+    expect(serializeRequest({ ...req, raw: undefined }).ip).toBe('::ffff:172.18.0.6');
   });
 
   it('falls back to the socket address and leaves out absent headers', () => {

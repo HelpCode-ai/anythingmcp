@@ -91,11 +91,10 @@ if (useOAuth) {
         store: new PrismaOAuthStore(new PrismaService()),
       },
       authorizationServerMetadata: {
-        grantTypesSupported: [
-          'authorization_code',
-          'refresh_token',
-          'client_credentials',
-        ],
+        // No `client_credentials`: every client here comes from open Dynamic
+        // Client Registration, so ClientCredentialsMiddleware refuses that
+        // grant for all of them (see its comment).
+        grantTypesSupported: ['authorization_code', 'refresh_token'],
         // OpenID Connect, the minimum of it: lets a relying party (ChatGPT
         // Enterprise, for one) ask who the user is via /userinfo and restrict
         // a connector to the company's e-mail domain. The scope policy only
@@ -226,9 +225,10 @@ export class AppModule implements NestModule {
     this.logger.log(`MCP Auth Mode: ${mode}`);
 
     // Pre-process POST /token for OAuth2 mode. The two middlewares match
-    // disjoint `grant_type` values (client_credentials vs refresh_token), so
-    // their order is immaterial; declaring them together makes it explicit
-    // that both must run before the upstream @rekog/mcp-nest-auth controller.
+    // disjoint `grant_type` values (client_credentials, which is refused, vs
+    // refresh_token), so their order is immaterial; declaring them together
+    // makes it explicit that both must run before the upstream
+    // @rekog/mcp-nest-auth controller.
     // RefreshTokenRevocationMiddleware is what makes `sessionsValidFrom`
     // actually revoke a session: without it a refresh grant mints a fresh
     // access token whose `iat` sits above the watermark.

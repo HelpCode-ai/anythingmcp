@@ -20,7 +20,8 @@ export const DASHBOARD_TOKEN_USE = 'dashboard';
 
 /**
  * Claims that only ever appear on tokens minted by the MCP OAuth authorization
- * server (@rekog/mcp-nest `JwtTokenService`) or by `ClientCredentialsMiddleware`.
+ * server (@rekog/mcp-nest `JwtTokenService`) or, before it started refusing the
+ * grant, by `ClientCredentialsMiddleware` (such tokens live 24 hours).
  *
  * SECURITY: those tokens are signed with the SAME `JWT_SECRET` as dashboard
  * tokens (app.module.ts passes it straight to McpAuthModule), so the signature

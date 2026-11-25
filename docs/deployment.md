@@ -316,6 +316,25 @@ server {
 }
 ```
 
+Add `proxy_set_header X-Forwarded-For $proxy_add_x_forwarded_for;` and `proxy_set_header X-Forwarded-Proto $scheme;` to each `location` that goes to port 4000 (nginx drops server-level `proxy_set_header` lines in any location that sets its own), otherwise the backend sees every request as coming from nginx and per-IP rate limits apply to all users together.
+
+### Client address behind a proxy (`TRUST_PROXY`)
+
+The backend takes the client address from `X-Forwarded-For` only as far as it trusts the proxies in between. That address keys the per-IP rate limits (for example on sign-in) and appears in the logs.
+
+By default (`TRUST_PROXY` unset) it trusts proxies on private networks only: loopback, link-local and the private ranges (`10.0.0.0/8`, `172.16.0.0/12`, `192.168.0.0/16`, `fc00::/7`). It reads the header from the right, skips those hops, and stops at the first public address, which is the address the outermost proxy saw. An address a client puts in the header itself is never reached. This fits Caddy, nginx or the frontend in front of the backend on the same host or Docker network, and proxies on your LAN.
+
+Set `TRUST_PROXY` when your setup differs:
+
+| Setup | `TRUST_PROXY` |
+|-------|---------------|
+| Proxy on a private network or the same host (default) | leave unset |
+| Proxy that reaches the backend from a public address, or a CDN in front | the proxy's addresses or ranges, e.g. `loopback, uniquelocal, 203.0.113.0/24` |
+| Exactly *n* proxies in front, wherever they are | `n` (e.g. `1`) |
+| Clients connect to port 4000 directly, no proxy | `false` |
+
+`TRUST_PROXY=true` (the behaviour before this setting existed) trusts every hop, so a client can choose its own address and avoid per-IP limits; the backend logs a warning at startup when it is set. The setting in use is logged at startup as `Trusting proxy headers from …`.
+
 ---
 
 ## Authentication
@@ -326,7 +345,7 @@ Configure `MCP_AUTH_MODE` in `.env`:
 
 | Mode | Description |
 |------|-------------|
-| `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials **(default)** |
+| `oauth2` | OAuth 2.0 Authorization Code (PKCE) **(default)** |
 | `legacy` | Static Bearer Token (`MCP_BEARER_TOKEN`) or API Key (`MCP_API_KEY`) |
 | `both` | Accepts OAuth2 tokens, per-user MCP API keys, and the legacy static tokens when they are set |
 | `none` | No authentication (development only) |
@@ -348,8 +367,13 @@ GET http://your-server:4000/.well-known/oauth-authorization-server
 ```
 
 Supports:
-- **Authorization Code + PKCE** — For interactive clients
-- **Client Credentials** — For server-to-server integrations
+- **Authorization Code + PKCE** — For interactive clients (dynamic client registration is open)
+- **Refresh tokens** — Issued with the authorization code
+
+The `client_credentials` grant is refused with `unauthorized_client`. Clients
+come from open dynamic client registration, so anyone could register one, and
+a client token names no user, so no endpoint would accept it. For
+server-to-server access, use a per-user MCP API key (below).
 
 ### Per-User API Keys
 
@@ -403,6 +427,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `DOMAIN` | No | Domain for Caddy SSL certificate (e.g., `example.com`) |
 | `ACME_EMAIL` | No | Email for Let's Encrypt certificate notifications |
 | `APP_BIND_IP` | No | Bind IP for app ports (default: `0.0.0.0`, set `127.0.0.1` behind Caddy) |
+| `TRUST_PROXY` | No | Which proxies may set the client address via `X-Forwarded-For` (default: private networks only). A number of hops, `false`, or a list of addresses / CIDR ranges / `loopback`, `linklocal`, `uniquelocal` — see [Client address behind a proxy](#client-address-behind-a-proxy-trust_proxy) |
 | `METRICS_ENABLED` | No | Start a second, separate `/metrics` listener for Prometheus (default: `false`) — see [observability.md](operations/observability.md) |
 | `METRICS_PORT` | No | Port for the metrics listener (default: `9464`) |
 | `METRICS_HOST` | No | Bind host for the metrics listener (default: `0.0.0.0`) |
