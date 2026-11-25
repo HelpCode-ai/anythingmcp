@@ -26,6 +26,8 @@ describe('AuditController member visibility', () => {
   /**
    * One entry per GET route: how to call it, the AuditService method it
    * reaches, and the arguments of the open path (today) and the restricted path.
+   * Two routes also pass whether owning a connector shows its error text in
+   * full: true for an EDITOR, false for a VIEWER.
    */
   const ROUTES: Record<
     string,
@@ -34,7 +36,7 @@ describe('AuditController member visibility', () => {
       service: string;
       call: (c: AuditController, role: string) => Promise<unknown>;
       open: unknown[];
-      restricted: unknown[];
+      restricted: unknown[] | ((role: string) => unknown[]);
     }
   > = {
     listInvocations: {
@@ -46,7 +48,7 @@ describe('AuditController member visibility', () => {
         40,
         { toolId: 'tool-1', status: 'ERROR', search: 'crm', connectorId: 'conn-1', mcpServerId: 'srv-1', organizationId: ORG },
       ],
-      restricted: [
+      restricted: (role) => [
         20,
         40,
         {
@@ -57,6 +59,7 @@ describe('AuditController member visibility', () => {
           mcpServerId: 'srv-1',
           organizationId: ORG,
           onlyUserId: ME,
+          ownerSeesErrors: role === 'EDITOR',
         },
       ],
     },
@@ -79,7 +82,7 @@ describe('AuditController member visibility', () => {
       service: 'getToolPerformance',
       call: (c, role) => c.getToolPerformance(req(role), { hours: 48, connectorId: 'conn-1', mcpServerId: 'srv-1' }),
       open: [ORG, { hours: 48, connectorId: 'conn-1', mcpServerId: 'srv-1' }],
-      restricted: [ORG, { hours: 48, connectorId: 'conn-1', mcpServerId: 'srv-1' }, ME],
+      restricted: (role) => [ORG, { hours: 48, connectorId: 'conn-1', mcpServerId: 'srv-1' }, ME, role === 'EDITOR'],
     },
     getBreakdowns: {
       path: 'breakdowns',
@@ -127,6 +130,9 @@ describe('AuditController member visibility', () => {
       expect(mock.mock.calls[0]).toHaveLength(args.length);
     };
 
+    const restrictedArgs = (role: string) =>
+      typeof route.restricted === 'function' ? route.restricted(role) : route.restricted;
+
     it.each(['open', 'restricted'])('ADMIN in a %s workspace: today’s call, no settings read', async (mode) => {
       orgSettings.get.mockResolvedValue(mode);
       await route.call(controller, 'ADMIN');
@@ -151,7 +157,7 @@ describe('AuditController member visibility', () => {
     it.each(['EDITOR', 'VIEWER'])('%s in a restricted workspace: own calls only', async (role) => {
       orgSettings.get.mockResolvedValue('restricted');
       await route.call(controller, role);
-      expectCall(route.restricted);
+      expectCall(restrictedArgs(role));
     });
 
     it.each([[['tool-1']], [[]]])(
@@ -160,7 +166,7 @@ describe('AuditController member visibility', () => {
         orgSettings.get.mockResolvedValue('restricted');
         roles.getAllowedToolIds.mockResolvedValue(allowed);
         await route.call(controller, 'VIEWER');
-        expectCall(route.restricted);
+        expectCall(restrictedArgs('VIEWER'));
       },
     );
 

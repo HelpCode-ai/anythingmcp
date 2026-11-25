@@ -30,6 +30,12 @@ import { CHAT_SETUP_SOURCE } from '../license/license-checkout';
 import { inspectOdooAddress } from './odoo-database-hint';
 import { WOOCOMMERCE_SLUG, WOOCOMMERCE_URL_VAR } from './woocommerce-setup';
 import { appApprovalAnnounced, signInPath } from './app-approval-watch';
+import {
+  MemberVisibilityService,
+  VisibilityScope,
+  connectorWhere,
+  ownsConnector,
+} from '../settings/member-visibility.service';
 
 /** Assistants a setup link can name (see assistantForRedirectUris). */
 const RETURN_ASSISTANTS: readonly ReturnAssistant[] = ['claude', 'chatgpt', 'muse'];
@@ -153,6 +159,9 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     private readonly registry: SharedSetupRegistry,
     private readonly securityEvents: SecurityEventService,
     private readonly productEvents: ProductEventService,
+    // Not @Optional: Nest refuses to boot without it. It is missing only in
+    // unit specs that build the service by hand and predate the setting.
+    private readonly visibility?: MemberVisibilityService,
   ) {}
 
   onModuleInit(): void {
@@ -684,13 +693,41 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
 
   // ── Status ────────────────────────────────────────────────────────────
 
+  /**
+   * The caller's member visibility in the workspace of this connection, from
+   * their role there (the membership, as everywhere on the MCP endpoint).
+   * Someone who is no longer an active member sees nothing.
+   */
+  private async visibilityScope(ctx: SetupContext): Promise<VisibilityScope> {
+    if (!this.visibility) return { restricted: false };
+    const member = await this.prisma.organizationMember.findFirst({
+      where: { userId: ctx.userId, organizationId: ctx.organizationId, deactivatedAt: null },
+      select: { role: true },
+    });
+    if (!member) return { restricted: true, userId: ctx.userId, allowedToolIds: [], ownerAccess: false };
+    return this.visibility.scopeFor({
+      sub: ctx.userId,
+      role: member.role as string,
+      organizationId: ctx.organizationId,
+    });
+  }
+
   async status(ctx: SetupContext): Promise<SetupCallResult> {
+    // Member visibility: in a restricted workspace a member who is not an
+    // admin gets the connectors the dashboard shows them, and of one they do
+    // not own only that it exists and whether it is set up. This answer used
+    // to list every connector of the workspace to any EDITOR, with the
+    // provider's words for a refused credential and the last error of a call.
+    const scope = await this.visibilityScope(ctx);
     const rows = await this.prisma.connector.findMany({
-      where: { organizationId: ctx.organizationId },
+      where: scope.restricted
+        ? { AND: [{ organizationId: ctx.organizationId }, connectorWhere(scope)] }
+        : { organizationId: ctx.organizationId },
       orderBy: { createdAt: 'desc' },
       take: 50,
       select: {
         id: true,
+        userId: true,
         name: true,
         authType: true,
         authConfig: true,
@@ -710,17 +747,27 @@ export class ConnectorSetupService implements SharedSetupProvider, OnModuleInit 
     // wrong value ("Save anyway") is ready too. So each ready one also says
     // how its last call went, and one finished in the last day but never
     // used gets the setup check, with its stored values.
-    const states = rows.map((r) => ({ row: r, state: this.stateOf(r) }));
+    const states = rows.map((r) => ({
+      row: r,
+      state: this.stateOf(r),
+      // Shared with a restricted member through their roles, not theirs.
+      reduced: scope.restricted && !ownsConnector(scope, r),
+    }));
     const checks = await this.readyChecks(
       ctx,
-      states.filter(({ state }) => state.status === 'ready').map(({ row }) => row),
+      states.filter(({ state, reduced }) => !reduced && state.status === 'ready').map(({ row }) => row),
     );
     const now = Date.now();
     const out = [];
     let unfinished = 0;
     let refused = 0;
     let approved = 0;
-    for (const { row: r, state } of states) {
+    for (const { row: r, state, reduced } of states) {
+      if (reduced) {
+        // The reduced view: no link that opens its setup, no provider message.
+        out.push({ name: r.name, status: state.status });
+        continue;
+      }
       const check = checks.get(r.id);
       // The provider approved the user's app (Etsy: it left Pending) and only
       // the sign-in is left: said first, with the link of the approval email.

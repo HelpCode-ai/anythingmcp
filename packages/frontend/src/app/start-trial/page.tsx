@@ -19,9 +19,12 @@ import {
   formatTrialEnd,
   planById,
   fitFor,
+  isAuthorizationPath,
+  isBackendAuthorizationPath,
   readAuthorizationReturn,
   readPlanIntent,
   readPromoCode,
+  saveAuthorizationReturn,
   selectionForFit,
   takeAuthorizationReturn,
   trialRunning,
@@ -113,19 +116,49 @@ function StartTrialContent() {
   // Set when the user came from "Connect" in an AI client: every way out of
   // this page goes back to that authorization.
   const [authorizationReturn, setAuthorizationReturn] = useState<string | null>(null);
+  // `?return=` is stored once per page load: stored again after leaving, it
+  // would send a later visit to an authorization that is long finished.
+  const returnStored = useRef(false);
+
+  // Set once the browser is on its way to the authorization. The stored
+  // return is spent by then, so a second call (the effect below runs again
+  // when the session refreshes) would send the same person to the dashboard.
+  const leavingForAuthorization = useRef(false);
+  useEffect(() => {
+    // Back on this page through the Back button (restored as it was left):
+    // the ways out work again.
+    const reset = (event: PageTransitionEvent) => {
+      if (event.persisted) leavingForAuthorization.current = false;
+    };
+    window.addEventListener('pageshow', reset);
+    return () => window.removeEventListener('pageshow', reset);
+  }, []);
 
   /** Leave for the waiting authorization (a backend page) or for `fallback`. */
   const leave = useCallback(
     (fallback: string) => {
+      if (leavingForAuthorization.current) return;
       const target = takeAuthorizationReturn(fallback);
-      if (target.startsWith('/auth/')) window.location.assign(target);
-      else router.replace(target);
+      if (isBackendAuthorizationPath(target)) {
+        leavingForAuthorization.current = true;
+        window.location.assign(target);
+      } else router.replace(target);
     },
     [router],
   );
 
   useEffect(() => {
     if (isLoading || !deploymentModeLoaded) return;
+    // Opened from the page after approving an AI client
+    // (`?return=/callback`): every way out finishes that authorization. Stored
+    // before anything below can leave the page, so the exits for someone the
+    // offer is not for (not an admin, no running trial, a licence that could
+    // not be read) go back to the client too, instead of to the dashboard.
+    if (deploymentMode === 'cloud' && !returnStored.current) {
+      returnStored.current = true;
+      const returnTo = new URLSearchParams(window.location.search).get('return');
+      if (isAuthorizationPath(returnTo)) saveAuthorizationReturn(returnTo);
+    }
     if (!token || !user) {
       // Keep ?source= through the sign-in (the offer email links here).
       router.replace(`/login?redirect=${encodeURIComponent(`/start-trial${window.location.search}`)}`);
@@ -245,7 +278,7 @@ function StartTrialContent() {
 
   return (
     <div className="min-h-screen bg-[var(--bg)] text-[var(--text)]">
-      <header className="max-w-3xl mx-auto px-6 pt-5 flex items-center justify-between gap-4">
+      <header className="max-w-3xl mx-auto px-4 sm:px-6 pt-4 sm:pt-5 flex items-center justify-between gap-3">
         <div className="flex items-center gap-2">
           <span className="flex h-[30px] w-[30px] items-center justify-center rounded-[8px] bg-[var(--brand-tint)] text-[var(--brand)]">
             <LogoIcon size={20} />
@@ -254,22 +287,24 @@ function StartTrialContent() {
             Anything<span className="text-[var(--brand)]">MCP</span>
           </span>
         </div>
-        {/* Deliberately quiet: a plain text link in the corner, not a button. */}
+        {/* Easy to find on a phone: people who do not want to add a payment
+            method now must see straight away that they can go on without. */}
         <button
           type="button"
+          data-testid="skip-corner"
           onClick={handleSkip}
-          className="text-xs text-[var(--text-3)] underline-offset-2 hover:text-[var(--text-2)] hover:underline"
+          className="shrink-0 rounded-full border border-[var(--border-strong)] bg-[var(--surface)] px-3 py-1.5 text-[13px] font-medium text-[var(--text)] hover:border-[var(--brand)] hover:text-[var(--brand)]"
         >
           {t('skipCorner')}
         </button>
       </header>
 
-      <main className="max-w-3xl mx-auto px-6 py-10 sm:py-14">
-        <div className="text-center mb-8">
-          <p className="text-xs uppercase tracking-[0.18em] text-[var(--brand)] font-mono mb-3">
+      <main className="max-w-3xl mx-auto px-4 sm:px-6 py-6 sm:py-14">
+        <div className="text-center mb-5 sm:mb-8">
+          <p className="text-xs uppercase tracking-[0.18em] text-[var(--brand)] font-mono mb-2 sm:mb-3">
             {paysToday ? t('eyebrow.choosePlan') : endLong ? t('eyebrow.freeUntil', { date: endLong }) : t('eyebrow.freeTrial')}
           </p>
-          <h1 className="text-3xl sm:text-4xl font-bold tracking-tight mb-3">
+          <h1 className="text-2xl sm:text-4xl font-bold tracking-tight mb-2 sm:mb-3">
             {paysToday ? t('title.paysToday') : t('title.trial')}
           </h1>
           {kind === 'ending' ? (
@@ -283,9 +318,16 @@ function StartTrialContent() {
               {endLong ? t.rich('returning', { date: endLong, strong }) : t.rich('returningNoDate', { strong })}
             </p>
           ) : (
-            <p className="text-[var(--text-2)] max-w-xl mx-auto">
-              {endLong ? t.rich('trial', { date: endLong, strong }) : t.rich('trialNoDate', { strong })}
-            </p>
+            <>
+              {/* On a phone the full text pushed the plans below the first
+                  screen: one sentence there, the rest under the buttons. */}
+              <p data-testid="trial-intro-short" className="sm:hidden text-[var(--text-2)] max-w-xl mx-auto">
+                {endLong ? t.rich('trialShort', { date: endLong, strong }) : t.rich('trialShortNoDate', { strong })}
+              </p>
+              <p className="hidden sm:block text-[var(--text-2)] max-w-xl mx-auto">
+                {endLong ? t.rich('trial', { date: endLong, strong }) : t.rich('trialNoDate', { strong })}
+              </p>
+            </>
           )}
           {authorizationReturn && (
             <p className="mt-3 text-sm text-[var(--text-2)] max-w-xl mx-auto">
@@ -336,16 +378,30 @@ function StartTrialContent() {
                   ? t('finePrintTrial', { plan: plan.name, period: selection.period, date: endLong })
                   : t('finePrintTrialNoDate', { plan: plan.name, period: selection.period })}
             </p>
-            <p className="text-xs text-[var(--text-2)] text-center">
-              {paysToday ? t('notReady') : t('notReadyCard')}{' '}
-              <button
-                type="button"
-                onClick={handleSkip}
-                className="font-medium text-[var(--brand)] underline-offset-2 hover:underline"
-              >
-                {paysToday ? t('keepFree') : t('tryFree')}
-              </button>
-            </p>
+            {paysToday ? (
+              <p className="text-xs text-[var(--text-2)] text-center">
+                {t('notReady')}{' '}
+                <button
+                  type="button"
+                  onClick={handleSkip}
+                  className="font-medium text-[var(--brand)] underline-offset-2 hover:underline"
+                >
+                  {t('keepFree')}
+                </button>
+              </p>
+            ) : (
+              <>
+                <Button
+                  variant="secondary"
+                  size="lg"
+                  className="w-full sm:w-auto sm:min-w-[260px]"
+                  onClick={handleSkip}
+                >
+                  {t('tryFree')}
+                </Button>
+                <p className="-mt-1 text-xs text-[var(--text-3)] text-center max-w-md">{t('skipNote')}</p>
+              </>
+            )}
           </div>
         </Card>
         {/* What the chosen plan changes for this workspace: under the card, in the same column. */}

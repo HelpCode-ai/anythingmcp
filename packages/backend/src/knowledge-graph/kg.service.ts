@@ -17,6 +17,37 @@ import { KgObservationalService } from './kg-observational.service';
 import { KgLlmService } from './kg-llm.service';
 import { skillVisibility } from './kg-skill.service';
 
+/**
+ * Graph nodes as a caller whose roles limit tools may read them.
+ *
+ * A connector is in a caller's scope as soon as their roles allow one of its
+ * tools, and its nodes name every tool that reads or writes the entity. Left
+ * as they are, kg_how_to_obtain and the knowledge-graph resource told a member
+ * which tools exist beyond their role. So each node keeps only the allowed
+ * tool names, and a node whose tools are all denied is dropped (with its
+ * edges, since both ends of an edge must be in scope): the caller cannot reach
+ * that entity. A node no tool names (curated by hand) stays.
+ *
+ * `allowed` null or undefined means the roles limit nothing: unchanged.
+ */
+export function narrowToAllowedTools<T extends { toolNames: unknown }>(
+  nodes: T[],
+  allowed: ReadonlySet<string> | null | undefined,
+): T[] {
+  if (!allowed) return nodes;
+  const out: T[] = [];
+  for (const node of nodes) {
+    const names = Array.isArray(node.toolNames) ? (node.toolNames as string[]) : [];
+    if (names.length === 0) {
+      out.push(node);
+      continue;
+    }
+    const kept = names.filter((name) => allowed.has(name));
+    if (kept.length > 0) out.push({ ...node, toolNames: kept });
+  }
+  return out;
+}
+
 @Injectable()
 export class KgService {
   private readonly logger = new Logger(KgService.name);
@@ -509,7 +540,16 @@ export class KgService {
   async lookup(
     organizationId: string,
     query: string,
-    opts?: { connectorIds?: string[]; mcpServerId?: string; folders?: FolderAccess | null },
+    opts?: {
+      connectorIds?: string[];
+      mcpServerId?: string;
+      folders?: FolderAccess | null;
+      /**
+       * Names of the tools the caller's roles allow, when roles limit them
+       * (see `narrowToAllowedTools`). null or absent narrows nothing.
+       */
+      allowedToolNames?: ReadonlySet<string> | null;
+    },
   ) {
     const scope = opts?.connectorIds
       ? { connectorId: { in: opts.connectorIds.length ? opts.connectorIds : ['__none__'] } }
@@ -519,17 +559,20 @@ export class KgService {
     const q = (query || '').toLowerCase().trim().replace(/\s+/g, '_');
     if (!q) return { query, entities: [], howToObtain: [], relatedTo: [], skills };
 
-    const nodes = await this.prisma.kgNode.findMany({
-      where: { organizationId, ...scope },
-      select: {
-        id: true,
-        entity: true,
-        label: true,
-        description: true,
-        fields: true,
-        toolNames: true,
-      },
-    });
+    const nodes = narrowToAllowedTools(
+      await this.prisma.kgNode.findMany({
+        where: { organizationId, ...scope },
+        select: {
+          id: true,
+          entity: true,
+          label: true,
+          description: true,
+          fields: true,
+          toolNames: true,
+        },
+      }),
+      opts?.allowedToolNames,
+    );
     const byId = new Map(nodes.map((n) => [n.id, n]));
     const nodeIds = new Set(nodes.map((n) => n.id));
     const label = (id: string) => byId.get(id)?.label ?? '?';
@@ -603,6 +646,8 @@ export class KgService {
       mcpServerId?: string;
       serverName?: string;
       folders?: FolderAccess | null;
+      /** As in lookup(): the tool names the caller's roles allow, or null. */
+      allowedToolNames?: ReadonlySet<string> | null;
     },
   ): Promise<string> {
     const MAX_ENTITIES = 150;
@@ -617,7 +662,7 @@ export class KgService {
       'to another. Use it to plan a chain of tool calls. For a single entity or parameter, ' +
       'the kg_how_to_obtain tool gives the same information on demand.';
 
-    const [nodes, skills] = await Promise.all([
+    const [allNodes, skills] = await Promise.all([
       opts.connectorIds.length
         ? this.prisma.kgNode.findMany({
             where: { organizationId, connectorId: { in: opts.connectorIds } },
@@ -639,6 +684,7 @@ export class KgService {
         folders: opts.folders,
       }),
     ]);
+    const nodes = narrowToAllowedTools(allNodes, opts.allowedToolNames);
 
     if (nodes.length === 0) {
       return [

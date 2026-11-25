@@ -118,10 +118,50 @@ export const ProductEvents = {
    * `authorize_page_viewed` carries a short hash of the authorization as
    * `attempt`, so reloads of one attempt count once. `mcp_tools_listed` is
    * written once per workspace and UTC day.
+   *
+   * Every event written while a browser is on our pages carries the same
+   * `attempt`, the `device` ('mobile' or 'desktop') and, on Cloud, the arm of
+   * the page test the attempt is in (`connectedArm`, see
+   * auth/authorization-attempt.ts), so one attempt can be followed from the
+   * page view to the code:
+   * - authorize_page_viewed also carries `lang`, the browser's first language
+   *   when it is one of the seven the trial pages speak, else 'other';
+   * - authorize_action: a button of the sign-in page was used. metadata.button
+   *   = 'google', 'microsoft', 'github', 'sso', 'password', 'session' (Allow
+   *   access as the signed-in dashboard account), 'cancel' or 'create_account'
+   *   (the link to the dashboard's sign-up, reported by the page);
+   * - authorization_signed_in: the identity is settled and access allowed.
+   *   metadata.method = the provider, 'password', 'session', 'email_code' or
+   *   'sso'; metadata.account = 'new' (created in the last 30 minutes) or
+   *   'existing';
+   * - authorization_code_issued carries device, attempt and arm since
+   *   November 2026 (AuthorizationAttemptMiddleware); a code issued and never
+   *   exchanged, by device, is the hand-back that failed;
+   * - post_approve_continue_clicked: "Continue" on the page shown to an empty
+   *   workspace (reported by the page with a beacon that cannot delay the
+   *   click). metadata.button = 'continue', or 'auto_continue' when the page
+   *   went on by itself after the one-tap Telegram bot was connected, or
+   *   'copy_continue' when "Copy & continue" pressed it;
+   * - authorize_action from the page after approving: metadata.button =
+   *   'open_dashboard' ("Or add an app here first") or 'payment_method'
+   *   ("Add a payment method"), both reported by the page with a beacon;
+   * - authorize_step_viewed: a step between sign-in and the code was shown.
+   *   metadata.step = 'email-code' (the code step for an unverified address),
+   *   'servers' ("Choose what to connect") or 'wrong-workspace' (the client
+   *   asked for a server this account cannot reach);
+   * - authorize_request_closed: a browser reached the flow without an open
+   *   authorization (expired after 30 minutes, already used, or a bookmark)
+   *   and was shown the "no longer open" page. metadata.via = 'login',
+   *   'callback' or 'next' (where), metadata.device. No account, no attempt.
    */
   AUTHORIZE_PAGE_VIEWED: 'authorize_page_viewed',
+  AUTHORIZE_ACTION: 'authorize_action',
+  AUTHORIZATION_SIGNED_IN: 'authorization_signed_in',
   AUTHORIZATION_CODE_ISSUED: 'authorization_code_issued',
   AUTHORIZATION_CODE_EXCHANGED: 'authorization_code_exchanged',
+  POST_APPROVE_CONTINUE_CLICKED: 'post_approve_continue_clicked',
+  AUTHORIZE_STEP_VIEWED: 'authorize_step_viewed',
+  AUTHORIZE_REQUEST_CLOSED: 'authorize_request_closed',
   MCP_TOOLS_LISTED: 'mcp_tools_listed',
   /**
    * An install asked for from a chat or the picker that added no connector,
@@ -505,8 +545,13 @@ const SERVER_ONLY = new Set<string>([
   ProductEvents.OAUTH_FAILED,
   ProductEvents.AI_CLIENT_CONNECTED,
   ProductEvents.AUTHORIZE_PAGE_VIEWED,
+  ProductEvents.AUTHORIZE_ACTION,
+  ProductEvents.AUTHORIZATION_SIGNED_IN,
   ProductEvents.AUTHORIZATION_CODE_ISSUED,
   ProductEvents.AUTHORIZATION_CODE_EXCHANGED,
+  ProductEvents.POST_APPROVE_CONTINUE_CLICKED,
+  ProductEvents.AUTHORIZE_STEP_VIEWED,
+  ProductEvents.AUTHORIZE_REQUEST_CLOSED,
   ProductEvents.MCP_TOOLS_LISTED,
   ProductEvents.SETUP_INSTALL_FAILED,
   ProductEvents.DIRECTORY_SIGNUP,
@@ -659,10 +704,14 @@ export class ProductEventService {
 // `attempt`: authorize_page_viewed, the value that makes reloads of one
 // authorization count once: a short lower-case base-36 number (the time the
 // pending authorization expires), and nothing else is kept.
+// `button`, `method`, `account`, `lang`, `connectedArm`, `signinArm`, `trialOfferArm`: the
+// authorization pages (authorize_action, authorization_signed_in,
+// authorize_page_viewed and the page tests), each from a fixed set.
 const METADATA_KEYS = [
   'client', 'serverId', 'connectorId', 'adapterSlug', 'step', 'index', 'field', 'kind', 'via', 'query', 'results', 'missing', 'match',
   'status', 'toolName', 'error', 'verified', 'cardTrialOffered', 'source', 'device', 'protocol', 'preset', 'files',
   'tool', 'profile', 'setupTool', 'variant', 'calls', 'state', 'action', 'plan', 'period', 'offer', 'attempt', 'code',
+  'button', 'method', 'account', 'lang', 'connectedArm', 'signinArm', 'trialOfferArm',
 ] as const;
 /** A provider's error code: a short identifier, never a sentence or a pasted value. */
 const PROVIDER_CODE = /^[A-Za-z][A-Za-z_]{2,39}$/;
@@ -698,6 +747,17 @@ const ENUM_KEYS: Partial<Record<(typeof METADATA_KEYS)[number], ReadonlySet<stri
   period: new Set(['monthly', 'yearly']),
   // The reactivation page's Telegram price test (reactivationOfferArm).
   offer: new Set(['personal', 'list']),
+  // The authorization pages (auth/authorization-attempt.ts, login.controller.ts).
+  button: new Set([
+    'google', 'microsoft', 'github', 'sso', 'password', 'session', 'cancel', 'create_account', 'continue', 'auto_continue',
+    'copy_continue', 'open_dashboard', 'payment_method',
+  ]),
+  method: new Set(['google', 'microsoft', 'github', 'sso', 'password', 'session', 'email_code']),
+  account: new Set(['new', 'existing']),
+  lang: new Set(['en', 'de', 'it', 'es', 'zh', 'ja', 'ru', 'other']),
+  connectedArm: new Set(['control', 'next_step']),
+  signinArm: new Set(['control', 'buttons_first']),
+  trialOfferArm: new Set(['control', 'panel']),
 };
 /**
  * Keys kept only when the value has a fixed shape; anything else is dropped.
@@ -717,6 +777,16 @@ const KNOWN_CHECKOUT_SOURCES = new Set<string>(CHECKOUT_SOURCES);
 const MAX_QUERY_LENGTH = 100;
 /** The values of `match` (see catalog-search.ts). */
 const SEARCH_MATCH_KINDS = new Set(['direct', 'fuzzy', 'partial', 'suggested']);
+
+/**
+ * The allow-list above for a writer that is built without dependency
+ * injection (the OAuth store): the same keys, sets and shapes as `log`.
+ */
+export function boundEventMetadata(
+  metadata: Record<string, unknown> | null | undefined,
+): Record<string, string | number | boolean> | null {
+  return boundMetadata(metadata);
+}
 
 function boundMetadata(
   metadata: Record<string, unknown> | null | undefined,

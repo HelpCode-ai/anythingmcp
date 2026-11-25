@@ -156,7 +156,7 @@ export default function WelcomePage() {
               {(query.trim() ? matches.slice(0, 8) : popular).map((a) => (
                 <Link
                   key={a.slug}
-                  href={fileSearchSetupPath(a.slug, 'welcome') ?? `/connectors/setup/${encodeURIComponent(a.slug)}`}
+                  href={fileSearchSetupPath(a.slug, 'welcome') ?? `/connectors/setup/${encodeURIComponent(a.slug)}?back=welcome`}
                   onClick={() => reportPicked(a.slug)}
                   className="flex items-center gap-3 rounded-[12px] border border-[var(--border)] bg-[var(--surface)] p-3 shadow-[var(--shadow-sm)] transition-colors hover:border-[var(--brand)] hover:bg-[var(--brand-tint)]"
                 >

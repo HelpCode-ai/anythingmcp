@@ -8,6 +8,7 @@ import { AppShell } from '@/components/app-shell';
 import { cn } from '@/lib/utils';
 
 import { SIDEBAR_SECTIONS, getVisibleSettingsSections } from '@/lib/navigation';
+import { useMemberAccess } from '@/lib/use-member-access';
 
 const SETTINGS_ICONS: Record<string, React.ComponentType<{ size?: number }>> = {
   '/settings': GearIcon,
@@ -28,7 +29,8 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
   const { user, deploymentMode } = useAuth();
   const isAdmin = user?.role === 'ADMIN';
   const isCloud = deploymentMode === 'cloud';
-  const visibleSections = getVisibleSettingsSections(SIDEBAR_SECTIONS, { isAdmin, isCloud });
+  const { can } = useMemberAccess();
+  const visibleSections = getVisibleSettingsSections(SIDEBAR_SECTIONS, { isAdmin, isCloud, can });
 
   return (
     <AppShell title={tNav('settings')}>
@@ -36,7 +38,7 @@ export default function SettingsLayout({ children }: { children: React.ReactNode
         {/* Settings sub-navigation */}
         {/* Below lg this is a scrolling strip. The scrollbar is hidden, so the
             soft trailing edge is what says there is more to the right. */}
-        <nav className="scrollbar-none scroll-fade-x -mx-4 flex gap-1 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:sticky lg:top-0 lg:mx-0 lg:flex-col lg:overflow-x-visible lg:px-0 lg:pb-0 lg:[mask-image:none]">
+        <nav data-testid="settings-nav" className="scrollbar-none scroll-fade-x -mx-4 flex gap-1 overflow-x-auto px-4 pb-2 sm:-mx-6 sm:px-6 lg:sticky lg:top-0 lg:mx-0 lg:flex-col lg:overflow-x-visible lg:px-0 lg:pb-0 lg:[mask-image:none]">
           {visibleSections.map((section, si) => (
             <div key={si} className="contents lg:block">
               {section.title && (

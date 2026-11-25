@@ -64,7 +64,11 @@ describe('McpEndpointController — tenant isolation', () => {
       remove: jest.fn().mockResolvedValue(undefined),
       notifyToolsChanged: jest.fn().mockResolvedValue(undefined),
     };
-    grants = { resolve: jest.fn().mockResolvedValue(null) };
+    // No connection grant: the tenant check alone decides (server-url-grant.spec.ts has the grant).
+    grants = {
+      resolve: jest.fn().mockResolvedValue(null),
+      serverScope: jest.fn().mockResolvedValue('no-grant'),
+    };
     controller = new McpEndpointController(
       mcpServersService,
       toolRegistry,
@@ -1031,6 +1035,17 @@ describe('McpEndpointController — knowledge graph scope', () => {
     expect(await lookupScope(controller, kgService, null)).toEqual(['c-crm', 'c-fibu']);
   });
 
+  it('kg_how_to_obtain is told which tool names the role allows, and nothing for an unrestricted caller', async () => {
+    const { controller, kgService } = make();
+    await lookupScope(controller, kgService, ['crm_get_customer']);
+    expect(kgService.lookup.mock.calls.at(-1)[2].allowedToolNames).toEqual(new Set(['crm_get_customer']));
+    await lookupScope(controller, kgService, null);
+    expect(kgService.lookup.mock.calls.at(-1)[2].allowedToolNames).toBeNull();
+    // A role without any tool on this server: an empty set, not "everything".
+    await lookupScope(controller, kgService, []);
+    expect(kgService.lookup.mock.calls.at(-1)[2].allowedToolNames).toEqual(new Set());
+  });
+
   it('publishes the knowledge-graph resource, scoped to the role, built on read', async () => {
     const { controller, kgService } = make();
     const server = fakeServer();
@@ -1046,6 +1061,7 @@ describe('McpEndpointController — knowledge graph scope', () => {
       connectorIds: ['c-crm'],
       mcpServerId: 'srv-1',
       serverName: 'Sales',
+      allowedToolNames: new Set(['crm_get_customer']),
     });
     expect(result.contents[0]).toEqual({
       uri: 'anythingmcp://server/srv-1/knowledge-graph',

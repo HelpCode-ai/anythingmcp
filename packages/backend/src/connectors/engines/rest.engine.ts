@@ -112,6 +112,34 @@ export function parseRetryAfterMs(value: unknown, now = Date.now()): number | nu
 }
 
 /**
+ * Whether a 429 body says a daily or monthly quota is used up (Etsy
+ * "Exceeded daily rate limit", Twelve Data "You have run out of API credits
+ * for the day"). Retrying such a call a second later fails the same way and
+ * costs the customer one more request against the empty quota. Per-second and
+ * per-minute limits are left to the normal retry.
+ */
+export function isExhaustedQuotaBody(data: unknown): boolean {
+  let text: string;
+  if (typeof data === 'string') text = data;
+  else if (Buffer.isBuffer(data)) text = data.toString('utf8', 0, Math.min(data.length, 4000));
+  else if (data instanceof ArrayBuffer) text = Buffer.from(data, 0, Math.min(data.byteLength, 4000)).toString('utf8');
+  else if (data && typeof data === 'object') {
+    try {
+      text = JSON.stringify(data);
+    } catch {
+      return false;
+    }
+  } else return false;
+  text = text.slice(0, 4000);
+  if (/\b(per[ -]?(second|minute)|current minute|this minute)\b/i.test(text)) return false;
+  return (
+    /\bexceeded (your |the )?(daily|monthly) (rate |request |api )?(limit|quota)/i.test(text) ||
+    /\brun out of (api )?credits for the (day|month)\b/i.test(text) ||
+    /\b(daily|monthly) (rate |request |api )?(limit|quota|credits?) (has been |was |is )?(reached|exceeded|exhausted|used up)\b/i.test(text)
+  );
+}
+
+/**
  * Methods whose `bodyMapping` / `bodyTemplate` the engine turns into a
  * request body. DELETE is one of them: plenty of APIs take the ids of a bulk
  * delete in the body (Coda's `rowIds`, Klaviyo's JSON:API `data`), and a
@@ -873,7 +901,8 @@ export class RestEngine {
    * requests in two days. So a 429, and a 503 that says when to come back,
    * get at most one more attempt: after the API's Retry-After when it is
    * short, after about a second when it gives none, and none at all when it
-   * asks for longer than we can wait inside a tool call. The model still sees
+   * asks for longer than we can wait inside a tool call or when the body says
+   * a daily or monthly quota is used up. The model still sees
    * the status and the Retry-After header in the error.
    */
   private retryDelayMs(
@@ -886,7 +915,11 @@ export class RestEngine {
     const retryAfter = parseRetryAfterMs(response?.headers?.['retry-after']);
     if (status === 429 || (status === 503 && retryAfter !== null)) {
       if (attempt > 0) return null;
-      if (retryAfter === null) return 1000 + Math.floor(Math.random() * 250);
+      if (retryAfter === null) {
+        // A used-up daily or monthly quota does not come back in a second.
+        if (status === 429 && isExhaustedQuotaBody(response?.data)) return null;
+        return 1000 + Math.floor(Math.random() * 250);
+      }
       return retryAfter <= MAX_RETRY_AFTER_MS ? retryAfter : null;
     }
     return attempt < delaysMs.length ? delaysMs[attempt] : null;
@@ -2558,14 +2591,21 @@ export function injectLoginTokenHeaders(
   const others = Object.fromEntries(
     Object.entries(current).filter(([name]) => name.toLowerCase() !== headerName.toLowerCase()),
   );
-  axiosConfig.headers = (
+  // Built with Object.fromEntries (own properties only): header names come
+  // from the connector's configuration and must never reach the prototype.
+  // Later entries win, as before: the token header over a connector header,
+  // extraHeaders over both.
+  const base: [string, unknown][] =
     authConfig.tokenPlacement === 'body'
-      ? { ...current }
-      : { ...others, [headerName]: interpolate(headerTemplate) }
-  ) as AxiosRequestConfig['headers'];
-  for (const [k, v] of Object.entries(authConfig.extraHeaders || {})) {
-    axiosConfig.headers![k] = interpolate(String(v));
-  }
+      ? Object.entries(current)
+      : [...Object.entries(others), [headerName, interpolate(headerTemplate)]];
+  const extra = Object.entries(authConfig.extraHeaders || {}).map(
+    ([k, v]): [string, unknown] => [k, interpolate(String(v))],
+  );
+  axiosConfig.headers = Object.fromEntries([
+    ...base,
+    ...extra,
+  ]) as AxiosRequestConfig['headers'];
   return replaced;
 }
 

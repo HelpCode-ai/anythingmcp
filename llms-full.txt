@@ -661,6 +661,7 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `MCP_API_KEY` | No | API key for legacy MCP auth |
 | `SERVER_URL` | No | Server URL for OAuth2 metadata (default: `http://localhost:4000`) |
 | `MCP_RATE_LIMIT_PER_MINUTE` | No | Rate limit per client (default: 60) |
+| `MCP_GRANT_SERVER_SCOPE` | No | Whether what a person allowed an AI client while connecting it also limits which MCP servers that client opens by their own URL (`/mcp/<serverId>`). `enforce` (default): a client connected to one server, or to the servers picked on the authorization page, gets a 401 on any other server of the workspace and runs the authorization again for that URL; allowing it adds the server to what the client may reach. `report`: nothing is refused, the backend logs one warning (`MCP grant scope (report only)…`) for each client, user and server it would refuse, at most once in ten minutes. `off`: no check. It applies to OAuth connections only: API keys, the static credentials and connections without a stored choice (made before September 2026, or through single sign-on before this version) are not affected. Same on Cloud and self-hosted; a change needs a restart of the backend. |
 | `TOOL_MAX_RESPONSE_BYTES` | No | Largest upstream response body, in bytes after decompression, that one tool call reads from a REST, JSON-RPC, OData, GraphQL or SOAP API (default: `10485760`, 10 MB, on Cloud and self-hosted). A bigger response fails the call with code `TOOL_RESPONSE_TOO_LARGE` and a message that asks the model to narrow the request. The same limit applies to the text sent to the MCP client, for every connector type (database and MCP connectors too): a result over it is sent as compact JSON, and if that is still too big the call fails with the same code |
 | `SMTP_HOST` | No | SMTP server for instance emails; used when no SMTP is configured in the admin Settings page |
 | `SMTP_PORT` | No | SMTP port (default: 587) |
@@ -694,6 +695,9 @@ curl -s http://localhost:4000/api/mcp-api-keys \
 | `TELEGRAM_MANAGER_BOT_TOKEN` | No | The token of a Telegram "manager bot" of this server (a bot with **Bot Management Mode** enabled in @BotFather). With it and `TELEGRAM_MANAGER_WEBHOOK_SECRET`, a user who picks Telegram on the page after approving an AI client creates their own bot with one tap in Telegram instead of a chat with @BotFather and a pasted token; see [One-tap Telegram bot](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#one-tap-telegram-bot>). Default: off, the page is as before |
 | `TELEGRAM_MANAGER_WEBHOOK_SECRET` | With the token | A secret of your own, 16 to 256 characters of `A-Z`, `a-z`, `0-9`, `_` and `-` (for example `openssl rand -hex 32`). Telegram sends it back with every update of the manager bot, to `<SERVER_URL>/api/telegram/manager-webhook`; a call without it is refused |
 | `TELEGRAM_MANAGED_BOT_ORG_IDS` | No | Comma-separated organization ids the one-tap Telegram bot is offered to. Empty (default): every organization. Set it to try the feature on one workspace first: every other organization sees the page as before |
+| `AUTHORIZE_CONNECTED_PAGE_TEST` | No | Cloud only: the page shown after approving an AI client into an empty workspace (see [Authorization page tests](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authorization-page-tests>)). Unset: `next_step` for everyone. `split`: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `next_step`: that arm for everyone. Ignored on a self-hosted instance, which always shows the page as before |
+| `AUTHORIZE_SIGNIN_PAGE_TEST` | No | Cloud only: the split test of the sign-in page inside an authorization (see [Sign-in page test](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#sign-in-page-test>)). Unset: an equal split. `off`: the page as before for everyone, no arm recorded. `control` or `buttons_first`: that arm for everyone. Ignored on a self-hosted instance |
+| `AUTHORIZE_TRIAL_OFFER_TEST` | No | Cloud only: the split test of the card-trial offer on the page after approving (see [Card-trial offer test](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#card-trial-offer-test>)). Unset: an equal split. `off`: the offer as before for everyone, no arm recorded. `control` or `panel`: that arm for everyone. Ignored on a self-hosted instance |
 | `METRICS_TOOL_LABELS` | No | Add `connector_id`/`tool` labels to tool-call metrics (default: `false`; ignored on Cloud) |
 | `LICENSE_USAGE_REPORT` | No | Self-hosted only: `false` stops the licence check from sending the usage counts (active users, connectors, MCP servers, version) described under [License Verification](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#license-verification>); the key is still verified. Default: sent. Ignored on Cloud, which never sends them |
 
@@ -737,9 +741,11 @@ The manager bot answers a `/start` in its own chat with one line: connected (go 
 
 The AI client is not connected yet at that moment: its authorization is finished by **Continue** on the page. Three things say so and follow it up:
 
-- **The page** shows "Telegram is connected" with "Last step: tap Continue to Claude below", and scrolls the button into view. It never follows the button for the user. On a phone or another touch device, the tap on Continue also copies the example request to the clipboard ("Copied. Paste it in a new chat in Claude."), since no chat tab is opened there; a refused clipboard changes nothing, and the tap goes through as always.
+- **The page** shows "Telegram is connected" with "Last step: tap Continue to Claude below", and scrolls the button into view. It never follows the button for the user. The click on Continue also copies the example request to the clipboard ("Copied. Paste it in a new chat in Claude."), on every device: no chat tab is opened, because a second tab left the authorization unfinished (on phones first, later on computers). A refused clipboard changes nothing, and the click goes through as always.
 - **The welcome message** the new bot sends its creator says the same: go back to the page and tap "Continue to Claude" (the client's name as the page shows it).
 - **A second message** follows when the AI client really is connected: on the first `tools/list` that the user's client sends to the shared `/mcp` endpoint within 30 minutes of the bot being connected, the bot writes "Claude is now connected to AnythingMCP. Ask it: "Send me a test message on Telegram."". For Claude the message has a button that opens a new chat with that request typed in (`https://claude.ai/new?q=…`); for any other client it is the same sentence without a link. It is sent once per connector, only for a bot created in one tap by the user whose client it is, and only when the welcome could be delivered (the creator pressed **Start** in the bot's chat: a bot cannot write to someone who has not). It never delays or fails the MCP request: the endpoint only notes the request, and the check (one database read per workspace every five seconds at most, none while the feature is off) and the message happen in the background.
+
+On Cloud, half of the pending authorizations see another version of this page (the `next_step` arm of the [authorization page test](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#authorization-page-tests>)): once the bot is connected and Start was pressed, the page counts down five seconds ("Telegram is connected. Going back to Claude in 5 s…") and then follows the Continue link itself, in the same tab, only while the tab is visible. **Stay on this page** stops the countdown.
 
 What to know:
 
@@ -751,6 +757,77 @@ What to know:
 - **Cloud and self-hosted.** The settings are read in both modes. The page that offers the button (shown after approving an AI client, to a workspace with no connectors) exists on Cloud only today, so a self-hosted instance sees no change yet: no setup is ever started there, so the manager bot has nothing to link and the second message has nobody to go to. Redis is not needed for any of it.
 - **Outbound calls.** `api.telegram.org`, with the manager bot's token (start-up, once per created bot, and one answer per `/start` in its chat) and with the user's new bot's token (the welcome message and the "assistant is connected" message).
 - **Events.** `telegram_bot_link_offered`, `telegram_bot_link_opened`, `telegram_bot_connected` (`kind: claim` when the bot was linked by its creator's Start), `telegram_bot_unmatched`, `telegram_bot_claim_offered`, `telegram_bot_claim` (`status`: `linked`, `waiting` or `refused`), `telegram_bot_client_notice` (`status`: `sent` or `failed`) and `telegram_bot_token_pasted`, in `product_events`. None holds a Telegram id, a username or a code.
+
+## Authorization page tests
+
+Cloud only. A self-hosted instance always shows the pages as before and records no arm.
+
+The page shown after approving an AI client into an empty workspace says "Claude is connected" although the client is connected only after **Continue**: no authorization code exists yet. On Cloud everyone sees the `next_step` arm by default; `AUTHORIZE_CONNECTED_PAGE_TEST=split` runs the two as a split test:
+
+| Arm | What the person sees |
+|-----|----------------------|
+| `control` | The page as before: "Claude is connected" |
+| `next_step` | No visible heading (the tab title is "One more step: go back to Claude"): one line ("Press Continue to Claude to finish connecting."), then the picker, the example request and the Continue link. The copy button is "Copy & continue": it copies the request and presses Continue. After the one-tap Telegram bot is connected the page goes on by itself (see [After the bot is connected](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#after-the-bot-is-connected>)) |
+
+The arm is chosen per pending authorization (a hash of its session, never stored) and stays the same through reloads, the round trip to Google and the sign-up detour. A new connection attempt from the AI client can get the other arm.
+
+The events of one attempt carry the same `attempt` value, the `device` (`mobile` or `desktop`) and the arm as `connectedArm`:
+
+| Event | Written when | Extra fields |
+|-------|--------------|--------------|
+| `authorize_page_viewed` | the sign-in page is opened inside an authorization | `lang`: the browser's first language if it is one of `en`, `de`, `it`, `es`, `zh`, `ja`, `ru`, else `other` |
+| `authorize_action` | a button of the sign-in page is used, or one of the two links of the page after approving that are not Continue | `button`: `google`, `microsoft`, `github`, `sso`, `password`, `session`, `cancel`, `create_account`; `open_dashboard` ("Or add an app here first"), `payment_method` ("Add a payment method") |
+| `authorization_signed_in` | the identity is settled and access allowed | `method`: the provider, `sso` (organization sign-in, self-hosted, see [single sign-on](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md#connecting-an-ai-client>)), `password`, `session`, `email_code`; `account`: `new` (created in the last 30 minutes) or `existing` |
+| `empty_workspace_prompt` | the page of the test is shown | |
+| `post_approve_app_picked` | an app is picked on it | |
+| `post_approve_continue_clicked` | Continue is pressed on it | `button`: `continue`, `copy_continue` when "Copy & continue" pressed it, or `auto_continue` when the page went on by itself |
+| `authorize_step_viewed` | a step between sign-in and the code is shown | `step`: `email-code` (code step for an unverified address), `servers` ("Choose what to connect"), `wrong-workspace` (the client asked for a server this account cannot reach) |
+| `authorize_request_closed` | a browser reaches the flow without an open authorization and gets the "no longer open" page | `via`: `login`, `next` or `callback`; `device`. No account, no attempt |
+| `authorization_code_issued` | the code is handed to the client's redirect | |
+| `authorization_code_exchanged` | the client presents the code | `client` only: no browser is present |
+
+`post_approve_continue_clicked` and the `create_account` button are reported by the page with `navigator.sendBeacon` to `POST /auth/beacon`, which never delays the click. That route writes one event, only for the pending authorization of the browser that names its own attempt, and always answers 204.
+
+To read the test, compare the arms on attempts that have an `empty_workspace_prompt`: the share with an `authorization_code_issued` in the same attempt (the person came back to the client), and the share of those codes followed by an `authorization_code_exchanged` of the same user (the client really connected).
+
+### What the flow does when something is off
+
+- **The page after approving has its own address**, `GET /auth/next`. The request that finishes the sign-in answers with a redirect to it, and the page is rendered from signed cookies that live as long as the pause. Reload, the Back button and a tab restored by a phone show the page again; an app picked on it stays shown as added.
+- **A request that is no longer open** (it expired after 30 minutes, its code was already issued, or the address was opened from a bookmark) gets one page on `/auth/login`, `/auth/next` and `/callback`: "This connection request is no longer open", with what to do (go back to the AI client; press Connect again if it is not shown as connected). `/callback` answers it with status 400, as the OAuth library's JSON did.
+- **Continue works once.** A second press within five seconds is dropped on the page; the sign-in cookie is cleared as soon as the code is on its way to the client.
+- **The sign-in is bound to one authorization.** `/callback` accepts the sign-in cookie only for the pending authorization it was issued for; another authorization started in the same browser asks for consent itself.
+- **Cancel tells the client**: a redirect to its registered address with `error=access_denied`, its `state` and `iss`.
+- **The rate limit answers a person with a page** ("Too many attempts", status 429); the routes that scripts call keep the JSON answer.
+- **A message for the sign-in page travels as a key.** A step that sends the person back to `/auth/login?error=…` (session expired, wrong password, wrong workspace, sign-in cancelled, authorization expired, single sign-on unavailable, …) puts the key of the message into the address (`error=sessionExpired`, or `error=providerNoEmail:google` for the three that name a provider), and the page writes the text in its own language. The English text an older redirect carried is still recognised, so a page that was already open keeps working; any other text is shown as it is, escaped.
+- **Pages without an attempt speak the browser's language.** "This connection request is no longer open", "Too many attempts" and "Request Cancelled" without a pending authorization have no attempt to read a test arm from (see [Sign-in page test](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#sign-in-page-test>)): they are shown in the browser's language (`en`, `de`, `it`, `es`, `zh`, `ja`, `ru`; English otherwise) to everyone, on Cloud and on a self-hosted instance.
+- **`GET /auth/pending`** tells the dashboard (same origin, Cloud) whether an authorization is waiting in this browser and whether "Allow" or only "Continue" is missing, so it can show a way back.
+- ChatGPT's database plugin never gets the page after approving (it has no setup tools). A workspace whose free trial has ended gets it without the app picker and the example request.
+
+### Sign-in page test
+
+The sign-in page inside an authorization runs as a second split test, independent of the first (another hash of the same session), set with `AUTHORIZE_SIGNIN_PAGE_TEST`:
+
+| Arm | What the person sees |
+|-----|----------------------|
+| `control` | The page as before, in English |
+| `buttons_first` | The page in the browser's language (`en`, `de`, `it`, `es`, `zh`, `ja`, `ru`; English otherwise), one line on what the person gets, the Google / Microsoft / GitHub buttons right under the heading on every screen, the consent box after the buttons (a short form of its destination warning stays above them), and "Create an account with email" as a link under the form instead of the sign-up box |
+
+Unset: an equal split. `off`: the page as before, no arm recorded. `control` or `buttons_first`: that arm for everyone. The arm is recorded on the same events as `signinArm`. To read it, compare the arms on attempts with an `authorize_page_viewed`: the share with any `authorize_action` (the person did something), and the share with an `authorization_code_issued` (the person came back to the client).
+
+The arm also sets the language of every page of that attempt after the sign-in page: the e-mail code step, "Choose what to connect", the page after approving (its app picker, the one-tap Telegram panel, the texts its scripts write, and what `POST /auth/first-app` and the Telegram status and token routes answer to the page), the File Search folder page, and the messages shown on the sign-in page. On `buttons_first` they are in the browser's language; on `control`, with the test `off`, and on a self-hosted instance (which has no arm) they are in English. One attempt never mixes languages: every page derives its language the same way, from the arm of the pending authorization and the browser's `Accept-Language`. Dates are written in the page's language.
+
+Still English in every language: the trust row and the footer under the card, the directory badge, the messages the Telegram bot itself sends in Telegram, a refusal worded by Telegram or by an adapter's own credential check, and the answers of `POST /auth/file-search/session` (shown by the dashboard, which has its own language). The texts are in `packages/backend/src/auth/auth-page-i18n*.ts`, one typed object per language, so a key missing in one language does not compile. Texts of the page scripts are embedded as one JSON object literal per script (`scriptTexts`: `<`, `>`, `&`, U+2028 and U+2029 written as escapes) and only ever written with `textContent`.
+
+### Card-trial offer test
+
+An admin on the free trial who can still add a payment method sees an offer under **Continue** on the page after approving. It is never above Continue and never in its place. A third split test, independent of the other two, sets how it looks, with `AUTHORIZE_TRIAL_OFFER_TEST`:
+
+| Arm | What the person sees |
+|-----|----------------------|
+| `control` | The secondary button "Add a payment method (optional)" and one line under it, as before |
+| `panel` | A box: "Free until {date}. Keep it running after?", the button "Add a payment method · €0 today", what it gives (the trial's higher connector limit, no interruption when the trial ends), when the first charge would be, and that the person comes straight back to the client |
+
+Both lead to the same `/start-trial?source=post_approve` page, which returns through `/callback`. Unset: an equal split. `off`: the offer as before, no arm recorded. `control` or `panel`: that arm for everyone. The arm is recorded as `trialOfferArm` on the events of the attempt (`empty_workspace_prompt`, `authorize_action`, `post_approve_continue_clicked`, `authorization_code_issued`). To read it, compare the arms on `empty_workspace_prompt` with `cardTrialOffered`: the share with a completed `post_approve` checkout (Stripe, by the workspace), and the share with an `authorization_code_issued`, which must not drop.
 
 ## External Services
 
@@ -2827,6 +2904,57 @@ On an OData connector, imported and hand-written HTTP tools get the SAP client a
 SAP's API policy expects third-party integrations to use published APIs (`API_*` services on the SAP Business Accelerator Hub) or services the customer built; restrict `services` accordingly.
 
 The **SAP S/4HANA (OData)** catalog adapter packages all of this for on-premise and Private Cloud systems: the built-ins with the `s4` prefix, ready tools for journal entry items, billing documents, sales orders, business partners, material stock and products, and a guide (`s4_guide`) to filters, analytical services and KPIs.
+
+---
+
+## docs/connectors/onenote-resources.md
+
+Source: https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/onenote-resources.md
+
+# Reading OneNote images and attachments
+
+The OneNote connector can fetch images and attached files that appear as
+authenticated Microsoft Graph links in a page's HTML. It uses the account
+that authorized the connector on both AnythingMCP Cloud and self-hosted
+installations. The existing delegated `Notes.ReadWrite` permission covers
+the resource download; a read-only setup can use `Notes.Read`.
+
+## Read an image from a page
+
+1. Use `microsoft_onenote_get_page_content` to read the page HTML.
+2. Find the image's `/resources/{id}/` link. Prefer `data-fullres-src` when
+   present to retrieve the original image rather than its preview.
+3. Call `microsoft_onenote_get_resource` with only that `resource_id`:
+
+   ```json
+   { "resource_id": "0-resource-id-from-the-page" }
+   ```
+
+Do not pass the complete resource URL, its `/content` or `/$value` suffix,
+or an access token as an argument. The connector adds its existing sign-in
+and requests the documented Graph endpoint
+`/me/onenote/resources/{resource_id}/content`.
+
+PNG, JPEG, GIF and WebP downloads are returned as MCP image content for
+clients that support images. Other binary files, such as PDF attachments,
+are returned as embedded resources. The client must support that content
+type to make use of the attachment; the tool does not extract a PDF's text.
+
+## Limits
+
+- The attachment limit is 4 MiB. Larger files are described without embedding
+  their bytes; the instance's HTTP response-size limit also applies.
+- A resource must be accessible to the Microsoft account that authorized
+  the connector. This tool does not make a private Graph link public.
+- Resources already present in a page can be downloaded. Uploading new
+  attachments is outside this tool's scope.
+- Handwritten ink strokes are not rendered by this tool. An existing image
+  of a printout can be read, but the tool does not render an entire page or
+  combine its text, images and ink.
+
+See the [Graph resource API](<https://learn.microsoft.com/en-us/graph/api/resource-get?view=graph-rest-1.0>)
+and [OneNote content guide](<https://learn.microsoft.com/en-us/graph/onenote-get-content>)
+for the resource paths and delegated permissions.
 
 ---
 
@@ -7050,7 +7178,7 @@ should see what their AI client can use, and their own calls, nothing more.
 | Mode | What a member who is not an admin sees |
 |---|---|
 | **Open** (default) | Everything in the workspace, as before this setting existed. |
-| **Restricted** | Only their own tool calls, the connectors their MCP roles reach, and the MCP servers they own. Of a connector they do not own: its name, its status and the tools they may use, not its settings. Never another member's MCP server. |
+| **Restricted** | Only their own tool calls, the connectors their MCP roles reach, and the MCP servers they own. Of a connector they do not own: its name, its status and the tools they may use, not its settings. Never another member's MCP server. The dashboard lists only the pages they can use ([navigation](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#what-a-restricted-member-sees-in-the-navigation>)). |
 
 Admins always see everything, in both modes. "Member" below means a VIEWER or
 an EDITOR of the workspace. An EDITOR also keeps seeing the connectors they
@@ -7069,12 +7197,12 @@ workspace until an admin switches it.
 
 | Area | Open | Restricted, member |
 |---|---|---|
-| Audit log (`GET /api/audit/invocations`) | Every call of the workspace, with the caller and the full input and output | Only the calls the member made. Calls without a user (for example a static key) are hidden. A call made through an MCP server the member does not own keeps its content, but `mcpServer` and `mcpServerId` are null; `mcpServerId=` of such a server matches nothing. The page says "You see your own calls. Workspace admins see all calls." |
-| Analytics, stats, tool performance (`/api/audit/stats`, `/analytics`, `/breakdowns`, `/tool-performance`) | Workspace-wide numbers, including calls per user and per server | The same numbers, counted over the member's own calls only. The "by user" panel is hidden; the API's `byUser` holds only the member's own row. Only the member's own servers are named: `byServer` counts calls through any other server in one row with `id: null` ("Other server or none"), and tool performance reports them with `mcpServerId: null`. |
+| Audit log (`GET /api/audit/invocations`) | Every call of the workspace, with the caller and the full input and output | Only the calls the member made. Calls without a user (for example a static key) are hidden. A call made through an MCP server the member does not own keeps its content, but `mcpServer` and `mcpServerId` are null; `mcpServerId=` of such a server matches nothing. The page says "You see your own calls. Workspace admins see all calls." The error text of a failed call (`error`) on a connector the member reads in the reduced view is replaced: see [error text of a call](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#error-text-of-a-call>). |
+| Analytics, stats, tool performance (`/api/audit/stats`, `/analytics`, `/breakdowns`, `/tool-performance`) | Workspace-wide numbers, including calls per user and per server | The same numbers, counted over the member's own calls only. The "by user" panel is hidden; the API's `byUser` holds only the member's own row. Only the member's own servers are named: `byServer` counts calls through any other server in one row with `id: null` ("Other server or none"), and tool performance reports them with `mcpServerId: null`. `lastError` of tool performance follows the same rule as the audit log's `error`. |
 | Connectors (`GET /api/connectors`, `/health-check`) | Every connector with all of its tools and settings | Connectors that hold at least one tool the member's roles allow, plus, for an EDITOR, the connectors they own. A connector an EDITOR owns comes back in full. One they do not own comes back in the [reduced view](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#what-a-member-sees-of-a-shared-connector>), with only the allowed tools. |
 | Connector and tool detail (`/api/connectors/:id`, its per-user sign-in, tools) | Any connector of the workspace | 404 for a connector the member cannot see, with the same body as an unknown id. A member cannot tell "hidden" from "does not exist". A connector they can see but do not own comes back in the reduced view. On a connector they own, `mcpServers` lists only the servers they own. |
 | Connector settings (`/api/connectors/:id/oauth-config`) | Any connector of the workspace | Only for a connector the member owns; 404 for the others, visible or not. |
-| Owner-or-admin reads (`/api/connectors/:id/webhook/url`, `/webhook/events`, `/catalog-diff`, a tool's `/annotations` and `/response-mapping`) | Owner or admin only (403 for other members) | 404 for a connector the member cannot see, and for a tool outside their roles on a connector they do not own; otherwise as in Open. |
+| Owner-or-admin reads (`/api/connectors/:id/webhook/url`, `/webhook/events`, `/catalog-diff`, a tool's `/annotations` and `/response-mapping`) and the connection test (`POST /api/connectors/:id/test`) | Owner or admin only (403 for other members) | 404 for a connector the member cannot see, and for a tool outside their roles on a connector they do not own; otherwise as in Open. |
 | Exports (`/api/connectors/export-all`, `/:id/export`) | Every connector, secrets masked unless admin | Only connectors an EDITOR owns; nothing for a VIEWER; 404 for the others. |
 | File Search (`/api/file-search/connectors/:id` and everything below it: overview, tree, problems, runs, scans, sync, schedule, description, access rules) | Any File Search connector of the workspace | 404 unless the member is an EDITOR who owns the connector, including a File Search connector shared with them through their roles: these routes show the source's address, every folder and file name and the role rules, more than the tools let their AI client read. They use the File Search tools instead. `capabilities` and `policy` (plan, limits, aggregate usage) are unchanged. |
 | MCP servers (`GET /api/mcp-servers`, `/:id`, `/:id/activity`, and `PUT`/`DELETE` `/:id`, `PUT /:id/connectors`) | Every server, with the names of all its connectors | Only the servers the member owns, never another member's server, not even one holding a connector they can see. On their own servers, connector names and counts list only the connectors they can see. Every other server answers 404 with the body of an unknown id, on reads and writes. Assigning a connector they cannot see to their own server answers 404 like an unknown connector. |
@@ -7085,6 +7213,8 @@ workspace until an admin switches it.
 | Catalog (`/api/adapters/popular-connectors`, `/starter-pack`) | `installed` for every connector of the workspace | `installed` only for connectors the member can see. |
 | Members, invitations, roles, identity providers (`/api/users`, `/api/roles`, ...) | Admins only | Admins only (unchanged) |
 | MCP endpoint (`/mcp`, `/mcp/<serverId>`) | Tools filtered by MCP roles | Unchanged: roles already decide what an AI client can list and call. The server links the workspace connection hands to the model (`anythingmcp_get_configuration_url`) list only the member's own servers. |
+| Tool names inside tools (`kg_how_to_obtain`, the knowledge-graph resource, `amcp.search` in code mode) | Every tool of the connectors in reach | Only the tools the member's roles allow, in both modes whenever roles limit tools: a connector is in reach with one allowed tool, and these answers named all of its tools. An entity only denied tools reach is left out. |
+| Connector status in the chat (`setup_get_status` on the workspace connection, EDITOR and ADMIN) | Up to 50 connectors of the workspace, with links to finish or fix a setup and the provider's last error | The connectors the member can see. One they own: as in Open. One shared with them: its name and status only, no link and no error text. |
 
 Writes keep their rules: changing or deleting a connector or a server stays
 limited to its owner or an admin, in both modes. In restricted mode a server
@@ -7142,6 +7272,63 @@ A restricted member who sees no connector or server gets "Nothing has been
 shared with you yet. Ask a workspace admin for a role." on the Connectors and
 MCP Servers pages, and is not sent into the setup wizard (`/welcome`).
 
+### What a restricted member sees in the navigation
+
+In restricted mode the sidebar, the settings navigation and the command
+palette list only the pages a member can use. A page that is not listed does
+not open either: typing its URL, a bookmark or a link from a colleague ends on
+the **Connectors** list with the note "This page is not available to you". The
+page is not drawn first and none of its requests is sent.
+
+| Page | VIEWER | EDITOR |
+|---|---|---|
+| Dashboard, Analytics, Audit Log, Connectors (and a connector they can see) | Yes | Yes |
+| Marketplace, New connector, guided connector setup | No | Yes: an EDITOR creates connectors |
+| MCP Servers | Only when they own a server (every invited member gets `Default (<name>)`) | Yes: an EDITOR creates servers |
+| Memory | Only where Memory is licensed and their memory access is not "none" | The same; an EDITOR also curates the company memory |
+| Knowledge Graph, AI Skills, Learning projects | No | No: other members' work, admins only |
+| Setup & onboarding (`/welcome`) | No | No: it sets up a workspace |
+| Settings: Profile, Connections, General (Organization), File Share | Yes | Yes |
+| Settings: Users, Roles, Single sign-on, License, Administration | No | No (admins only, as in Open) |
+
+On **Settings → Organization** a restricted member sees the workspace name,
+their role and their workspaces, not the feature switches.
+
+Two pages are refused by what they are asked for, not by their address: the
+page of an MCP server that is not the member's (`/mcp-server/<id>`) sends them
+back to their own list, and a File Search hand-off that cannot be opened
+(`/setup/file-search`) sends a member who may not set up a connector to their
+connectors, both with the same note.
+
+Admins see every page in both modes. In an Open workspace nothing changes for
+anyone: every entry is listed, and a page for admins shows its "Access Denied"
+panel to a member, as before.
+
+The rules live in one place, `packages/frontend/src/lib/member-access.ts`. The
+navigation is a convenience, not the access control: the API refuses what a
+member may not read whatever the dashboard shows.
+
+So that a restricted member does not see an admin's navigation for a moment
+on every page load, the dashboard sets a cookie `amcp_nav=restricted` in the
+browser of a restricted member, and the server renders their first HTML from
+it: the narrow navigation, and nothing of a page that is not theirs. Nobody
+else gets the cookie, and without it the server renders what it always did.
+On their very first load in a browser a restricted member therefore sees the
+whole navigation until their answer has loaded, a moment later. The cookie
+decides only what is drawn.
+
+### One browser, two accounts
+
+The dashboard keeps its session in the browser's local storage, which every
+tab of that browser shares. Signing in as an admin in one tab and as a member
+in another does not give two sessions: the last sign-in is the session of
+both. A tab now notices when another tab signs out, signs in as someone else
+or switches workspace, and loads again as that account, instead of keeping
+the previous account's name and navigation on screen.
+
+To look at the dashboard as a member while staying signed in as an admin, use
+a private window or a second browser profile.
+
 ### VIEWERs cannot create MCP servers
 
 A VIEWER cannot create an MCP server in any mode: `POST /api/mcp-servers`
@@ -7156,13 +7343,39 @@ Restricted mode hides identities and content, not every number:
 
 - **Aggregate counts.** `GET /api/license/usage` keeps returning the
   workspace's number of connectors, servers and users. These carry no identity.
+  Members need them on Cloud: the count against the plan's limit decides
+  whether an EDITOR is offered "Add connector", and the ids of connectors and
+  servers a plan change paused mark those on the member's own list. The
+  self-hosted dashboard does not ask for it.
 - **Their own servers' activity.** For a server the member owns,
   `GET /api/mcp-servers/:id/activity` and the list's `usage` return the
   server's two numbers (calls in the last 30 days, time of the last call),
   counted over all callers.
-- **The member's own calls**, with their full input and output. They made
+- **The member's own calls**, with their full input and output (for the text
+  of an error see [error text of a call](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#error-text-of-a-call>)). They made
   those calls, including through a server they do not own (that server is not
   named).
+
+### Error text of a call
+
+The error stored with a failed call often says where the connector connects:
+"Host not found: 'erp.corp.example' could not be resolved", a response body
+quoting the request URL, a database error naming host, database and user. A
+restricted member reads a connector they do not own in the reduced view,
+without its address, so the audit log (`error`) and tool performance
+(`lastError`) do not hand that text back either. For a call on such a
+connector they get the HTTP status, when the call ended with one, and a fixed
+sentence:
+
+```
+HTTP 404. The call failed. Its details are kept for the connector's owner and the workspace admins.
+```
+
+An EDITOR keeps the full text for the connectors they own; admins, and
+everyone in an Open workspace, keep it for every call. `input` and `output`
+of the member's own calls are unchanged. The member's AI client still receives
+the full error when the call fails, as before: the model needs it to correct
+the call.
 
 ## How a restricted member connects their AI client
 
@@ -7183,6 +7396,12 @@ in one of two ways:
 Connections made before the workspace was switched to restricted keep working:
 the MCP endpoint is unchanged and roles still decide the tools. The dashboard
 just no longer names a server the member does not own.
+
+That includes a connection to a team server an admin owns: the member's AI
+client keeps reaching `/mcp/<that server's id>` and gets the tools their roles
+allow on it. A client that connects there learns the server's name and its
+instructions, which the dashboard no longer shows the member; it cannot list
+or call a tool outside their roles.
 
 ## Set it up with roles and SSO group mapping
 
@@ -7206,16 +7425,73 @@ of its tools. So set up the roles first, then switch the mode:
    marked and can only be changed in the role mappings, and the last column
    counts the connectors the member's roles reach.
 4. **Switch to Restricted** under **Settings → Organization → Security →
-   Member visibility**, and save.
+   Member visibility**, and save with the button of that card. Choosing
+   Restricted alone changes nothing: the card shows the mode that is active
+   ("Active now: Open"), says "Not saved yet" while the choice differs from
+   it, and the page asks before it is left with an unsaved choice (the
+   browser on a reload or a closed tab, the dashboard on one of its links).
 
 If no role in the workspace has a tool list yet, roles narrow nothing: every
-member may call every tool, so in restricted mode they still see every
-connector (only their calls are narrowed to their own). The settings page
-warns about this and links to **Settings → Roles**.
+member may call every tool, so in restricted mode a member, with or without a
+role, still sees every connector, in the reduced view (name, status and tools,
+not its settings). Only their calls are narrowed to their own, and the
+navigation to the pages above. The settings page says so while Restricted is
+chosen and while it is active, and links to **Settings → Roles**.
 
 Once any role in the workspace has a tool list, a member with **no** role gets
 no tools on the MCP endpoint, and so sees in restricted mode only the
 connectors they own as an EDITOR, and none as a VIEWER.
+
+### Invitations
+
+An invitation carries the workspace role and the MCP roles the member gets
+when they accept it.
+
+- **Inviting the same address again applies the new values.** While an
+  invitation is pending, a second invitation to that address reuses its link
+  and sends the mail again. The role and the MCP roles of the second attempt
+  replace those of the first, so the member gets what the last mail says. (It
+  used to keep the first attempt's role: an invitation sent as Editor and
+  corrected to Viewer made an Editor.)
+- **The invite form offers Viewer first** in a restricted workspace, Editor in
+  an open one. An Editor creates connectors and always sees the ones they
+  own; pick it on purpose.
+
+### Who may create a workspace
+
+Whoever creates a workspace (`POST /api/organizations`, "Create New
+Organization" under **Settings → Organization**) becomes its ADMIN.
+
+- **Cloud:** every signed-in user may create their own workspace. An admin of
+  one workspace reaches nothing outside it.
+- **Self-hosted:** only someone who is an ADMIN of their active workspace; a
+  VIEWER or an EDITOR gets 403 and is not shown the form. On a self-hosted
+  instance a workspace ADMIN is the operator: they reach every admin page and
+  the instance-wide list of hosts exempt from the SSRF guard
+  (**Settings → Administration**). A member could otherwise make themselves
+  one in a single request.
+
+There is no separate instance-admin role: on a self-hosted instance every
+ADMIN of any workspace can change the instance-wide settings. Give the ADMIN
+role, in any workspace of the instance, only to people who may do that. A
+workspace a member created before this rule existed keeps them as its ADMIN;
+list the workspaces and their admins once after upgrading and remove what
+should not be there.
+
+### Static instance credentials bypass roles
+
+`MCP_API_KEY`, `MCP_BEARER_TOKEN` and `MCP_AUTH_MODE=none` are credentials of
+the instance, not of a person. A client that connects with one of them carries
+no user, so there is no role to apply: it lists and calls **every tool of
+every connector**, in both modes, and its calls appear in the audit log
+without a user.
+
+Do not use them on an instance that relies on roles or on Restricted mode.
+Leave `MCP_API_KEY` and `MCP_BEARER_TOKEN` unset and set `MCP_AUTH_MODE` to
+`oauth2` or `both`, never `none` or `legacy`
+([MCP auth modes](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/deployment.md#mcp-auth-modes>)). Each member then connects
+as themselves, with an OAuth sign-in or a personal MCP API key they create in
+the dashboard, and gets the tools of their roles.
 
 ### A member still sees more than their role
 
@@ -7229,10 +7505,23 @@ Check, in this order:
    last column lists them.
 3. **Whether they are an Editor who owns connectors.** An Editor always sees
    the connectors they created. Make them a Viewer if they should not manage
-   connectors.
+   connectors. In a workspace with more than one active member, an admin sees
+   the owner of each connector on its card and on its page ("Owner: …").
 4. **The mode of the workspace they are in**: signed in as the member,
    `GET /api/settings/member-visibility` answers
    `{"mode":"restricted","restrictedForMe":true}`. The mode is per workspace.
+   On **Settings → Organization** the card shows "Active now: Restricted"
+   only once the choice was saved.
+5. **Whether any role has a tool list.** Without one, roles narrow nothing and
+   every member sees every connector in the reduced view (see above).
+6. **Whose session the browser holds.** Two tabs of one browser share one
+   session ([one browser, two accounts](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#one-browser-two-accounts>)): what
+   looks like the member's view may be the admin's. Check with a private
+   window.
+7. **How their AI client connects.** A client using `MCP_API_KEY`,
+   `MCP_BEARER_TOKEN` or an instance with `MCP_AUTH_MODE=none` is not that
+   member and gets every tool
+   ([static instance credentials](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#static-instance-credentials-bypass-roles>)).
 
 ## Route decisions (for contributors)
 
@@ -7999,6 +8288,70 @@ immediately — Entra provisioning fails until the new one is pasted in.
 
 ---
 
+## Connecting an AI client
+
+When a member connects Claude, ChatGPT or another MCP client, the client opens
+AnythingMCP's authorization page (`/auth/login`). On a self-hosted instance with
+an active provider that page has a button for it, above the email and password
+fields:
+
+- **On the shared URL (`/mcp`) and on a server's own URL (`/mcp/<serverId>`).**
+  The page shows the providers the dashboard sign-in page shows, no more: every
+  active provider of the instance. For a server's own URL the providers of that
+  server's workspace come first.
+- **After the provider.** The person continues exactly as after a password
+  sign-in on that page:
+  - The client asked for one server by URL: that server is granted. If the
+    account is not an active member of that server's workspace, the page says
+    so and no access is given.
+  - The client asked for the shared URL and the person can reach one server:
+    that server is granted, without a question.
+  - The client asked for the shared URL and the person can reach several
+    servers that have connectors (or belongs to several workspaces): the page **Choose what to
+    connect** is shown once per connection.
+  - What was granted is listed under **Settings → Connections** and can be
+    changed or revoked there, without reconnecting.
+- **If the provider answers with an error**, the person is back on the
+  authorization page with a message and can try again.
+
+With **Require single sign-on** on (§4), the authorization page refuses a
+password for every member of the workspace, as the dashboard does, before the
+password is looked at: *This workspace requires single sign-on. Use your
+organization sign-in on this page.* The provider's button is on that page. An
+account whose own password sign-in is disabled is refused in the same way.
+
+A member who is already signed in to the dashboard in that browser is offered
+**Allow access** instead of a sign-in. This follows the dashboard: a session
+that was opened with a password before **Require single sign-on** was turned on
+stays valid until it expires or is revoked, there and here. To end those
+sessions when you turn the requirement on, use **Settings → General → Security
+→ Sign everyone out** (see [Signing people out](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/sso.md#signing-people-out>)).
+
+Recovery codes (§5) work on the dashboard sign-in page only. With a recovery
+code, sign in to the dashboard first, then connect the client in the same
+browser and choose **Allow access**.
+
+### Upgrading an instance that already uses single sign-on
+
+Before this behaviour, the button was shown only for a server's own URL, and a
+sign-in through the provider went straight back to the client. What changes:
+
+| Situation | Before | Now |
+|---|---|---|
+| Connections that already exist | Work | Work unchanged, until the client signs in again |
+| A client that uses a server's own URL | Connected to that server | The same. The connection is now also listed under **Settings → Connections** |
+| A client that uses the shared URL | No button: only a password or an open dashboard session got through | The button is there. One reachable server, or only one that has connectors: connected without a question. Several with connectors: **Choose what to connect**, once |
+| A member of a workspace that requires single sign-on types a password on the authorization page | Accepted | Refused with the message above; the button gets them through |
+| A sign-in for a server of a workspace the person is not (or no longer) an active member of | A token was issued and every call with it was refused | Refused on the page, with the reason |
+| The provider answers with an error | The dashboard sign-in page, with no way back to the client | The authorization page, with a message |
+
+A connection through the shared URL reaches the connectors **on the granted
+server**. A connector that is on no server is not part of it: put it on the
+server (**MCP Servers → the server → Connectors**), or grant the whole workspace
+under **Settings → Connections**.
+
+---
+
 ## Turning SSO off
 
 | Goal | How |
@@ -8102,6 +8455,8 @@ deactivated keys cannot be restored.
 | `ROLE_SYNC_SKIPPED` with `reason: overage` | The user is in too many groups; switch the claim to *Groups assigned to the application* |
 | Cannot enable **Require single sign-on** | Complete one dashboard sign-in through the provider, and generate recovery codes |
 | Every SSO route returns 404 | You are on AnythingMCP Cloud. SSO is self-hosted only |
+| *This workspace requires single sign-on* when connecting an AI client | The workspace has **Require single sign-on** on. Use the provider's button on the same page |
+| A member lands on **Choose what to connect** when connecting an AI client | They can reach more than one MCP server that has connectors. They pick once; the choice is kept for that client |
 | Entra's **Get started** for provisioning is greyed out | The app came from *App registrations*. Provisioning needs a second, non-gallery app — see §6 |
 | **Test connection** fails | The Tenant URL must end in `/api/scim/v2` and be reachable from Microsoft's network; the token must be the current one. A rotation invalidates the old token immediately |
 | Provisioned, but the user has no tools | No mapped group matched, so the fallback applied. Assign MCP roles to the `from SCIM` row under *Role mappings*, or check role sync is on and reading **groups** |
@@ -8818,6 +9173,16 @@ curl -s http://localhost:4000/api/auth/invite \
   -H 'Content-Type: application/json' \
   -d '{"email":"user@example.com","role":"EDITOR","mcpRoleId":"optional-role-id"}'
 ```
+
+Inviting an address that already has a pending invitation reuses its link,
+sends the mail again and applies the `role` and MCP roles of this call to it.
+
+### Create a workspace
+
+`POST /api/organizations` with `{"name":"..."}` creates a workspace and makes
+the caller its ADMIN. Cloud: any signed-in user. Self-hosted: only an ADMIN of
+the active workspace (403 otherwise); see
+[who may create a workspace](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/operations/member-visibility.md#who-may-create-a-workspace>).
 
 ---
 

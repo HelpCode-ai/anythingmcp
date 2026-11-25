@@ -58,6 +58,7 @@ import { PrismaService } from '../common/prisma.service';
 import {
   McpConnectionGrantService,
   ResolvedGrant,
+  grantServerScopeMode,
 } from '../mcp-servers/mcp-connection-grant.service';
 import {
   SharedToolsetDeps,
@@ -749,6 +750,10 @@ export class McpEndpointController {
           if (!byOrg.has(t.organizationId)) byOrg.set(t.organizationId, new Set());
           byOrg.get(t.organizationId)!.add(t.connectorId);
         }
+        // `scopeTools` is already what the caller's roles allow. Where roles
+        // limit tools, the graph names those tools only (a connector is in
+        // scope with one allowed tool, and its graph names all of them).
+        const roleLimited = (req as { roleLimitedOrgIds?: Set<string> }).roleLimitedOrgIds;
         const results: unknown[] = [];
         for (const [orgId, connectorIds] of byOrg) {
           if (!(await this.kgService.isEnabled(orgId))) continue;
@@ -756,6 +761,9 @@ export class McpEndpointController {
             await this.kgService.lookup(orgId, query, {
               connectorIds: [...connectorIds],
               folders: await this.folderAccessFor(orgId, user.sub),
+              allowedToolNames: roleLimited?.has(orgId)
+                ? new Set(scopeTools.filter((t) => t.organizationId === orgId).map((t) => t.name))
+                : null,
             }),
           );
         }
@@ -964,6 +972,11 @@ export class McpEndpointController {
     // The full entries, not just the names: `answerToolsList` builds this
     // caller's tools/list from them.
     (req as { visibleTools?: RegisteredTool[] }).visibleTools = visible;
+    // The workspaces whose roles limit this caller's tools (an allow-list,
+    // not `null`): there the knowledge graph names allowed tools only.
+    (req as { roleLimitedOrgIds?: Set<string> }).roleLimitedOrgIds = new Set(
+      [...allowedByOrg].filter(([, allowed]) => allowed !== null).map(([orgId]) => orgId),
+    );
 
     const visibleNames = new Set(visible.map((t) => t.name));
     user.roles = [
@@ -1344,6 +1357,106 @@ export class McpEndpointController {
     return true;
   }
 
+  /** `MCP_GRANT_SERVER_SCOPE=report`: until when each (client, user, server) stays reported. */
+  private readonly reportedOutsideGrant = new Map<string, number>();
+
+  /**
+   * Applies the connection grant on a server's own URL.
+   *
+   * While authorizing, the person chose what the client may reach (or the
+   * client asked for one server by its URL), and that choice is stored as the
+   * client's grant. Membership of the workspace is not enough then: a client
+   * allowed one server must not open the workspace's other servers with the
+   * same token. A server outside the grant, or a revoked connection, is
+   * answered like a sign-in for the wrong workspace: 401 with `invalid_token`
+   * and a marker for the refresh grant, so the client runs the authorization
+   * again for this URL and the person can allow it (the grant is then
+   * extended, see `grantRequestedServer`).
+   *
+   * Only OAuth tokens have a grant. API keys, app JWTs and the static
+   * credentials pass, and so does a client without a grant row (tokens from
+   * before grants existed). `MCP_GRANT_SERVER_SCOPE=report` logs instead of
+   * refusing, once per client, user and server in ten minutes, and `off`
+   * skips the check.
+   *
+   * Call it only after the caller is known to be a member of the server's
+   * workspace. Returns true when it has answered.
+   */
+  private async refuseOutsideGrant(
+    serverId: string,
+    serverOrganizationId: string | null | undefined,
+    req: Request,
+    res: Response,
+  ): Promise<boolean> {
+    const mode = grantServerScopeMode();
+    if (mode === 'off') return false;
+    const user = (req as any).user;
+    if (user?.authMethod !== 'jwt' || !user?.sub) return false;
+    const clientId = oauthClientId(user);
+    if (!clientId) return false;
+
+    // Report only: what was just reported is not looked up or logged again,
+    // so a busy client outside its grant costs one lookup in ten minutes.
+    const reportKey = `${clientId}\u0000${user.sub}\u0000${serverId}`;
+    if (mode === 'report' && (this.reportedOutsideGrant.get(reportKey) ?? 0) > Date.now()) return false;
+
+    // A lookup that fails refuses nothing, as on the refresh grant: this check
+    // must not be what takes a working connection down.
+    const scope = await this.grants
+      .serverScope(clientId, user.sub, { id: serverId, organizationId: serverOrganizationId })
+      .catch((err: any) => {
+        this.logger.warn(`MCP grant scope: lookup failed, request served (${err?.message ?? err})`);
+        return 'no-grant' as const;
+      });
+    if (scope === 'no-grant' || scope === 'granted') return false;
+
+    const who = `client …${clientId.slice(-6)}, ${this.describePrincipal(user)}`;
+    if (scope === 'not-grantable') {
+      // Member visibility hides the server from this user, so no authorization
+      // could add it to the grant: left reachable, as before grants applied here.
+      this.logger.warn(
+        `MCP grant scope: server ${serverId} is outside the connection grant but hidden from the user ` +
+          `by member visibility, so it stays reachable (${who})`,
+      );
+      return false;
+    }
+    const why =
+      scope === 'revoked' ? 'the connection was revoked' : 'the connection grant does not include it';
+    if (mode === 'report') {
+      this.logger.warn(
+        `MCP grant scope (report only): a request to server ${serverId} would be refused, ${why} (${who})`,
+      );
+      if (this.reportedOutsideGrant.size >= 5000) this.reportedOutsideGrant.clear();
+      this.reportedOutsideGrant.set(reportKey, Date.now() + 10 * 60 * 1000);
+      return false;
+    }
+    this.logger.warn(`MCP request refused: server ${serverId}, ${why} (${who})`);
+
+    // As for the wrong workspace: clients answer a 401 with a refresh grant,
+    // which must be refused too, or they never reach the authorization page.
+    await this.refusals?.mark(user.sub, clientId, serverId).catch(() => undefined);
+    res.setHeader(
+      'WWW-Authenticate',
+      mcpWwwAuthenticate(
+        req,
+        `/mcp/${serverId}`,
+        process.env.SERVER_URL || 'http://localhost:4000',
+        'This connection was not allowed to use this MCP server',
+      ),
+    );
+    res.status(401).json({
+      jsonrpc: '2.0',
+      error: {
+        code: -32001,
+        message:
+          'Connect again: this connection was not allowed to use this MCP server. ' +
+          'Authorize it again from your AI client to allow this server.',
+      },
+      id: null,
+    });
+    return true;
+  }
+
   private async handleMcpRequest(
     serverId: string,
     req: Request,
@@ -1469,6 +1582,9 @@ export class McpEndpointController {
           id: null,
         });
       }
+      // A member of the workspace: the client's grant decides which of its
+      // servers this connection may open.
+      if (await this.refuseOutsideGrant(serverId, serverOrg, req, res)) return;
     }
 
     // A subscriptions/listen stream, once the caller may reach this server:
@@ -1908,6 +2024,10 @@ export class McpEndpointController {
       });
       return true;
     }
+
+    // A live session was opened when the grant allowed this server; the grant
+    // may have been narrowed or revoked since.
+    if (await this.refuseOutsideGrant(serverId, session.organizationId, req, res)) return true;
 
     this.sessionManager.touch(sessionId, Date.now());
     try {
@@ -2431,6 +2551,7 @@ export class McpEndpointController {
     ) {
       const orgId = invocationContext.organizationId;
       const scopeConnectorIds = this.kgScopeConnectorIds(params);
+      const scopeToolNames = this.kgAllowedToolNames(params);
       const scopeServerId = invocationContext.mcpServerId;
       entries.push({
         name: 'kg_how_to_obtain',
@@ -2463,6 +2584,7 @@ export class McpEndpointController {
                 connectorIds: scopeConnectorIds,
                 mcpServerId: scopeServerId,
                 folders: params.folders,
+                allowedToolNames: scopeToolNames,
               });
               // What the workspace remembers about these entities (memory,
               // within the caller's access and folders).
@@ -3087,6 +3209,21 @@ export class McpEndpointController {
   }
 
   /**
+   * The names of the server's tools this caller's roles allow, for the
+   * knowledge graph; null when the roles limit nothing (an admin, or a
+   * workspace without tool whitelists). A connector is in the graph's scope
+   * with a single allowed tool, and its entities name every tool that reaches
+   * them: without this, kg_how_to_obtain and the knowledge-graph resource
+   * named tools beyond the caller's role.
+   */
+  private kgAllowedToolNames(params: ToolSetParams): Set<string> | null {
+    const { serverTools, allowedToolIds } = params;
+    if (allowedToolIds === null || allowedToolIds === undefined) return null;
+    const allowed = new Set(allowedToolIds);
+    return new Set(serverTools.filter((t) => allowed.has(t.id)).map((t) => t.name));
+  }
+
+  /**
    * Registers the caller's instructions and stored resources (see
    * mcp-resources.ts). The plan is built from content already narrowed to the
    * connectors this caller can use, so a resource that is not registered here
@@ -3244,6 +3381,7 @@ export class McpEndpointController {
               mcpServerId: invocationContext.mcpServerId,
               serverName: invocationContext.mcpServerName,
               folders: params.folders,
+              allowedToolNames: this.kgAllowedToolNames(params),
             }),
           },
         ],

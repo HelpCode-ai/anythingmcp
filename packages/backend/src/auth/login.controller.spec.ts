@@ -3,7 +3,8 @@ import { Logger } from '@nestjs/common';
 // LoginController -> SsoService. Nothing here exercises the network half.
 jest.mock('openid-client', () => ({}));
 
-import { LoginController } from './login.controller';
+import { CONTINUE_ONCE_SCRIPT, LoginController } from './login.controller';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
 import { TELEGRAM_ONE_TAP } from '../adapters/telegram-managed-bot';
 import { TELEGRAM_PANEL_SCRIPT } from './first-app-telegram';
 import type { SsoService } from '../identity-providers/sso.service';
@@ -12,6 +13,9 @@ import type { AuthService } from './auth.service';
 import type { PrismaService } from '../common/prisma.service';
 import type { ConfigService } from '@nestjs/config';
 import type { PrismaOAuthStore } from './prisma-oauth.store';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 interface FakeRes extends Response {
   _cookies: Record<string, { value: string; options: any }>;
@@ -53,8 +57,9 @@ function makeRes(): FakeRes {
       this._json = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };
@@ -83,6 +88,7 @@ describe('LoginController', () => {
   let sso: { startMcp: jest.Mock };
   let grants: {
     grantServers: jest.Mock;
+    grantRequestedServer: jest.Mock;
     grantWholeOrganization: jest.Mock;
     listSelectableTargets: jest.Mock;
     resolve: jest.Mock;
@@ -98,11 +104,12 @@ describe('LoginController', () => {
       }),
     };
     prisma = { user: { findUnique: jest.fn(), findMany: jest.fn().mockResolvedValue([]) } };
-    config = { get: jest.fn().mockReturnValue(undefined) };
+    config = { get: jest.fn((key: string) => (key === 'AUTHORIZE_SIGNIN_PAGE_TEST' || key === 'AUTHORIZE_TRIAL_OFFER_TEST' ? 'off' : undefined)) as any };
     store = { getOAuthSession: jest.fn(), getClient: jest.fn() };
     sso = { startMcp: jest.fn() };
     grants = {
       grantServers: jest.fn().mockResolvedValue([]),
+      grantRequestedServer: jest.fn().mockResolvedValue(true),
       grantWholeOrganization: jest.fn().mockResolvedValue(true),
       listSelectableTargets: jest.fn().mockResolvedValue([]),
       // No grant: the user's own organization, as before grants existed.
@@ -124,6 +131,18 @@ describe('LoginController', () => {
   });
 
   describe('GET /auth/login (consent + CSRF)', () => {
+    /** A pending authorization from Claude in this browser (cookie `oauth_session=s1`). */
+    const pending = () => {
+      store.getOAuthSession.mockResolvedValue({
+        sessionId: 's1',
+        state: 'x',
+        clientId: 'client-abc',
+        redirectUri: 'https://claude.ai/api/mcp/auth_callback',
+        expiresAt: Date.now() + 20 * 60_000,
+      } as any);
+      store.getClient.mockResolvedValue({ client_id: 'client-abc', client_name: 'Claude' } as any);
+    };
+
     it('renders the client name and redirect host for a pending OAuth session', async () => {
       store.getOAuthSession.mockResolvedValue({
         sessionId: 's1',
@@ -153,10 +172,12 @@ describe('LoginController', () => {
       expect(csrf).toBeDefined();
       expect(csrf.options.signed).toBe(true);
       expect(csrf.options.httpOnly).toBe(true);
-      expect(res._sent).toContain(`name="csrf" value="${csrf.value}"`);
+      // The form holds the token; the cookie also names the pending authorization it belongs to.
+      expect(res._sent).toContain(`name="csrf" value="${csrf.value.split('.')[0]}"`);
     });
 
     it('renders the provider mark unescaped and the provider name escaped', async () => {
+      pending();
       // Locks the new markup and the escaping invariant together: the SVG
       // must reach the page intact, the admin-supplied name must not.
       (prisma as any).mcpServerConfig = {
@@ -172,7 +193,7 @@ describe('LoginController', () => {
       await controller.showLoginPage(
         undefined as unknown as string,
         undefined as unknown as string,
-        makeReq({ cookies: {}, signedCookies: { mcp_resource: 'srv-1' } } as any),
+        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { mcp_resource: 'srv-1' } } as any),
         res,
       );
 
@@ -196,14 +217,15 @@ describe('LoginController', () => {
         { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false } as any,
         grants as any,
       );
+      pending();
       const res = makeRes();
       await cloud.showLoginPage(
         undefined as unknown as string,
         undefined as unknown as string,
-        makeReq({ cookies: {} }),
+        makeReq({ cookies: { oauth_session: 's1' } }),
         res,
       );
-      expect(res._sent).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin"');
+      expect(res._sent).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=claude"');
       expect(res._sent).toContain('href="/forgot-password"');
       // The sign-up is a button at the top of the card, before the form.
       expect(res._sent).toContain('class="signup-btn"');
@@ -221,25 +243,32 @@ describe('LoginController', () => {
         { mode: 'cloud', isCloud: () => true, isSelfHosted: () => false } as any,
         grants as any,
       );
+      pending();
       const res = makeRes();
-      await cloud.showLoginPage('Invalid email or password', undefined as unknown as string, makeReq({ cookies: {} }), res);
+      await cloud.showLoginPage(
+        'Invalid email or password',
+        undefined as unknown as string,
+        makeReq({ cookies: { oauth_session: 's1' } }),
+        res,
+      );
       expect(res._sent).not.toContain('class="signup-btn"');
-      expect(res._sent).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin"');
+      expect(res._sent).toContain('href="/login?mode=register&amp;redirect=%2Fauth%2Flogin&amp;client=claude"');
     });
 
     it('offers no sign-up on self-hosted (registration is invite-based there)', async () => {
+      pending();
       const res = makeRes();
       await controller.showLoginPage(
         undefined as unknown as string,
         undefined as unknown as string,
-        makeReq({ cookies: {} }),
+        makeReq({ cookies: { oauth_session: 's1' } }),
         res,
       );
       expect(res._sent).not.toContain('mode=register');
       expect(res._sent).toContain('href="/forgot-password"');
     });
 
-    it('falls back to a generic form (no consent block) without a session', async () => {
+    it('shows the "no longer open" page, not a form, without a pending authorization', async () => {
       const res = makeRes();
       await controller.showLoginPage(
         undefined as unknown as string,
@@ -248,8 +277,27 @@ describe('LoginController', () => {
         res,
       );
       expect(store.getOAuthSession).not.toHaveBeenCalled();
+      // Signing in here could only end in a refused callback: no form, no token.
+      expect(res._sent).toContain('<h1>This connection request is no longer open</h1>');
+      expect(res._sent).toContain('press <strong>Connect</strong> again');
+      expect(res._sent).not.toContain('name="password"');
       expect(res._sent).not.toContain('class="consent"');
-      expect(res._cookies['login_csrf']).toBeDefined();
+      expect(res._cookies['login_csrf']).toBeUndefined();
+      expect(res._headers['Cache-Control']).toBe('no-store');
+    });
+
+    it('says the same for an authorization that expired, with the message of the step that noticed', async () => {
+      store.getOAuthSession.mockResolvedValue(undefined as any);
+      const res = makeRes();
+      await controller.showLoginPage(
+        'Your authorization request expired. Start again from your AI client.',
+        undefined as unknown as string,
+        makeReq({ cookies: { oauth_session: 'gone' } }),
+        res,
+      );
+      expect(res._sent).toContain('This connection request is no longer open');
+      expect(res._sent).toContain('Your authorization request expired. Start again from your AI client.');
+      expect(res._sent).not.toContain('name="csrf"');
     });
   });
 
@@ -508,7 +556,9 @@ describe('LoginController', () => {
       const res = await getPage({ amcp_token: 'jwt' });
 
       expect(authService.verifyToken).not.toHaveBeenCalled();
-      expect(res._sent).toContain('name="password"');
+      // No form at all outside an authorization: the "no longer open" page.
+      expect(res._sent).toContain('This connection request is no longer open');
+      expect(res._sent).not.toContain('approve-session');
     });
 
     it.each([
@@ -658,17 +708,14 @@ describe('LoginController', () => {
       authService.comparePassword.mockResolvedValue(true);
     };
 
-    const login = async (signedCookies: Record<string, string> = {}) => {
+    const login = async (signedCookies: Record<string, string> = {}, headers: Record<string, string> = {}) => {
       const res = makeRes();
-      await cloud.handleLogin(
-        makeReq({
-          cookies: { oauth_session: 's1' },
-          signedCookies: { login_csrf: 'tok', ...signedCookies },
-          headers: { host: 'mcp.test' },
-        } as any),
-        { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' },
-        res,
-      );
+      const request = makeReq({
+        cookies: { oauth_session: 's1' },
+        signedCookies: { login_csrf: 'tok', ...signedCookies },
+        headers: { host: 'mcp.test', ...headers },
+      } as any);
+      await cloud.handleLogin(request, { email: 'a@b.com', password: 'pw', csrf: 'tok', action: 'approve' }, res);
       return res;
     };
 
@@ -681,8 +728,10 @@ describe('LoginController', () => {
       productEvents = { log: jest.fn().mockResolvedValue(undefined) };
       licenseGuard = { getTrialState: jest.fn().mockResolvedValue(null) };
       eligibility = { hadSubscription: jest.fn().mockResolvedValue(false) };
+      // The page test (authorization-attempt.ts) is held on its control arm
+      // here: the tests of the arms set it themselves.
       config.get.mockImplementation((key: string) =>
-        key === 'FRONTEND_URL' ? 'https://cloud.example/' : undefined,
+        key === 'FRONTEND_URL' ? 'https://cloud.example/' : key === 'AUTHORIZE_CONNECTED_PAGE_TEST' ? 'control' : key === 'AUTHORIZE_SIGNIN_PAGE_TEST' || key === 'AUTHORIZE_TRIAL_OFFER_TEST' ? 'off' : undefined,
       );
       cloud = new LoginController(
         authService as unknown as AuthService,
@@ -714,7 +763,14 @@ describe('LoginController', () => {
       await view('Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 Chrome/140.0.0.0 Safari/537.36');
       const views = productEvents.log.mock.calls.map((c) => c[0]).filter((e) => e.event === 'authorize_page_viewed');
       expect(views).toHaveLength(2);
-      expect(views[0].metadata).toEqual({ client: 'Claude', device: 'mobile', attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/) });
+      expect(views[0].metadata).toEqual({
+        client: 'Claude',
+        device: 'mobile',
+        attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/),
+        connectedArm: 'control',
+        // No Accept-Language header: no language bucket.
+        lang: undefined,
+      });
       expect(views[1].metadata.device).toBe('desktop');
       // The same authorization: the same value, so a reload counts once.
       expect(views[1].metadata.attempt).toBe(views[0].metadata.attempt);
@@ -785,17 +841,20 @@ describe('LoginController', () => {
         ...over,
       });
 
-      it('tells an admin on the free trial when it ends, under Continue, in a new tab', async () => {
+      it('offers an admin on the free trial a payment method under Continue, coming back through /callback', async () => {
         arrange();
         licenseGuard.getTrialState.mockResolvedValue(trial());
         const res = await login();
 
         expect(licenseGuard.getTrialState).toHaveBeenCalledWith('org-1');
         expect(res._sent).toContain('Your free trial runs until October&nbsp;13.');
-        expect(res._sent).toContain('Nothing is charged before October&nbsp;13.');
-        expect(res._sent).toMatch(
-          /<a href="https:\/\/cloud\.example\/start-trial\?source=post_approve" target="_blank" rel="noopener noreferrer">add a payment method now \(new tab\)<\/a>/,
+        expect(res._sent).toContain('nothing is charged before October&nbsp;13.');
+        // Same tab: the card-trial page sends every way out back to /callback,
+        // which finishes this authorization.
+        expect(res._sent).toContain(
+          '<a class="button secondary-link" id="card-trial-link" href="https://cloud.example/start-trial?source=post_approve&amp;return=%2Fcallback">Add a payment method (optional)</a>',
         );
+        expect(res._sent).not.toMatch(/id="card-trial-link"[^>]*target=/);
         // Continue stays the first and only button.
         const html = res._sent ?? '';
         expect(html.indexOf('Continue to Claude')).toBeLessThan(html.indexOf('start-trial'));
@@ -803,7 +862,7 @@ describe('LoginController', () => {
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'empty_workspace_prompt',
-            metadata: { client: 'Claude', cardTrialOffered: true },
+            metadata: expect.objectContaining({ client: 'Claude', cardTrialOffered: true }),
           }),
         );
       });
@@ -819,9 +878,9 @@ describe('LoginController', () => {
 
         expect(res._sent).toContain('Claude is connected');
         expect(res._sent).not.toContain('start-trial');
-        expect(productEvents.log).toHaveBeenCalledWith(
-          expect.objectContaining({ metadata: { client: 'Claude' } }),
-        );
+        const prompt = productEvents.log.mock.calls.map((c) => c[0]).find((e) => e.event === 'empty_workspace_prompt');
+        expect(prompt.metadata).toEqual(expect.objectContaining({ client: 'Claude' }));
+        expect(prompt.metadata).not.toHaveProperty('cardTrialOffered');
       });
 
       it('is left out for an address that had a subscription: it would pay today', async () => {
@@ -885,7 +944,7 @@ describe('LoginController', () => {
 
       expect(res._redirect).toBe('http://mcp.test/callback');
       expect(res._cookies['login_user'].options.maxAge).toBe(60 * 1000);
-      expect(productEvents.log).not.toHaveBeenCalled();
+      expect(productEvents.log.mock.calls.map((c) => c[0].event)).not.toContain('empty_workspace_prompt');
     });
 
     it('goes straight to /callback when the client connects one server URL', async () => {
@@ -893,6 +952,9 @@ describe('LoginController', () => {
       const res = await login({ mcp_resource: 'srv-1' });
 
       expect(res._redirect).toBe('http://mcp.test/callback');
+      // Added to what the client was already allowed, never a replacement.
+      expect(grants.grantRequestedServer).toHaveBeenCalledWith(expect.any(String), expect.any(String), 'srv-1');
+      expect(grants.grantServers).not.toHaveBeenCalled();
     });
 
     it('never shows on self-hosted', async () => {
@@ -1089,6 +1151,73 @@ describe('LoginController', () => {
       });
     });
 
+    // Every invited member gets an empty default server: a workspace with
+    // two people has two servers, and "Choose what to connect" had nothing
+    // to offer there.
+    describe('one workspace whose servers leave nothing to choose', () => {
+      const twoServers = (first: number, second: number) =>
+        grants.listSelectableTargets.mockResolvedValue([
+          {
+            organizationId: 'org-1',
+            organizationName: 'Primary',
+            servers: [
+              { id: 'srv-admin', name: 'Default (Ada)', connectorCount: first },
+              { id: 'srv-own', name: 'Default (A)', connectorCount: second },
+            ],
+          },
+        ]);
+
+      beforeEach(() => {
+        (grants as any).firstOwnServerId = jest.fn().mockResolvedValue('srv-own');
+        (grants as any).hasActiveGrant = jest.fn().mockResolvedValue(false);
+      });
+
+      it('connects an editor of an empty workspace to the whole workspace and shows the page after approving', async () => {
+        arrange({ role: 'EDITOR' });
+        twoServers(0, 0);
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-1' });
+        const res = await login();
+
+        expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-abc', 'u1', 'org-1');
+        expect(grants.grantServers).not.toHaveBeenCalled();
+        expect(res._sent).toContain('Claude is connected');
+        expect(res._sent).not.toContain('Choose what to connect');
+        expect(res._cookies['pending_grant']).toBeUndefined();
+      });
+
+      it('sends a viewer of an empty workspace straight to /callback', async () => {
+        arrange({ role: 'VIEWER' });
+        twoServers(0, 0);
+        grants.resolve.mockResolvedValue({ mode: 'organization', organizationId: 'org-1' });
+        const res = await login();
+
+        expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-abc', 'u1', 'org-1');
+        expect(res._redirect).toBe('http://mcp.test/callback');
+        expect(res._sent).toBeUndefined();
+      });
+
+      it('connects the one server with connectors and the member\'s own, without a page', async () => {
+        arrange({ role: 'EDITOR', connectors: 2 });
+        twoServers(2, 0);
+        grants.grantServers.mockResolvedValue(['srv-admin', 'srv-own']);
+        const res = await login();
+
+        expect(grants.grantServers).toHaveBeenCalledWith('client-abc', 'u1', ['srv-admin', 'srv-own']);
+        expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+        expect(res._redirect).toBe('http://mcp.test/callback');
+      });
+
+      it('still asks when both servers have connectors', async () => {
+        arrange({ connectors: 3 });
+        twoServers(2, 1);
+        const res = await login();
+
+        expect(res._sent).toContain('Choose what to connect');
+        expect(grants.grantServers).not.toHaveBeenCalled();
+        expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+      });
+    });
+
     describe('the optional app picker', () => {
       let provider: { canSetUp: jest.Mock; install: jest.Mock; find: jest.Mock; status: jest.Mock };
       let picking: LoginController;
@@ -1138,7 +1267,7 @@ describe('LoginController', () => {
 
       const pick = async (
         body: Record<string, unknown>,
-        signedCookies: Record<string, string> = { first_app_csrf: 'pick-tok', login_user: LOGIN_USER },
+        signedCookies: Record<string, string> = { first_app_csrf: 'pick-tok', login_user: LOGIN_USER, login_bind: 's1' },
         c: LoginController = picking,
       ) => {
         const res = makeRes();
@@ -1176,7 +1305,8 @@ describe('LoginController', () => {
         expect(page).toContain('role="status" aria-live="polite"');
         // Optional: Continue is still the one button, straight to the callback.
         expect(page.match(/class="button"/g)).toHaveLength(1);
-        expect(page).toContain('href="http://mcp.test/callback" data-open-chat="https://claude.ai/new"');
+        expect(page).toContain('href="http://mcp.test/callback" data-client="Claude"');
+        expect(page).not.toContain('data-open-chat');
         expect(page.indexOf('id="quick-apps"')).toBeLessThan(page.indexOf('Continue to Claude'));
       });
 
@@ -1237,11 +1367,8 @@ describe('LoginController', () => {
             'quick-status': el(),
             'other-app': el(),
             // Continue and the "Copied" line as the page really has them.
-            continue: el({
-              'data-client': 'Claude',
-              ...(/id="continue"[^>]*data-open-chat=/.test(page) ? { 'data-open-chat': 'https://claude.ai/new' } : {}),
-            }),
-            'request-copied': el(/id="request-copied"[^>]*data-phone="1"/.test(page) ? { 'data-phone': '1' } : {}),
+            continue: el({ 'data-client': 'Claude' }),
+            'request-copied': el(),
           };
           nodes['request-copied'].hidden = /id="request-copied"[^>]*\shidden/.test(page);
           const fetch = jest.fn(async () => ({ json: async () => fetchAnswer() }));
@@ -1292,7 +1419,7 @@ describe('LoginController', () => {
           expect(chips.every((c) => c.attrs['aria-disabled'] === 'false' && !c.disabled)).toBe(true);
         });
 
-        it('turns another app into the request, and opens Claude with it on Continue', async () => {
+        it('turns another app into the request, and opens nothing on Continue', async () => {
           const { nodes, open } = await run(async () => ({}));
           nodes['other-app'].value = '  HubSpot   CRM ';
           nodes['other-app'].listeners.input({});
@@ -1301,24 +1428,22 @@ describe('LoginController', () => {
           nodes['other-app'].listeners.input({});
           expect(nodes['example-request'].textContent).toBe('Connect my Telegram bot to AnythingMCP.');
 
-          nodes.continue.listeners.click({});
-          expect(open).toHaveBeenCalledWith(
-            'https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP.',
-            '_blank',
-            'noopener',
-          );
+          // No clipboard in this browser: Continue is the plain link, with no listener at all.
+          expect(nodes.continue.listeners.click).toBeUndefined();
+          expect(open).not.toHaveBeenCalled();
         });
 
-        it('opens no second tab on a touch device, whatever its user agent says', async () => {
+        it('opens no second tab on a touch device either, whatever its user agent says', async () => {
           const { nodes, open } = await run(async () => ({}), true);
           expect(nodes.continue.listeners.click).toBeUndefined();
           expect(open).not.toHaveBeenCalled();
         });
 
-        // A phone gets no chat tab, so the tap on Continue copies the request
-        // instead. Continue is where 60% of phone users were lost for two
-        // weeks: the copy must not be able to change what the tap does.
-        describe('on a phone, Continue also copies the request', () => {
+        // Continue opens no chat tab on any device, so the click copies the
+        // request instead. Continue is where 60% of phone users were lost for
+        // two weeks, and a fifth of the desktop ones later: the copy must not
+        // be able to change what the click does.
+        describe('Continue also copies the request', () => {
           const IPHONE =
             'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
           const MAC =
@@ -1342,14 +1467,15 @@ describe('LoginController', () => {
             arrange();
             const phone = (await showPage(picking, IPHONE))._sent as string;
             const desktop = (await showPage(picking, MAC))._sent as string;
-            expect(phone).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" data-phone="1" hidden></p>');
-            expect(desktop).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>');
             for (const page of [phone, desktop]) {
+              expect(page).toContain('<p class="copied" id="request-copied" role="status" aria-live="polite" hidden></p>');
               expect(page.indexOf('id="example-request"')).toBeLessThan(page.indexOf('id="request-copied"'));
               expect(page.indexOf('id="request-copied"')).toBeLessThan(page.indexOf('id="continue"'));
             }
-            // Continue itself is the same link as before on a phone: no new attribute.
-            expect(phone).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
+            // Continue itself is the same plain link on both: no attribute for a chat tab.
+            for (const page of [phone, desktop]) {
+              expect(page).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
+            }
           });
 
           it('copies inside the tap and says so, without preventing the default action or opening a window', async () => {
@@ -1406,7 +1532,7 @@ describe('LoginController', () => {
             }
           });
 
-          it('copies on a touch device that asked for the desktop site, where no chat tab opens either', async () => {
+          it('copies on a touch device that asked for the desktop site', async () => {
             const writeText = jest.fn().mockResolvedValue(undefined);
             const { nodes, open } = await run(async () => ({}), true, { userAgent: MAC, navigator: { clipboard: { writeText } } });
             expect(Object.keys(nodes.continue.listeners)).toEqual(['click']);
@@ -1417,56 +1543,82 @@ describe('LoginController', () => {
             expect(nodes['request-copied'].hidden).toBe(false);
           });
 
-          it('leaves a desktop exactly as it was: the chat tab opens, and nothing is copied', async () => {
+          it('copies on a desktop too, and opens no chat tab there', async () => {
             const writeText = jest.fn().mockResolvedValue(undefined);
             const { nodes, open } = await run(async () => ({}), false, { userAgent: MAC, navigator: { clipboard: { writeText } } });
+            expect(Object.keys(nodes.continue.listeners)).toEqual(['click']);
             const event = tap();
             nodes.continue.listeners.click(event);
             await flush();
-            expect(open).toHaveBeenCalledTimes(1);
-            expect(open).toHaveBeenCalledWith('https://claude.ai/new?q=Connect%20my%20Telegram%20bot%20to%20AnythingMCP.', '_blank', 'noopener');
-            expect(writeText).not.toHaveBeenCalled();
-            expect(nodes['request-copied'].hidden).toBe(true);
+            expect(writeText).toHaveBeenCalledTimes(1);
+            expect(writeText).toHaveBeenCalledWith('Connect my Telegram bot to AnythingMCP.');
+            expect(nodes['request-copied'].hidden).toBe(false);
+            expect(open).not.toHaveBeenCalled();
             untouched(event);
+            expect(nodes.continue.attrs).toEqual({ 'data-client': 'Claude' });
           });
 
           it('is written so that it cannot stop, delay or redirect the tap', async () => {
             const { page } = await run(async () => ({}), true, { userAgent: IPHONE });
             const script = page.slice(page.indexOf('<script>') + 8, page.indexOf('</script>'));
-            const copy = script.slice(script.indexOf('// A phone gets no chat tab'));
+            const from = script.indexOf('// Continue goes back through the authorization and opens nothing else');
+            // The copy listener's own block: up to the end of its function.
+            const copy = script.slice(from, script.indexOf('})();', from));
             expect(copy).toContain("cont.addEventListener('click'");
             for (const forbidden of ['preventDefault', 'stopPropagation', 'window.open', 'location', 'await', 'return false', 'setTimeout', '.click(', 'href', 'setAttribute']) {
               expect(copy).not.toContain(forbidden);
             }
-            // One click listener on Continue in the whole page per device: this one, or the desktop's chat tab.
-            expect(script.match(/cont\.addEventListener\('click'/g)).toHaveLength(2);
+            // Three click listeners on Continue in the whole page (the copy, the
+            // beacon that reports the click, and the one that drops a second
+            // press), and no window opened anywhere in it.
+            expect(script.match(/cont\.addEventListener\('click'/g)).toHaveLength(3);
+            expect(script).not.toContain('window.open');
+          });
+
+          it('lets the first press through untouched and drops a second one for five seconds', () => {
+            const listeners: Array<(e: any) => void> = [];
+            const timers: Array<() => void> = [];
+            const cont = { addEventListener: (_t: string, f: (e: any) => void) => listeners.push(f) };
+            require('vm').runInNewContext(CONTINUE_ONCE_SCRIPT, {
+              document: { getElementById: (id: string) => (id === 'continue' ? cont : null) },
+              window: { setTimeout: (f: () => void) => timers.push(f) },
+            });
+            expect(listeners).toHaveLength(1);
+            const tap = () => ({ preventDefault: jest.fn() });
+            const first = tap();
+            listeners[0](first);
+            expect(first.preventDefault).not.toHaveBeenCalled();
+            const second = tap();
+            listeners[0](second);
+            expect(second.preventDefault).toHaveBeenCalledTimes(1);
+            // Five seconds later the link works again (a hand-back the browser refused).
+            timers.forEach((t) => t());
+            const later = tap();
+            listeners[0](later);
+            expect(later.preventDefault).not.toHaveBeenCalled();
           });
         });
       });
 
-      // A second tab on a phone takes over and the authorization in the first
-      // one is never finished (about 200 codes a day were left unexchanged).
+      // A second tab takes over and the authorization in the first one is never
+      // finished: about 200 codes a day were left unexchanged on phones in early
+      // November 2026, and a fifth of the desktop codes from 19 November.
       it.each([
         ['iPhone', 'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'],
         ['Android', 'Mozilla/5.0 (Linux; Android 16; Pixel 9) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Mobile Safari/537.36'],
         ['iPad', 'Mozilla/5.0 (iPad; CPU OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1'],
+        ['a Mac', 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36'],
+        ['Windows', 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36 Edg/140.0.0.0'],
       ])('goes straight back to Claude on %s, without a chat tab', async (_device, userAgent) => {
         arrange();
         const page = (await showPage(picking, userAgent))._sent as string;
-        expect(page).toContain('Continue to Claude');
-        expect(page).toContain('href="http://mcp.test/callback"');
-        expect(page).not.toContain('data-open-chat="');
+        expect(page).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
+        expect(page).not.toContain('data-open-chat');
+        expect(page).not.toContain('window.open');
+        expect(page).not.toContain('claude.ai/new');
       });
 
-      it('keeps the chat tab on a desktop browser', async () => {
-        arrange();
-        const page = (
-          await showPage(picking, 'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36')
-        )._sent as string;
-        expect(page).toContain('href="http://mcp.test/callback" data-open-chat="https://claude.ai/new"');
-      });
-
-      it('opens a new chat only for a code sent to claude.ai', async () => {
+      it('opens no chat for another client either', async () => {
         arrange();
         store.getOAuthSession.mockResolvedValue({
           sessionId: 's1',
@@ -1478,7 +1630,8 @@ describe('LoginController', () => {
         store.getClient.mockResolvedValue({ client_id: 'client-abc', client_name: 'ChatGPT' } as any);
         const page = (await showPage())._sent as string;
         expect(page).toContain('Continue to ChatGPT');
-        expect(page).not.toContain('data-open-chat="');
+        expect(page).not.toContain('data-open-chat');
+        expect(page).not.toContain('window.open');
       });
 
       it('is left out, with its cookie, when this instance cannot add connectors', async () => {
@@ -1515,7 +1668,14 @@ describe('LoginController', () => {
           event: 'post_approve_app_picked',
           userId: 'u1',
           organizationId: 'org-1',
-          metadata: { adapterSlug: 'telegram-bot', client: 'Claude', status: 'added' },
+          metadata: {
+            adapterSlug: 'telegram-bot',
+            client: 'Claude',
+            status: 'added',
+            device: 'desktop',
+            attempt: expect.stringMatching(/^[0-9a-z]{6,12}$/),
+            connectedArm: 'control',
+          },
         });
       });
 
@@ -1610,7 +1770,7 @@ describe('LoginController', () => {
         expect(productEvents.log).toHaveBeenCalledWith(
           expect.objectContaining({
             event: 'post_approve_app_picked',
-            metadata: { adapterSlug: 'woocommerce', client: 'Claude', status: 'failed', error: 'Connector limit reached' },
+            metadata: expect.objectContaining({ adapterSlug: 'woocommerce', client: 'Claude', status: 'failed', error: 'Connector limit reached' }),
           }),
         );
       });
@@ -1634,7 +1794,7 @@ describe('LoginController', () => {
           'Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/140.0.0.0 Safari/537.36';
         const PHONE_UA =
           'Mozilla/5.0 (iPhone; CPU iPhone OS 26_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/26.0 Mobile/15E148 Safari/604.1';
-        const COOKIES = { first_app_csrf: 'pick-tok', login_user: LOGIN_USER };
+        const COOKIES = { first_app_csrf: 'pick-tok', login_user: LOGIN_USER, login_bind: 's1' };
         let telegram: { isEnabledFor: jest.Mock; begin: jest.Mock; status: jest.Mock; saveToken: jest.Mock; qrScanned: jest.Mock };
         // The same two links for Telegram in the browser, as the service hands them out.
         const WEB = 'https://web.telegram.org/a/#?tgaddr=tg%3A%2F%2Fnewbot%3Fmanager%3DAnythingMCPBot%26username%3Damcp_1a2b3c4d_bot';
@@ -1791,7 +1951,7 @@ describe('LoginController', () => {
             expect(page.indexOf('id="tg-setup"')).toBeLessThan(page.indexOf('Continue to Claude'));
             expect(page.match(/class="button"/g)).toHaveLength(1);
             expect(page).toContain(
-              '<a class="button" id="continue" href="http://mcp.test/callback" data-open-chat="https://claude.ai/new" data-client="Claude">Continue to Claude</a>',
+              '<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>',
             );
           });
 
@@ -1813,7 +1973,7 @@ describe('LoginController', () => {
               expect(page).not.toContain('id="tg-link-web"');
               expect(page).not.toContain('<figure');
               expect(page).not.toContain('Scan with your phone');
-              // Continue as it is on a phone: straight to the callback, no chat tab.
+              // Continue as on every device: straight to the callback, no chat tab.
               expect(page).toContain('<a class="button" id="continue" href="http://mcp.test/callback" data-client="Claude">Continue to Claude</a>');
             }
           });
@@ -2011,9 +2171,9 @@ describe('LoginController', () => {
           it.each([
             ['no CSRF token', {}, COOKIES],
             ['a wrong CSRF token', { csrf: 'other' }, COOKIES],
-            ['no CSRF cookie', { csrf: 'pick-tok' }, { login_user: LOGIN_USER }],
+            ['no CSRF cookie', { csrf: 'pick-tok' }, { login_user: LOGIN_USER, login_bind: 's1' }],
             ['no signed login cookie', { csrf: 'pick-tok' }, { first_app_csrf: 'pick-tok' }],
-            ['a login cookie that is not a profile', { csrf: 'pick-tok' }, { first_app_csrf: 'pick-tok', login_user: 'garbage' }],
+            ['a login cookie that is not a profile', { csrf: 'pick-tok' }, { first_app_csrf: 'pick-tok', login_user: 'garbage', login_bind: 's1' }],
           ])('refuses a request with %s', async (_label, body, signedCookies) => {
             arrange();
             const res = await status(body, signedCookies as Record<string, string>);
@@ -2180,7 +2340,6 @@ describe('LoginController', () => {
             const picker = node({ 'data-csrf': /data-csrf="([^"]+)"/.exec(page)![1] });
             picker.hidden = true;
             picker.querySelectorAll = () => chips;
-            const cont = /<a class="button" id="continue"([^>]*)>/.exec(page)![1];
             const nodes: Record<string, Node> = {
               'copy-request': node(),
               'example-request': node({}, 'Connect my Telegram bot to AnythingMCP.'),
@@ -2189,10 +2348,7 @@ describe('LoginController', () => {
               'quick-apps': picker,
               'quick-status': node(),
               'other-app': node(),
-              continue: node({
-                'data-client': 'Claude',
-                ...(cont.includes('data-open-chat') ? { 'data-open-chat': 'https://claude.ai/new' } : {}),
-              }),
+              continue: node({ 'data-client': 'Claude' }),
             };
             // Every element of the panel the page really has, hidden where its markup says so.
             for (const m of page.matchAll(/<[a-z]+[^>]*\bid="(tg-[a-z-]+)"([^>]*)>/g)) {
@@ -2420,7 +2576,7 @@ describe('LoginController', () => {
             expect((t.nodes.continue as any).click).not.toHaveBeenCalled();
             expect(t.open).not.toHaveBeenCalled();
             expect(t.nodes.continue.listeners.click).toBe(before);
-            expect(t.nodes.continue.attrs).toEqual({ 'data-client': 'Claude', 'data-open-chat': 'https://claude.ai/new' });
+            expect(t.nodes.continue.attrs).toEqual({ 'data-client': 'Claude' });
           });
 
           it('still shows the bot as connected in a browser that cannot scroll that way', async () => {
@@ -2627,7 +2783,7 @@ describe('LoginController', () => {
             await t.pickTelegram();
             t.answers.status = () => ({ ok: false, error: 'This page has expired.' });
             await t.advance(2_100);
-            expect(t.nodes['tg-status'].textContent).toBe('This link has expired. Continue, and finish Telegram in Claude.');
+            expect(t.nodes['tg-status'].textContent).toBe('This link has expired. Go back to Claude and press Connect again.');
             expect(t.nodes['tg-link'].hidden).toBe(true);
             const asked = t.requests(STATUS).length;
             await t.advance(30_000);
@@ -2711,7 +2867,7 @@ describe('LoginController', () => {
             });
           });
 
-          it('leaves Continue alone: its one listener is the page\'s own, and there is none on a phone', async () => {
+          it('leaves Continue alone: no listener of its own, on a desktop or a phone', async () => {
             const desktop = await run();
             const before = desktop.nodes.continue.listeners.click;
             await desktop.pickTelegram();
@@ -2722,13 +2878,10 @@ describe('LoginController', () => {
             await flush();
             await desktop.advance(5_000);
             expect(desktop.nodes['tg-link'].hidden).toBe(false);
-            expect(desktop.nodes.continue.listeners.click).toBe(before);
-            expect(Object.keys(desktop.nodes.continue.listeners)).toEqual(['click']);
+            // This test browser has no clipboard, so the page added nothing to Continue either.
+            expect(before).toBeUndefined();
+            expect(desktop.nodes.continue.listeners).toEqual({});
             expect(desktop.open).not.toHaveBeenCalled();
-            // Continue still opens the chat with the request, as before.
-            desktop.nodes.continue.listeners.click({});
-            expect(desktop.open).toHaveBeenCalledTimes(1);
-            expect(desktop.open.mock.calls[0][0]).toContain('https://claude.ai/new?q=');
 
             const phone = await run({ userAgent: PHONE_UA, touch: true });
             await phone.pickTelegram();

@@ -5,7 +5,8 @@ import { join } from 'path';
 import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import * as Sentry from '@sentry/nestjs';
-import { SentryGlobalFilter, SentryModule } from '@sentry/nestjs/setup';
+import { SentryModule } from '@sentry/nestjs/setup';
+import { AppExceptionFilter } from './common/app-exception.filter';
 import { MCP_STRATEGY } from '@rekog/mcp-nest';
 import { McpAuthModule } from '@rekog/mcp-nest-auth';
 import { mcpStrategy } from './mcp-server/mcp-strategy';
@@ -39,6 +40,8 @@ import {
 } from './auth/authorize-pkce.middleware';
 import { ResourceIndicatorMiddleware } from './auth/resource-indicator.middleware';
 import { AuthorizationIssuerMiddleware } from './auth/authorization-issuer.middleware';
+import { AuthorizationAttemptMiddleware } from './auth/authorization-attempt.middleware';
+import { CallbackGuardMiddleware } from './auth/callback-guard.middleware';
 import { IdentityProvidersModule } from './identity-providers/identity-providers.module';
 import { LocalOAuthProvider } from './auth/local-oauth.provider';
 import { PrismaOAuthStore } from './auth/prisma-oauth.store';
@@ -199,8 +202,9 @@ if (useOAuth) {
   providers: [
     // Reports exceptions Nest turns into a 500 response, which otherwise never
     // reach Sentry. HttpExceptions (4xx, auth failures) are expected and are
-    // not reported. Must stay the first APP_FILTER.
-    { provide: APP_FILTER, useClass: SentryGlobalFilter },
+    // not reported, and client errors of the HTTP stack (an aborted upload)
+    // are logged as a warning. Must stay the first APP_FILTER.
+    { provide: APP_FILTER, useClass: AppExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: SentryContextInterceptor },
     { provide: APP_GUARD, useClass: ThrottlerGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
@@ -252,6 +256,12 @@ export class AppModule implements NestModule {
       // `authorization_response_iss_parameter_supported` in the metadata.
       consumer.apply(ResourceIndicatorMiddleware).forRoutes('authorize');
       consumer.apply(AuthorizationIssuerMiddleware).forRoutes('callback');
+      // Statistics only: lets the `authorization_code_issued` event carry the
+      // device and the page arm of the attempt (authorization-attempt.ts).
+      consumer.apply(AuthorizationAttemptMiddleware).forRoutes('callback');
+      // A browser without an open authorization gets a page instead of the
+      // library's JSON 400, and the sign-in cookie ends with the code.
+      consumer.apply(CallbackGuardMiddleware).forRoutes('callback');
     }
 
     // Apply legacy auth middleware for MCP endpoint. In 'both' it passes every

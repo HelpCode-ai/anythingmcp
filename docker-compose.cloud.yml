@@ -187,6 +187,9 @@ x-backend: &backend
     # unset = dry-run (log only), on = enforce, off = neither. It was never
     # passed to the container, so it could not be switched from the .env.
     - PLAN_CAPS_ENFORCE=${PLAN_CAPS_ENFORCE:-}
+    # The connection grant on a server's own URL (docs/deployment.md):
+    # unset = enforce, report = log only, off = no check.
+    - MCP_GRANT_SERVER_SCOPE=${MCP_GRANT_SERVER_SCOPE:-}
     - META_PLATFORM_APP_ID=${META_PLATFORM_APP_ID:-}
     - META_PLATFORM_APP_SECRET=${META_PLATFORM_APP_SECRET:-}
     - META_PLATFORM_CONFIG_ID=${META_PLATFORM_CONFIG_ID:-}
@@ -195,6 +198,11 @@ x-backend: &backend
     - TELEGRAM_MANAGER_BOT_TOKEN=${TELEGRAM_MANAGER_BOT_TOKEN:-}
     - TELEGRAM_MANAGER_WEBHOOK_SECRET=${TELEGRAM_MANAGER_WEBHOOK_SECRET:-}
     - TELEGRAM_MANAGED_BOT_ORG_IDS=${TELEGRAM_MANAGED_BOT_ORG_IDS:-}
+    # Split test of the page shown after approving into an empty workspace:
+    # unset = an equal split, 'off' or the name of one arm (see .env.example).
+    - AUTHORIZE_CONNECTED_PAGE_TEST=${AUTHORIZE_CONNECTED_PAGE_TEST:-}
+    - AUTHORIZE_SIGNIN_PAGE_TEST=${AUTHORIZE_SIGNIN_PAGE_TEST:-}
+    - AUTHORIZE_TRIAL_OFFER_TEST=${AUTHORIZE_TRIAL_OFFER_TEST:-}
     # Allow the SSRF guard to reach the internal MOTIS host (it resolves to
     # a private docker IP, which the guard blocks by default). Harmless on
     # self-host (no such host on their network).

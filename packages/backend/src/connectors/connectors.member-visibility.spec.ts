@@ -330,12 +330,16 @@ const BY_ID: Record<string, (c: Ctx, role: string, id: string) => Promise<unknow
   // Not GET routes, but a member reaches them with only a workspace check today.
   'ConnectorsController.deleteMyCredential': (c, role, id) => c.connectors.deleteMyCredential(req(role), id),
   'ConnectorsController.initiateOAuth': (c, role, id) => c.connectors.initiateOAuth(req(role), id, {}),
+  // POST :id/test is owner-or-admin: a hidden connector must answer the 404
+  // of an unknown id, not the 403 that says "it exists, but it is not yours".
+  'ConnectorsController.test': (c, role, id) => c.connectors.test(req(role), id),
   'FileSearchController.syncNow': (c, role, id) => c.fs.syncNow(req(role), id),
 };
 
 const NOT_GET_BY_ID: Record<string, Rule> = {
   'ConnectorsController.deleteMyCredential': 'visible',
   'ConnectorsController.initiateOAuth': 'visible',
+  'ConnectorsController.test': 'visible-then-owner',
   'FileSearchController.syncNow': 'owned',
 };
 

@@ -267,7 +267,7 @@ test.describe('popular apps on /welcome', () => {
   test('leads with the apps workspaces connect, saying what each setup asks for', async ({ page }) => {
     await openWelcome(page);
     const telegram = page.getByRole('link', { name: /Telegram Bot API/ });
-    await expect(telegram).toHaveAttribute('href', '/connectors/setup/telegram-bot');
+    await expect(telegram).toHaveAttribute('href', '/connectors/setup/telegram-bot?back=welcome');
     await expect(telegram).toContainText('Bot token');
     await expect(page.getByRole('link', { name: /Etsy Open API v3/ })).toContainText('Sign in · Keystring and Shared secret');
     await expect(page.getByRole('link', { name: /Odoo JSON-2 API/ })).toContainText('Already added');
@@ -285,6 +285,6 @@ test.describe('popular apps on /welcome', () => {
       popular: 'fail',
       catalog: [{ slug: 'telegram-bot', name: 'Telegram Bot API', icon: 'telegram', category: 'messaging', setupKind: 'credentials', requiredEnvVars: ['TELEGRAM_BOT_TOKEN'] }],
     });
-    await expect(page.getByRole('link', { name: /Telegram Bot API/ })).toHaveAttribute('href', '/connectors/setup/telegram-bot');
+    await expect(page.getByRole('link', { name: /Telegram Bot API/ })).toHaveAttribute('href', '/connectors/setup/telegram-bot?back=welcome');
   });
 });

@@ -9,6 +9,7 @@ import { LogoIcon } from '@/components/logo-icon';
 import { cn } from '@/lib/utils';
 import { GithubStarButton } from '@/components/github-star-button';
 import { NAV } from '@/lib/navigation';
+import { useMemberAccess } from '@/lib/use-member-access';
 
 /* ── Inline icons (match the redesign prototype) ── */
 function I({ d, children, ...p }: { d?: string; children?: React.ReactNode } & React.SVGProps<SVGSVGElement>) {
@@ -75,6 +76,13 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
   const pathname = usePathname();
   const t = useTranslations('nav');
   const { user, orgName, orgs, switchOrg, logout } = useAuth();
+  // What this member may open (lib/member-access.ts). Everything for admins
+  // and in an Open workspace; a restricted member is not shown the pages the
+  // route guard would send them away from. A group left empty is dropped.
+  const { can } = useMemberAccess();
+  const groups = NAV.map((g) => ({ ...g, items: g.items.filter((item) => can(item.href)) })).filter(
+    (g) => g.items.length > 0,
+  );
   const [wsMenu, setWsMenu] = useState(false);
   const wsRef = useRef<HTMLDivElement>(null);
 
@@ -106,8 +114,8 @@ export function AppSidebar({ mobileOpen, onClose }: { mobileOpen: boolean; onClo
         </div>
       </div>
 
-      <nav className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1.5">
-        {NAV.map((g) => (
+      <nav data-testid="app-nav" className="flex flex-1 flex-col gap-0.5 overflow-y-auto px-3 py-1.5">
+        {groups.map((g) => (
           <div key={g.group}>
             <div className="px-2.5 pb-1 pt-2.5 text-[10.5px] font-semibold uppercase tracking-[0.06em] text-[var(--text-3)]">
               {t(`groups.${g.id}`)}

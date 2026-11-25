@@ -19,6 +19,7 @@ import { IsString, IsOptional, IsBoolean } from 'class-validator';
 import { OrganizationsService } from './organizations.service';
 import { AuthService } from '../auth/auth.service';
 import { ConfigService } from '@nestjs/config';
+import { DeploymentService } from '../common/deployment.service';
 
 class UpdateOrganizationDto {
   @ApiPropertyOptional({ description: 'New organization name.' })
@@ -85,6 +86,7 @@ export class OrganizationsController {
     private readonly organizationsService: OrganizationsService,
     private readonly authService: AuthService,
     private readonly configService: ConfigService,
+    private readonly deployment: DeploymentService,
   ) {}
 
   @Get('mine')
@@ -219,8 +221,24 @@ export class OrganizationsController {
   }
 
   @Post()
-  @ApiOperation({ summary: 'Create a new organization (cloud mode)' })
+  @ApiOperation({
+    summary: 'Create a new organization',
+    description:
+      'The caller becomes the ADMIN of the new organization. Cloud: any signed-in user may create their own ' +
+      'workspace. Self-hosted: only a caller who is an ADMIN of their active workspace (403 for a VIEWER or an ' +
+      'EDITOR), because a workspace ADMIN on a self-hosted instance also reaches instance-wide settings.',
+  })
   async createOrg(@Req() req: any, @Body() dto: CreateOrgDto) {
+    // The creator becomes ADMIN of the new workspace. In Cloud every user
+    // runs their own workspace and an ADMIN reaches nothing beyond it. On a
+    // self-hosted instance a workspace ADMIN is the operator: they reach the
+    // instance-wide SSRF allowlist and every admin page. Letting any member
+    // create a workspace there handed a VIEWER that role in one request, so
+    // it takes someone who already is an ADMIN. `req.user.role` is the role
+    // of the active workspace, read from the membership on every request.
+    if (this.deployment.isSelfHosted() && req.user?.role !== 'ADMIN') {
+      throw new ForbiddenException('Only admins can create a workspace on this instance');
+    }
     const org = await this.organizationsService.create(dto.name);
     // Add creator as ADMIN member
     await this.organizationsService.addMember(req.user.sub, org.id, 'ADMIN' as any);

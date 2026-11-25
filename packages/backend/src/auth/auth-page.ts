@@ -5,6 +5,8 @@
  * row under the card. No external resources: logos are inline SVG, fonts are
  * the system's.
  */
+import { edgePageTexts } from './auth-page-i18n.pages';
+import type { PageLanguage } from './authorization-attempt';
 
 export function escapeHtml(value: unknown): string {
   return String(value ?? '')
@@ -244,9 +246,12 @@ export function renderAuthPage(opts: {
   trust: TrustRowOptions;
   /** Page-specific CSS, appended to the shared rules. */
   extraStyles?: string;
+  /** The page's language (`<html lang>`); English when absent. */
+  lang?: string;
 }): string {
+  const lang = opts.lang && /^[a-z]{2}$/.test(opts.lang) ? opts.lang : 'en';
   return `<!DOCTYPE html>
-<html lang="en">
+<html lang="${lang}">
 <head>
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
@@ -262,3 +267,48 @@ export function renderAuthPage(opts: {
 </body>
 </html>`;
 }
+
+/**
+ * The page for a connection request that is no longer open: it expired (30
+ * minutes), was already used, or never existed in this browser (a bookmark).
+ *
+ * Shown wherever the flow used to end in a bare sign-in form that could not
+ * work (`/auth/login` without a pending authorization) or in the OAuth
+ * library's raw JSON 400 (`/callback` without one). It cannot say which of
+ * the cases it is, so it says what to do in all of them. A second press on
+ * Continue lands here too, after the first one already went through: that is
+ * why it does not say the connection failed.
+ *
+ * There is no attempt left to read a page-test arm from, so the page speaks
+ * the browser's language for everyone, on Cloud and self-hosted: `lang` is
+ * what `pageLanguageFor` made of `Accept-Language` (English when absent).
+ */
+export function renderClosedRequestPage(opts: {
+  trust: TrustRowOptions;
+  /** A message from the step that sent the person here (already plain text). */
+  message?: string;
+  /** The dashboard, for someone who only wanted to sign in. */
+  dashboardUrl?: string;
+  lang?: PageLanguage | null;
+}): string {
+  const T = edgePageTexts(opts.lang).closed;
+  const message = opts.message ? `<div class="error" role="alert">${escapeHtml(opts.message)}</div>` : '';
+  const dashboard = opts.dashboardUrl
+    ? `
+    <p class="links">${T.dashboardLead} <a href="${escapeHtml(opts.dashboardUrl)}">${T.dashboardLink}</a></p>`
+    : '';
+  return renderAuthPage({
+    title: T.heading,
+    ...(opts.lang ? { lang: opts.lang } : {}),
+    card: `
+    <div class="pair"><div class="tile" title="AnythingMCP">${AMCP_MARK_SVG}</div></div>
+    <h1>${T.heading}</h1>
+    ${message}
+    <p class="sub" id="closed-what">${T.what}</p>
+    <p class="sub" id="closed-next" style="margin-bottom:0">${T.next}</p>${dashboard}`,
+    trust: opts.trust,
+    extraStyles: `
+  .sub strong { color: var(--text); font-weight: 600; }`,
+  });
+}
+

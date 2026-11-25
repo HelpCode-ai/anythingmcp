@@ -45,6 +45,10 @@
       "hideAriaLabel": "Hide Star on GitHub button"
     }
   },
+  "memberAccess": {
+    "notAvailableTitle": "This page is not available to you",
+    "notAvailableBody": "Your role in this workspace does not include it. Ask a workspace admin if you need more."
+  },
   "signIn": {
     "continueAs": "Continue as {email}",
     "continueAsHint": "You signed in here a moment ago to connect your AI assistant.",
@@ -84,6 +88,8 @@
     "title": "Create your account",
     "cloudTitle": "Create your free account",
     "cloudSubtitle": "7-day free trial · no credit card · connect Claude, ChatGPT, Copilot, Cursor or Meta Muse to your tools.",
+    "authorizationStep": "<strong>Step 1 of 2.</strong> Create your account, then you go straight back to finish connecting {client}.",
+    "authorizationStepGeneric": "<strong>Step 1 of 2.</strong> Create your account, then you go straight back to finish connecting your AI assistant.",
     "socialConsent": "By continuing you accept the <terms>Terms of Use</terms> and the <privacy>Privacy Policy</privacy>.",
     "continueWithEmail": "Continue with email",
     "name": "Name",
@@ -136,9 +142,13 @@
     "resendIn": "Resend in {seconds}s",
     "resent": "A new code has been sent to your email",
     "skip": "Skip for now",
+    "openedLink": "I opened the link in the email",
+    "checkingLink": "Checking…",
+    "notVerifiedYet": "This address is not verified yet. Open the link in the email or enter the code.",
     "errors": {
       "invalid": "Invalid verification code",
-      "resendFailed": "Failed to resend code"
+      "resendFailed": "Failed to resend code",
+      "checkFailed": "We could not check this right now. Please try again."
     }
   },
   "checkInbox": {
@@ -276,9 +286,27 @@
     "success": "Your email has been verified successfully!",
     "goToSignIn": "Go to Sign In",
     "backToSignIn": "Back to Sign In",
+    "continueConnecting": "Continue connecting {client}",
+    "continueConnectingGeneric": "Continue connecting your AI assistant",
+    "otherDevice": "Started on another device or in another tab? Go back there and choose “I opened the link in the email”.",
     "errors": {
       "noToken": "No verification token provided",
       "failed": "Verification failed"
+    }
+  },
+  "pendingAuthorization": {
+    "label": "Unfinished connection",
+    "allow": {
+      "text": "{client} is waiting for you.",
+      "action": "Back to connecting {client}",
+      "textGeneric": "Your AI assistant is waiting for you.",
+      "actionGeneric": "Back to connecting your AI assistant"
+    },
+    "continue": {
+      "text": "{client} is not connected yet.",
+      "action": "Finish connecting {client}",
+      "textGeneric": "Your AI assistant is not connected yet.",
+      "actionGeneric": "Finish connecting your AI assistant"
     }
   },
   "acceptInvite": {
@@ -362,6 +390,8 @@
     "returningNoDate": "This email address has had an AnythingMCP subscription before, so a new free trial with a payment method is not available. <strong>Your plan starts today and is billed today.</strong> Your workspace, connectors and settings stay exactly as they are.",
     "trial": "Every feature, free until <strong>{date}</strong>. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
     "trialNoDate": "Every feature, free until your trial ends. Add a payment method now and your plan simply carries on after the trial, with nothing charged before then. Or keep trying without payment details: that trial has a <strong>lower connector limit</strong>, and you can add a payment method any time to unlock your full plan.",
+    "trialShort": "Every feature, free until <strong>{date}</strong>. Nothing is charged before then.",
+    "trialShortNoDate": "Every feature, free until your trial ends. Nothing is charged before then.",
     "authorizationReturn": "Either way, you go straight back to finish connecting your AI client.",
     "chargesToday": "This address already had a subscription, so the checkout will charge {amount} today.",
     "start": {
@@ -380,6 +410,7 @@
     "notReadyCard": "Not ready to add a payment method?",
     "keepFree": "Keep using the free trial",
     "tryFree": "Try free without payment details",
+    "skipNote": "Without payment details the trial has a lower connector limit. You can add a payment method any time.",
     "methods": {
       "trial": "€0 today · card, PayPal and other methods",
       "pay": "Card, PayPal and other methods"
@@ -799,7 +830,9 @@
       "active": "Active",
       "inactive": "Inactive",
       "importSpec": "Import Spec",
-      "delete": "Delete"
+      "delete": "Delete",
+      "owner": "Owner: {name}",
+      "ownerGone": "Owner: no longer a member"
     },
     "addTile": {
       "title": "Add a connector",
@@ -1096,6 +1129,7 @@
   "setupGuide": {
     "stuck": "Stuck? Ask us",
     "intro": {
+      "back": "Back",
       "title": "Connect {name} to your AI",
       "steps": "{count, plural, one {# step} other {# steps}}",
       "examples": "Then ask your AI things like",
@@ -1673,7 +1707,9 @@
       "envSavedWarnings": "Environment variables saved. {warnings}",
       "discoveryFailed": "Discovery failed: {message}",
       "authorizationFailed": "Authorization failed: {message}"
-    }
+    },
+    "owner": "Owner: {name}",
+    "ownerGone": "Owner: no longer a member of this workspace"
   },
   "userCredentials": {
     "scopeError": "Could not change the sign-in mode.",
@@ -2262,11 +2298,17 @@
       },
       "restricted": {
         "label": "Restricted",
-        "description": "Members who are not admins see only their own tool calls, the connectors their roles reach and the MCP servers that hold one of them."
+        "description": "Members who are not admins see only their own tool calls, the connectors their roles reach (an Editor also the connectors they own) and the MCP servers they own. Pages for running the workspace are not listed for them."
       },
-      "noToolList": "No role limits tools yet, so members still see every connector. Create a role with a tool list under <link>Roles</link>.",
+      "noToolList": "Restricted does not narrow which connectors members see yet. No role in this workspace has a tool list, so every member still sees every connector by name, status and tools (not its settings); only their tool calls are narrowed to their own. Create a role with a tool list under <link>Roles</link> and assign it. From then on a member without a role sees no connector.",
       "saved": "Member visibility saved.",
-      "saveFailed": "Could not save member visibility."
+      "saveFailed": "Could not save member visibility.",
+      "activeNow": "Active now: {mode}",
+      "unsavedToRestricted": "Not saved yet. This workspace is still Open: every member sees everything until you save.",
+      "unsavedToOpen": "Not saved yet. This workspace is still Restricted until you save.",
+      "saveSwitch": "Save: switch to {mode}",
+      "discard": "Discard",
+      "confirmLeave": "The member visibility you chose is not saved yet. Leave this page without saving?"
     },
     "revokeDialog": {
       "title": "Sign everyone out",
@@ -2301,7 +2343,8 @@
       "createTitle": "Create New Organization",
       "createPlaceholder": "New organization name",
       "creating": "Creating...",
-      "create": "Create Organization"
+      "create": "Create Organization",
+      "createAdminOnly": "Only admins can create a workspace on this instance."
     }
   },
   "settingsUsers": {
@@ -2366,7 +2409,8 @@
       "emailFailed": "Failed to send email:",
       "link": "Invitation link (share manually):",
       "sending": "Sending...",
-      "send": "Send Invitation"
+      "send": "Send Invitation",
+      "restrictedRoleHint": "Member visibility is restricted here. A Viewer sees only what their MCP roles reach. An Editor also creates connectors and always sees the ones they own."
     },
     "bulk": {
       "selected": "{count} selected · Skill learning:",

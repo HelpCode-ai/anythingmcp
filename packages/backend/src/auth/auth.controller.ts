@@ -741,7 +741,25 @@ export class AuthController {
       ...new Set(dto.mcpRoleIds ?? (dto.mcpRoleId ? [dto.mcpRoleId] : [])),
     ];
 
-    if (!existingInvite) {
+    if (existingInvite) {
+      // Inviting the same address again states a role in the mail it sends:
+      // the pending invitation must grant that role, not the one of the first
+      // attempt. An admin who first picked EDITOR and corrected it to VIEWER
+      // otherwise got an EDITOR, with the mail saying VIEWER. The link and its
+      // expiry stay, so the first mail keeps working. `existingInvite` was
+      // found inside this workspace, so its id is this workspace's row.
+      // Written every time: an invitation of the previous release can hold
+      // its role in `mcpRoleId` alone, which an empty list must clear too.
+      await this.prisma.invitationToken.update({
+        where: { id: existingInvite.id },
+        data: {
+          role: dto.role,
+          mcpRoleId: invitedMcpRoleIds[0] ?? null,
+          mcpRoleIds: invitedMcpRoleIds,
+          invitedBy: req.user.sub,
+        },
+      });
+    } else {
       const expiresAt = new Date(Date.now() + 48 * 60 * 60 * 1000); // 48 hours
       await this.prisma.invitationToken.create({
         data: {

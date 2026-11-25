@@ -5,6 +5,8 @@ import { useParams, useRouter } from 'next/navigation';
 import Link from 'next/link';
 import { useTranslations } from 'next-intl';
 import { useAuth } from '@/lib/auth-context';
+import { useMemberVisibility } from '@/lib/use-member-visibility';
+import { useNotAvailableRedirect } from '@/components/member-route-guard';
 import { mcpServers, connectors as connectorsApi, mcpKeys, productEvents, server as serverApi, planLimitOf } from '@/lib/api';
 import { atPlanCap, pausedByPlanSets, usePlanUsage } from '@/lib/use-plan-fit';
 import { PausedByPlanBadge, PlanSwapDialog } from '@/components/plan-swap-dialog';
@@ -35,6 +37,12 @@ export default function McpServerDetailPage() {
   const isCloud = deploymentMode === 'cloud';
   const router = useRouter();
   const t = useTranslations('mcpServer');
+  // A restricted member is told nothing about a server they do not own: the
+  // API answers the 404 of an unknown id, and the page sends them back to
+  // their list with the note every refused page shows, instead of a shell
+  // around "not found".
+  const { restrictedForMe } = useMemberVisibility();
+  const notAvailable = useNotAvailableRedirect();
   // Cloud: paused by the last automatic downgrade, and the swap at the cap.
   const { usage: planUsage, reload: reloadPlanUsage } = usePlanUsage();
   const [swapMax, setSwapMax] = useState<number | null | undefined>(undefined);
@@ -126,6 +134,11 @@ export default function McpServerDetailPage() {
   useEffect(() => {
     serverApi.info().then((info) => setMcpAuthMode(info?.mcpAuthMode || '')).catch(() => {});
   }, []);
+
+  const notHers = !loading && !server && restrictedForMe;
+  useEffect(() => {
+    if (notHers) notAvailable('/mcp-server');
+  }, [notHers, notAvailable]);
 
   const apiUrl = getApiOrigin();
 
@@ -274,6 +287,8 @@ export default function McpServerDetailPage() {
       </AppShell>
     );
   }
+
+  if (!server && restrictedForMe) return null;
 
   if (!server) {
     return (

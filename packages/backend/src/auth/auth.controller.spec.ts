@@ -96,6 +96,8 @@ function makeController({
       ),
     },
     passwordResetToken: { create: jest.fn(async ({ data }: any) => data) },
+    // Role names for the invitation mail.
+    role: { findMany: jest.fn(async ({ where }: any) => (where.id.in as string[]).map((id) => ({ name: id }))) },
     invitationToken: {
       findUnique: jest.fn(async ({ where }: any) => invites.find((i) => i.token === where.token) ?? null),
       findFirst: jest.fn(async () => null),
@@ -713,5 +715,67 @@ describe('AuthController — email addresses ignore case', () => {
     expect(created.inviteUrl).not.toContain('old-token');
     expect(a.invites.map((i) => i.email)).toEqual(['Invitee@Example.com', 'other.person@example.com']);
     expect(a.sent).toContain('invite other.person@example.com');
+  });
+
+  it('inviting the same address again applies the new role and MCP roles to the pending invitation', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [EXISTING] });
+    const req = { user: { sub: 'u-existing', organizationId: 'org-x' } };
+    a.invites.push({
+      id: 'inv-old',
+      token: 'old-token',
+      email: 'invitee@example.com',
+      role: 'EDITOR',
+      mcpRoleId: 'role-all',
+      mcpRoleIds: ['role-all'],
+      invitedBy: 'u-someone-else',
+      organizationId: 'org-x',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+
+    const again = await a.controller.inviteUser(req, {
+      email: 'invitee@example.com',
+      role: 'VIEWER' as any,
+      mcpRoleIds: ['role-sales'],
+    });
+
+    // Same link, so the first mail keeps working, but it now grants what the
+    // second mail says.
+    expect(again.inviteUrl).toContain('token=old-token');
+    expect(a.invites).toHaveLength(1);
+    expect(a.invites[0]).toMatchObject({
+      role: 'VIEWER',
+      mcpRoleId: 'role-sales',
+      mcpRoleIds: ['role-sales'],
+      invitedBy: 'u-existing',
+      organizationId: 'org-x',
+    });
+    expect(a.prisma.invitationToken.update).toHaveBeenCalledWith(
+      expect.objectContaining({ where: { id: 'inv-old' } }),
+    );
+
+    // No MCP role this time: the earlier ones are cleared, not kept.
+    await a.controller.inviteUser(req, { email: 'invitee@example.com', role: 'VIEWER' as any });
+    expect(a.invites[0]).toMatchObject({ role: 'VIEWER', mcpRoleId: null, mcpRoleIds: [] });
+  });
+
+  it('a re-invite without MCP roles clears the single role an older invitation holds', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [EXISTING] });
+    const req = { user: { sub: 'u-existing', organizationId: 'org-x' } };
+    a.invites.push({
+      id: 'inv-legacy',
+      token: 'legacy-token',
+      email: 'invitee@example.com',
+      role: 'VIEWER',
+      // As the previous release stored it: no list, the single column only.
+      mcpRoleId: 'role-all',
+      mcpRoleIds: [],
+      invitedBy: 'u-existing',
+      organizationId: 'org-x',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+    await a.controller.inviteUser(req, { email: 'invitee@example.com', role: 'VIEWER' as any });
+    expect(a.invites[0]).toMatchObject({ role: 'VIEWER', mcpRoleId: null, mcpRoleIds: [] });
   });
 });

@@ -28,6 +28,7 @@ import { cn } from '@/lib/utils';
 import { missingLoginCredential, tokenPathFromInput, tokenPathToInput } from '@/lib/login-token-form';
 import { useAuthTypeLabel } from '@/lib/use-auth-type-label';
 import { canManageConnector } from '@/lib/can-manage-connector';
+import { useConnectorOwners } from '@/lib/use-connector-owners';
 import { ToolAnnotationsEditor } from '@/components/tool-annotations-editor';
 import { UserCredentialsCard } from '@/components/user-credentials-card';
 import { WebhookCard } from '@/components/webhook-card';
@@ -255,7 +256,7 @@ function slimHarForUpload(rawText: string, baseUrl?: string): { json: string; by
 }
 
 export default function ConnectorDetailPage() {
-  const { token, user, deploymentMode } = useAuth();
+  const { token, user, deploymentMode, deploymentModeLoaded } = useAuth();
   const t = useTranslations('connectorDetail');
   const te = useTranslations('emailSettings');
   const tt = useTranslations('connectorTools');
@@ -269,6 +270,16 @@ export default function ConnectorDetailPage() {
   // Cloud: whether the last automatic downgrade paused this connector, and the
   // swap dialog when activating it would go past the plan.
   const { usage: planUsage, reload: reloadPlanUsage } = usePlanUsage();
+  // Admins of a workspace with several members see who owns each connector.
+  // Cloud: the plan usage this page loads anyway says how many members there
+  // are, so a single-member workspace asks for no members list. Self-hosted
+  // has no such number for the workspace: the hook makes that one request.
+  const memberCount = !deploymentModeLoaded
+    ? null
+    : deploymentMode === 'cloud'
+      ? (planUsage ? planUsage.users.current : null)
+      : undefined;
+  const ownerOf = useConnectorOwners(memberCount);
   const pausedByPlan = pausedByPlanSets(planUsage).connectors.has(id);
   const tSwap = useTranslations('planSwap');
   const tAuthStatus = useTranslations('authStatus');
@@ -1612,6 +1623,13 @@ export default function ConnectorDetailPage() {
             {connector.baseUrl && (
               <div className="mt-0.5 break-all font-mono text-[12.5px] text-[var(--text-3)]">
                 {connector.baseUrl}
+              </div>
+            )}
+            {ownerOf(connector.userId) !== undefined && (
+              <div className="mt-0.5 text-[12.5px] text-[var(--text-3)]" data-testid="connector-owner">
+                {ownerOf(connector.userId) === null
+                  ? t('ownerGone')
+                  : t('owner', { name: ownerOf(connector.userId) as string })}
               </div>
             )}
           </div>

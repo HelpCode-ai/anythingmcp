@@ -45,6 +45,10 @@
       "hideAriaLabel": "Schaltfläche „Stern auf GitHub“ ausblenden"
     }
   },
+  "memberAccess": {
+    "notAvailableTitle": "Diese Seite steht Ihnen nicht zur Verfügung",
+    "notAvailableBody": "Ihre Rolle in diesem Workspace umfasst sie nicht. Wenn Sie mehr brauchen, wenden Sie sich an einen Workspace-Admin."
+  },
   "signIn": {
     "continueAs": "Weiter als {email}",
     "continueAsHint": "Sie haben sich hier gerade angemeldet, um Ihren KI-Assistenten zu verbinden.",
@@ -84,6 +88,8 @@
     "title": "Konto erstellen",
     "cloudTitle": "Kostenloses Konto erstellen",
     "cloudSubtitle": "7 Tage kostenlos testen · keine Kreditkarte · verbinden Sie Claude, ChatGPT, Copilot, Cursor oder Meta Muse mit Ihren Tools.",
+    "authorizationStep": "<strong>Schritt 1 von 2.</strong> Erstellen Sie Ihr Konto. Danach geht es direkt zurück, um die Verbindung mit {client} abzuschließen.",
+    "authorizationStepGeneric": "<strong>Schritt 1 von 2.</strong> Erstellen Sie Ihr Konto. Danach geht es direkt zurück, um die Verbindung mit Ihrem KI-Assistenten abzuschließen.",
     "socialConsent": "Mit dem Fortfahren akzeptieren Sie die <terms>Nutzungsbedingungen</terms> und die <privacy>Datenschutzerklärung</privacy>.",
     "continueWithEmail": "Weiter mit E-Mail",
     "name": "Name",
@@ -136,9 +142,13 @@
     "resendIn": "Erneut senden in {seconds} s",
     "resent": "Ein neuer Code wurde an Ihre E-Mail-Adresse gesendet",
     "skip": "Vorerst überspringen",
+    "openedLink": "Ich habe den Link in der E-Mail geöffnet",
+    "checkingLink": "Wird geprüft…",
+    "notVerifiedYet": "Diese Adresse ist noch nicht bestätigt. Öffnen Sie den Link in der E-Mail oder geben Sie den Code ein.",
     "errors": {
       "invalid": "Ungültiger Bestätigungscode",
-      "resendFailed": "Der Code konnte nicht erneut gesendet werden"
+      "resendFailed": "Der Code konnte nicht erneut gesendet werden",
+      "checkFailed": "Das ließ sich gerade nicht prüfen. Bitte versuchen Sie es erneut."
     }
   },
   "checkInbox": {
@@ -276,9 +286,27 @@
     "success": "Ihre E-Mail-Adresse wurde erfolgreich bestätigt!",
     "goToSignIn": "Zur Anmeldung",
     "backToSignIn": "Zurück zur Anmeldung",
+    "continueConnecting": "Verbindung mit {client} fortsetzen",
+    "continueConnectingGeneric": "Verbindung mit Ihrem KI-Assistenten fortsetzen",
+    "otherDevice": "Auf einem anderen Gerät oder in einem anderen Tab begonnen? Gehen Sie dorthin zurück und wählen Sie „Ich habe den Link in der E-Mail geöffnet“.",
     "errors": {
       "noToken": "Kein Bestätigungstoken angegeben",
       "failed": "Bestätigung fehlgeschlagen"
+    }
+  },
+  "pendingAuthorization": {
+    "label": "Verbindung noch nicht abgeschlossen",
+    "allow": {
+      "text": "{client} wartet auf Sie.",
+      "action": "Zurück zur Verbindung mit {client}",
+      "textGeneric": "Ihr KI-Assistent wartet auf Sie.",
+      "actionGeneric": "Zurück zur Verbindung mit Ihrem KI-Assistenten"
+    },
+    "continue": {
+      "text": "{client} ist noch nicht verbunden.",
+      "action": "Verbindung mit {client} abschließen",
+      "textGeneric": "Ihr KI-Assistent ist noch nicht verbunden.",
+      "actionGeneric": "Verbindung mit Ihrem KI-Assistenten abschließen"
     }
   },
   "acceptInvite": {
@@ -362,6 +390,8 @@
     "returningNoDate": "Diese E-Mail-Adresse hatte bereits ein AnythingMCP-Abonnement, daher ist eine neue kostenlose Testphase mit Zahlungsmethode nicht möglich. <strong>Ihr Tarif beginnt heute und wird heute abgerechnet.</strong> Ihr Workspace, Ihre Connectors und Einstellungen bleiben genau so, wie sie sind.",
     "trial": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
     "trialNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Hinterlegen Sie jetzt eine Zahlungsmethode, und Ihr Tarif läuft nach der Testphase einfach weiter, ohne dass vorher etwas abgebucht wird. Oder testen Sie ohne Zahlungsdaten weiter: Diese Testphase hat ein <strong>niedrigeres Connector-Limit</strong>, und Sie können jederzeit eine Zahlungsmethode hinterlegen, um Ihren vollen Tarif freizuschalten.",
+    "trialShort": "Alle Funktionen, kostenlos bis zum <strong>{date}</strong>. Vorher wird nichts abgebucht.",
+    "trialShortNoDate": "Alle Funktionen, kostenlos bis zum Ende Ihrer Testphase. Vorher wird nichts abgebucht.",
     "authorizationReturn": "So oder so geht es danach direkt zurück, um die Verbindung Ihres KI-Clients abzuschließen.",
     "chargesToday": "Diese Adresse hatte bereits ein Abonnement, daher berechnet der Checkout heute {amount}.",
     "start": {
@@ -380,6 +410,7 @@
     "notReadyCard": "Noch keine Zahlungsmethode hinterlegen?",
     "keepFree": "Kostenlose Testphase weiter nutzen",
     "tryFree": "Kostenlos ohne Zahlungsdaten testen",
+    "skipNote": "Ohne Zahlungsdaten hat die Testphase ein niedrigeres Connector-Limit. Sie können jederzeit eine Zahlungsmethode hinterlegen.",
     "methods": {
       "trial": "Heute 0 € · Karte, PayPal und weitere Methoden",
       "pay": "Karte, PayPal und weitere Methoden"
@@ -799,7 +830,9 @@
       "active": "Aktiv",
       "inactive": "Inaktiv",
       "importSpec": "Spezifikation importieren",
-      "delete": "Löschen"
+      "delete": "Löschen",
+      "owner": "Besitzer: {name}",
+      "ownerGone": "Besitzer: kein Mitglied mehr"
     },
     "addTile": {
       "title": "Connector hinzufügen",
@@ -1096,6 +1129,7 @@
   "setupGuide": {
     "stuck": "Nicht weitergekommen? Fragen Sie uns",
     "intro": {
+      "back": "Zurück",
       "title": "{name} mit Ihrer KI verbinden",
       "steps": "{count, plural, one {# Schritt} other {# Schritte}}",
       "examples": "Danach können Sie Ihre KI zum Beispiel fragen",
@@ -1673,7 +1707,9 @@
       "envSavedWarnings": "Umgebungsvariablen gespeichert. {warnings}",
       "discoveryFailed": "Erkennung fehlgeschlagen: {message}",
       "authorizationFailed": "Autorisierung fehlgeschlagen: {message}"
-    }
+    },
+    "owner": "Besitzer: {name}",
+    "ownerGone": "Besitzer: kein Mitglied dieses Workspace mehr"
   },
   "userCredentials": {
     "scopeError": "Der Anmeldemodus konnte nicht geändert werden.",
@@ -2262,11 +2298,17 @@
       },
       "restricted": {
         "label": "Eingeschränkt",
-        "description": "Mitglieder ohne Admin-Rolle sehen nur ihre eigenen Tool-Aufrufe, die Connectors, die ihre Rollen erreichen, und die MCP-Server, die einen davon enthalten."
+        "description": "Mitglieder ohne Admin-Rolle sehen nur ihre eigenen Tool-Aufrufe, die Connectors, die ihre Rollen erreichen (Editoren auch ihre eigenen Connectors), und ihre eigenen MCP-Server. Seiten zur Verwaltung des Workspace werden ihnen nicht angeboten."
       },
-      "noToolList": "Noch keine Rolle schränkt Tools ein, daher sehen Mitglieder weiterhin alle Connectors. Legen Sie unter <link>Rollen</link> eine Rolle mit einer Tool-Liste an.",
+      "noToolList": "Eingeschränkt begrenzt noch nicht, welche Connectors Mitglieder sehen. Keine Rolle in diesem Workspace hat eine Tool-Liste, deshalb sieht jedes Mitglied weiterhin jeden Connector mit Name, Status und Tools (nicht dessen Einstellungen); nur die Tool-Aufrufe sind auf die eigenen begrenzt. Legen Sie unter <link>Rollen</link> eine Rolle mit Tool-Liste an und weisen Sie sie zu. Ab dann sieht ein Mitglied ohne Rolle keinen Connector.",
       "saved": "Sichtbarkeit für Mitglieder gespeichert.",
-      "saveFailed": "Die Sichtbarkeit für Mitglieder konnte nicht gespeichert werden."
+      "saveFailed": "Die Sichtbarkeit für Mitglieder konnte nicht gespeichert werden.",
+      "activeNow": "Jetzt aktiv: {mode}",
+      "unsavedToRestricted": "Noch nicht gespeichert. Dieser Workspace ist weiterhin offen: Jedes Mitglied sieht alles, bis Sie speichern.",
+      "unsavedToOpen": "Noch nicht gespeichert. Dieser Workspace bleibt eingeschränkt, bis Sie speichern.",
+      "saveSwitch": "Speichern: auf {mode} umstellen",
+      "discard": "Verwerfen",
+      "confirmLeave": "Die gewählte Sichtbarkeit für Mitglieder ist noch nicht gespeichert. Diese Seite ohne Speichern verlassen?"
     },
     "revokeDialog": {
       "title": "Alle abmelden",
@@ -2301,7 +2343,8 @@
       "createTitle": "Neue Organisation erstellen",
       "createPlaceholder": "Name der neuen Organisation",
       "creating": "Wird erstellt...",
-      "create": "Organisation erstellen"
+      "create": "Organisation erstellen",
+      "createAdminOnly": "Auf dieser Instanz können nur Admins einen Workspace anlegen."
     }
   },
   "settingsUsers": {
@@ -2366,7 +2409,8 @@
       "emailFailed": "E-Mail konnte nicht gesendet werden:",
       "link": "Einladungslink (manuell weitergeben):",
       "sending": "Wird gesendet...",
-      "send": "Einladung senden"
+      "send": "Einladung senden",
+      "restrictedRoleHint": "Die Sichtbarkeit für Mitglieder ist hier eingeschränkt. Ein Viewer sieht nur, was seine MCP-Rollen erreichen. Ein Editor legt zusätzlich Connectors an und sieht seine eigenen immer."
     },
     "bulk": {
       "selected": "{count} ausgewählt · Skill-Lernen:",

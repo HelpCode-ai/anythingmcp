@@ -133,6 +133,9 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
     'consent picker; offers and grants only servers McpConnectionGrantService lets the user see',
   ),
   'LoginController.pickFirstApp': noSession('OAuth consent flow'),
+  'LoginController.pageBeacon': noSession('OAuth consent flow'),
+  'LoginController.showPausedPage': noSession('OAuth consent flow'),
+  'LoginController.pendingAuthorization': noSession('OAuth consent flow'),
   'LoginController.telegramOneTapQr': noSession('one-time code'),
   'LoginController.telegramOneTapStatus': noSession('one-time code'),
   'LoginController.telegramOneTapToken': noSession('one-time code'),
@@ -447,7 +450,9 @@ export const MEMBER_VISIBILITY_ROUTES: Readonly<Record<string, RouteVisibility>>
   'OrganizationsController.deleteCurrent': admin('checked in the handler'),
   'OrganizationsController.revokeWorkspaceSessions': admin('checked in the handler'),
   'OrganizationsController.switchOrg': own('switches the caller\'s active workspace'),
-  'OrganizationsController.createOrg': own('creates a workspace the caller owns'),
+  'OrganizationsController.createOrg': own(
+    'creates a workspace the caller owns; on self-hosted only for an ADMIN (checked in the handler)',
+  ),
   'PublicStatsController.getStats': noSession('public aggregate counts'),
 
   // ── roles and keys ─────────────────────────────────────────────────────

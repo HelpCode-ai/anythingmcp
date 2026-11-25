@@ -3,7 +3,11 @@
 jest.mock('openid-client', () => ({}));
 
 import { LoginController } from './login.controller';
+import { followPausedPageInPlace } from './paused-page.spec-helper';
 import type { Request, Response } from 'express';
+
+// The page after approving is reached through a redirect: follow it in place.
+followPausedPageInPlace();
 
 /**
  * Cloud: an account whose email address is not verified must not finish the
@@ -47,8 +51,9 @@ function makeRes(): FakeRes {
       this._sent = payload;
       return this;
     },
-    redirect(url: string) {
-      this._redirect = url;
+    redirect(a: string | number, b?: string) {
+      // Express: redirect(url) or redirect(status, url).
+      this._redirect = typeof a === 'number' ? (b as string) : a;
       return this;
     },
   };

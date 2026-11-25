@@ -155,3 +155,24 @@ describe('injectLoginTokenHeaders and the collision helpers', () => {
     expect((withLoginHeaderCollisionHint(notFound, 'Authorization') as any).hint).toBeUndefined();
   });
 });
+
+describe('injectLoginTokenHeaders: header names from the configuration', () => {
+  it('never writes a configured header name to the prototype', () => {
+    const config: any = { headers: { Accept: 'application/json' } };
+    const extraHeaders = JSON.parse('{"__proto__": "x-${token}", "X-Trace": "t"}');
+    injectLoginTokenHeaders(config, { headerName: 'Authorization', extraHeaders } as any, 'tok');
+    expect(Object.getPrototypeOf(config.headers)).toBe(Object.prototype);
+    expect(config.headers).toMatchObject({ Accept: 'application/json', Authorization: 'Bearer tok', 'X-Trace': 't' });
+    expect(({} as any)['x-tok']).toBeUndefined();
+  });
+
+  it('keeps the order: token header over a connector header, extraHeaders over both', () => {
+    const config: any = { headers: { authorization: 'old', 'X-A': '1' } };
+    injectLoginTokenHeaders(
+      config,
+      { headerName: 'Authorization', extraHeaders: { 'X-A': '2' } } as any,
+      'tok',
+    );
+    expect(config.headers).toEqual({ Authorization: 'Bearer tok', 'X-A': '2' });
+  });
+});
