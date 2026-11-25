@@ -2591,14 +2591,21 @@ export function injectLoginTokenHeaders(
   const others = Object.fromEntries(
     Object.entries(current).filter(([name]) => name.toLowerCase() !== headerName.toLowerCase()),
   );
-  axiosConfig.headers = (
+  // Built with Object.fromEntries (own properties only): header names come
+  // from the connector's configuration and must never reach the prototype.
+  // Later entries win, as before: the token header over a connector header,
+  // extraHeaders over both.
+  const base: [string, unknown][] =
     authConfig.tokenPlacement === 'body'
-      ? { ...current }
-      : { ...others, [headerName]: interpolate(headerTemplate) }
-  ) as AxiosRequestConfig['headers'];
-  for (const [k, v] of Object.entries(authConfig.extraHeaders || {})) {
-    axiosConfig.headers![k] = interpolate(String(v));
-  }
+      ? Object.entries(current)
+      : [...Object.entries(others), [headerName, interpolate(headerTemplate)]];
+  const extra = Object.entries(authConfig.extraHeaders || {}).map(
+    ([k, v]): [string, unknown] => [k, interpolate(String(v))],
+  );
+  axiosConfig.headers = Object.fromEntries([
+    ...base,
+    ...extra,
+  ]) as AxiosRequestConfig['headers'];
   return replaced;
 }
 

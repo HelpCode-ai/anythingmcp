@@ -102,11 +102,15 @@ export function interpolateDeep<T>(
   }
 
   if (value !== null && typeof value === 'object') {
-    const result: Record<string, unknown> = {};
-    for (const [key, val] of Object.entries(value)) {
-      result[key] = interpolateDeep(val, envVars, options);
-    }
-    return result as T;
+    // Object.fromEntries defines own properties, so a key such as
+    // "__proto__" from a JSON body stays a plain field and never changes
+    // the result's prototype (an assignment loop would).
+    return Object.fromEntries(
+      Object.entries(value).map(([key, val]) => [
+        key,
+        interpolateDeep(val, envVars, options),
+      ]),
+    ) as T;
   }
 
   return value;
