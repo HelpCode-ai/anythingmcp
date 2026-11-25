@@ -144,7 +144,7 @@ Configure `MCP_AUTH_MODE` in your `.env` (self-hosted):
 
 | Mode | Description |
 |------|-------------|
-| `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials (the value in `.env.example`) |
+| `oauth2` | OAuth 2.0 Authorization Code (PKCE) (the value in `.env.example`) |
 | `legacy` | Static Bearer Token or API Key |
 | `both` | Accepts either OAuth2 or legacy tokens |
 | `none` | No authentication (development only) |
@@ -180,10 +180,10 @@ Content-Type: application/json
 
 ### OAuth2 Flow
 
-In `oauth2` or `both` mode, clients authenticate via:
-
-1. **Authorization Code + PKCE** for interactive clients (dynamic client registration is supported)
-2. **Client Credentials** for server-to-server integrations
+In `oauth2` or `both` mode, interactive clients authenticate with the
+**Authorization Code + PKCE** flow (dynamic client registration is supported).
+The `client_credentials` grant is refused with `unauthorized_client`: for
+server-to-server integrations, use a per-user MCP API key (see above).
 
 Clients discover the endpoints from:
 

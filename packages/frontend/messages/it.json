@@ -2079,7 +2079,7 @@
     "authModes": {
       "none": "Nessuna (sconsigliato)",
       "legacy": "Legacy (Bearer Token / chiave API)",
-      "oauth2": "OAuth 2.0 (Authorization Code + Client Credentials)",
+      "oauth2": "OAuth 2.0 (Authorization Code + PKCE)",
       "both": "Entrambe (OAuth 2.0 + Legacy)"
     },
     "toast": {
@@ -2161,7 +2161,7 @@
       "loading": "Caricamento...",
       "active": "Attivo",
       "oauthTitle": "Endpoint OAuth 2.0",
-      "oauthNote": "Supporta i grant type Authorization Code (con PKCE) e Client Credentials. I client MCP come Claude Desktop rilevano questi endpoint automaticamente.",
+      "oauthNote": "Supporta il grant type Authorization Code (con PKCE). I client MCP come Claude Desktop rilevano questi endpoint automaticamente. Per l'accesso macchina usa una chiave API MCP personale.",
       "legacyTitle": "Autenticazione legacy",
       "legacyBody": "Imposta <code>MCP_BEARER_TOKEN</code> o <code>MCP_API_KEY</code> nelle tue variabili d'ambiente.",
       "modeNote": "La modalità di autenticazione si configura con la variabile d'ambiente <code>MCP_AUTH_MODE</code>. Impostala su <code>oauth2</code>, <code>legacy</code>, <code>both</code> o <code>none</code>."
