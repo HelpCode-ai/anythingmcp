@@ -888,6 +888,8 @@ AnythingMCP is fully self-hosted, but makes **optional** network calls to `anyth
 
 **If the service is unreachable:** The application continues to work normally. License verification failures are logged as warnings and do not block functionality.
 
+**Who can read the license on your instance:** `GET /api/license/status`, `/api/license/usage` and `/api/license/instance-id` answer without sign-in only until the first user account exists, so the setup screens can read them. After that, a request without a valid dashboard session gets the same empty answer as on AnythingMCP Cloud: no plan, features, expiry, instance ID or counts. Signed-in users see their license as before.
+
 ### Email Fallback
 
 **When:** Only if SMTP is **not** configured and the application needs to send an email (invitations, welcome emails, email verification).

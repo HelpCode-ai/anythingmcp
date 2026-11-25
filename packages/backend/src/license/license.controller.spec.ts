@@ -316,3 +316,151 @@ describe('LicenseController — plan fit', () => {
     await expect(make().controller.planFitForUser({ user: {} })).rejects.toThrow(NotFoundException);
   });
 });
+
+/**
+ * status, usage and instance-id have no guard: a self-hosted instance answers
+ * them before anyone has signed up. Once it has a user, a visitor without a
+ * dashboard token used to read the plan, features, expiry, instance id and
+ * the connector, server and user counts. Now they get the empty answer Cloud
+ * gives, and signed-in callers are unaffected.
+ */
+describe('LicenseController — anonymous reads on self-hosted', () => {
+  const ACTIVE = {
+    plan: 'enterprise',
+    status: 'active',
+    features: { sso: true, maxUsers: 50 },
+    expiresAt: new Date('2027-06-30'),
+    lastVerifiedAt: new Date('2026-11-25'),
+    instanceId: 'inst-1234',
+  };
+  const USAGE = {
+    plan: 'enterprise',
+    connectors: { current: 12, max: null, isOver: false },
+    mcpServers: { current: 4, max: null, isOver: false },
+    users: { current: 9, max: 50, isOver: false },
+    isOverAny: false,
+  };
+  const DASHBOARD = { sub: 'user-1', organizationId: 'org-1', tokenUse: 'dashboard' };
+
+  function make(opts: { users: number; cloud?: boolean; payload?: any }) {
+    const cloud = opts.cloud ?? false;
+    const licenseService = {
+      getCurrentLicense: jest.fn(async () => ACTIVE),
+      getLatestInactiveLicense: jest.fn(async () => null),
+      getPaymentFailedLicense: jest.fn(async () => null),
+      getInstanceId: jest.fn(async () => 'inst-1234'),
+    };
+    const licenseGuard = { getUsage: jest.fn(async () => USAGE) };
+    const usersService = { count: jest.fn(async () => opts.users) };
+    const authService = {
+      verifyToken: jest.fn(() => {
+        if (opts.payload === undefined) throw new Error('Invalid or expired token');
+        return opts.payload;
+      }),
+    };
+    const controller = new LicenseController(
+      licenseService as any,
+      licenseGuard as any,
+      authService as any,
+      usersService as any,
+      { isCloud: () => cloud, isSelfHosted: () => !cloud } as any,
+      {} as any,
+      {} as any,
+      {} as any,
+    );
+    return { controller, licenseService, licenseGuard, usersService };
+  }
+
+  const anonymous = { headers: {} };
+  const bearer = { headers: { authorization: 'Bearer some.jwt' } };
+
+  const EMPTY_STATUS = { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
+  const EMPTY_USAGE = {
+    plan: null,
+    connectors: { current: 0, max: null, isOver: false },
+    mcpServers: { current: 0, max: null, isOver: false },
+    users: { current: 0, max: null, isOver: false },
+    isOverAny: false,
+  };
+
+  describe.each([1, 5])('once the instance has %i user(s)', (users) => {
+    it('gives an anonymous visitor the empty status, like Cloud', async () => {
+      const { controller, licenseService } = make({ users });
+      expect(await controller.getStatus(anonymous)).toEqual(EMPTY_STATUS);
+      expect(licenseService.getCurrentLicense).not.toHaveBeenCalled();
+    });
+
+    it('gives an anonymous visitor empty usage', async () => {
+      const { controller, licenseGuard } = make({ users });
+      expect(await controller.getUsage(anonymous)).toEqual(EMPTY_USAGE);
+      expect(licenseGuard.getUsage).not.toHaveBeenCalled();
+    });
+
+    it('withholds the instance id from an anonymous visitor', async () => {
+      const { controller, licenseService } = make({ users });
+      expect(await controller.getInstanceId(anonymous)).toEqual({ instanceId: null });
+      expect(licenseService.getInstanceId).not.toHaveBeenCalled();
+    });
+
+    it('treats an invalid or expired token as anonymous', async () => {
+      const { controller } = make({ users, payload: undefined });
+      expect(await controller.getStatus(bearer)).toEqual(EMPTY_STATUS);
+      expect(await controller.getUsage(bearer)).toEqual(EMPTY_USAGE);
+      expect(await controller.getInstanceId(bearer)).toEqual({ instanceId: null });
+    });
+
+    it('treats an MCP access token (same secret, not a dashboard token) as anonymous', async () => {
+      const mcpToken = { sub: 'user-1', azp: 'dcr-client', resource: 'https://x/mcp', type: 'access' };
+      const { controller } = make({ users, payload: mcpToken });
+      expect(await controller.getStatus(bearer)).toEqual(EMPTY_STATUS);
+      expect(await controller.getUsage(bearer)).toEqual(EMPTY_USAGE);
+      expect(await controller.getInstanceId(bearer)).toEqual({ instanceId: null });
+    });
+
+    it('still answers a signed-in dashboard user in full', async () => {
+      const { controller, licenseService, licenseGuard, usersService } = make({ users, payload: DASHBOARD });
+      expect(await controller.getStatus(bearer)).toMatchObject({
+        plan: 'enterprise',
+        features: ACTIVE.features,
+        instanceId: 'inst-1234',
+      });
+      expect(licenseService.getCurrentLicense).toHaveBeenCalledWith('org-1');
+      expect(await controller.getUsage(bearer)).toEqual(USAGE);
+      expect(licenseGuard.getUsage).toHaveBeenCalledWith('user-1', 'org-1');
+      expect(await controller.getInstanceId(bearer)).toEqual({ instanceId: 'inst-1234' });
+      // A signed-in caller never costs the user count.
+      expect(usersService.count).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('before the first user exists (setup)', () => {
+    it('keeps answering anonymously, as before', async () => {
+      const { controller, licenseService, licenseGuard } = make({ users: 0 });
+      expect(await controller.getStatus(anonymous)).toMatchObject({ plan: 'enterprise', instanceId: 'inst-1234' });
+      expect(licenseService.getCurrentLicense).toHaveBeenCalledWith(undefined);
+      expect(await controller.getUsage(anonymous)).toEqual(USAGE);
+      expect(licenseGuard.getUsage).toHaveBeenCalledWith(undefined, undefined);
+      expect(await controller.getInstanceId(anonymous)).toEqual({ instanceId: 'inst-1234' });
+    });
+  });
+
+  describe('Cloud is unchanged', () => {
+    it('answers status and usage empty without a workspace token, without counting users', async () => {
+      const { controller, usersService } = make({ users: 3, cloud: true });
+      expect(await controller.getStatus(anonymous)).toEqual(EMPTY_STATUS);
+      expect(await controller.getUsage(anonymous)).toEqual(EMPTY_USAGE);
+      expect(usersService.count).not.toHaveBeenCalled();
+    });
+
+    it('answers a workspace token in full', async () => {
+      const { controller } = make({ users: 3, cloud: true, payload: DASHBOARD });
+      expect(await controller.getStatus(bearer)).toMatchObject({ plan: 'enterprise' });
+      expect(await controller.getUsage(bearer)).toEqual(USAGE);
+    });
+
+    it('keeps the instance id endpoint as it was', async () => {
+      const { controller } = make({ users: 3, cloud: true });
+      expect(await controller.getInstanceId(anonymous)).toEqual({ instanceId: 'inst-1234' });
+    });
+  });
+});
