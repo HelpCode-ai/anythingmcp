@@ -300,11 +300,24 @@ export function withheldGenerationTools(slug: string, profile: SharedToolsetProf
 
 let generationToolNames: Set<string> | null = null;
 
-/** The host of a connector's base URL, lower-cased; null when it has none. */
+/**
+ * The host of a connector's base URL, lower-cased and without a trailing DNS
+ * dot; null when it has none. Read with the WHATWG URL parser, the one the
+ * HTTP client uses, so `https://api.example.ai\@other.org` gives
+ * `api.example.ai` here too. A base URL the parser refuses is read with a
+ * scheme-and-host pattern; one without a scheme (a `{{VARIABLE}}`) has no host.
+ */
 function baseUrlHost(baseUrl: unknown): string | null {
   if (typeof baseUrl !== 'string') return null;
-  const match = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/?#@]*@)?([^/:?#]+)/i.exec(baseUrl.trim());
-  return match ? match[1].toLowerCase() : null;
+  let host: string | undefined;
+  try {
+    host = new URL(baseUrl.trim()).hostname;
+  } catch {
+    host = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/?#@]*@)?([^/:?#]+)/i.exec(baseUrl.trim())?.[1];
+  }
+  let normalized = host?.toLowerCase() ?? '';
+  while (normalized.endsWith('.')) normalized = normalized.slice(0, -1);
+  return normalized || null;
 }
 
 /**

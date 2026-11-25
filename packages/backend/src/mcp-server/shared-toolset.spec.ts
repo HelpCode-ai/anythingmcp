@@ -442,6 +442,10 @@ describe('shared /mcp tool set', () => {
     const ANSWER = handMade('openai_create_response', 'c-ai', 'https://api.openai.com/v1');
     // Neither a generation host nor a generation tool name.
     const LOOKALIKE = handMade('crm_generate_report', 'c-other', 'https://notsuno.com.example.org');
+    // Variants the HTTP client sends to the generation host: a backslash before
+    // `@` (the URL parser reads the host before it) and a trailing DNS dot.
+    const BACKSLASH = handMade('my_video', 'c-bs', 'https://api.higgsfield.ai\\@example.org/v1');
+    const TRAILING_DOT = handMade('my_video', 'c-dot', 'https://API.Higgsfield.ai./v1');
 
     expect(handMadeGenerationKind(VIDEO)).toBe('connector');
     expect(handMadeGenerationKind(VIDEO_STATUS)).toBe('connector');
@@ -450,6 +454,8 @@ describe('shared /mcp tool set', () => {
     expect(handMadeGenerationKind(IMAGE)).toBe('tool');
     expect(handMadeGenerationKind(ANSWER)).toBeNull();
     expect(handMadeGenerationKind(LOOKALIKE)).toBeNull();
+    expect(handMadeGenerationKind(BACKSLASH)).toBe('connector');
+    expect(handMadeGenerationKind(TRAILING_DOT)).toBe('connector');
     expect(handMadeGenerationKind(CRM_READ)).toBeNull();
     // A catalog connector is judged by its adapter, never by its host or names.
     expect(
@@ -461,7 +467,7 @@ describe('shared /mcp tool set', () => {
         }),
       ),
     ).toBeNull();
-    for (const t of [VIDEO, VIDEO_STATUS, SONG, MODEL, IMAGE]) {
+    for (const t of [VIDEO, VIDEO_STATUS, SONG, MODEL, IMAGE, BACKSLASH, TRAILING_DOT]) {
       expect(excludedOnSharedEndpoint(t, 'default')).toBe(true);
       expect(excludedOnSharedEndpoint(t, 'chatgpt')).toBe(false);
     }
