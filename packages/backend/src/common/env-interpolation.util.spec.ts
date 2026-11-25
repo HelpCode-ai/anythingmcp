@@ -54,6 +54,16 @@ describe('EnvInterpolation', () => {
       expect(result.headers.Authorization).toBe('Bearer secret-token-123');
     });
 
+    it('keeps a "__proto__" key as a plain field without touching the prototype', () => {
+      const input = JSON.parse('{"__proto__": {"polluted": "{{TOKEN}}"}, "a": "{{API_VERSION}}"}');
+      const result = interpolateDeep(input, envVars) as Record<string, any>;
+      expect(Object.getPrototypeOf(result)).toBe(Object.prototype);
+      expect(Object.prototype.hasOwnProperty.call(result, '__proto__')).toBe(true);
+      expect(Object.getOwnPropertyDescriptor(result, '__proto__')?.value).toEqual({ polluted: 'secret-token-123' });
+      expect(result.a).toBe('v2');
+      expect(({} as any).polluted).toBeUndefined();
+    });
+
     it('should interpolate arrays', () => {
       const input = ['{{API_BASE}}', '{{API_VERSION}}'];
       const result = interpolateDeep(input, envVars);
