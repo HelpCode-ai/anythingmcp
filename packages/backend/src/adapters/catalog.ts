@@ -404,6 +404,7 @@ import * as instagram from './intl/instagram.json';
 import * as instagramLogin from './intl/instagram-login.json';
 import * as instantly from './intl/instantly.json';
 import * as intercom from './intl/intercom.json';
+import * as internetdata from './intl/internetdata.json';
 import * as intruder from './intl/intruder.json';
 import * as invoiceNinja from './intl/invoice-ninja.json';
 import * as invoice123 from './intl/invoice123.json';
@@ -1680,6 +1681,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   instagramLogin as unknown as AdapterDefinition,
   instantly as unknown as AdapterDefinition,
   intercom as unknown as AdapterDefinition,
+  internetdata as unknown as AdapterDefinition,
   intruder as unknown as AdapterDefinition,
   invoiceNinja as unknown as AdapterDefinition,
   invoice123 as unknown as AdapterDefinition,
