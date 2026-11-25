@@ -33,3 +33,20 @@ describe('WellKnownOAuthController — openai-apps-challenge', () => {
     expect(r._body).not.toContain('undefined');
   });
 });
+
+describe('WellKnownOAuthController — authorization server metadata', () => {
+  const controller = new WellKnownOAuthController({ get: () => undefined } as any);
+  const req = { headers: { host: 'mcp.example.com' }, secure: true } as any;
+
+  it('does not advertise the client_credentials grant, which /token refuses', () => {
+    // Every client comes from open dynamic client registration, so
+    // ClientCredentialsMiddleware refuses the grant for all of them.
+    for (const meta of [
+      controller.openidConfiguration(req),
+      controller.openidConfigurationScoped(req),
+      controller.authorizationServerScoped(req),
+    ] as any[]) {
+      expect(meta.grant_types_supported).toEqual(['authorization_code', 'refresh_token']);
+    }
+  });
+});

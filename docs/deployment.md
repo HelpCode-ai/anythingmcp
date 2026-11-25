@@ -326,7 +326,7 @@ Configure `MCP_AUTH_MODE` in `.env`:
 
 | Mode | Description |
 |------|-------------|
-| `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials **(default)** |
+| `oauth2` | OAuth 2.0 Authorization Code (PKCE) **(default)** |
 | `legacy` | Static Bearer Token (`MCP_BEARER_TOKEN`) or API Key (`MCP_API_KEY`) |
 | `both` | Accepts OAuth2 tokens, per-user MCP API keys, and the legacy static tokens when they are set |
 | `none` | No authentication (development only) |
@@ -348,8 +348,13 @@ GET http://your-server:4000/.well-known/oauth-authorization-server
 ```
 
 Supports:
-- **Authorization Code + PKCE** — For interactive clients
-- **Client Credentials** — For server-to-server integrations
+- **Authorization Code + PKCE** — For interactive clients (dynamic client registration is open)
+- **Refresh tokens** — Issued with the authorization code
+
+The `client_credentials` grant is refused with `unauthorized_client`. Clients
+come from open dynamic client registration, so anyone could register one, and
+a client token names no user, so no endpoint would accept it. For
+server-to-server access, use a per-user MCP API key (below).
 
 ### Per-User API Keys
 

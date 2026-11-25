@@ -50,11 +50,10 @@ export class WellKnownOAuthController {
       revocation_endpoint: `${base}/revoke`,
       response_types_supported: ['code'],
       response_modes_supported: ['query'],
-      grant_types_supported: [
-        'authorization_code',
-        'refresh_token',
-        'client_credentials',
-      ],
+      // No `client_credentials`: ClientCredentialsMiddleware refuses it for
+      // every client, since all of them come from open Dynamic Client
+      // Registration. Keep in step with grantTypesSupported in app.module.ts.
+      grant_types_supported: ['authorization_code', 'refresh_token'],
       token_endpoint_auth_methods_supported: [
         'client_secret_basic',
         'client_secret_post',

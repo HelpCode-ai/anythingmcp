@@ -604,7 +604,7 @@ Configure `MCP_AUTH_MODE` in `.env`:
 
 | Mode | Description |
 |------|-------------|
-| `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials **(default)** |
+| `oauth2` | OAuth 2.0 Authorization Code (PKCE) **(default)** |
 | `legacy` | Static Bearer Token (`MCP_BEARER_TOKEN`) or API Key (`MCP_API_KEY`) |
 | `both` | Accepts OAuth2 tokens, per-user MCP API keys, and the legacy static tokens when they are set |
 | `none` | No authentication (development only) |
@@ -626,8 +626,13 @@ GET http://your-server:4000/.well-known/oauth-authorization-server
 ```
 
 Supports:
-- **Authorization Code + PKCE** — For interactive clients
-- **Client Credentials** — For server-to-server integrations
+- **Authorization Code + PKCE** — For interactive clients (dynamic client registration is open)
+- **Refresh tokens** — Issued with the authorization code
+
+The `client_credentials` grant is refused with `unauthorized_client`. Clients
+come from open dynamic client registration, so anyone could register one, and
+a client token names no user, so no endpoint would accept it. For
+server-to-server access, use a per-user MCP API key (below).
 
 ### Per-User API Keys
 
@@ -6434,7 +6439,7 @@ Configure `MCP_AUTH_MODE` in your `.env` (self-hosted):
 
 | Mode | Description |
 |------|-------------|
-| `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials (the value in `.env.example`) |
+| `oauth2` | OAuth 2.0 Authorization Code (PKCE) (the value in `.env.example`) |
 | `legacy` | Static Bearer Token or API Key |
 | `both` | Accepts either OAuth2 or legacy tokens |
 | `none` | No authentication (development only) |
@@ -6470,10 +6475,10 @@ Content-Type: application/json
 
 ### OAuth2 Flow
 
-In `oauth2` or `both` mode, clients authenticate via:
-
-1. **Authorization Code + PKCE** for interactive clients (dynamic client registration is supported)
-2. **Client Credentials** for server-to-server integrations
+In `oauth2` or `both` mode, interactive clients authenticate with the
+**Authorization Code + PKCE** flow (dynamic client registration is supported).
+The `client_credentials` grant is refused with `unauthorized_client`: for
+server-to-server integrations, use a per-user MCP API key (see above).
 
 Clients discover the endpoints from:
 
