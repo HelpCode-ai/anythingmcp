@@ -57,6 +57,40 @@
 	# the release test caught exactly that, one 503 in ~4000 requests.
 	vars amcp_colour {file./config/amcp-colour}
 
+	# ── Access log ─────────────────────────────────────────────────────────
+	# One JSON line per request, so a security incident can be traced back
+	# (who called what, when, with which status). Until 2026-11 nothing was
+	# logged per request: only reverse-proxy errors reached `docker logs`.
+	# Kept small on purpose, the droplet shares its RAM and disk with the app:
+	#   - written to a file in the caddy_data volume, not to stdout, so it
+	#     does not grow the Docker json log or `docker logs` output;
+	#   - rotated at 100 MiB, rotated files gzip-compressed (~12x), at most
+	#     40 kept and none older than 30 days. Measured 2026-11-25: ~7 req/s,
+	#     ~400 bytes a line, ~230 MB a day before compression, so 40 files
+	#     cover about two weeks in at most ~100 MB + 40 x ~9 MB on disk;
+	#   - no request or response headers (they carry API keys, bearer tokens,
+	#     service tokens and webhook signatures under many names) and no query
+	#     string (OAuth codes, `?api_key=`); the user agent is appended alone;
+	#   - health checks are not logged (the uptime probe hits them all day).
+	log_skip /health*
+	log_append user_agent {http.request.header.User-Agent}
+	log {
+		output file /data/access-log/access.log {
+			roll_size 100MiB
+			roll_keep 40
+			roll_keep_for 720h
+		}
+		format filter {
+			wrap json
+			fields {
+				request>headers delete
+				request>tls delete
+				resp_headers delete
+				request>uri regexp "\?.*$" "?redacted"
+			}
+		}
+	}
+
 	# Compress the backend's JSON. Next compresses its own pages, the backend
 	# does not, and nothing here did: GET /api/adapters, the catalogue the
 	# connector store loads, went out as 551 KB of raw JSON (Sentry

@@ -186,8 +186,9 @@ export function sharedEndpointMode(): 'fixed' | 'direct' {
 // excludes software that uses AI models to generate images, video or audio,
 // text-to-speech and voice models included; only design visuals are allowed.
 // The default profile does not serve connectors built for that, and withholds
-// the generation tools of general AI and media connectors. The ChatGPT profile
-// serves them.
+// the generation tools of general AI and media connectors. A connector made by
+// hand that calls one of those services is treated like the catalog one (see
+// handMadeGenerationKind). The ChatGPT profile serves them.
 //
 // Betting odds: OpenAI's app guidelines prohibit apps that facilitate
 // sportsbook wagers, so the ChatGPT profile does not serve odds connectors.
@@ -218,16 +219,37 @@ export const GENERATIVE_MEDIA_ADAPTERS = [
 ];
 /** Generation tools of catalog connectors that are otherwise served, by adapter slug. */
 export const GENERATIVE_MEDIA_TOOLS: Record<string, string[]> = {
+  atlassian: ['atlassian_createConfluenceInfographicForPage', 'atlassian_editConfluenceInfographicForPage'],
   cloudinary: ['cloudinary_generate_image', 'cloudinary_generate_image_from_images', 'cloudinary_get_generation_task'],
   deepgram: ['deepgram_text_to_speech'],
   freepik: ['freepik_generate_image_mystic', 'freepik_get_mystic_task'],
   gemini: ['gemini_generate_image', 'gemini_edit_image'],
-  kittl: ['kittl_generate_media'],
+  kittl: ['kittl_generate_media', 'kittl_run_ai_workflow', 'kittl_upscale_image'],
   openai: ['openai_generate_image', 'openai_edit_image'],
   openrouter: ['openrouter_generate_image'],
   telnyx: ['telnyx_speak_text'],
   xai: ['xai_generate_image', 'xai_edit_image'],
 };
+/**
+ * Domains of services built for image, video or audio generation: those of the
+ * catalog connectors in GENERATIVE_MEDIA_ADAPTERS, plus fal and Suno, which
+ * workspaces reach through connectors they made by hand. A connector that
+ * comes from no catalog adapter and calls one of them is withheld like the
+ * catalog ones (see {@link handMadeGenerationKind}).
+ */
+export const GENERATIVE_MEDIA_DOMAINS = [
+  'elevenlabs.io',
+  'fal.ai',
+  'fal.run',
+  'fish.audio',
+  'gen-api.ru',
+  'heygen.com',
+  'higgsfield.ai',
+  'kie.ai',
+  'replicate.com',
+  'stability.ai',
+  'suno.com',
+];
 const BETTING_ODDS_ADAPTERS = ['odds-api', 'oddsrelay', 'the-odds-api'];
 
 /** How much of a catalog connector the shared endpoint serves. */
@@ -276,6 +298,45 @@ export function withheldGenerationTools(slug: string, profile: SharedToolsetProf
   return profile === 'chatgpt' ? [] : (GENERATIVE_MEDIA_TOOLS[slug] ?? []);
 }
 
+let generationToolNames: Set<string> | null = null;
+
+/**
+ * The host of a connector's base URL, lower-cased and without a trailing DNS
+ * dot; null when it has none. Read with the WHATWG URL parser, the one the
+ * HTTP client uses, so `https://api.example.ai\@other.org` gives
+ * `api.example.ai` here too. A base URL the parser refuses is read with a
+ * scheme-and-host pattern; one without a scheme (a `{{VARIABLE}}`) has no host.
+ */
+function baseUrlHost(baseUrl: unknown): string | null {
+  if (typeof baseUrl !== 'string') return null;
+  let host: string | undefined;
+  try {
+    host = new URL(baseUrl.trim()).hostname;
+  } catch {
+    host = /^[a-z][a-z0-9+.-]*:\/\/(?:[^/?#@]*@)?([^/:?#]+)/i.exec(baseUrl.trim())?.[1];
+  }
+  let normalized = host?.toLowerCase() ?? '';
+  while (normalized.endsWith('.')) normalized = normalized.slice(0, -1);
+  return normalized || null;
+}
+
+/**
+ * A connector made by hand has no adapter slug, so the catalog lists above do
+ * not see it. It is withheld on the default profile all the same when it calls
+ * a generation service (`connector`: every tool of it), or when the tool
+ * carries the name of a catalog generation tool (`tool`: that tool only).
+ * Null for everything else, and for every connector that has an adapter slug.
+ */
+export function handMadeGenerationKind(tool: RegisteredTool): 'connector' | 'tool' | null {
+  if (typeof tool.connectorConfig?.config?.adapterSlug === 'string') return null;
+  const host = baseUrlHost(tool.connectorConfig?.baseUrl);
+  if (host && GENERATIVE_MEDIA_DOMAINS.some((d) => host === d || host.endsWith(`.${d}`))) {
+    return 'connector';
+  }
+  generationToolNames ??= new Set(Object.values(GENERATIVE_MEDIA_TOOLS).flat());
+  return generationToolNames.has(tool.name) ? 'tool' : null;
+}
+
 /** True for a catalog adapter the shared endpoint does not serve at all in `profile`. */
 export function isExcludedAdapterSlug(slug: string, profile: SharedToolsetProfile): boolean {
   return sharedEndpointAccess(slug, profile) === 'none';
@@ -289,7 +350,7 @@ export function excludedOnSharedEndpoint(tool: RegisteredTool, profile: SharedTo
   // Enterprise-gated design (see the code-mode issues).
   if ((tool.endpointMapping as { method?: unknown } | undefined)?.method === 'code') return true;
   const slug = tool.connectorConfig?.config?.adapterSlug;
-  if (typeof slug !== 'string') return false;
+  if (typeof slug !== 'string') return profile !== 'chatgpt' && handMadeGenerationKind(tool) !== null;
   if (withheldGenerationTools(slug, profile).includes(tool.name)) return true;
   const served = sharedEndpointAccess(slug, profile);
   return served === 'none' || (served === 'read' && access(tool) === 'write');
@@ -297,10 +358,11 @@ export function excludedOnSharedEndpoint(tool: RegisteredTool, profile: SharedTo
 
 function withheldReason(tool: RegisteredTool): string {
   const slug = String(tool.connectorConfig?.config?.adapterSlug ?? '');
-  if (GENERATIVE_MEDIA_TOOLS[slug]?.includes(tool.name)) {
+  const handMade = handMadeGenerationKind(tool);
+  if (GENERATIVE_MEDIA_TOOLS[slug]?.includes(tool.name) || handMade === 'tool') {
     return `'${tool.name}' generates images, video or audio. Those tools are not served on this shared connection`;
   }
-  switch (withheldKind(slug)) {
+  switch (handMade === 'connector' ? 'media' : withheldKind(slug)) {
     case 'crypto':
       return `'${tool.name}' belongs to a cryptocurrency connector. Those are not served on this shared connection`;
     case 'media':
@@ -1038,7 +1100,8 @@ export function registerSharedToolset(
       // connectors on the default profile), or only their generation tools.
       const servedIds = new Set(served.map((t) => t.connectorId));
       const isGenerationTool = (t: RegisteredTool) =>
-        withheldGenerationTools(String(t.connectorConfig?.config?.adapterSlug ?? ''), profile).includes(t.name);
+        withheldGenerationTools(String(t.connectorConfig?.config?.adapterSlug ?? ''), profile).includes(t.name) ||
+        handMadeGenerationKind(t) === 'tool';
       const heldIds = [...new Set(withheld.filter((t) => !isGenerationTool(t)).map((t) => t.connectorId))];
       const notServedHere = heldIds.filter((id) => !servedIds.has(id)).map((id) => connectorName(byId, id));
       const readToolsOnlyHere = heldIds.filter((id) => servedIds.has(id)).map((id) => connectorName(byId, id));

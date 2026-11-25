@@ -646,10 +646,20 @@ describe('RefreshTokenRevocationMiddleware — server outside the connection gra
     await expect(store.peek(USER_ID, CLIENT)).resolves.toBe(SRV_B);
   });
 
-  it('refuses a revoked connection', async () => {
+  it('refuses a revoked connection and says it was revoked', async () => {
     grants.serverScopeById.mockResolvedValue('revoked');
     await middleware.use(refresh({ resource: url(`/mcp/${SRV_B}`) }), res, next);
-    expectOutsideGrant('resource');
+    expect(next).not.toHaveBeenCalled();
+    expect(res.status).toHaveBeenCalledWith(400);
+    expect(res.json).toHaveBeenCalledWith({
+      error: 'invalid_grant',
+      error_description: 'This connection was revoked. Connect again to use this MCP server.',
+    });
+    expect(securityEvents.log).toHaveBeenCalledWith(
+      expect.objectContaining({
+        metadata: expect.objectContaining({ reason: 'connection_revoked', via: 'resource', serverId: SRV_B }),
+      }),
+    );
   });
 
   it('passes a refresh for a server inside the grant', async () => {
