@@ -177,8 +177,10 @@ export const BROWSER_IGNORE_ERRORS: Array<string | RegExp> = [
   /Invalid call to runtime\.sendMessage\(\)\. Tab not found/,
   // Google Tag Manager's own beacons blocked by an ad blocker or dropped by
   // the network; the SDK names the host in the message (ANYTHINGMCP-CLOUD-FRONTEND-D).
-  // GA4 sends its beacons to analytics.google.com (ANYTHINGMCP-CLOUD-FRONTEND-N, -P).
-  /^Failed to fetch \((?:[\w-]+\.)*(?:doubleclick\.net|google-analytics\.com|analytics\.google\.com|googletagmanager\.com|googleadservices\.com|googlesyndication\.com)\)$/,
+  // GA4 sends its beacons to analytics.google.com (ANYTHINGMCP-CLOUD-FRONTEND-N, -P),
+  // Google Ads sends /ccm/collect and /rmkt/collect beacons to www.google.com
+  // (ANYTHINGMCP-CLOUD-FRONTEND-D); other google.com hosts are kept.
+  /^Failed to fetch \((?:[\w-]+\.)*(?:doubleclick\.net|google-analytics\.com|analytics\.google\.com|www\.google\.com|googletagmanager\.com|googleadservices\.com|googlesyndication\.com)\)$/,
 ];
 
 const SCRIPT_FILE = /\.[cm]?js(?:[?#]|$)/i;

@@ -243,7 +243,7 @@ export class OrganizationsService {
   // refresh grant honours it (RefreshTokenRevocationMiddleware), that is
   // sufficient: there is no fourth way to obtain a user token —
   // `authorization_code` needs an interactive login and `client_credentials`
-  // mints `sub: "client:<id>"`, which is not a user session. What the
+  // is refused for every client (ClientCredentialsMiddleware). What the
   // watermark does NOT cover is per-user MCP API keys, hence `revokeApiKeys`.
   //
   // Acting on yourself is allowed: it is not a lockout, you sign in again.

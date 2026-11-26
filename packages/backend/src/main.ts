@@ -34,6 +34,7 @@ import { McpAuthExceptionFilter } from './auth/mcp-auth-exception.filter';
 import { McpEmailVerificationFilter } from './auth/mcp-email-verification';
 import { validateRequiredSecretsAtStartup } from './common/secrets.util';
 import { cookieSecrets } from './common/cookie-secrets.util';
+import { resolveTrustProxy } from './common/trust-proxy.util';
 import { startMetricsServer, stopMetricsServer } from './common/metrics';
 
 async function bootstrap() {
@@ -47,9 +48,17 @@ async function bootstrap() {
   app.useLogger(app.get(PinoLogger));
   const logger = app.get(PinoLogger);
 
-  // Trust proxy headers (ngrok, reverse proxies) for correct protocol/host detection
+  // Believe X-Forwarded-* only from the configured proxies (see
+  // trust-proxy.util.ts): req.ip keys the per-IP rate limits and the log, and
+  // protocol/host detection behind a reverse proxy depends on it too.
   const expressApp = app.getHttpAdapter().getInstance();
-  expressApp.set('trust proxy', true);
+  const trustProxy = resolveTrustProxy(process.env.TRUST_PROXY);
+  expressApp.set('trust proxy', trustProxy.value);
+  if (trustProxy.unsafe) {
+    logger.warn(`Trusting proxy headers from ${trustProxy.description}`, 'Bootstrap');
+  } else {
+    logger.log(`Trusting proxy headers from ${trustProxy.description}`, 'Bootstrap');
+  }
 
   // The WooCommerce key callback is unauthenticated and receives five short
   // fields: its own parser caps the body at 4 KB before the global one runs

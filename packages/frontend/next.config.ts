@@ -39,6 +39,17 @@ const nextConfig: NextConfig = {
       { source: '/userinfo', destination: `${BACKEND_URL}/userinfo` },
     ];
   },
+  // The app icons are fetched by AI clients every time they draw the
+  // connector (icon-512.png about 2,700 times an hour on Cloud, 134 KB each,
+  // ~6.5 GB a day) and Next serves public/ files with max-age=0. They change
+  // only with a release, so a day of caching is safe.
+  async headers() {
+    const oneDay = [{ key: 'Cache-Control', value: 'public, max-age=86400' }];
+    return ['/icon-48.png', '/icon-192.png', '/icon-512.png', '/icon-512-white.png', '/logo.svg'].map((source) => ({
+      source,
+      headers: oneDay,
+    }));
+  },
 };
 
 // Source maps are uploaded to our Sentry project when the build has a

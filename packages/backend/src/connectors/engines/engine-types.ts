@@ -18,7 +18,9 @@ export interface RestEndpointMapping {
    * Reserved keys, each opt-in: `__raw` (non-JSON body), `__merge` (spread an
    * object argument), `__spread` (form bodies), `{ "__file": "$p" }` (multipart
    * upload), `{ "__json": <template> }` (the field is sent as the JSON text
-   * of its resolved value) and `{ "__mime": { to, cc, bcc, from, replyTo, subject,
+   * of its resolved value), `{ "__jsonFile": <template>, "__filename"?: "x.json" }`
+   * (form-data only: the field is sent as a file part holding that JSON text)
+   * and `{ "__mime": { to, cc, bcc, from, replyTo, subject,
    * subjectPrefix, text, html, inReplyTo, references }, "__encoding"?:
    * "base64url" | "base64" | "none" }`, which builds an RFC 5322 message where
    * the marker stands (see mime-message.util.ts).

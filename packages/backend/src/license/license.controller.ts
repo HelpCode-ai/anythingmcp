@@ -26,7 +26,7 @@ import { IsBoolean, IsEmail, IsIn, IsString, IsOptional, Matches, MaxLength, Val
 import { Roles, RolesGuard } from '../auth/roles.guard';
 import { LicenseService, type BillingPortalFlow } from './license.service';
 import { LicenseGuardService } from './license-guard.service';
-import { AuthService } from '../auth/auth.service';
+import { AuthService, isForeignIssuedToken } from '../auth/auth.service';
 import { UsersService } from '../users/users.service';
 import { DeploymentService } from '../common/deployment.service';
 import { ProductEventService, ProductEvents } from '../audit/product-event.service';
@@ -144,22 +144,60 @@ export class LicenseController {
     @Optional() private readonly planFit?: PlanFitService,
   ) {}
 
+  /**
+   * The dashboard caller behind an optional Bearer token, or null.
+   *
+   * status, usage and instance-id take no guard because a self-hosted
+   * instance answers them before anyone has signed up. A token counts only
+   * when it is a dashboard token: an MCP access token is signed with the same
+   * secret but names no workspace here (see `isForeignIssuedToken`), so it is
+   * treated as no token at all.
+   */
+  private optionalCaller(req: any): { organizationId?: string; userId?: string } | null {
+    const authHeader = req.headers?.authorization;
+    if (typeof authHeader !== 'string' || !authHeader.startsWith('Bearer ')) return null;
+    try {
+      const payload = this.authService.verifyToken(authHeader.substring(7));
+      if (isForeignIssuedToken(payload as unknown as Record<string, unknown>)) return null;
+      const organizationId = payload.organizationId ?? undefined;
+      const userId = payload.sub ?? undefined;
+      return organizationId || userId ? { organizationId, userId } : null;
+    } catch {
+      return null;
+    }
+  }
+
+  /**
+   * Self-hosted: whether a request without a dashboard token must get the
+   * empty answer Cloud gives. That is the case once the instance has its
+   * first user (the same test sign-up uses to make the first account the
+   * ADMIN, and /health reports as `hasUsers`): from then on plan, features,
+   * expiry, instance id and counts are for signed-in users only. Before that
+   * there is nothing to protect and the setup screens may read them. The
+   * dashboard always sends its token, so signed-in pages are unaffected.
+   */
+  private async withholdFromAnonymous(
+    caller: { organizationId?: string; userId?: string } | null,
+  ): Promise<boolean> {
+    if (caller) return false;
+    if (!this.deployment.isSelfHosted()) return false;
+    return (await this.usersService.count()) > 0;
+  }
+
   @Get('status')
   @ApiOperation({ summary: 'Get current license status (optional auth for org-scoped results)' })
   async getStatus(@Req() req: any) {
-    // Optional auth: extract organizationId from JWT if present
-    let organizationId: string | undefined;
-    const authHeader = req.headers?.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      try {
-        const payload = this.authService.verifyToken(authHeader.substring(7));
-        organizationId = payload.organizationId ?? undefined;
-      } catch {}
-    }
+    // Optional auth: the workspace of a signed-in dashboard user.
+    const caller = this.optionalCaller(req);
+    const organizationId = caller?.organizationId;
 
-    // In cloud mode, require auth — don't leak license status to unauthenticated users
-    if (this.deployment.isCloud() && !organizationId) {
-      return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
+    // Cloud requires auth, and so does a self-hosted instance once it has a
+    // user: don't leak licence status to unauthenticated visitors.
+    if (
+      (this.deployment.isCloud() && !organizationId) ||
+      (await this.withholdFromAnonymous(caller))
+    ) {
+      return emptyLicenseStatus();
     }
 
     const license = await this.licenseService.getCurrentLicense(organizationId);
@@ -208,7 +246,7 @@ export class LicenseController {
           ...(last.plan === 'trial' && { trialDaysLeft: 0 }),
         };
       }
-      return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
+      return emptyLicenseStatus();
     }
 
     const trialDaysLeft = trialDaysLeftOf(license);
@@ -265,8 +303,13 @@ export class LicenseController {
   }
 
   @Get('instance-id')
-  @ApiOperation({ summary: 'Get the instance ID' })
-  async getInstanceId() {
+  @ApiOperation({
+    summary: 'Get the instance ID (self-hosted: signed-in users only once the first user exists)',
+  })
+  async getInstanceId(@Req() req: any) {
+    if (await this.withholdFromAnonymous(this.optionalCaller(req))) {
+      return { instanceId: null };
+    }
     const instanceId = await this.licenseService.getInstanceId();
     return { instanceId };
   }
@@ -277,27 +320,17 @@ export class LicenseController {
       'Current usage vs caps for the org. Drives the soft-warn upgrade banner in the UI.',
   })
   async getUsage(@Req() req: any) {
-    // Optional auth — anonymous self-hosted single-user instances still get
-    // their global usage. Cloud requires an org-scoped JWT.
-    let organizationId: string | undefined;
-    let userId: string | undefined;
-    const authHeader = req.headers?.authorization;
-    if (authHeader?.startsWith('Bearer ')) {
-      try {
-        const payload = this.authService.verifyToken(authHeader.substring(7));
-        organizationId = payload.organizationId ?? undefined;
-        userId = payload.sub ?? undefined;
-      } catch {}
-    }
+    // Optional auth. Cloud requires an org-scoped JWT; a self-hosted instance
+    // answers anonymously only before its first user exists.
+    const caller = this.optionalCaller(req);
+    const organizationId = caller?.organizationId;
+    const userId = caller?.userId;
 
-    if (this.deployment.isCloud() && !organizationId) {
-      return {
-        plan: null,
-        connectors: { current: 0, max: null, isOver: false },
-        mcpServers: { current: 0, max: null, isOver: false },
-        users: { current: 0, max: null, isOver: false },
-        isOverAny: false,
-      };
+    if (
+      (this.deployment.isCloud() && !organizationId) ||
+      (await this.withholdFromAnonymous(caller))
+    ) {
+      return emptyLicenseUsage();
     }
 
     return this.licenseGuard.getUsage(userId, organizationId);
@@ -706,6 +739,25 @@ export class LicenseController {
       throw new BadRequestException(err.message || 'Failed to register community license');
     }
   }
+}
+
+/**
+ * GET /api/license/status for a caller who may not see the licence: Cloud
+ * without a workspace token, a set-up self-hosted instance without a token.
+ */
+function emptyLicenseStatus() {
+  return { plan: null, status: 'none', features: null, expiresAt: null, instanceId: null };
+}
+
+/** GET /api/license/usage for the same callers: no plan, no counts. */
+function emptyLicenseUsage() {
+  return {
+    plan: null,
+    connectors: { current: 0, max: null, isOver: false },
+    mcpServers: { current: 0, max: null, isOver: false },
+    users: { current: 0, max: null, isOver: false },
+    isOverAny: false,
+  };
 }
 
 /** Whole days left on a free trial (0 once it is over); undefined for other plans. */

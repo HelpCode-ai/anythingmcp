@@ -836,11 +836,20 @@ ${paramXml}
       case 'BEARER_TOKEN':
         headers['Authorization'] = `Bearer ${authConfig.token}`;
         break;
-      case 'API_KEY':
-        headers[String(authConfig.headerName || 'X-API-Key')] = String(
-          authConfig.apiKey,
-        );
+      case 'API_KEY': {
+        const headerName = String(authConfig.headerName || 'X-API-Key');
+        // The header name comes from the connector's configuration: refuse
+        // the names that would write to the prototype instead of a header.
+        if (
+          headerName === '__proto__' ||
+          headerName === 'constructor' ||
+          headerName === 'prototype'
+        ) {
+          throw new Error(`Invalid API key header name: ${headerName}`);
+        }
+        headers[headerName] = String(authConfig.apiKey);
         break;
+      }
     }
   }
 

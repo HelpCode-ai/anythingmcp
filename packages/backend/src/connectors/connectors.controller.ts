@@ -2431,7 +2431,9 @@ export class ConnectorsController {
         catalogMcpToolsFor(connector.config, discovered),
       );
     } catch (error: any) {
-      this.logger.error(`Tool discovery failed for connector ${id}: ${error.message}`);
+      // Almost always the remote server refusing the user's setup (sign-in
+      // required, wrong URL, 4xx): the user sees the message, nothing for us.
+      this.logger.warn(`Tool discovery failed for connector ${id}: ${error.message}`);
       return { error: `Tool discovery failed: ${error.message}` };
     }
   }

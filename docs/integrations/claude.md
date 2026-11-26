@@ -18,6 +18,8 @@ Copy it from the server's page (**MCP Servers → your server → MCP endpoint**
 
 There is also a shared endpoint, `https://<your-host>/mcp`. When a client connects to it, the sign-in asks which of your servers (or which workspace) the connection may reach; with a single server, it is picked for you. The Claude Directory listing below uses this shared endpoint.
 
+On AnythingMCP Cloud the shared endpoint follows the Claude Directory policy, so it does not serve everything a workspace has: tools that generate images, video or audio with an AI model (text to speech included), cryptocurrency connectors, and the write tools of payment and banking connectors are left out. This also holds for a connector you built yourself for an image, video or audio generation service. All of them stay available on the server's own URL above. A self-hosted instance serves the same tools on both URLs by default.
+
 ---
 
 ## Option 1: the Claude Directory (AnythingMCP Cloud)
@@ -142,7 +144,7 @@ Configure `MCP_AUTH_MODE` in your `.env` (self-hosted):
 
 | Mode | Description |
 |------|-------------|
-| `oauth2` | OAuth 2.0 Authorization Code (PKCE) + Client Credentials (the value in `.env.example`) |
+| `oauth2` | OAuth 2.0 Authorization Code (PKCE) (the value in `.env.example`) |
 | `legacy` | Static Bearer Token or API Key |
 | `both` | Accepts either OAuth2 or legacy tokens |
 | `none` | No authentication (development only) |
@@ -178,10 +180,10 @@ Content-Type: application/json
 
 ### OAuth2 Flow
 
-In `oauth2` or `both` mode, clients authenticate via:
-
-1. **Authorization Code + PKCE** for interactive clients (dynamic client registration is supported)
-2. **Client Credentials** for server-to-server integrations
+In `oauth2` or `both` mode, interactive clients authenticate with the
+**Authorization Code + PKCE** flow (dynamic client registration is supported).
+The `client_credentials` grant is refused with `unauthorized_client`: for
+server-to-server integrations, use a per-user MCP API key (see above).
 
 Clients discover the endpoints from:
 

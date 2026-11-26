@@ -74,11 +74,12 @@ function parseAuthConfig(value: unknown): Record<string, unknown> {
 
 function asStringMap(value: unknown): Record<string, string> {
   if (!value || typeof value !== 'object') return {};
-  const out: Record<string, string> = {};
-  for (const [k, v] of Object.entries(value as Record<string, unknown>)) {
-    if (v !== undefined && v !== null && String(v) !== '') out[k] = String(v);
-  }
-  return out;
+  // Own properties only: a "__proto__" key stays a plain entry.
+  return Object.fromEntries(
+    Object.entries(value as Record<string, unknown>)
+      .filter(([, v]) => v !== undefined && v !== null && String(v) !== '')
+      .map(([k, v]) => [k, String(v)]),
+  );
 }
 
 function hasRealValue(value: unknown): boolean {

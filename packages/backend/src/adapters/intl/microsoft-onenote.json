@@ -1,8 +1,8 @@
 {
   "slug": "microsoft-onenote",
   "name": "OneNote (Microsoft 365)",
-  "description": "Let your AI work in OneNote: browse notebooks, sections and pages, read pages, create notebooks, sections and pages, and add notes to existing pages. OneNote for work or school and personal OneNote through Microsoft Graph, signed in with your Microsoft account.",
-  "instructions": "## OneNote\nThis connector works with the signed-in user's OneNote notebooks through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`, `/me/onenote`): browse notebooks, section groups, sections and pages, read pages, create notebooks, sections and pages, and add to or change existing pages. It works with OneNote for work or school (Microsoft 365) and with personal OneNote. Everything runs as the user who authorized the connector: the AI sees and changes exactly what that user can.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) → **Applications → App registrations → New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and personal accounts) or `consumers` (personal accounts only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions → Add a permission → Microsoft Graph → Delegated permissions**: add `offline_access`, `User.Read`, `Notes.ReadWrite`.\n5. **Certificates & secrets → New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the account whose notebooks the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook connector works here as well. Open it, add the delegated permissions from step 4 under **API permissions**, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it. The permissions per connector:\n- Outlook: `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`\n- OneDrive: `Files.ReadWrite`\n- Excel: `Files.ReadWrite` (plus `Files.ReadWrite.All` for workbooks in SharePoint or shared with the user)\n- SharePoint: `Sites.ReadWrite.All` and `Files.ReadWrite.All`\n- OneNote: `Notes.ReadWrite`\n- Microsoft To Do: `Tasks.ReadWrite`\n- Planner: `Tasks.ReadWrite`\nEvery connector also needs `offline_access` and `User.Read`.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration → **API permissions → Grant admin consent for <organisation>** once; afterwards every user can authorize. Each connector still works only with what the account that signed in may see.\n\n**Scopes**: `offline_access User.Read Notes.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token; without it the connector stops an hour after authorizing. `Notes.ReadWrite` covers the user's own notebooks. For notebooks other people shared with the user (work or school), add `Notes.ReadWrite.All` to the app registration, replace `Notes.ReadWrite` with it in the connector's OAuth settings and authorize again. For a read-only setup, use `offline_access User.Read Notes.Read`, authorize again, and disable `microsoft_onenote_create_notebook`, `microsoft_onenote_create_section`, `microsoft_onenote_create_page`, `microsoft_onenote_append_to_page` and `microsoft_onenote_update_page`.\n\n**Confirm writes**: before creating a notebook, section or page, or changing a page, tell the user what you are about to write and where, and wait for a yes.\n\n**Switched off at install**: `microsoft_onenote_delete_page`. Turn it on per tool only if the AI should delete pages.\n\n**Structure**: notebook → section groups (optional folders, can nest) → sections → pages. Find a notebook with `microsoft_onenote_list_notebooks`, its sections with `microsoft_onenote_list_notebook_sections` (sections inside section groups with `microsoft_onenote_list_notebook_section_groups` and `microsoft_onenote_list_section_group_sections`), or all sections at once with `microsoft_onenote_list_sections`. Then `microsoft_onenote_list_section_pages` lists a section's pages.\n\n**Finding pages**: `microsoft_onenote_list_pages` lists pages across notebooks, newest change first. Search titles with `filter` = `contains(tolower(title),'budget')`; filter on `lastModifiedDateTime ge 2026-09-01` for recent pages. Graph does not search page text; open candidate pages with `microsoft_onenote_get_page_content`. Users with very many OneNote items get error 10008 from `microsoft_onenote_list_pages`; go section by section then.\n\n**Reading**: `microsoft_onenote_get_page_content` returns the page as HTML. Read the text from it and leave the markup out of your answer. Images appear as links to Graph resources that only open with the user's sign-in; ink drawings are not included. Very long pages are cut off at about 200 KB.\n\n**Writing**\n- `microsoft_onenote_create_page` builds the page from a `title` and `body_html`. Use well-formed HTML (close every tag, write `&` as `&amp;`). `<p data-tag=\"to-do\">Call Anna</p>` makes a checkbox; `<img src=\"https://...\">` pulls a public image into the page. Uploading files or images from the user's computer is not supported here.\n- `microsoft_onenote_append_to_page` adds HTML at the end of a page: the easy way to add notes.\n- `microsoft_onenote_update_page` sends change commands: replace the title (`{\"target\":\"title\",\"action\":\"replace\",\"content\":\"New title\"}`), insert next to or replace an element. To replace an element, read the page with `include_ids` true and use the element's generated `id` (e.g. `p:{33f8a242-...}{40}`, no `#`). Ids change after each update; read again before the next change.\n- Writes that succeed return no content (HTTP 204) for updates and the new object (HTTP 201) for creates.\n\n**Pagination**: list answers carry `@odata.nextLink` while more results exist. Call the same tool again with `skip` set to the `$skip` value in that link (and the same `top`). Pages come 20 at a time unless `top` (at most 100) says otherwise.\n\n**Rate limits**: Microsoft Graph throttles OneNote per user and per app. A throttled call answers 429 with Retry-After; wait and retry.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 (code 40004 or 40002): `Notes.ReadWrite` is missing or not consented, or the notebook is shared read-only with the user.\n- 404 or code 20102/20112: the id is wrong or the item was deleted.\n- 20117: a notebook or section with that name already exists there. 20115/20153/20155: the name has a forbidden character or is too long (notebooks 128, sections 50 characters).\n- 20120, 20134 or 20149: the update command's target was not found; read the page again with `include_ids` true. 20121/20122/20141: the action does not fit the target (for example a replace on a `data-id` paragraph).\n- 10008 or 20266 on `microsoft_onenote_list_pages`: too many OneNote items for a cross-notebook query; list per section.\n- 30105/30108: the user's OneDrive for Business is not set up yet; the user opens OneDrive once, or the admin checks the licence.\n\n**Handwriting and pictures**: use `microsoft_onenote_get_page_image` with a page_id for PNG previews of the ink Graph exposes and positioned PNG/JPEG pictures. Typed text is returned separately. Pen pressure and non-round tips are approximate; typed fonts and table layout are not drawn into the previews. Some OneNote pen content is not exposed by Graph. Check any warnings and do not claim to have read ink that Graph did not return. Large pages fail at the documented tile and image limits rather than silently dropping strokes.\n\n**Out of scope here**: uploading images or files into pages, copying pages or sections, and notebooks of groups or SharePoint sites.",
+  "description": "Let your AI work in OneNote: browse notebooks, sections and pages, read pages and their image/file resources, create notebooks, sections and pages, and add notes to existing pages. Also reads shared SharePoint site and Microsoft 365 group notebooks. OneNote for work or school and personal OneNote through Microsoft Graph, signed in with your Microsoft account.",
+  "instructions": "## OneNote\nThis connector works with the signed-in user's OneNote notebooks through **Microsoft Graph v1.0** (`https://graph.microsoft.com/v1.0`): `/me/onenote` for the user's notebooks, with read-only `/sites/{id}/onenote` and `/groups/{id}/onenote` tools for shared work or school notebooks. You can browse notebooks, section groups, sections and pages, read pages, create notebooks, sections and pages, and add to or change existing pages. It works with OneNote for work or school (Microsoft 365) and with personal OneNote. Everything runs as the user who authorized the connector: the AI sees and changes exactly what that user can.\n\n**Setup (one-time, about 10 minutes)**\n1. Open https://entra.microsoft.com (or https://portal.azure.com) \u2192 **Applications \u2192 App registrations \u2192 New registration**.\n2. Name it (e.g. \"AnythingMCP Microsoft 365\") and choose the **supported account types**:\n   - *Accounts in this organizational directory only* (single tenant): only your organisation's users can sign in. Set `MICROSOFT_TENANT_ID` to the **Directory (tenant) ID** shown on the app's Overview page (a GUID), or to your domain such as `contoso.onmicrosoft.com`.\n   - *Accounts in any organizational directory* (multi-tenant): set `MICROSOFT_TENANT_ID` to `organizations`.\n   - *... and personal Microsoft accounts*: set `MICROSOFT_TENANT_ID` to `common` (work, school and personal accounts) or `consumers` (personal accounts only).\n   The value must match the app's account type, otherwise Microsoft refuses the sign-in (AADSTS50194 or AADSTS50020).\n3. Under **Redirect URI** pick platform **Web** and enter `https://cloud.anythingmcp.com/api/mcp-oauth/callback` on AnythingMCP Cloud, or `<your AnythingMCP URL>/api/mcp-oauth/callback` when you host AnythingMCP yourself. It must match character for character (AADSTS50011 otherwise).\n4. **API permissions \u2192 Add a permission \u2192 Microsoft Graph \u2192 Delegated permissions**: add `offline_access`, `User.Read`, `Notes.ReadWrite`.\n5. **Certificates & secrets \u2192 New client secret**. Copy the secret **Value** (not the Secret ID); it is shown once. Note its expiry date: when it expires the connector stops working until you paste a new one.\n6. Paste the **Application (client) ID** into `MICROSOFT_CLIENT_ID`, the secret value into `MICROSOFT_CLIENT_SECRET`, the tenant value from step 2 into `MICROSOFT_TENANT_ID`, and install.\n7. On the connector page click **Authorize with Provider** and sign in with the account whose notebooks the AI should work with. The refresh token is stored encrypted and access tokens (about 1 hour) are renewed automatically.\n\n**One Entra app for all Microsoft connectors**: the app registration made for the Outlook connector works here as well. Open it, add the delegated permissions from step 4 under **API permissions**, keep the same redirect URI, and reuse the same `MICROSOFT_CLIENT_ID`, `MICROSOFT_CLIENT_SECRET` and `MICROSOFT_TENANT_ID`. Each connector asks only for its own scopes when you authorize it. The permissions per connector:\n- Outlook: `Mail.ReadWrite`, `Mail.Send`, `Calendars.ReadWrite`\n- OneDrive: `Files.ReadWrite`\n- Excel: `Files.ReadWrite` (plus `Files.ReadWrite.All` for workbooks in SharePoint or shared with the user)\n- SharePoint: `Sites.ReadWrite.All` and `Files.ReadWrite.All`\n- OneNote: `Notes.ReadWrite`\n- Microsoft To Do: `Tasks.ReadWrite`\n- Planner: `Tasks.ReadWrite`\nEvery connector also needs `offline_access` and `User.Read`.\n\n**Admin consent**: these delegated permissions normally do not need an administrator, but many organisations turn off user consent. If the sign-in shows \"Need admin approval\" (AADSTS65001 or AADSTS90094), a tenant administrator opens the app registration \u2192 **API permissions \u2192 Grant admin consent for <organisation>** once; afterwards every user can authorize. Each connector still works only with what the account that signed in may see.\n\n**Scopes**: `offline_access User.Read Notes.ReadWrite`. `offline_access` is what makes Microsoft issue a refresh token; without it the connector stops an hour after authorizing. `Notes.ReadWrite` covers the user's own notebooks. For notebooks other people shared with the user (work or school), add `Notes.ReadWrite.All` to the app registration, replace `Notes.ReadWrite` with it in the connector's OAuth settings and authorize again. For a read-only setup, use `offline_access User.Read Notes.Read`, authorize again, and disable `microsoft_onenote_create_notebook`, `microsoft_onenote_create_section`, `microsoft_onenote_create_page`, `microsoft_onenote_append_to_page` and `microsoft_onenote_update_page`.\n\n**Confirm writes**: before creating a notebook, section or page, or changing a page, tell the user what you are about to write and where, and wait for a yes.\n\n**Switched off at install**: `microsoft_onenote_delete_page`. Turn it on per tool only if the AI should delete pages.\n\n**Structure**: notebook \u2192 section groups (optional folders, can nest) \u2192 sections \u2192 pages. Find a notebook with `microsoft_onenote_list_notebooks`, its sections with `microsoft_onenote_list_notebook_sections` (sections inside section groups with `microsoft_onenote_list_notebook_section_groups` and `microsoft_onenote_list_section_group_sections`), or all sections at once with `microsoft_onenote_list_sections`. Then `microsoft_onenote_list_section_pages` lists a section's pages.\n\n**Finding pages**: `microsoft_onenote_list_pages` lists pages across notebooks, newest change first. Search titles with `filter` = `contains(tolower(title),'budget')`; filter on `lastModifiedDateTime ge 2026-09-01` for recent pages. Graph does not search page text; open candidate pages with `microsoft_onenote_get_page_content`. Users with very many OneNote items get error 10008 from `microsoft_onenote_list_pages`; go section by section then.\n\n**Reading**: `microsoft_onenote_get_page_content` returns the page as HTML. Read the text from it and leave the markup out of your answer. Very long pages are cut off at about 200 KB. Images and attached files appear as authenticated Graph resource links. Call `microsoft_onenote_get_resource` with the resource id from `/resources/{id}/` in the HTML, using `data-fullres-src` for an original image when present. Pass only that id, not the full link or a token. PNG, JPEG, GIF and WebP resources become MCP image content; other binary files are embedded resources. Files above 4 MiB are described without their bytes; the instance response-size limit still applies. This works the same on Cloud and self-hosted, using the existing delegated sign-in. It does not render ink strokes or a whole page; `microsoft_onenote_get_page_image` does that.\n\n**Shared notebooks (work or school accounts)**: use the site/group read tools with the explicit SharePoint `site_id` or Microsoft 365 `group_id`. Start with `microsoft_onenote_list_site_notebooks` or `microsoft_onenote_list_group_notebooks`, list that owner's sections, then list pages within a section and read the page under the same owner. IDs are Microsoft Graph ids, not browser URLs. Images and attachments can be fetched with `microsoft_onenote_get_site_resource` or `microsoft_onenote_get_group_resource`; pass only the resource id from the page HTML. PNG, JPEG, GIF and WebP are returned as MCP images; other binary files as embedded resources, up to 4 MiB. These tools do not discover site/group ids, and page previews (`microsoft_onenote_get_page_image`) cover only the signed-in user's own notebooks. The account must already have access to that site/group. For shared notebooks, configure the delegated `Notes.Read.All` permission (or `Notes.ReadWrite.All` if shared writes are separately needed) in the Entra app and the connector's OAuth scopes, then authorize again. The connector's default scopes stay unchanged; personal Microsoft accounts cannot access organizational sites/groups. Delegated read-all does not inherently require admin consent, but tenant consent policy may require an administrator. Cloud and self-hosted use the same Graph endpoints and sign-in.\n\n**Writing**\n- `microsoft_onenote_create_page` builds the page from a `title` and `body_html`. Use well-formed HTML (close every tag, write `&` as `&amp;`). `<p data-tag=\"to-do\">Call Anna</p>` makes a checkbox; `<img src=\"https://...\">` pulls a public image into the page. Uploading files or images from the user's computer is not supported here.\n- `microsoft_onenote_append_to_page` adds HTML at the end of a page: the easy way to add notes.\n- `microsoft_onenote_update_page` sends change commands: replace the title (`{\"target\":\"title\",\"action\":\"replace\",\"content\":\"New title\"}`), insert next to or replace an element. To replace an element, read the page with `include_ids` true and use the element's generated `id` (e.g. `p:{33f8a242-...}{40}`, no `#`). Ids change after each update; read again before the next change.\n- Writes that succeed return no content (HTTP 204) for updates and the new object (HTTP 201) for creates.\n\n**Pagination**: list answers carry `@odata.nextLink` while more results exist. Call the same tool again with `skip` set to the `$skip` value in that link (and the same `top`). Pages come 20 at a time unless `top` (at most 100) says otherwise.\n\n**Rate limits**: Microsoft Graph throttles OneNote per user and per app. A throttled call answers 429 with Retry-After; wait and retry.\n\n**Common errors**\n- 401 `InvalidAuthenticationToken`: the authorization was revoked or the client secret expired. Paste a new secret if needed and click **Authorize with Provider** again.\n- 403 (code 40004 or 40002): `Notes.ReadWrite` is missing or not consented, or the notebook is shared read-only with the user.\n- 404 or code 20102/20112: the id is wrong or the item was deleted.\n- 20117: a notebook or section with that name already exists there. 20115/20153/20155: the name has a forbidden character or is too long (notebooks 128, sections 50 characters).\n- 20120, 20134 or 20149: the update command's target was not found; read the page again with `include_ids` true. 20121/20122/20141: the action does not fit the target (for example a replace on a `data-id` paragraph).\n- 10008 or 20266 on `microsoft_onenote_list_pages`: too many OneNote items for a cross-notebook query; list per section.\n- 30105/30108: the user's OneDrive for Business is not set up yet; the user opens OneDrive once, or the admin checks the licence.\n\n**Handwriting and pictures**: use `microsoft_onenote_get_page_image` with a page_id for PNG previews of the ink Graph exposes and positioned PNG/JPEG pictures. Typed text is returned separately. Pen pressure and non-round tips are approximate; typed fonts and table layout are not drawn into the previews. Some OneNote pen content is not exposed by Graph. Check any warnings and do not claim to have read ink that Graph did not return. Large pages fail at the documented tile and image limits rather than silently dropping strokes.\n\n**Out of scope here**: uploading images or files into pages, copying pages or sections.\n",
   "region": "intl",
   "category": "productivity",
   "icon": "microsoft-onenote",
@@ -17,7 +17,7 @@
     "MICROSOFT_CLIENT_ID": {
       "label": "Application (client) ID",
       "kind": "credential",
-      "help": "Microsoft Entra admin center → App registrations → your app → Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
+      "help": "Microsoft Entra admin center \u2192 App registrations \u2192 your app \u2192 Overview: Application (client) ID. The app registration made for the Outlook connector works here too.",
       "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade",
       "example": "00001111-aaaa-2222-bbbb-3333cccc4444",
       "pattern": "^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$",
@@ -26,7 +26,7 @@
     "MICROSOFT_CLIENT_SECRET": {
       "label": "Client secret value",
       "kind": "credential",
-      "help": "Same app → Certificates & secrets → New client secret: copy the Value column (shown once), not the Secret ID.",
+      "help": "Same app \u2192 Certificates & secrets \u2192 New client secret: copy the Value column (shown once), not the Secret ID.",
       "link": "https://entra.microsoft.com/#view/Microsoft_AAD_RegisteredApps/ApplicationsListBlade"
     },
     "MICROSOFT_TENANT_ID": {
@@ -40,7 +40,7 @@
   },
   "verifyHints": {
     "401": "Microsoft refused the access token. Click Authorize with Provider again; if the client secret has expired, create a new one in the app registration first.",
-    "403": "The app lacks a Graph permission or consent for it. Add Notes.ReadWrite and User.Read as delegated permissions, grant admin consent if your organisation requires it, and authorize again.",
+    "403": "Microsoft Graph refused access. For personal notebooks, check Notes.ReadWrite (or Notes.Read for reads). For shared site/group notebooks, check delegated Notes.Read.All or Notes.ReadWrite.All, authorize again, and confirm that the signed-in account can access that site/group. Tenant policy may require administrator consent.",
     "rate_limited": "Microsoft Graph is throttling OneNote for this account. Wait a minute and try again."
   },
   "probe": {
@@ -493,6 +493,548 @@
       "responseMapping": {
         "render": "onenote-page",
         "binary": {
+          "maxBytes": 4194304
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_get_resource",
+      "description": "Download an image or attached file from a OneNote page using its resource id. Read the page HTML first and take the id from a Graph /resources/{id}/ link, including data-fullres-src for the original image. Pass only the id, not a URL. Supported images are attached to the MCP result so the model can read them; other binary files are embedded resources. Files above 4 MiB are described without attaching their bytes. This does not render ink strokes or an entire page. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "resource_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Resource id from the page HTML's /resources/{id}/ link. Copy only the id, without the Graph URL or the /content or /$value suffix."
+          }
+        },
+        "required": [
+          "resource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/me/onenote/resources/{resource_id}/content",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "binary": {
+          "as": "auto",
+          "maxBytes": 4194304
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_list_site_notebooks",
+      "description": "List the OneNote notebooks in a SharePoint site that the signed-in work or school account can access. Returns notebook ids, names and links. Supply the site_id; this does not discover sites or groups. Requires delegated access to the shared notebooks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SharePoint site id from Microsoft Graph, normally hostname,site-collection-guid,web-guid. Use the id property, not a browser URL."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. \"contains(tolower(displayName),'project')\" or \"lastModifiedDateTime ge 2026-01-01\". Property names are case-sensitive; compare text with tolower()."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"displayName\" or \"lastModifiedDateTime desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "How many to return (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many to skip, for the next page: the $skip value from @odata.nextLink.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/onenote/notebooks",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_onenote_list_site_sections",
+      "description": "List all OneNote sections, including sections in section groups, in a SharePoint site accessible to the signed-in work or school account. Results identify their parent notebook. Use a section id with microsoft_onenote_list_site_section_pages. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SharePoint site id from Microsoft Graph, normally hostname,site-collection-guid,web-guid. Use the id property, not a browser URL."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. \"contains(tolower(displayName),'project')\" or \"lastModifiedDateTime ge 2026-01-01\". Property names are case-sensitive; compare text with tolower()."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"displayName\" or \"lastModifiedDateTime desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "How many to return (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many to skip, for the next page: the $skip value from @odata.nextLink.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "site_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/onenote/sections",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_onenote_list_site_section_pages",
+      "description": "List OneNote pages in one section of a SharePoint site. Returns page ids and titles, including pagination links. List sections first to obtain the section id, then use microsoft_onenote_get_site_page_content to read a page. Work or school account only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SharePoint site id from Microsoft Graph, normally hostname,site-collection-guid,web-guid. Use the id property, not a browser URL."
+          },
+          "section_id": {
+            "type": "string",
+            "description": "Section id from microsoft_onenote_list_site_sections under this same site."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter on page properties, e.g. \"contains(tolower(title),'meeting')\" to search titles, \"lastModifiedDateTime ge 2026-09-01\", or \"parentNotebook/id eq '<notebook id>'\". Property names are case-sensitive; compare text with tolower()."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"title\" or \"createdDateTime desc\". Default: lastModifiedDateTime desc (most recently changed first)."
+          },
+          "top": {
+            "type": "integer",
+            "description": "How many to return (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many to skip, for the next page: the $skip value from @odata.nextLink.",
+            "minimum": 0
+          },
+          "page_level": {
+            "type": "boolean",
+            "description": "Also return each page's level and order within the section."
+          }
+        },
+        "required": [
+          "site_id",
+          "section_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/onenote/sections/{section_id}/pages",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "pagelevel": "$page_level"
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_get_site_page",
+      "description": "Get a OneNote page's metadata in a SharePoint site: id, title, creation and modification dates, links and parent section/notebook. Use microsoft_onenote_get_site_page_content for its HTML. The signed-in work or school account must have access. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SharePoint site id from Microsoft Graph, normally hostname,site-collection-guid,web-guid. Use the id property, not a browser URL."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "Page id from microsoft_onenote_list_site_section_pages under this same site."
+          }
+        },
+        "required": [
+          "site_id",
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/onenote/pages/{page_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$expand": "parentSection,parentNotebook"
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_get_site_page_content",
+      "description": "Read a OneNote page's HTML in a SharePoint site. Images and attached files are authenticated resource links; use microsoft_onenote_get_site_resource with the id to download one. Ink is not rendered. Long HTML is capped at about 200 KB. Work or school account only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SharePoint site id from Microsoft Graph, normally hostname,site-collection-guid,web-guid. Use the id property, not a browser URL."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "Page id from microsoft_onenote_list_site_section_pages under this same site."
+          },
+          "include_ids": {
+            "type": "boolean",
+            "description": "Include generated element ids in the returned HTML. These tools only read shared pages; microsoft_onenote_update_page targets personal notebooks."
+          }
+        },
+        "required": [
+          "site_id",
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/onenote/pages/{page_id}/content",
+        "encodePathParams": true,
+        "queryParams": {
+          "includeIDs": "$include_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "@odata.context"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_get_site_resource",
+      "description": "Download an image or attached binary file from a OneNote page in a SharePoint site. Pass the resource id from a /resources/{id}/ link in that page's HTML, not the complete URL. Supported images become MCP image content; other binary files are embedded resources. Files above 4 MiB are described without their bytes. Work or school account only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "site_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "SharePoint site id from Microsoft Graph (hostname,site-collection-guid,web-guid), not a browser URL."
+          },
+          "resource_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Resource id from the page HTML. Pass only the id, without the URL or /content or /$value suffix."
+          }
+        },
+        "required": [
+          "site_id",
+          "resource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/sites/{site_id}/onenote/resources/{resource_id}/content",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "binary": {
+          "as": "auto",
+          "maxBytes": 4194304
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_list_group_notebooks",
+      "description": "List the OneNote notebooks in a Microsoft 365 group that the signed-in work or school account can access. Returns notebook ids, names and links. Supply the group_id; this does not discover sites or groups. Requires delegated access to the shared notebooks. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Microsoft 365 group id (GUID) whose OneNote notebooks the signed-in work or school account can access."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. \"contains(tolower(displayName),'project')\" or \"lastModifiedDateTime ge 2026-01-01\". Property names are case-sensitive; compare text with tolower()."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"displayName\" or \"lastModifiedDateTime desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "How many to return (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many to skip, for the next page: the $skip value from @odata.nextLink.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/onenote/notebooks",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_onenote_list_group_sections",
+      "description": "List all OneNote sections, including sections in section groups, in a Microsoft 365 group accessible to the signed-in work or school account. Results identify their parent notebook. Use a section id with microsoft_onenote_list_group_section_pages. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Microsoft 365 group id (GUID) whose OneNote notebooks the signed-in work or school account can access."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter, e.g. \"contains(tolower(displayName),'project')\" or \"lastModifiedDateTime ge 2026-01-01\". Property names are case-sensitive; compare text with tolower()."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"displayName\" or \"lastModifiedDateTime desc\"."
+          },
+          "top": {
+            "type": "integer",
+            "description": "How many to return (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many to skip, for the next page: the $skip value from @odata.nextLink.",
+            "minimum": 0
+          }
+        },
+        "required": [
+          "group_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/onenote/sections",
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip"
+        },
+        "encodePathParams": true
+      }
+    },
+    {
+      "name": "microsoft_onenote_list_group_section_pages",
+      "description": "List OneNote pages in one section of a Microsoft 365 group. Returns page ids and titles, including pagination links. List sections first to obtain the section id, then use microsoft_onenote_get_group_page_content to read a page. Work or school account only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Microsoft 365 group id (GUID) whose OneNote notebooks the signed-in work or school account can access."
+          },
+          "section_id": {
+            "type": "string",
+            "description": "Section id from microsoft_onenote_list_group_sections under this same group."
+          },
+          "filter": {
+            "type": "string",
+            "description": "OData filter on page properties, e.g. \"contains(tolower(title),'meeting')\" to search titles, \"lastModifiedDateTime ge 2026-09-01\", or \"parentNotebook/id eq '<notebook id>'\". Property names are case-sensitive; compare text with tolower()."
+          },
+          "orderby": {
+            "type": "string",
+            "description": "Sort order, e.g. \"title\" or \"createdDateTime desc\". Default: lastModifiedDateTime desc (most recently changed first)."
+          },
+          "top": {
+            "type": "integer",
+            "description": "How many to return (default 20, at most 100).",
+            "minimum": 1,
+            "maximum": 100
+          },
+          "skip": {
+            "type": "integer",
+            "description": "How many to skip, for the next page: the $skip value from @odata.nextLink.",
+            "minimum": 0
+          },
+          "page_level": {
+            "type": "boolean",
+            "description": "Also return each page's level and order within the section."
+          }
+        },
+        "required": [
+          "group_id",
+          "section_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/onenote/sections/{section_id}/pages",
+        "encodePathParams": true,
+        "queryParams": {
+          "$filter": "$filter",
+          "$orderby": "$orderby",
+          "$top": "$top",
+          "$skip": "$skip",
+          "pagelevel": "$page_level"
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_get_group_page",
+      "description": "Get a OneNote page's metadata in a Microsoft 365 group: id, title, creation and modification dates, links and parent section/notebook. Use microsoft_onenote_get_group_page_content for its HTML. The signed-in work or school account must have access. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Microsoft 365 group id (GUID) whose OneNote notebooks the signed-in work or school account can access."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "Page id from microsoft_onenote_list_group_section_pages under this same group."
+          }
+        },
+        "required": [
+          "group_id",
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/onenote/pages/{page_id}",
+        "encodePathParams": true,
+        "queryParams": {
+          "$expand": "parentSection,parentNotebook"
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_get_group_page_content",
+      "description": "Read a OneNote page's HTML in a Microsoft 365 group. Images and attached files are authenticated resource links; use microsoft_onenote_get_group_resource with the id to download one. Ink is not rendered. Long HTML is capped at about 200 KB. Work or school account only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Microsoft 365 group id (GUID) whose OneNote notebooks the signed-in work or school account can access."
+          },
+          "page_id": {
+            "type": "string",
+            "description": "Page id from microsoft_onenote_list_group_section_pages under this same group."
+          },
+          "include_ids": {
+            "type": "boolean",
+            "description": "Include generated element ids in the returned HTML. These tools only read shared pages; microsoft_onenote_update_page targets personal notebooks."
+          }
+        },
+        "required": [
+          "group_id",
+          "page_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/onenote/pages/{page_id}/content",
+        "encodePathParams": true,
+        "queryParams": {
+          "includeIDs": "$include_ids"
+        }
+      },
+      "responseMapping": {
+        "transform": {
+          "exclude": [
+            "@odata.context"
+          ],
+          "maxBytes": 200000
+        }
+      }
+    },
+    {
+      "name": "microsoft_onenote_get_group_resource",
+      "description": "Download an image or attached binary file from a OneNote page in a Microsoft 365 group. Pass the resource id from a /resources/{id}/ link in that page's HTML, not the complete URL. Supported images become MCP image content; other binary files are embedded resources. Files above 4 MiB are described without their bytes. Work or school account only. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "group_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Microsoft 365 group id (GUID)."
+          },
+          "resource_id": {
+            "type": "string",
+            "minLength": 1,
+            "description": "Resource id from the page HTML. Pass only the id, without the URL or /content or /$value suffix."
+          }
+        },
+        "required": [
+          "group_id",
+          "resource_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/groups/{group_id}/onenote/resources/{resource_id}/content",
+        "encodePathParams": true
+      },
+      "responseMapping": {
+        "binary": {
+          "as": "auto",
           "maxBytes": 4194304
         }
       }

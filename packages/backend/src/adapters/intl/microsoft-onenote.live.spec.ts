@@ -7,6 +7,7 @@ import { deriveToolAnnotations } from '../../mcp-server/tool-annotations';
 import { applySchemaDefaults } from '../../common/schema-defaults.util';
 import { applyResponseTransform, validateTransform } from '../../connectors/response-transform.util';
 import { getAdapter, listAdapters } from '../catalog';
+import { isBinaryBody, readBinaryConfig, renderBinaryBody } from '../../connectors/binary-response.util';
 
 /**
  * Two layers of verification for the OneNote (Microsoft Graph) adapter:
@@ -26,6 +27,8 @@ import { getAdapter, listAdapters } from '../catalog';
  *      section, appended to, retitled and read back, then deleted in
  *      `finally`. Notebooks and sections are never created: Graph v1.0 has no
  *      way to delete them again.
+ *      ONENOTE_LIVE_RESOURCE_ID additionally reads an existing image or PDF
+ *      resource with the same delegated token; no resource is created.
  */
 
 jest.mock('axios', () => {
@@ -155,11 +158,12 @@ describe('microsoft-onenote adapter: static spec conformance', () => {
   });
 
   it('marks reads read-only and appending as non-destructive', () => {
-    const readOnly = a.tools.filter((t) => annotationsOf(t).readOnlyHint === true).map((t) => t.name);
+    const readOnly = a.tools.filter((t) => t.endpointMapping.path.startsWith('/me/onenote/') && annotationsOf(t).readOnlyHint === true).map((t) => t.name);
     expect(readOnly.sort()).toEqual([
       'microsoft_onenote_get_page',
       'microsoft_onenote_get_page_content',
       'microsoft_onenote_get_page_image',
+      'microsoft_onenote_get_resource',
       'microsoft_onenote_list_notebook_section_groups',
       'microsoft_onenote_list_notebook_sections',
       'microsoft_onenote_list_notebooks',
@@ -195,6 +199,7 @@ describe('microsoft-onenote adapter: static spec conformance', () => {
     ['microsoft_onenote_list_section_pages', { section_id: '1-s' }, 'GET', '/me/onenote/sections/1-s/pages'],
     ['microsoft_onenote_get_page', { page_id: '1-p!1' }, 'GET', '/me/onenote/pages/1-p!1'],
     ['microsoft_onenote_get_page_content', { page_id: '1-p' }, 'GET', '/me/onenote/pages/1-p/content'],
+    ['microsoft_onenote_get_resource', { resource_id: '0-resource!1' }, 'GET', '/me/onenote/resources/0-resource!1/content'],
     ['microsoft_onenote_create_notebook', { display_name: 'N' }, 'POST', '/me/onenote/notebooks'],
     ['microsoft_onenote_create_section', { notebook_id: '1-abc', display_name: 'S' }, 'POST', '/me/onenote/notebooks/1-abc/sections'],
     ['microsoft_onenote_create_page', { section_id: '1-s', title: 'T', body_html: '<p>x</p>' }, 'POST', '/me/onenote/sections/1-s/pages'],
@@ -248,6 +253,61 @@ describe('microsoft-onenote adapter: static spec conformance', () => {
     const capped = applyResponseTransform(long, mapping).value as Record<string, unknown>;
     expect(capped._truncated).toBe(true);
     expect(String(capped.preview).length).toBeLessThanOrEqual(200_000);
+  });
+
+  it('keeps a resource id within one path segment on the fixed Graph host', async () => {
+    mockedAxios.mockResolvedValue({ data: {} });
+    const resourceId = '0-resource/../../other?token=fixture#fragment';
+    await call('microsoft_onenote_get_resource', { resource_id: resourceId });
+    expect(sent().url).toBe(`${BASE}/me/onenote/resources/${encodeURIComponent(resourceId)}/content`);
+    expect(sent().params ?? {}).toEqual({});
+    expect(sent().headers.Authorization).toBe('Bearer test-token');
+  });
+
+  const image = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+aWQAAAABJRU5ErkJggg==', 'base64');
+
+  // Exercise the decoder actually configured by RestEngine. The HTTP mock
+  // applies axios' response transform to the bytes before returning them.
+  const respondWithResource = (bytes: Buffer, contentType: string) => {
+    mockedAxios.mockImplementationOnce(async (request: {
+      transformResponse: Array<(data: Buffer, headers: Record<string, string>) => unknown>;
+    }) => {
+      const headers = { 'content-type': contentType };
+      return { data: request.transformResponse[0](bytes, headers), headers };
+    });
+  };
+
+  it.each(['image/png', 'application/octet-stream'])('returns resource bytes as an MCP image when Graph sends %s', async (contentType) => {
+    respondWithResource(image, contentType);
+    const raw = await call('microsoft_onenote_get_resource', { resource_id: '0-image' });
+    if (!isBinaryBody(raw)) throw new Error('Expected a binary resource body');
+    expect(renderBinaryBody(raw, readBinaryConfig(tool('microsoft_onenote_get_resource').responseMapping)).content).toEqual([
+      { type: 'image', data: image.toString('base64'), mimeType: 'image/png' },
+    ]);
+    expect(sent().responseType).toBe('arraybuffer');
+  });
+
+  it('returns a non-image resource as an embedded file', async () => {
+    const pdf = Buffer.from('%PDF-1.4\nfixture\n%%EOF');
+    respondWithResource(pdf, 'application/pdf');
+    const raw = await call('microsoft_onenote_get_resource', { resource_id: '0-pdf' });
+    if (!isBinaryBody(raw)) throw new Error('Expected a binary resource body');
+    const rendered = renderBinaryBody(raw, readBinaryConfig(tool('microsoft_onenote_get_resource').responseMapping));
+    expect(rendered.content).toEqual([
+      { type: 'resource', resource: { uri: 'file:///response', mimeType: 'application/pdf', blob: pdf.toString('base64') } },
+    ]);
+  });
+
+  it('describes a resource above the attachment limit without embedding its bytes', async () => {
+    const bytes = Buffer.alloc(4 * 1024 * 1024 + 1);
+    image.copy(bytes);
+    respondWithResource(bytes, 'image/png');
+    const raw = await call('microsoft_onenote_get_resource', { resource_id: '0-large' });
+    if (!isBinaryBody(raw)) throw new Error('Expected a binary resource body');
+    const rendered = renderBinaryBody(raw, readBinaryConfig(tool('microsoft_onenote_get_resource').responseMapping));
+    expect(rendered.content).toEqual([]);
+    expect(rendered.value).toMatchObject({ file: { bytes: bytes.length }, note: expect.stringContaining('over this tool\'s limit') });
+    expect(JSON.stringify(rendered.value).length).toBeLessThan(1000);
   });
 
   it('creates a page from a title and HTML sent as a raw text/html document', async () => {
@@ -329,6 +389,12 @@ live('microsoft-onenote adapter: live Graph API', () => {
       }
     }
   }, 60_000);
+
+  (process.env.ONENOTE_LIVE_RESOURCE_ID ? it : it.skip)('downloads an existing image or PDF resource', async () => {
+    const raw = await run('microsoft_onenote_get_resource', { resource_id: process.env.ONENOTE_LIVE_RESOURCE_ID });
+    expect(isBinaryBody(raw)).toBe(true);
+    expect(raw.bytes).toBeGreaterThan(0);
+  }, 30_000);
 
   (process.env.ONENOTE_LIVE_SECTION_ID ? it : it.skip)(
     'creates a page, appends to it, retitles it, reads it back and deletes it',
