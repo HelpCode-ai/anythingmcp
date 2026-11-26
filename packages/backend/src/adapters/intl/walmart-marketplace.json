@@ -1353,8 +1353,12 @@
           "feedType": "$feed_type"
         },
         "bodyMapping": {
-          "__raw": "$feed"
-        }
+          "file": {
+            "__jsonFile": "$feed",
+            "__filename": "feed.json"
+          }
+        },
+        "bodyEncoding": "form-data"
       },
       "enabled": false
     },
@@ -1380,8 +1384,12 @@
           "feedType": "PRICE_AND_PROMOTION"
         },
         "bodyMapping": {
-          "__raw": "$feed"
-        }
+          "file": {
+            "__jsonFile": "$feed",
+            "__filename": "feed.json"
+          }
+        },
+        "bodyEncoding": "form-data"
       },
       "enabled": false
     },
@@ -1434,11 +1442,17 @@
           "feedType": "lagtime"
         },
         "bodyMapping": {
-          "LagTimeHeader": {
-            "version": "1.0"
-          },
-          "lagTime": "$items"
-        }
+          "file": {
+            "__jsonFile": {
+              "LagTimeHeader": {
+                "version": "1.0"
+              },
+              "lagTime": "$items"
+            },
+            "__filename": "lagtime.json"
+          }
+        },
+        "bodyEncoding": "form-data"
       },
       "annotations": {
         "readOnlyHint": false,

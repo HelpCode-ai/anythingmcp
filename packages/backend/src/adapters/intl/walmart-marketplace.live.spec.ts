@@ -137,6 +137,26 @@ const sent = () => mockedAxios.mock.calls.at(-1)![0];
 const ok = (status = 200, data: unknown = {}) => mockedAxios.mockResolvedValueOnce({ status, data, headers: {} });
 const header = (req: { headers: Record<string, string> }, name: string) =>
   Object.entries(req.headers).find(([k]) => k.toLowerCase() === name.toLowerCase())?.[1];
+/**
+ * The feed of a POST /v3/feeds request: one multipart part named `file`,
+ * application/json, under the one Content-Type the form sets (the
+ * connector's JSON default must not go out next to it).
+ */
+const feedFile = (req: { headers: Record<string, string>; data: { getBuffer(): Buffer } }) => {
+  const contentTypes = Object.keys(req.headers).filter((k) => k.toLowerCase() === 'content-type');
+  expect(contentTypes).toHaveLength(1);
+  const boundary = /^multipart\/form-data; boundary=(.+)$/.exec(String(header(req, 'Content-Type')))?.[1];
+  expect(boundary).toBeTruthy();
+  const parts = req.data.getBuffer().toString('utf8').split(`--${boundary}`).slice(1, -1);
+  expect(parts).toHaveLength(1);
+  const [head, ...body] = parts[0].split('\r\n\r\n');
+  expect(head).toContain('Content-Disposition: form-data; name="file"');
+  expect(head).toContain('Content-Type: application/json');
+  return {
+    filename: /filename="([^"]+)"/.exec(head)?.[1],
+    json: JSON.parse(body.join('\r\n\r\n').replace(/\r\n$/, '')),
+  };
+};
 
 // Every tool, its HTTP method and path, from the US Marketplace API reference.
 const ROUTES: Record<string, string> = {
@@ -515,12 +535,14 @@ describe('walmart-marketplace adapter: static contract', () => {
     await call('walmart_marketplace_submit_price_feed', { feed: priceFeed });
     expect(sent().url).toBe(`${BASE}/v3/feeds`);
     expect(sent().params).toEqual({ feedType: 'PRICE_AND_PROMOTION' });
-    expect(sent().data).toEqual(priceFeed);
+    expect(feedFile(sent())).toEqual({ filename: 'feed.json', json: priceFeed });
 
+    // Walmart reads a feed only as an uploaded file: the same JSON as the
+    // request body is accepted with itemsReceived 0 (ERR_INT_SYS_0801003).
     ok();
     await call('walmart_marketplace_submit_item_feed', { feed_type: 'MP_MAINTENANCE', feed: { MPItemFeedHeader: { version: '5.0' }, MPItem: [] } });
     expect(sent().params).toEqual({ feedType: 'MP_MAINTENANCE' });
-    expect(sent().data).toEqual({ MPItemFeedHeader: { version: '5.0' }, MPItem: [] });
+    expect(feedFile(sent())).toEqual({ filename: 'feed.json', json: { MPItemFeedHeader: { version: '5.0' }, MPItem: [] } });
 
     ok(200, { feedId: 'F1' });
     const lag = await call('walmart_marketplace_update_lag_time', {
@@ -532,13 +554,15 @@ describe('walmart-marketplace adapter: static contract', () => {
     expect(String(sent().method).toUpperCase()).toBe('POST');
     expect(sent().url).toBe(`${BASE}/v3/feeds`);
     expect(sent().params).toEqual({ feedType: 'lagtime' });
-    expect(header(sent(), 'Content-Type')).toBe('application/json');
-    expect(sent().data).toEqual({
-      LagTimeHeader: { version: '1.0' },
-      lagTime: [
-        { sku: 'SKU-1', fulfillmentLagTime: 1 },
-        { sku: 'SKU-2', fulfillmentLagTime: 2, shipNode: '721407' },
-      ],
+    expect(feedFile(sent())).toEqual({
+      filename: 'lagtime.json',
+      json: {
+        LagTimeHeader: { version: '1.0' },
+        lagTime: [
+          { sku: 'SKU-1', fulfillmentLagTime: 1 },
+          { sku: 'SKU-2', fulfillmentLagTime: 2, shipNode: '721407' },
+        ],
+      },
     });
     expect(JSON.stringify(lag)).toContain('F1');
     expect(tool('walmart_marketplace_update_lag_time').description).toContain('walmart_marketplace_get_feed_status');
