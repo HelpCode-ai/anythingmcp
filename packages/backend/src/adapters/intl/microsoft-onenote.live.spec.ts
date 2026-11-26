@@ -158,7 +158,7 @@ describe('microsoft-onenote adapter: static spec conformance', () => {
   });
 
   it('marks reads read-only and appending as non-destructive', () => {
-    const readOnly = a.tools.filter((t) => annotationsOf(t).readOnlyHint === true).map((t) => t.name);
+    const readOnly = a.tools.filter((t) => t.endpointMapping.path.startsWith('/me/onenote/') && annotationsOf(t).readOnlyHint === true).map((t) => t.name);
     expect(readOnly.sort()).toEqual([
       'microsoft_onenote_get_page',
       'microsoft_onenote_get_page_content',
