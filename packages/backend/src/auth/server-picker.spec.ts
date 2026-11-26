@@ -26,6 +26,10 @@ function build(
     hasGrant?: boolean;
     /** Connectors of the workspace, on a server or not. */
     workspaceConnectors?: number;
+    /** The signed-in user's email address. */
+    email?: string;
+    /** Per workspace: member visibility narrows the user's view there. */
+    restrictedOrgs?: string[];
   } = {},
 ) {
   const grants = {
@@ -33,7 +37,9 @@ function build(
     grantRequestedServer: jest.fn().mockResolvedValue(true),
     grantWholeOrganization: jest.fn().mockResolvedValue(true),
     listSelectableTargets: jest.fn().mockResolvedValue(opts.targets ?? []),
-    restrictedIn: jest.fn().mockResolvedValue(!!opts.restricted),
+    restrictedIn: jest.fn(async (_userId: string, orgId: string) =>
+      opts.restrictedOrgs ? opts.restrictedOrgs.includes(orgId) : !!opts.restricted,
+    ),
     firstOwnServerId: jest.fn().mockResolvedValue(opts.ownServerId ?? null),
     hasActiveGrant: jest.fn().mockResolvedValue(!!opts.hasGrant),
   };
@@ -48,7 +54,7 @@ function build(
   const controller = new LoginController(
     { comparePassword: jest.fn() } as any,
     {
-      user: { findUnique: jest.fn() },
+      user: { findUnique: jest.fn().mockResolvedValue(opts.email ? { email: opts.email } : null) },
       connector: { count: jest.fn().mockResolvedValue(opts.workspaceConnectors ?? 0) },
     } as any,
     { get: jest.fn() } as any,
@@ -412,6 +418,81 @@ describe('servers without connectors are not a choice', () => {
 
     expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-1']);
     expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+  });
+});
+
+// The picker can run on a dashboard session already open in the browser
+// (often an admin's): reproduced on a self-hosted instance, a Viewer at an
+// admin's browser was shown every server of the workspace under the admin's
+// name. The page now says whose choice it is, and in a workspace where member
+// visibility narrows the user's view it does not promise "everything".
+describe('what the picker tells the person choosing', () => {
+  const twoWorkspaces = [
+    workspace('org-A', 'Acme', [server('srv-own', 'Default (Rita)', 0)]),
+    workspace('org-B', 'Lab', [server('srv-lab', 'Lab server', 1)]),
+  ];
+
+  it('names the signed-in account with a link to switch accounts', async () => {
+    const { controller, req, res } = build({ targets: twoWorkspaces, email: 'rita@example.com' });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    const html = res.send.mock.calls[0][0];
+    expect(html).toContain('Signed in as <strong>rita@example.com</strong>');
+    expect(html).toContain('href="/auth/login?switch=1"');
+    expect(html).toContain('Switch account');
+  });
+
+  it('escapes the account it names', async () => {
+    const { controller, req, res } = build({ targets: twoWorkspaces, email: '<b>x</b>@example.com' });
+
+    await ask(controller, req, res);
+
+    const html = res.send.mock.calls[0][0];
+    expect(html).not.toContain('<b>x</b>@example.com');
+    expect(html).toContain('&lt;b&gt;x&lt;/b&gt;@example.com');
+  });
+
+  it('shows no account line when the user cannot be read', async () => {
+    const { controller, req, res } = build({ targets: twoWorkspaces });
+
+    await ask(controller, req, res);
+
+    expect(res.send.mock.calls[0][0]).not.toContain('class="acct"');
+  });
+
+  it('offers a restricted member the tools their role allows, not "everything in this workspace"', async () => {
+    const { controller, grants, req, res } = build({
+      targets: twoWorkspaces,
+      email: 'rita@example.com',
+      restrictedOrgs: ['org-A'],
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    const html: string = res.send.mock.calls[0][0];
+    const acme = html.slice(html.indexOf('<legend>Acme</legend>'), html.indexOf('<legend>Lab</legend>'));
+    const lab = html.slice(html.indexOf('<legend>Lab</legend>'));
+    expect(acme).toContain('The tools your role allows');
+    expect(acme).not.toContain('Everything in this workspace');
+    expect(acme).not.toContain('including connectors not on a server');
+    // The whole-workspace grant itself is unchanged: roles cap it on every call.
+    expect(acme).toContain('name="workspace" value="org-A"');
+    // A workspace where they are not restricted keeps the option as it was.
+    expect(lab).toContain('Everything in this workspace');
+    expect(lab).not.toContain('The tools your role allows');
+    expect(grants.restrictedIn).toHaveBeenCalledWith('u1', 'org-A');
+    expect(grants.restrictedIn).toHaveBeenCalledWith('u1', 'org-B');
+  });
+
+  it('keeps "everything in this workspace" for an admin or in open mode', async () => {
+    const { controller, req, res } = build({ targets: twoWorkspaces, restrictedOrgs: [] });
+
+    await ask(controller, req, res);
+
+    const html: string = res.send.mock.calls[0][0];
+    expect(html.match(/class="pick-name">Everything in this workspace/g)).toHaveLength(2);
+    expect(html).not.toContain('The tools your role allows');
   });
 });
 
