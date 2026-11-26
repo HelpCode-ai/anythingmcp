@@ -9006,7 +9006,9 @@ and can be exported), created in the dashboard under a connector's tools with
 the **Code** tool type. A saved code tool declares:
 
 - **Uses** — the connectors (optionally specific tools) the program may call.
-  Only connectors from the same workspace.
+  Only connectors from the same workspace: this is checked whenever a code tool
+  is saved (single create, bulk create, JSON tool import, backup import) and
+  again on every run.
 - **Run as** — `invoker` re-checks the calling user's own permissions on every
   inner call; `definer` runs with the author's curation instead (like a stored
   procedure), still limited to *Uses* and the write setting. Definer is
@@ -9073,7 +9075,8 @@ Then set a server's `codeMode` to `tools` or `inline` (on the server's settings
 page or via the API). The runner holds no secrets and needs no inbound internet;
 it accepts only the backend's connection on the internal network. A saved code
 tool's **Test** button in the tool editor runs the program through the runner,
-so you can check it before a client does.
+so you can check it before a client does. An admin tests without role limits;
+a connector owner who is not an admin tests with their own roles.
 
 ## Limits
 

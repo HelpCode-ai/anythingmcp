@@ -112,6 +112,8 @@ import {
   writeConnectorEnvVars,
 } from './connector-env-write.util';
 import { EditionService } from '../ee/licensing/edition.service';
+import { isCodeMethod } from '../mcp-server/code-tool.util';
+import { assertCodeToolBatch, type CodeToolSaveDeps } from './code-tool-save.util';
 import {
   USER_CREDENTIALS_FEATURE,
   UserCredentialsService,
@@ -942,6 +944,11 @@ export class ConnectorsController {
     if (req.user.role === 'VIEWER') {
       throw new ForbiddenException('Viewers cannot modify connectors');
     }
+  }
+
+  /** Save-time code tool checks (code-tool-save.util.ts), shared with ToolsController. */
+  private get codeToolDeps(): CodeToolSaveDeps {
+    return { prisma: this.prisma, edition: this.edition, licenseGuard: this.licenseGuard };
   }
 
   private assertCanWrite(connector: any, req: any) {
@@ -2503,6 +2510,8 @@ export class ConnectorsController {
       }
     });
 
+    await this.assertImportedCodeTools(body, req);
+
     for (const c of body.connectors) {
       // Connector names are not unique in the schema, so the P2002 branch
       // below never fired and restoring a backup twice doubled every
@@ -2622,6 +2631,40 @@ export class ConnectorsController {
       ...results,
       ...mergeSummaries(moves),
     };
+  }
+
+  /**
+   * Code tools in an export file get the same checks as a single create (shape,
+   * definer rights, writes, `uses` in the caller's organization) and the plan's
+   * code tool cap, before anything is written. A file without code tools costs
+   * no query. Only connectors not skipped as duplicates count towards the cap.
+   */
+  private async assertImportedCodeTools(body: ImportAllDto, req: any) {
+    const entries: Array<{ label: string; connector: string; name?: string; endpointMapping: unknown }> = [];
+    body.connectors.forEach((c, i) => {
+      (Array.isArray(c.tools) ? c.tools : []).forEach((t, j) => {
+        if (isCodeMethod(t?.endpointMapping)) {
+          entries.push({ label: `connectors[${i}].tools[${j}]`, connector: c.name, name: t.name, endpointMapping: t.endpointMapping });
+        }
+      });
+    });
+    if (entries.length === 0) return;
+
+    const existing = await this.prisma.connector.findMany({
+      where: { organizationId: req.user.organizationId, name: { in: [...new Set(entries.map((e) => e.connector))] } },
+      select: { name: true },
+    });
+    const skippedNames = new Set(existing.map((c) => c.name));
+    await assertCodeToolBatch(
+      this.codeToolDeps,
+      entries,
+      { organizationId: req.user.organizationId },
+      req.user,
+      {
+        label: (k) => entries[k].label,
+        newCodeTools: entries.filter((e) => !skippedNames.has(e.connector)).length,
+      },
+    );
   }
 
   @Post(':id/import-spec')
@@ -2903,6 +2946,26 @@ export class ConnectorsController {
     } catch (err: any) {
       this.logger.warn(`Import failed for connector ${id}: ${err.message}`);
       return { error: `Import failed: ${describeSpecError(err)}` };
+    }
+
+    // Code tools (from JSON definitions) get the same checks and plan cap as a
+    // single create, before anything is written. Only the ones that do not
+    // update an existing tool of the same name count towards the cap.
+    if (parsedTools.some((t) => isCodeMethod(t?.endpointMapping))) {
+      const existingNames = new Set(
+        (
+          await this.prisma.mcpTool.findMany({
+            where: { connectorId: connector.id },
+            select: { name: true },
+          })
+        ).map((t) => t.name),
+      );
+      await assertCodeToolBatch(this.codeToolDeps, parsedTools, connector, req.user, {
+        label: (i) => `Tool ${parsedTools[i]?.name ?? i}`,
+        newCodeTools: parsedTools.filter(
+          (t) => isCodeMethod(t?.endpointMapping) && !existingNames.has(t.name),
+        ).length,
+      });
     }
 
     // Auto-populate healthcheckPath when first detected from an OpenAPI import,

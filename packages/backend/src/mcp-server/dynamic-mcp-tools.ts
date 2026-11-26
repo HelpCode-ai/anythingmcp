@@ -7,6 +7,7 @@ import {
   isCodeMethod,
   parseCodeToolMapping,
   buildCodeBridge,
+  CodeToolAccessError,
   type CodeBridgeDeps,
   type BridgeResolvedTool,
 } from './code-tool.util';
@@ -1681,7 +1682,16 @@ export class DynamicMcpTools {
           ? []
           : null;
 
-    const deps = this.codeBridgeDeps(usesConnectorIds, allowedToolIds, context, spec.runAs === 'invoker');
+    // A saved code tool always belongs to an organization; without one there is
+    // nothing to scope its `uses` to, so it does not run.
+    if (!tool.organizationId) return fail('This code tool has no workspace.');
+    const deps = this.codeBridgeDeps(
+      usesConnectorIds,
+      allowedToolIds,
+      context,
+      spec.runAs === 'invoker',
+      tool.organizationId,
+    );
     const bridge = buildCodeBridge(spec, deps);
     // The program receives its tool arguments as `args` via a wrapper the runner
     // does not add, so expose them through a declared variable: prepend a const.
@@ -1898,7 +1908,13 @@ export class DynamicMcpTools {
       runAs: 'invoker' as const,
       allowWrites: false,
     };
-    const deps = this.codeBridgeDeps(opts.connectorIds, opts.allowedToolIds, context, true);
+    const deps = this.codeBridgeDeps(
+      opts.connectorIds,
+      opts.allowedToolIds,
+      context,
+      true,
+      context.organizationId,
+    );
     const bridge = buildCodeBridge(spec, deps);
     const program = `const args = {};\n${code}`;
 
@@ -1945,18 +1961,42 @@ export class DynamicMcpTools {
    * connector is in reach with one allowed tool, so without this a member
    * read the names and descriptions of every other tool on it. With definer
    * rights the author's `uses` decides, as for the calls.
+   *
+   * `organizationId`: the organization the run belongs to (the code tool's
+   * own, or the caller's for inline code). The registry holds the tools of
+   * every organization and a stored `uses` entry is only an id, so connectors
+   * of any other organization are dropped before anything is resolved, and
+   * resolve, describe, search and run each check the tool's organization
+   * again. Undefined only for inline code without an organization (an
+   * instance-level credential on a self-hosted instance).
    */
   private codeBridgeDeps(
     usesConnectorIds: string[],
     allowedToolIds: string[] | null,
     context: CodeExecContext | undefined,
     searchWithinRole: boolean,
+    organizationId?: string,
   ): CodeBridgeDeps {
+    const inOrg = (t: RegisteredTool) => organizationId === undefined || t.organizationId === organizationId;
+    const reachableIds =
+      organizationId === undefined
+        ? usesConnectorIds
+        : usesConnectorIds.filter((id) => this.toolRegistry.getToolsForConnectors([id]).every(inOrg));
+    if (reachableIds.length < usesConnectorIds.length) {
+      this.logger.warn(
+        `Code run in organization ${organizationId}: ignored ${usesConnectorIds.length - reachableIds.length} connector(s) of another organization`,
+      );
+    }
+    const lookup = (name: string): RegisteredTool | undefined => {
+      const t = this.toolRegistry.getTool(name, reachableIds);
+      return t && inOrg(t) ? t : undefined;
+    };
     const searchable = searchWithinRole && allowedToolIds !== null ? new Set(allowedToolIds) : null;
     const toBridgeTool = (t: RegisteredTool): BridgeResolvedTool => ({
       id: t.id,
       name: t.name,
       connectorId: t.connectorId,
+      organizationId: t.organizationId,
       readOnly:
         deriveToolAnnotations({
           name: t.name,
@@ -1970,11 +2010,18 @@ export class DynamicMcpTools {
 
     return {
       resolveTool: (name) => {
-        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
+        const resolved = lookup(name);
         return resolved ? toBridgeTool(resolved) : undefined;
       },
+      organizationId,
       allowedToolIds,
       runTool: async (name, args, connectorId) => {
+        const target = reachableIds.includes(connectorId)
+          ? this.toolRegistry.getTool(name, [connectorId])
+          : undefined;
+        if (!target || !inOrg(target)) {
+          throw new CodeToolAccessError(`'${name}' is not a tool this code tool can use.`);
+        }
         const r = await this.executeTool(name, args, {
           ...context,
           connectorIds: [connectorId],
@@ -1996,9 +2043,10 @@ export class DynamicMcpTools {
         const q = query.toLowerCase().trim();
         const seen = new Set<string>();
         const out: { tool: string; description: string; readOnly: boolean }[] = [];
-        for (const connectorId of usesConnectorIds) {
+        for (const connectorId of reachableIds) {
           for (const t of this.toolRegistry.getAllTools()) {
             if (t.connectorId !== connectorId || isCodeMethod(t.endpointMapping)) continue;
+            if (!inOrg(t)) continue;
             if (searchable && !searchable.has(t.id)) continue;
             if (seen.has(t.name)) continue;
             const hay = `${t.name} ${t.description ?? ''}`.toLowerCase();
@@ -2011,7 +2059,7 @@ export class DynamicMcpTools {
         return out;
       },
       describe: async (name) => {
-        const resolved = this.toolRegistry.getTool(name, usesConnectorIds);
+        const resolved = lookup(name);
         if (!resolved) return null;
         return {
           name: resolved.name,
