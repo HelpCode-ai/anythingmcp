@@ -806,6 +806,20 @@ export class LoginController {
         .catch(() => undefined);
     }
 
+    // "Switch account" can be pressed after a sign-in already went through:
+    // on the server picker, the callback's identity cookie (60 s) and the
+    // pending grant (10 min) name the first account. Left in place, /callback
+    // (or the dashboard's "finish connecting" bar, through /auth/pending)
+    // would still connect the client as the account the person switched away
+    // from. The other ways here with switch=1 come before they are set, so
+    // clearing them is harmless there.
+    const switching = switchAccount === '1';
+    if (switching) {
+      clearLoginUserCookie(res);
+      res.clearCookie(PENDING_GRANT_COOKIE);
+      res.clearCookie(PENDING_SOCIAL_COOKIE);
+    }
+
     // Issue the form's CSRF token (double-submit, HMAC-signed cookie +
     // matching hidden field). Prevents login CSRF / silent credential
     // submission from a cross-site context.
@@ -816,7 +830,7 @@ export class LoginController {
     // inside an authorize flow, and never when the user asked to switch
     // accounts.
     const sessionUser =
-      consent && switchAccount !== '1'
+      consent && !switching
         ? await this.resolveDashboardSession(req)
         : null;
 
@@ -842,6 +856,7 @@ export class LoginController {
         sessionUser,
         requestedServer,
         lang: pageLanguageFor(req.headers['accept-language']),
+        switching,
       }),
     );
   }
@@ -941,11 +956,16 @@ export class LoginController {
       password: string;
       csrf: string;
       action?: string;
+      /** Set by the form when it was shown after "Switch account". */
+      switch?: string;
     },
     @Res() res: Response,
   ) {
     const serverName =
       this.configService.get<string>('MCP_SERVER_NAME') || 'AnythingMCP';
+    // A sign-in that fails after "Switch account" comes back to the form
+    // still switching, not to "Signed in as <the first account>".
+    const again = body?.switch === '1' ? 'switch=1&' : '';
 
     // CSRF: the signed cookie must match the form field. Reject before doing
     // anything with the submitted credentials. A POST without a form body
@@ -954,7 +974,7 @@ export class LoginController {
       this.logger.warn('Rejected login with missing/invalid CSRF token');
       res.clearCookie('login_csrf');
       return res.redirect(
-        `/auth/login?error=${loginErrorParam('sessionExpired')}`,
+        `/auth/login?${again}error=${loginErrorParam('sessionExpired')}`,
       );
     }
 
@@ -1002,7 +1022,7 @@ export class LoginController {
       } catch (error: any) {
         this.logger.warn(`MCP SSO start failed: ${error?.reason ?? error}`);
         return res.redirect(
-          `/auth/login?error=${loginErrorParam('ssoUnavailable')}`,
+          `/auth/login?${again}error=${loginErrorParam('ssoUnavailable')}`,
         );
       }
     }
@@ -1034,7 +1054,7 @@ export class LoginController {
 
     if (!email || !password) {
       return res.redirect(
-        `/auth/login?error=${loginErrorParam('credentialsRequired')}`,
+        `/auth/login?${again}error=${loginErrorParam('credentialsRequired')}`,
       );
     }
 
@@ -1046,7 +1066,7 @@ export class LoginController {
       this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${loginErrorParam(this.signInFailedMessage())}`,
+        `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
 
@@ -1057,7 +1077,7 @@ export class LoginController {
     if (user.passwordLoginDisabled) {
       this.logger.warn(`Password login refused for SSO-only account: ${maskEmail(email)}`);
       return res.redirect(
-        `/auth/login?error=${loginErrorParam('passwordDisabled')}`,
+        `/auth/login?${again}error=${loginErrorParam('passwordDisabled')}`,
       );
     }
 
@@ -1067,7 +1087,7 @@ export class LoginController {
     // The provider that requires it is active, so its button is on this page.
     if (await this.ssoEnforcement?.isPasswordLoginBlocked(user.id)) {
       this.logger.warn(`Password login refused, the workspace requires single sign-on: ${maskEmail(email)}`);
-      return res.redirect(`/auth/login?error=${encodeURIComponent(SSO_REQUIRED_MESSAGE)}`);
+      return res.redirect(`/auth/login?${again}error=${encodeURIComponent(SSO_REQUIRED_MESSAGE)}`);
     }
 
     // Nullable for IdP-provisioned users — never hand null to bcrypt.
@@ -1075,7 +1095,7 @@ export class LoginController {
       this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
       return res.redirect(
-        `/auth/login?error=${loginErrorParam(this.signInFailedMessage())}`,
+        `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
 
@@ -1088,7 +1108,7 @@ export class LoginController {
     if (!passwordValid) {
       this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
       return res.redirect(
-        `/auth/login?error=${loginErrorParam(this.signInFailedMessage())}`,
+        `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
 
@@ -1099,7 +1119,7 @@ export class LoginController {
     if (this.deployment.isCloud() && !user.emailVerified) {
       if (!this.emailVerification) {
         return res.redirect(
-          `/auth/login?error=${loginErrorParam('verifyEmailFirst')}`,
+          `/auth/login?${again}error=${loginErrorParam('verifyEmailFirst')}`,
         );
       }
       this.logger.log(`Authorization held for email verification: ${maskEmail(email)}`);
@@ -1424,7 +1444,7 @@ export class LoginController {
 
     // Between "who you are" and "what this client may reach". Returns true when
     // it has taken over the response with the picker.
-    if (await this.maybeAskWhichServers(req, res, user.id, socialProvider)) return;
+    if (await this.maybeAskWhichServers(req, res, user.id, socialProvider, user.email)) return;
 
     // Derive callback URL from the request origin (works behind proxy/tunnel)
     const baseUrl = this.getBaseUrl(req);
@@ -2230,6 +2250,8 @@ ${
     res: Response,
     userId: string,
     socialProvider?: string,
+    /** The signed-in account, when the caller already holds it. */
+    email?: string,
   ): Promise<boolean> {
     const consent = await this.loadConsentContext(req);
     // Not an authorize flow — a bare visit to the login page. Nothing to grant.
@@ -2350,10 +2372,9 @@ ${
     // this user's view, "everything in this workspace" would promise more
     // than they get: their roles cap it. That option is offered there as
     // what it is, the tools their roles allow.
-    const account = await this.prisma.user.findUnique({
-      where: { id: userId },
-      select: { email: true },
-    });
+    const account = email
+      ? { email }
+      : await this.prisma.user.findUnique({ where: { id: userId }, select: { email: true } });
     const restrictedOrgIds: string[] = [];
     for (const t of targets) {
       if (await this.grants.restrictedIn(userId, t.organizationId)) restrictedOrgIds.push(t.organizationId);
@@ -3315,6 +3336,8 @@ ${
     requestedServer?: string | null;
     /** The browser's language, if one of ours (buttons_first arm only). */
     lang?: PageLanguage | null;
+    /** Shown after "Switch account": a failed sign-in keeps switching. */
+    switching?: boolean;
   }): string {
     const { error, serverName, consent, csrfToken, ssoProviders, sessionUser, requestedServer } =
       params;
@@ -3530,7 +3553,9 @@ ${
     ${errorHtml}
     ${consentHtml}${returnsCompact}
     <form method="POST" action="/auth/login">
-      <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">${formHtml}
+      <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}">${
+        params.switching && !sessionUser ? '\n      <input type="hidden" name="switch" value="1">' : ''
+      }${formHtml}
     </form>
     </div>${signupBeacon}`;
 

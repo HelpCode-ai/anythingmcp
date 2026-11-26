@@ -549,6 +549,54 @@ describe('LoginController', () => {
       expect(res._sent).not.toContain('approve-session');
     });
 
+    // "Switch account" on the server picker comes after a sign-in went
+    // through: the callback's identity cookie and the pending grant name the
+    // first account and must not survive, or /callback (or the dashboard's
+    // "finish connecting" bar) would still connect the client as that account.
+    it('forgets the account switched away from', async () => {
+      pendingSession();
+
+      const res = await getPage({ oauth_session: 's1', amcp_token: 'jwt' }, '1');
+
+      expect(res._cleared).toEqual(
+        expect.arrayContaining(['login_user', 'login_bind', 'pending_grant', 'pending_grant_social']),
+      );
+      // The pending authorization itself stays: the person signs in again for it.
+      expect(res._cleared).not.toContain('oauth_session');
+      expect(res._sent).toContain('<input type="hidden" name="switch" value="1">');
+    });
+
+    it('keeps the cookies of a sign-in when nobody switches', async () => {
+      pendingSession();
+
+      const res = await getPage({ oauth_session: 's1' });
+
+      expect(res._cleared).not.toContain('login_user');
+      expect(res._cleared).not.toContain('pending_grant');
+      expect(res._sent).not.toContain('name="switch"');
+    });
+
+    it('a failed sign-in after "Switch account" comes back still switching', async () => {
+      pendingSession();
+      prisma.user.findUnique.mockResolvedValue(validUser());
+
+      const res = makeRes();
+      await controller.handleLogin(
+        makeReq({ cookies: { oauth_session: 's1', amcp_token: 'jwt' }, signedCookies: { login_csrf: 'tok' } } as any),
+        { email: '', password: '', csrf: 'tok', action: 'approve', switch: '1' },
+        res,
+      );
+      expect(res._redirect).toMatch(/^\/auth\/login\?switch=1&error=/);
+
+      const plain = makeRes();
+      await controller.handleLogin(
+        makeReq({ cookies: { oauth_session: 's1' }, signedCookies: { login_csrf: 'tok' } } as any),
+        { email: '', password: '', csrf: 'tok', action: 'approve' },
+        plain,
+      );
+      expect(plain._redirect).toMatch(/^\/auth\/login\?error=/);
+    });
+
     it('never offers Approve outside an authorize flow', async () => {
       dashboardToken();
       prisma.user.findUnique.mockResolvedValue(validUser());
