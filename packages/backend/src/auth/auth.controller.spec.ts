@@ -1,4 +1,5 @@
 import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthController, NEUTRAL_PASSWORD_RESET, NEUTRAL_REGISTRATION } from './auth.controller';
 import { ProductEventService } from '../audit/product-event.service';
 import { findUserByEmail, normalizeEmail } from '../common/email.util';
@@ -18,6 +19,8 @@ type Account = {
   emailVerified: boolean;
   passwordHash: string | null;
   passwordLoginDisabled: boolean;
+  /** Revocation watermark (JwtStrategy): tokens issued before it are refused. */
+  sessionsValidFrom?: Date | null;
 };
 
 function makeController({
@@ -45,10 +48,21 @@ function makeController({
     hashPassword: jest.fn(async (p: string) => `hash:${p}`),
     comparePassword: jest.fn(async (p: string, h: string) => h === `hash:${p}`),
     generateToken: jest.fn(() => 'jwt'),
-    // Test sessions are the literal string `sess:<email>`; anything else is an
-    // invalid token.
+    // Test sessions are the literal string `sess:<email>` (a dashboard token of
+    // the account with that address, issued now) or `mcp:<email>` (a token of
+    // the MCP authorization server for it); anything else is an invalid token.
     verifyToken: jest.fn((t: string) => {
-      if (typeof t === 'string' && t.startsWith('sess:')) return { email: t.slice(5) };
+      const iat = Math.floor(Date.now() / 1000);
+      if (typeof t === 'string' && t.startsWith('sess:')) {
+        const email = t.slice(5);
+        const sub = users.find((u) => u.email.toLowerCase() === email.toLowerCase())?.id ?? `u-unknown-${email}`;
+        return { sub, email, tokenUse: 'dashboard', iat };
+      }
+      if (typeof t === 'string' && t.startsWith('mcp:')) {
+        const email = t.slice(4);
+        const sub = users.find((u) => u.email.toLowerCase() === email.toLowerCase())?.id ?? `u-unknown-${email}`;
+        return { sub, email, type: 'access', user_data: { email }, iat };
+      }
       throw new Error('invalid token');
     }),
   };
@@ -82,6 +96,20 @@ function makeController({
     }),
   };
   const prisma = {
+    // What JwtStrategy reads for a session: the user, its revocation
+    // watermark and its active memberships.
+    user: {
+      findUnique: jest.fn(async ({ where }: any) => {
+        const u = users.find((x) => x.id === where.id);
+        if (!u) return null;
+        return {
+          ...u,
+          sessionsValidFrom: u.sessionsValidFrom ?? null,
+          memberships: [{ organizationId: u.organizationId ?? 'org-1', role: u.role }],
+        };
+      }),
+      update: jest.fn(async () => undefined),
+    },
     organization: { findFirst: jest.fn(async () => ({ id: 'org-first' })) },
     emailVerificationToken: {
       updateMany: jest.fn(async () => ({ count: 0 })),
@@ -194,6 +222,7 @@ function makeController({
     usersService,
     emailService,
     organizationsService,
+    ssoEnforcement,
     prisma,
   };
 }
@@ -503,6 +532,100 @@ describe('AuthController — accept-invite ownership check', () => {
       ),
     ).rejects.toBeInstanceOf(UnauthorizedException);
     expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('does not take a revoked session as proof (sessionsValidFrom after the token)', async () => {
+    const revoked: Account = { ...EXISTING, sessionsValidFrom: new Date(Date.now() + 60_000) };
+    const a = makeController({ mode: 'cloud', accounts: [revoked] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite(
+        { headers: { authorization: 'Bearer sess:taken@example.com' } },
+        { token: 'invite-token' },
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+    expect(a.authService.generateToken).not.toHaveBeenCalled();
+  });
+
+  it('does not take a token of the MCP authorization server as a session', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite(
+        { headers: { authorization: 'Bearer mcp:taken@example.com' } },
+        { token: 'invite-token' },
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('does not take a session of a user that no longer exists', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    // A signed token whose user id matches no account.
+    a.authService.verifyToken.mockReturnValueOnce({
+      sub: 'u-deleted',
+      email: 'taken@example.com',
+      tokenUse: 'dashboard',
+      iat: Math.floor(Date.now() / 1000),
+    } as any);
+    await expect(
+      a.controller.acceptInvite({ headers: { authorization: 'Bearer anything' } }, { token: 'invite-token' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('still accepts the password when the bearer is not a valid session', async () => {
+    const revoked: Account = { ...EXISTING, sessionsValidFrom: new Date(Date.now() + 60_000) };
+    const a = makeController({ mode: 'cloud', accounts: [revoked] });
+    a.invites.push(makeInvite());
+    const res = await a.controller.acceptInvite(
+      { headers: { authorization: 'Bearer sess:taken@example.com' } },
+      { token: 'invite-token', password: 'Correct#Horse1' },
+    );
+    expect(res.accessToken).toBe('jwt');
+  });
+
+  it('refuses the password when password sign-in is disabled for the account, before comparing it', async () => {
+    const ssoOnly: Account = { ...EXISTING, passwordLoginDisabled: true };
+    const a = makeController({ mode: 'self-hosted', accounts: [ssoOnly] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: 'invite-token', password: 'Correct#Horse1' }),
+    ).rejects.toThrow('Password sign-in is disabled for this account. Use your organization sign-in.');
+    expect(a.authService.comparePassword).not.toHaveBeenCalled();
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('refuses the password when single sign-on is enforced for the account', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [EXISTING] });
+    a.ssoEnforcement.isPasswordLoginBlocked.mockResolvedValue(true);
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: 'invite-token', password: 'Correct#Horse1' }),
+    ).rejects.toThrow('This workspace requires single sign-on.');
+    expect(a.ssoEnforcement.isPasswordLoginBlocked).toHaveBeenCalledWith('u-existing');
+    expect(a.authService.comparePassword).not.toHaveBeenCalled();
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('lets a valid session join even when password sign-in is disabled (it is not the password branch)', async () => {
+    const ssoOnly: Account = { ...EXISTING, passwordLoginDisabled: true };
+    const a = makeController({ mode: 'self-hosted', accounts: [ssoOnly] });
+    a.invites.push(makeInvite());
+    const res = await a.controller.acceptInvite(
+      { headers: { authorization: 'Bearer sess:taken@example.com' } },
+      { token: 'invite-token' },
+    );
+    expect(res.accessToken).toBe('jwt');
+  });
+
+  it('has the same throttle as POST /api/auth/login (5 a minute)', () => {
+    const reflector = new Reflector();
+    expect(reflector.get('THROTTLER:LIMITdefault', AuthController.prototype.acceptInvite)).toBe(5);
+    expect(reflector.get('THROTTLER:TTLdefault', AuthController.prototype.acceptInvite)).toBe(60_000);
+    expect(reflector.get('THROTTLER:LIMITdefault', AuthController.prototype.login)).toBe(5);
   });
 
   it('tells an SSO-only existing account to sign in first (password cannot prove it)', async () => {

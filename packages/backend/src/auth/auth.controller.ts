@@ -27,6 +27,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
+import { validateDashboardPayload } from './jwt.strategy';
 import { UsersService } from '../users/users.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { PrismaService } from '../common/prisma.service';
@@ -268,18 +269,20 @@ export class AuthController {
   }
 
   /**
-   * The verified dashboard-session email on a request, or null. Used to let an
+   * The user behind the request's dashboard session, or null. Used to let an
    * already-signed-in owner accept an invitation to one of their other
-   * addresses without re-typing a password. Never throws: a missing, malformed
-   * or expired token is simply "no session".
+   * addresses without re-typing a password. The bearer must be a dashboard
+   * session exactly as JwtStrategy accepts one (signature and expiry, not an
+   * MCP token, the user still exists, not revoked by `sessionsValidFrom`, an
+   * active membership). Never throws: anything else is simply "no session".
    */
-  private sessionEmailFromRequest(req: any): string | null {
+  private async sessionUserFromRequest(req: any): Promise<{ id: string; email: string } | null> {
     const header: string | undefined = req?.headers?.authorization;
     if (!header?.startsWith('Bearer ')) return null;
     try {
       const payload = this.authService.verifyToken(header.slice(7).trim());
-      const email = (payload as any)?.email;
-      return typeof email === 'string' ? normalizeEmail(email) : null;
+      const session = await validateDashboardPayload(payload, this.prisma);
+      return { id: session.sub, email: normalizeEmail(session.email) };
     } catch {
       return null;
     }
@@ -851,6 +854,9 @@ export class AuthController {
   }
 
   @Post('accept-invite')
+  // The password branch checks an existing account's password: the same cap
+  // as POST /api/auth/login.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Accept an invitation and create account' })
   async acceptInvite(@Req() req: any, @Body() dto: AcceptInviteDto) {
     const invite = await this.prisma.invitationToken.findUnique({
@@ -873,13 +879,26 @@ export class AuthController {
       // its current password. Otherwise anyone who can create an invite (every
       // workspace admin, i.e. every signed-up user) could take over an
       // arbitrary account by inviting it and accepting the invite themselves.
-      const sessionEmail = this.sessionEmailFromRequest(req);
-      const provenBySession = sameEmail(sessionEmail, invite.email);
+      const session = await this.sessionUserFromRequest(req);
+      const provenBySession = session?.id === existing.id && sameEmail(session.email, invite.email);
       if (!provenBySession) {
         if (!existing.passwordHash) {
           throw new UnauthorizedException(
             'This email already has an account that signs in with single sign-on. ' +
               'Sign in first, then open this invitation again to join the workspace.',
+          );
+        }
+        // The same refusals as POST /api/auth/login, before the password is
+        // compared: an account that may not sign in with a password cannot
+        // prove itself with one here either.
+        if (existing.passwordLoginDisabled) {
+          throw new UnauthorizedException(
+            'Password sign-in is disabled for this account. Use your organization sign-in.',
+          );
+        }
+        if (await this.ssoEnforcement.isPasswordLoginBlocked(existing.id)) {
+          throw new UnauthorizedException(
+            'This workspace requires single sign-on. Use your organization sign-in, or a recovery code if you cannot reach it.',
           );
         }
         const ok =
