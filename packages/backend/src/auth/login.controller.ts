@@ -806,19 +806,18 @@ export class LoginController {
         .catch(() => undefined);
     }
 
-    // "Switch account" can be pressed after a sign-in already went through:
-    // on the server picker, the callback's identity cookie (60 s) and the
-    // pending grant (10 min) name the first account. Left in place, /callback
-    // (or the dashboard's "finish connecting" bar, through /auth/pending)
-    // would still connect the client as the account the person switched away
-    // from. The other ways here with switch=1 come before they are set, so
-    // clearing them is harmless there.
+    // The sign-in form starts the sign-in of this authorization afresh. It
+    // can be reached after one already went through: "Switch account" on the
+    // server picker, or the picker sending back an empty or unusable choice.
+    // The callback's identity cookie (60 s) and the pending grant (10 min)
+    // then name the earlier account; left in place, /callback (or the
+    // dashboard's "finish connecting" bar, through /auth/pending) would still
+    // connect the client as that account. Every way that finishes a sign-in
+    // sets them again, so nothing that is still wanted is lost.
+    clearLoginUserCookie(res);
+    res.clearCookie(PENDING_GRANT_COOKIE);
+    res.clearCookie(PENDING_SOCIAL_COOKIE);
     const switching = switchAccount === '1';
-    if (switching) {
-      clearLoginUserCookie(res);
-      res.clearCookie(PENDING_GRANT_COOKIE);
-      res.clearCookie(PENDING_SOCIAL_COOKIE);
-    }
 
     // Issue the form's CSRF token (double-submit, HMAC-signed cookie +
     // matching hidden field). Prevents login CSRF / silent credential

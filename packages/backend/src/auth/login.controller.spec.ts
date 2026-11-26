@@ -566,13 +566,15 @@ describe('LoginController', () => {
       expect(res._sent).toContain('<input type="hidden" name="switch" value="1">');
     });
 
-    it('keeps the cookies of a sign-in when nobody switches', async () => {
+    // The picker also sends an empty or unusable choice back to the form:
+    // that sign-in must not survive either.
+    it('starts the sign-in afresh whenever the form is shown', async () => {
       pendingSession();
 
       const res = await getPage({ oauth_session: 's1' });
 
-      expect(res._cleared).not.toContain('login_user');
-      expect(res._cleared).not.toContain('pending_grant');
+      expect(res._cleared).toEqual(expect.arrayContaining(['login_user', 'login_bind', 'pending_grant']));
+      expect(res._cleared).not.toContain('oauth_session');
       expect(res._sent).not.toContain('name="switch"');
     });
 
