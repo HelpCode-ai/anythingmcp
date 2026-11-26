@@ -1087,6 +1087,8 @@ The Database connector lets AI clients query databases directly through MCP. It 
 | **MongoDB** | `mongodb://user:pass@host:27017/dbname` or `mongodb+srv://...` |
 | **SQLite** | `sqlite:///absolute/path/to/db.sqlite` |
 
+On AnythingMCP Cloud, SQLite is not available, and parameters that point at files on the server are ignored with a warning in the log: `sslcert`, `sslkey`, `sslrootcert` and `options` for PostgreSQL, `tlsCAFile`, `tlsCRLFile` and `tlsCertificateKeyFile` for MongoDB. `sslmode` and every other parameter work as usual. Self-hosted instances accept them all.
+
 ---
 
 ## Creating a Database Connector

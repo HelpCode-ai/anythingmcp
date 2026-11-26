@@ -13,6 +13,11 @@ import {
   resolveHanaDriverName,
 } from './hana.driver';
 import { renderStaticResponse } from '../static-response.util';
+import {
+  CLOUD_BLOCKED_MONGODB_PARAMS,
+  CLOUD_BLOCKED_POSTGRES_PARAMS,
+  stripConnectionParams,
+} from './db-connection-params.util';
 
 @Injectable()
 export class DatabaseEngine {
@@ -143,6 +148,54 @@ export class DatabaseEngine {
     return url.toString();
   }
 
+  /**
+   * The connection string pg receives: credentials spliced in and, on
+   * AnythingMCP Cloud, without the parameters that read server files or set
+   * server startup options (see db-connection-params.util).
+   */
+  private postgresConnectionString(config: {
+    baseUrl: string;
+    authConfig?: Record<string, unknown>;
+  }): string {
+    return this.cloudSafeConnectionString(
+      this.withUrlCredentials(config.baseUrl, config.authConfig),
+      CLOUD_BLOCKED_POSTGRES_PARAMS,
+      false,
+      'PostgreSQL',
+    );
+  }
+
+  /** The same for the MongoDB driver, whose option names ignore case. */
+  private mongoConnectionString(config: {
+    baseUrl: string;
+    authConfig?: Record<string, unknown>;
+  }): string {
+    return this.cloudSafeConnectionString(
+      this.withUrlCredentials(config.baseUrl, config.authConfig),
+      CLOUD_BLOCKED_MONGODB_PARAMS,
+      true,
+      'MongoDB',
+    );
+  }
+
+  private cloudSafeConnectionString(
+    connectionString: string,
+    blocked: readonly string[],
+    caseInsensitive: boolean,
+    engine: string,
+  ): string {
+    if (process.env.DEPLOYMENT_MODE !== 'cloud') return connectionString;
+    const out = stripConnectionParams(connectionString, blocked, { caseInsensitive });
+    if (out.removed.length > 0) {
+      // Names only: a value can be a path or part of a secret.
+      this.logger.warn(
+        `${engine} connection string: ignored ${out.removed.join(', ')} ` +
+          '(not available on AnythingMCP Cloud: they read files on the server or set server startup options)',
+      );
+    }
+    return out.connectionString;
+  }
+
   private detectDriver(baseUrl: string): SqlDriver {
     if (this.isHana(baseUrl)) return 'hana';
     if (this.isMssql(baseUrl)) return 'mssql';
@@ -186,10 +239,9 @@ export class DatabaseEngine {
   }): Promise<void> {
     await this.assertSafeDbHost(config.baseUrl);
     if (this.isMongodb(config.baseUrl)) {
-      const client = new MongoClient(
-        this.withUrlCredentials(config.baseUrl, config.authConfig),
-        { serverSelectionTimeoutMS: 10000 },
-      );
+      const client = new MongoClient(this.mongoConnectionString(config), {
+        serverSelectionTimeoutMS: 10000,
+      });
       try {
         await client.connect();
         await client.db().command({ ping: 1 });
@@ -233,10 +285,7 @@ export class DatabaseEngine {
       }
     } else {
       const pool = new Pool({
-        connectionString: this.withUrlCredentials(
-          config.baseUrl,
-          config.authConfig,
-        ),
+        connectionString: this.postgresConnectionString(config),
       });
       try {
         await pool.query('SELECT 1');
@@ -255,10 +304,7 @@ export class DatabaseEngine {
     sql: string,
     values: unknown[] = [],
   ): Promise<unknown> {
-    const connectionString = this.withUrlCredentials(
-      config.baseUrl,
-      config.authConfig,
-    );
+    const connectionString = this.postgresConnectionString(config);
     // The host only. What follows the first `@` can be the rest of a
     // password that contains one.
     const safeHost = this.extractHosts(connectionString).join(',') || 'unknown';
@@ -449,10 +495,9 @@ export class DatabaseEngine {
       throw new Error('MongoDB query must specify a "collection" field');
     }
 
-    const client = new MongoClient(
-      this.withUrlCredentials(config.baseUrl, config.authConfig),
-      { serverSelectionTimeoutMS: 10000 },
-    );
+    const client = new MongoClient(this.mongoConnectionString(config), {
+      serverSelectionTimeoutMS: 10000,
+    });
 
     try {
       await client.connect();
@@ -485,10 +530,9 @@ export class DatabaseEngine {
   private async getMongoSchema(
     config: { baseUrl: string; authConfig?: Record<string, unknown> },
   ): Promise<unknown> {
-    const client = new MongoClient(
-      this.withUrlCredentials(config.baseUrl, config.authConfig),
-      { serverSelectionTimeoutMS: 10000 },
-    );
+    const client = new MongoClient(this.mongoConnectionString(config), {
+      serverSelectionTimeoutMS: 10000,
+    });
 
     try {
       await client.connect();
