@@ -555,6 +555,18 @@ export class RestEngine {
           // objects included, so without this a model could make any
           // form-data tool download a URL of its choosing.
           const fileKeys = configuredFileKeys(bodyMapping);
+          // `{ "__jsonFile": <template>, "__filename"?: "feed.json" }`: the
+          // field goes out as a file part holding the JSON text of its
+          // resolved value (Walmart's feed upload). Only markers written in
+          // the tool's own bodyMapping count, and only multipart carries it.
+          const jsonFileKeys = configuredJsonFileKeys(bodyMapping);
+          if (jsonFileKeys.size > 0 && encoding !== 'form-data') {
+            throw new Error(
+              `bodyMapping.${[...jsonFileKeys][0]} uses the __jsonFile marker, ` +
+                `but this tool's encoding is '${encoding}'. A file part needs ` +
+                `bodyEncoding 'form-data'.`,
+            );
+          }
 
           if (encoding === 'form-urlencoded') {
             const urlParams = new URLSearchParams();
@@ -605,6 +617,10 @@ export class RestEngine {
                     ? await this.resolveUploadedFile(source, config.organizationId)
                     : await fetchFileForUpload(source),
                 });
+              } else if (jsonFileKeys.has(k)) {
+                // A marker whose value the caller left out resolves without
+                // `__jsonFile`: leave the part out rather than send its name.
+                if (isJsonFileMarker(v)) fileEntries.push({ key: k, file: jsonFilePart(v) });
               } else {
                 plainEntries.push([k, v]);
               }
@@ -631,10 +647,7 @@ export class RestEngine {
             };
             const form = buildForm();
             axiosConfig.data = form;
-            axiosConfig.headers = {
-              ...axiosConfig.headers,
-              ...form.getHeaders(),
-            };
+            axiosConfig.headers = withFormDataHeaders(axiosConfig.headers, form);
             buildBody = buildForm;
           } else {
             axiosConfig.data = mapped;
@@ -2302,6 +2315,45 @@ function configuredFileKeys(bodyMapping: Record<string, unknown>): Set<string> {
   );
 }
 
+/** A `{ __jsonFile: <template>, __filename?: string }` wrapper in a bodyMapping entry. */
+function isJsonFileMarker(
+  value: unknown,
+): value is { __jsonFile?: unknown; __filename?: unknown } {
+  return (
+    value !== null &&
+    typeof value === 'object' &&
+    !Array.isArray(value) &&
+    '__jsonFile' in (value as Record<string, unknown>)
+  );
+}
+
+/** Top-level bodyMapping keys whose template is a `{ __jsonFile: ... }` marker. */
+function configuredJsonFileKeys(bodyMapping: Record<string, unknown>): Set<string> {
+  if (Array.isArray(bodyMapping)) return new Set();
+  return new Set(
+    Object.entries(bodyMapping)
+      .filter(([, template]) => isJsonFileMarker(template))
+      .map(([key]) => key),
+  );
+}
+
+/**
+ * The multipart part for a resolved `__jsonFile` marker: the JSON text of its
+ * value (a string is taken as JSON text already), sent as application/json
+ * under the marker's `__filename` (default `file.json`). Some APIs only read
+ * a document uploaded as a file part, not the same JSON as the request body:
+ * Walmart's POST /v3/feeds then reports itemsReceived 0.
+ */
+function jsonFilePart(marker: { __jsonFile?: unknown; __filename?: unknown }): FetchedFile {
+  const value = marker.__jsonFile;
+  const text = typeof value === 'string' ? value : JSON.stringify(value ?? {});
+  const filename =
+    typeof marker.__filename === 'string' && marker.__filename.trim()
+      ? sanitizeFilename(marker.__filename)
+      : 'file.json';
+  return { buffer: Buffer.from(text, 'utf8'), filename, contentType: 'application/json' };
+}
+
 /** A `{ __json: <template> }` wrapper in a bodyMapping entry. */
 function isJsonMarker(value: unknown): value is { __json?: unknown } {
   return (
@@ -2355,8 +2407,27 @@ function rebuildBody(axiosConfig: AxiosRequestConfig, build: (() => unknown) | u
   const body = build();
   axiosConfig.data = body;
   if (body instanceof FormData) {
-    axiosConfig.headers = { ...axiosConfig.headers, ...body.getHeaders() };
+    axiosConfig.headers = withFormDataHeaders(axiosConfig.headers, body);
   }
+}
+
+/**
+ * The headers of a multipart request: the form's own Content-Type (with its
+ * boundary) replaces any other spelling of that header. A connector-wide
+ * `Content-Type: application/json` (Walmart's) would otherwise sit next to
+ * the form's lower-case `content-type`, and which one goes out is up to the
+ * HTTP client.
+ */
+function withFormDataHeaders(
+  headers: AxiosRequestConfig['headers'],
+  form: FormData,
+): AxiosRequestConfig['headers'] {
+  const kept = Object.fromEntries(
+    Object.entries((headers ?? {}) as Record<string, unknown>).filter(
+      ([name]) => name.toLowerCase() !== 'content-type',
+    ),
+  );
+  return { ...kept, ...form.getHeaders() } as AxiosRequestConfig['headers'];
 }
 
 const DEFAULT_MAX_FILE_UPLOAD_BYTES = 10 * 1024 * 1024;
