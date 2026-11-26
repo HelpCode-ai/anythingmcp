@@ -1167,6 +1167,33 @@ Arguments the caller leaves out are dropped first, so the example sends `{"order
 argument through. The marker works in JSON bodies too, where the field becomes a string. Only
 markers written in the tool's own mapping count; one inside a caller's argument is an ordinary object.
 
+### JSON documents as file uploads (`__jsonFile`)
+
+Some APIs read a JSON document only when it is uploaded as a file, not when the same JSON is the
+request body (Walmart's `POST /v3/feeds` then accepts the feed and reports zero items). Wrap the
+field in a `__jsonFile` marker on a `form-data` body and it goes out as a multipart file part
+holding the JSON text of its resolved value, with `Content-Type: application/json`:
+
+```json
+{
+  "method": "POST",
+  "path": "/v3/feeds",
+  "queryParams": { "feedType": "lagtime" },
+  "bodyEncoding": "form-data",
+  "bodyMapping": {
+    "file": {
+      "__jsonFile": { "LagTimeHeader": { "version": "1.0" }, "lagTime": "$items" },
+      "__filename": "lagtime.json"
+    }
+  }
+}
+```
+
+`__filename` is optional (default `file.json`). A string value is taken as JSON text already. The
+form sets the request's `Content-Type` with its boundary, replacing a connector-wide
+`Content-Type: application/json`. The marker is refused on any other `bodyEncoding`, and, as with
+`__json`, only markers written in the tool's own mapping count.
+
 ### XML bodies
 
 APIs that take an XML request (TallyPrime, SOAP-like endpoints) get their body

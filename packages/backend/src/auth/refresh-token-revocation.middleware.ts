@@ -44,6 +44,8 @@ const WRONG_WORKSPACE_DESCRIPTION =
   'Connect again and sign in with an account of that workspace, or ask its admin to invite you.';
 const OUTSIDE_GRANT_DESCRIPTION =
   'This connection was not allowed to use this MCP server. Connect again to allow it.';
+const CONNECTION_REVOKED_DESCRIPTION =
+  'This connection was revoked. Connect again to use this MCP server.';
 
 /**
  * Makes `users.sessionsValidFrom` mean something on the OAuth refresh grant.
@@ -201,7 +203,8 @@ export class RefreshTokenRevocationMiddleware implements NestMiddleware {
           .catch(() => 'no-grant' as const);
         if (scope === 'outside' || scope === 'revoked') {
           if (via === 'marker') await this.refusals?.clear(userId, clientId).catch(() => undefined);
-          return this.deny(res, payload, userId, 'outside_grant', { serverId, via });
+          const reason = scope === 'revoked' ? 'connection_revoked' : 'outside_grant';
+          return this.deny(res, payload, userId, reason, { serverId, via });
         }
       }
       if (via === 'marker' && clientId) {
@@ -256,7 +259,9 @@ export class RefreshTokenRevocationMiddleware implements NestMiddleware {
           ? WRONG_WORKSPACE_DESCRIPTION
           : reason === 'outside_grant'
             ? OUTSIDE_GRANT_DESCRIPTION
-            : REVOKED_DESCRIPTION,
+            : reason === 'connection_revoked'
+              ? CONNECTION_REVOKED_DESCRIPTION
+              : REVOKED_DESCRIPTION,
     });
   }
 

@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 957 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 958 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ## Getting started
 
@@ -19,6 +19,7 @@
 - [Loom (agent memory)](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/loom.md): The Loom catalog preset connects AnythingMCP to your own Loom deployment through the existing MCP bridge.
 - [MCP Bridge Connector — MCP-to-MCP Gateway](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/mcp-bridge.md): The MCP Bridge connector lets you connect to other MCP servers and re-expose their tools through AnythingMCP.
 - [OData to MCP](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/odata.md): AnythingMCP connects Claude, ChatGPT and Copilot to OData V2 and V4 services through MCP, with SAP Gateway (S/4HANA, ECC, BW) as a first-class case.
+- [Reading OneNote images and attachments](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/onenote-resources.md): The OneNote connector can fetch images and attached files that appear as authenticated Microsoft Graph links in a page's HTML.
 - [Reading shared OneNote notebooks](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/onenote-shared-notebooks.md): The OneNote connector has read tools for SharePoint site notebooks and Microsoft 365 group notebooks.
 - [Per-user sign-in for OAuth2 connectors](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/per-user-sign-in.md): By default an OAuth2 connector is authorized once: whoever clicks "Authorize with Provider" signs in, and every user of the workspace then calls the...
 - [Proxy / Web-Unblocker](https://raw.githubusercontent.com/HelpCode-ai/anythingmcp/main/docs/connectors/proxy.md): Some upstream APIs block server-side requests — by IP reputation, geo, rate limits, or full anti-bot systems (Akamai Bot Manager, Cloudflare, DataDome).

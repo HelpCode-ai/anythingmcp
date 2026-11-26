@@ -239,6 +239,17 @@ describe('FileUploadService', () => {
     await expect(svc.receive(tokenOf(link.upload_url), Readable.from([]), 0)).rejects.toThrow(/empty/);
   });
 
+  it('answers 429 while every upload slot is taken and keeps the link pending', async () => {
+    const link = await svc.createLink({ organizationId: ORG, filename: 'a.png' });
+    (svc as any).active = 8;
+    const err = await svc.receive(tokenOf(link.upload_url), Readable.from([PNG]), PNG.length).catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(err.message).toMatch(/same link/);
+    expect(prisma.fileUpload.rows[0].state).toBe('pending');
+    (svc as any).active = 0;
+    await expect(svc.receive(tokenOf(link.upload_url), Readable.from([PNG]), PNG.length)).resolves.toMatchObject({ bytes: PNG.length });
+  });
+
   it('refuses an expired link', async () => {
     const link = await svc.createLink({ organizationId: ORG, filename: 'a.png' });
     prisma.fileUpload.rows[0].uploadBy = new Date(Date.now() - 1000);
