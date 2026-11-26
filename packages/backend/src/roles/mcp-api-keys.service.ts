@@ -1,4 +1,10 @@
-import { Injectable, Logger, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
 import { apiKeyLookupWhere, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
@@ -59,6 +65,7 @@ export class McpApiKeysService implements OnApplicationBootstrap {
     name: string,
     mcpServerId?: string,
     scope: McpApiKeyScope = 'MCP',
+    options: { keyOrganizationId?: string } = {},
   ) {
     // A key for a server is limited to that server, so the server must be one
     // the user can reach: an existing server of an organization they are an
@@ -77,6 +84,13 @@ export class McpApiKeysService implements OnApplicationBootstrap {
         : null;
       if (!membership || membership.deactivatedAt) {
         throw new NotFoundException('MCP server not found');
+      }
+      // Requested with an API key: the key acts in one workspace, so it may
+      // only create keys for servers of that workspace.
+      if (options.keyOrganizationId && server!.organizationId !== options.keyOrganizationId) {
+        throw new ForbiddenException(
+          "This API key can only create keys for MCP servers of its own workspace",
+        );
       }
       // A server's key belongs to the server's workspace (resolveUserByKey
       // scopes a key to its organization), whichever workspace the owner
@@ -184,6 +198,11 @@ export class McpApiKeysService implements OnApplicationBootstrap {
     });
 
     if (!record || !record.isActive || isKeyExpired(record.expiresAt)) return null;
+    // Only MCP-scoped keys call tools. MANAGEMENT_READ / MANAGEMENT_ADMIN keys
+    // are for the management API (JwtOrManagementKeyGuard); every caller of
+    // this method serves /mcp. Support keys carry a scope too and follow the
+    // same rule. Same answer as an unknown key.
+    if (record.scope !== 'MCP') return null;
 
     // Defence in depth: a key is bound to one organization, and it must not
     // authenticate a user who has been deactivated there — even if the key row
