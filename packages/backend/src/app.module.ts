@@ -32,6 +32,7 @@ import { RedisModule } from './common/redis.module';
 import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { ClientCredentialsMiddleware } from './auth/client-credentials.middleware';
+import { TokenRequestShapeMiddleware } from './auth/token-request-shape.middleware';
 import { RefreshTokenRevocationMiddleware } from './auth/refresh-token-revocation.middleware';
 import { OAuthRegisterGuardMiddleware } from './auth/oauth-register-guard.middleware';
 import {
@@ -232,9 +233,16 @@ export class AppModule implements NestModule {
     // RefreshTokenRevocationMiddleware is what makes `sessionsValidFrom`
     // actually revoke a session: without it a refresh grant mints a fresh
     // access token whose `iat` sits above the watermark.
+    // TokenRequestShapeMiddleware runs first: it refuses parameters that are
+    // not plain strings, so the two above and the upstream controller all read
+    // the same values.
     if (mode === 'oauth2' || mode === 'both') {
       consumer
-        .apply(ClientCredentialsMiddleware, RefreshTokenRevocationMiddleware)
+        .apply(
+          TokenRequestShapeMiddleware,
+          ClientCredentialsMiddleware,
+          RefreshTokenRevocationMiddleware,
+        )
         .forRoutes('token');
     }
 
