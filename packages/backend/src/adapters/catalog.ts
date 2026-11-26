@@ -600,6 +600,7 @@ import * as plivo from './intl/plivo.json';
 import * as plytix from './intl/plytix.json';
 import * as podio from './intl/podio.json';
 import * as podium from './intl/podium.json';
+import * as poyo from './intl/poyo.json';
 import * as posterPos from './intl/poster-pos.json';
 import * as postgres from './intl/postgres.json';
 import * as posthog from './intl/posthog.json';
@@ -1877,6 +1878,7 @@ const RAW_ADAPTERS: AdapterDefinition[] = [
   plytix as unknown as AdapterDefinition,
   podio as unknown as AdapterDefinition,
   podium as unknown as AdapterDefinition,
+  poyo as unknown as AdapterDefinition,
   posterPos as unknown as AdapterDefinition,
   postgres as unknown as AdapterDefinition,
   posthog as unknown as AdapterDefinition,
