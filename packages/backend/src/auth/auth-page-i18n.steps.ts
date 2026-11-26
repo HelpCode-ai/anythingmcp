@@ -252,6 +252,9 @@ export interface ServerPickerTexts {
   connectors: PluralTexts;
   everything: string;
   everythingSub: string;
+  /** The whole-workspace option where member visibility narrows the user's view. */
+  roleTools: string;
+  roleToolsSub: string;
   pickError: string;
   connect: string;
   note: string;
@@ -263,6 +266,8 @@ const SERVER_PICKER_EN: ServerPickerTexts = {
   connectors: { one: '{n} connector', few: '{n} connectors', many: '{n} connectors', other: '{n} connectors' },
   everything: 'Everything in this workspace',
   everythingSub: 'including connectors not on a server',
+  roleTools: 'The tools your role allows',
+  roleToolsSub: 'in this workspace, from every connector shared with you',
   pickError: 'Choose at least one server, or a whole workspace.',
   connect: 'Connect',
   note: 'You can change this later from Settings, without reconnecting.',
@@ -274,6 +279,8 @@ const SERVER_PICKER_DE: ServerPickerTexts = {
   connectors: { one: '{n} Connector', few: '{n} Connectors', many: '{n} Connectors', other: '{n} Connectors' },
   everything: 'Alles in diesem Workspace',
   everythingSub: 'auch Connectors, die auf keinem Server liegen',
+  roleTools: 'Die Tools, die Ihre Rolle erlaubt',
+  roleToolsSub: 'in diesem Workspace, aus allen für Sie freigegebenen Connectors',
   pickError: 'Wählen Sie mindestens einen Server oder einen ganzen Workspace.',
   connect: 'Verbinden',
   note: 'Sie können das später in den Einstellungen ändern, ohne neu zu verbinden.',
@@ -285,6 +292,8 @@ const SERVER_PICKER_IT: ServerPickerTexts = {
   connectors: { one: '{n} connettore', few: '{n} connettori', many: '{n} connettori', other: '{n} connettori' },
   everything: 'Tutto in questo workspace',
   everythingSub: 'compresi i connettori non assegnati a un server',
+  roleTools: 'Gli strumenti consentiti dal tuo ruolo',
+  roleToolsSub: 'in questo workspace, da tutti i connettori condivisi con te',
   pickError: 'Scegli almeno un server oppure un intero workspace.',
   connect: 'Collega',
   note: 'Puoi cambiarlo più tardi dalle Impostazioni, senza ricollegare.',
@@ -296,6 +305,8 @@ const SERVER_PICKER_ES: ServerPickerTexts = {
   connectors: { one: '{n} conector', few: '{n} conectores', many: '{n} conectores', other: '{n} conectores' },
   everything: 'Todo lo de este workspace',
   everythingSub: 'incluidos los conectores que no están en ningún servidor',
+  roleTools: 'Las herramientas que permite tu rol',
+  roleToolsSub: 'en este workspace, de todos los conectores compartidos contigo',
   pickError: 'Elige al menos un servidor o un workspace entero.',
   connect: 'Conectar',
   note: 'Puedes cambiarlo más adelante en Ajustes, sin volver a conectar.',
@@ -307,6 +318,8 @@ const SERVER_PICKER_ZH: ServerPickerTexts = {
   connectors: { one: '{n} 个连接器', few: '{n} 个连接器', many: '{n} 个连接器', other: '{n} 个连接器' },
   everything: '此工作区中的全部内容',
   everythingSub: '包括未关联到任何服务器的连接器',
+  roleTools: '你的角色允许的工具',
+  roleToolsSub: '此工作区中与你共享的所有连接器',
   pickError: '请至少选择一个服务器，或选择整个工作区。',
   connect: '连接',
   note: '之后可以在设置中更改，无需重新连接。',
@@ -318,6 +331,8 @@ const SERVER_PICKER_JA: ServerPickerTexts = {
   connectors: { one: 'コネクタ {n} 件', few: 'コネクタ {n} 件', many: 'コネクタ {n} 件', other: 'コネクタ {n} 件' },
   everything: 'このワークスペースのすべて',
   everythingSub: 'サーバーに割り当てられていないコネクタを含む',
+  roleTools: 'あなたのロールで許可されたツール',
+  roleToolsSub: 'このワークスペースで共有されているすべてのコネクタから',
   pickError: 'サーバーを 1 つ以上、またはワークスペース全体を選択してください。',
   connect: '接続',
   note: 'この選択は、再接続せずに後から「設定」で変更できます。',
@@ -329,6 +344,8 @@ const SERVER_PICKER_RU: ServerPickerTexts = {
   connectors: { one: '{n} коннектор', few: '{n} коннектора', many: '{n} коннекторов', other: '{n} коннектора' },
   everything: 'Всё в этом workspace',
   everythingSub: 'включая коннекторы, не привязанные к серверу',
+  roleTools: 'Инструменты, разрешённые вашей ролью',
+  roleToolsSub: 'в этом workspace, из всех коннекторов, к которым вам дали доступ',
   pickError: 'Выберите хотя бы один сервер или весь workspace.',
   connect: 'Подключить',
   note: 'Это можно изменить позже в настройках, без повторного подключения.',

@@ -16,7 +16,15 @@ const TRANSFORM = {
 const MAPPED = { total: 812, devices: [{ hostname: 'PC-01' }] };
 
 function buildController(
-  overrides: { prisma?: any; connectorsService?: any; mcpServer?: any; edition?: any; licenseGuard?: any } = {},
+  overrides: {
+    prisma?: any;
+    connectorsService?: any;
+    mcpServer?: any;
+    edition?: any;
+    licenseGuard?: any;
+    toolExecutor?: any;
+    roles?: any;
+  } = {},
 ) {
   const prisma = overrides.prisma ?? {
     mcpTool: {
@@ -51,6 +59,8 @@ function buildController(
     edition as any,
     licenseGuard as any,
     toolExecutor as any,
+    undefined,
+    overrides.roles,
   );
   return { controller, prisma, connectorsService, mcpServer, edition, licenseGuard, toolExecutor };
 }
@@ -419,5 +429,96 @@ describe('ToolsController — code tools', () => {
   it('rejects an empty program', async () => {
     const { controller } = buildController({ prisma: codePrisma() });
     await expect(controller.create(req('ADMIN'), 'c1', codeDto({ code: '  ' }) as any)).rejects.toThrow(/non-empty/);
+  });
+
+  describe('bulk create', () => {
+    const plainDto = { name: 'get_orders', description: 'd', parameters: {}, endpointMapping: { method: 'GET', path: '/orders' } };
+
+    it('refuses a code tool whose uses names a connector of another workspace, and stores nothing', async () => {
+      const prisma = codePrisma();
+      prisma.connector.findMany = jest.fn().mockResolvedValue([]);
+      const { controller, mcpServer } = buildController({ prisma });
+      const err = await controller
+        .bulkCreate(req('ADMIN'), 'c1', { tools: [plainDto, codeDto({ uses: [{ connectorId: 'foreign' }] })] } as any)
+        .catch((e) => e);
+      expect(err).toBeInstanceOf(BadRequestException);
+      expect(err.message).toMatch(/^tools\[1\]: .*own workspace/);
+      expect(prisma.connector.findMany).toHaveBeenCalledWith({
+        where: { id: { in: ['foreign'] }, organizationId: 'org1' },
+        select: { id: true },
+      });
+      expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+      expect(mcpServer.reloadConnectorTools).not.toHaveBeenCalled();
+    });
+
+    it('refuses definer rights for a non-admin owner', async () => {
+      const { controller, prisma } = buildController({ prisma: codePrisma() });
+      await expect(
+        controller.bulkCreate(req('EDITOR'), 'c1', { tools: [codeDto({ runAs: 'definer' })] } as any),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+    });
+
+    it('applies the plan cap to the code tools of the batch', async () => {
+      const licenseGuard = { checkCanCreateCodeTool: jest.fn().mockRejectedValue(new ForbiddenException('Plan limit reached')) };
+      const { controller, prisma } = buildController({ prisma: codePrisma(), licenseGuard });
+      await expect(
+        controller.bulkCreate(req('ADMIN'), 'c1', { tools: [codeDto(), codeDto({ code: 'return 2;' }), plainDto] } as any),
+      ).rejects.toThrow(/Plan limit/);
+      expect(licenseGuard.checkCanCreateCodeTool).toHaveBeenCalledWith('org1', 2);
+      expect(prisma.mcpTool.create).not.toHaveBeenCalled();
+    });
+
+    it('creates same-workspace code tools and plain tools as before', async () => {
+      const { controller, prisma, licenseGuard } = buildController({ prisma: codePrisma() });
+      const res: any = await controller.bulkCreate(req('ADMIN'), 'c1', { tools: [plainDto, codeDto()] } as any);
+      expect(prisma.mcpTool.create).toHaveBeenCalledTimes(2);
+      expect(prisma.mcpTool.create.mock.calls[1][0].data.endpointMapping).toEqual(codeDto().endpointMapping);
+      expect(licenseGuard.checkCanCreateCodeTool).toHaveBeenCalledWith('org1', 1);
+      expect(res.message).toBe('Created 2 tools');
+    });
+
+    it('does not call the plan cap for a batch without code tools', async () => {
+      const { controller, licenseGuard } = buildController({ prisma: codePrisma() });
+      await controller.bulkCreate(req('ADMIN'), 'c1', { tools: [plainDto] } as any);
+      expect(licenseGuard.checkCanCreateCodeTool).not.toHaveBeenCalled();
+    });
+  });
+
+  describe('test run of a saved code tool', () => {
+    const storedCodeTool = () => ({
+      id: 'code-1',
+      name: 'summary',
+      connectorId: 'c1',
+      endpointMapping: codeDto().endpointMapping,
+      connector: { id: 'c1', type: 'REST', organizationId: 'org1' },
+    });
+    const withStoredTool = () => {
+      const prisma = codePrisma();
+      prisma.mcpTool.findUnique = jest.fn().mockResolvedValue(storedCodeTool());
+      return prisma;
+    };
+
+    it('runs unrestricted for an admin', async () => {
+      const roles = { getAllowedToolIds: jest.fn() };
+      const { controller, toolExecutor } = buildController({ prisma: withStoredTool(), roles });
+      await controller.testTool('c1', 'code-1', req('ADMIN') as any, {} as any);
+      expect(toolExecutor.runSavedCodeTool.mock.calls[0][2].allowedToolIds).toBeNull();
+      expect(roles.getAllowedToolIds).not.toHaveBeenCalled();
+    });
+
+    it('runs with the roles of a connector owner who is not an admin', async () => {
+      const roles = { getAllowedToolIds: jest.fn().mockResolvedValue(['t-allowed']) };
+      const { controller, toolExecutor } = buildController({ prisma: withStoredTool(), roles });
+      await controller.testTool('c1', 'code-1', req('EDITOR') as any, {} as any);
+      expect(roles.getAllowedToolIds).toHaveBeenCalledWith('u1', 'org1');
+      expect(toolExecutor.runSavedCodeTool.mock.calls[0][2].allowedToolIds).toEqual(['t-allowed']);
+    });
+
+    it('reaches no inner tool for a non-admin when roles cannot be read', async () => {
+      const { controller, toolExecutor } = buildController({ prisma: withStoredTool() });
+      await controller.testTool('c1', 'code-1', req('EDITOR') as any, {} as any);
+      expect(toolExecutor.runSavedCodeTool.mock.calls[0][2].allowedToolIds).toEqual([]);
+    });
   });
 });

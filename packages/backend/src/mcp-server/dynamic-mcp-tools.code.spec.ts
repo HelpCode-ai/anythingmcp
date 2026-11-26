@@ -95,6 +95,7 @@ function build(
     },
     getToolForOrg: (name: string, org: string) => tools.find((t) => t.name === name && t.organizationId === org),
     getAllTools: () => tools,
+    getToolsForConnectors: (ids: string[]) => tools.filter((t) => ids.includes(t.connectorId)),
   };
   const audit = { logInvocation: jest.fn().mockResolvedValue(undefined) };
   const redisClient = { decr: jest.fn().mockResolvedValue(0), del: jest.fn().mockResolvedValue(1) };
@@ -242,6 +243,95 @@ describe('DynamicMcpTools — code tools', () => {
     const res = await executor.executeTool('summary', {}, { organizationId: 'org1' });
     expect(res.isError).toBe(true);
     expect(res.content[0].text).toMatch(/not a tool this code tool can use|uses/);
+  });
+});
+
+describe('DynamicMcpTools — code tools stay in their own organization', () => {
+  // A connector of another organization, holding a tool with its own name and
+  // one with the same name as a tool of the code tool's organization.
+  const foreignRead: RegisteredTool = {
+    ...innerRead,
+    id: 'f-read',
+    connectorId: 'c-foreign',
+    organizationId: 'org2',
+    name: 'foreign_read',
+    endpointMapping: { method: 'static', path: '', staticResponse: 'FOREIGNVALUE' } as any,
+  };
+  const foreignTwin: RegisteredTool = { ...foreignRead, id: 'f-twin', name: 'inner_read' };
+  const usesForeign = { uses: [{ connectorId: 'c-foreign' }], runAs: 'definer' };
+  const usesBoth = { uses: [{ connectorId: 'c-foreign' }, { connectorId: 'c1' }], runAs: 'definer' };
+
+  const call = (executor: DynamicMcpTools) =>
+    executor.executeTool('summary', {}, { userId: 'u1', organizationId: 'org1', allowedToolIds: null });
+
+  it('cannot run a tool of a connector of another organization named in uses', async () => {
+    const { executor } = build([codeTool(usesForeign), foreignRead], (b) => b.run('foreign_read', {}));
+    const res = await call(executor);
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not a tool this code tool can use');
+    expect(res.content[0].text).not.toContain('FOREIGNVALUE');
+  });
+
+  it('cannot describe it or find it by search', async () => {
+    const { executor } = build([codeTool(usesForeign), foreignRead], async (b) => ({
+      found: await b.search('', {}),
+      described: await b.describe('foreign_read').catch((e: Error) => e.message),
+    }));
+    const res = await call(executor);
+    expect(res.isError).toBeUndefined();
+    expect(res.structured).toEqual({
+      found: [],
+      described: "'foreign_read' is not a tool this code tool can use.",
+    });
+  });
+
+  it('resolves a shared tool name to its own organization only', async () => {
+    const { executor } = build([codeTool(usesBoth), foreignTwin, innerRead], async (b) => ({
+      ran: await b.run('inner_read', {}),
+      found: await b.search('', {}),
+    }));
+    const res = await call(executor);
+    expect(res.isError).toBeUndefined();
+    expect(res.structured).toEqual({
+      ran: { text: 'READVALUE' },
+      found: [{ tool: 'inner_read', description: 'reads', readOnly: true }],
+    });
+  });
+
+  it('applies to the dashboard test run of a saved code tool as well', async () => {
+    const { executor } = build([foreignRead], (b) => b.run('foreign_read', {}));
+    const stored = codeTool(usesForeign);
+    const res = await executor.runSavedCodeTool(
+      {
+        id: stored.id,
+        name: stored.name,
+        connectorId: stored.connectorId,
+        organizationId: 'org1',
+        endpointMapping: stored.endpointMapping,
+      },
+      {},
+      { userId: 'u1', organizationId: 'org1', allowedToolIds: null },
+    );
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not a tool this code tool can use');
+  });
+
+  it('inline code with an organization reaches only that organization', async () => {
+    const { executor } = build([foreignRead, innerRead], (b) => b.run('foreign_read', {}));
+    const res = await executor.executeInlineCode(
+      'return 1;',
+      { userId: 'u1', organizationId: 'org1' },
+      { connectorIds: ['c-foreign', 'c1'], allowedToolIds: null },
+    );
+    expect(res.isError).toBe(true);
+    expect(res.content[0].text).toContain('not a tool this code tool can use');
+  });
+
+  it('leaves same-organization code tools unchanged', async () => {
+    const { executor } = build([codeTool({ runAs: 'definer' }), innerRead], (b) => b.run('inner_read', {}));
+    const res = await call(executor);
+    expect(res.isError).toBeUndefined();
+    expect(res.structured).toEqual({ text: 'READVALUE' });
   });
 });
 
