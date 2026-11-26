@@ -1,6 +1,9 @@
 import {
   SupportTriageService,
+  HUMAN_ROUTING_ACKS,
   fallbackTriage,
+  humanRoutingAck,
+  isPublicAgentReply,
   normaliseAttrs,
   parseTriage,
   segmentTags,
@@ -9,9 +12,11 @@ import {
 import { compactError, redactSecrets } from './support-redact';
 import * as llm from '../../knowledge-graph/llm-client';
 
-function fakeDesk(messages: any[] = []) {
+function fakeDesk(messages: any[] = [], all: any[] = messages) {
   return {
     incomingMessages: jest.fn().mockResolvedValue(messages),
+    messages: jest.fn().mockResolvedValue(all),
+    reply: jest.fn().mockResolvedValue(true),
     addTags: jest.fn().mockResolvedValue(true),
     setPriority: jest.fn().mockResolvedValue(true),
     assignTeam: jest.fn().mockResolvedValue(true),
@@ -224,6 +229,109 @@ describe('SupportTriageService', () => {
     const off = fakeDesk(msgs);
     await new TestTriage(off).triage({ uuid: 'a5', inbox_channel: 'livechat', contact: { custom_attributes: { deployment: 'cloud' } } });
     expect(off.assignUser).not.toHaveBeenCalled();
+  });
+
+  describe('acknowledgement when a live chat goes straight to a person', () => {
+    const customer = { type: 'incoming', private: false, sender_type: 'contact', text_content: 'Why was I charged during the trial?' };
+    const triageNoteMsg = { type: 'outgoing', private: true, sender_type: 'agent', text_content: 'AI triage: billing' };
+    const cloud = { custom_attributes: { deployment: 'cloud', plan: 'trial' } };
+
+    it('posts one public message in the customer language on human-only routing', async () => {
+      jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'billing', priority: 'High', language: 'de' } });
+      const desk = fakeDesk([customer], [triageNoteMsg, customer]);
+      await new TestTriage(desk, undefined, 5).triage({ uuid: 'h1', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.assignUser).not.toHaveBeenCalled();
+      expect(desk.reply).toHaveBeenCalledTimes(1);
+      expect(desk.reply).toHaveBeenCalledWith('h1', `<p>${HUMAN_ROUTING_ACKS.de}</p>`);
+      // After the team, tags and note, so the person finds the context.
+      expect(desk.addPrivateNote.mock.invocationCallOrder[0]).toBeLessThan(desk.reply.mock.invocationCallOrder[0]);
+    });
+
+    it('also acknowledges when no AI assistant is configured', async () => {
+      jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'connector-setup', priority: 'Low', language: 'it' } });
+      const desk = fakeDesk([customer]);
+      await new TestTriage(desk).triage({ uuid: 'h2', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.reply).toHaveBeenCalledWith('h2', `<p>${HUMAN_ROUTING_ACKS.it}</p>`);
+    });
+
+    it('falls back to English without an LLM or for a language without a text', async () => {
+      const desk = fakeDesk([customer]);
+      await new TestTriage(desk, null, 5).triage({ uuid: 'h3', inbox_channel: 'livechat', contact: cloud });
+      // The fallback triage is "other", which the assistant handles.
+      expect(desk.assignUser).toHaveBeenCalledWith('h3', 5);
+      expect(desk.reply).not.toHaveBeenCalled();
+
+      await new TestTriage(desk, null).triage({ uuid: 'h4', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.reply).toHaveBeenCalledWith('h4', `<p>${HUMAN_ROUTING_ACKS.en}</p>`);
+    });
+
+    it('says nothing when the AI assistant takes the chat', async () => {
+      jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'connector-error', priority: 'Medium', language: 'fr' } });
+      const desk = fakeDesk([customer]);
+      await new TestTriage(desk, undefined, 5).triage({ uuid: 'h5', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.assignUser).toHaveBeenCalledWith('h5', 5);
+      expect(desk.messages).not.toHaveBeenCalled();
+      expect(desk.reply).not.toHaveBeenCalled();
+    });
+
+    it('says nothing outside the live chat', async () => {
+      jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'billing', priority: 'High', language: 'en' } });
+      const desk = fakeDesk([customer]);
+      await new TestTriage(desk, undefined, 5).triage({ uuid: 'h6', inbox_channel: 'email', contact: cloud });
+      expect(desk.reply).not.toHaveBeenCalled();
+    });
+
+    it('is not posted when a public agent reply is already there', async () => {
+      jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'bug', priority: 'Medium', language: 'en' } });
+      const human = { type: 'outgoing', private: false, sender_type: 'agent', text_content: 'Looking into it' };
+      const desk = fakeDesk([customer], [human, triageNoteMsg, customer]);
+      await new TestTriage(desk, undefined, 5).triage({ uuid: 'h7', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.reply).not.toHaveBeenCalled();
+    });
+
+    it('is never duplicated on a repeated delivery or a re-triage after a restart', async () => {
+      jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'billing', priority: 'High', language: 'en' } });
+      const desk = fakeDesk([customer], [triageNoteMsg, customer]);
+      const svc = new TestTriage(desk, undefined, 5);
+      await svc.triage({ uuid: 'h8', inbox_channel: 'livechat', contact: cloud });
+      await svc.triage({ uuid: 'h8', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.reply).toHaveBeenCalledTimes(1);
+
+      // A new process whose tag step had failed: the posted message is in the chat.
+      const posted = { type: 'outgoing', private: false, sender_type: 'agent', text_content: HUMAN_ROUTING_ACKS.en };
+      desk.messages.mockResolvedValue([posted, triageNoteMsg, customer]);
+      await new TestTriage(desk, undefined, 5).triage({ uuid: 'h8', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.reply).toHaveBeenCalledTimes(1);
+    });
+
+    it('is not posted when the messages cannot be read', async () => {
+      jest.spyOn(llm, 'chatJson').mockResolvedValue({ json: { category: 'billing', priority: 'High', language: 'en' } });
+      const desk = fakeDesk([customer]);
+      desk.messages.mockRejectedValue(new Error('Libredesk GET -> 502'));
+      await new TestTriage(desk, undefined, 5).triage({ uuid: 'h9', inbox_channel: 'livechat', contact: cloud });
+      expect(desk.reply).not.toHaveBeenCalled();
+      expect(desk.addPrivateNote).toHaveBeenCalled();
+    });
+
+    it('picks the language and tells replies from notes and activity rows', () => {
+      expect(humanRoutingAck('pt-BR')).toBe(HUMAN_ROUTING_ACKS.pt);
+      expect(humanRoutingAck('ES')).toBe(HUMAN_ROUTING_ACKS.es);
+      expect(humanRoutingAck('ja')).toBe(HUMAN_ROUTING_ACKS.en);
+      expect(humanRoutingAck('')).toBe(HUMAN_ROUTING_ACKS.en);
+      expect(isPublicAgentReply({ type: 'outgoing', private: false, sender_type: 'agent' })).toBe(true);
+      expect(isPublicAgentReply({ type: 'outgoing', private: true, sender_type: 'agent' })).toBe(false);
+      expect(isPublicAgentReply({ type: 'activity', private: false, sender_type: 'agent' })).toBe(false);
+      expect(isPublicAgentReply({ type: 'incoming', private: false, sender_type: 'contact' })).toBe(false);
+    });
+
+    it('keeps every text short, plain and free of promises', () => {
+      for (const text of Object.values(HUMAN_ROUTING_ACKS)) {
+        expect(text).not.toMatch(/[\u2013\u2014]/);
+        expect(text).toMatch(/17/);
+        expect(text.length).toBeLessThan(200);
+        expect(text).not.toMatch(/refund|€|\$|24 ?h/i);
+      }
+    });
   });
 
   it('a failing step does not stop the others', async () => {
