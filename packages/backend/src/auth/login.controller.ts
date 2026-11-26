@@ -2344,6 +2344,21 @@ ${
       signed: true,
     });
 
+    // Who is choosing: the page may run on a dashboard session already open
+    // in this browser (often an admin's), so it names the account, as the
+    // sign-in page does. And in a workspace where member visibility narrows
+    // this user's view, "everything in this workspace" would promise more
+    // than they get: their roles cap it. That option is offered there as
+    // what it is, the tools their roles allow.
+    const account = await this.prisma.user.findUnique({
+      where: { id: userId },
+      select: { email: true },
+    });
+    const restrictedOrgIds: string[] = [];
+    for (const t of targets) {
+      if (await this.grants.restrictedIn(userId, t.organizationId)) restrictedOrgIds.push(t.organizationId);
+    }
+
     this.recordStepViewed(req, 'servers');
     res.setHeader('Content-Type', 'text/html');
     res.send(
@@ -2353,6 +2368,8 @@ ${
         targets,
         csrfToken,
         lang: this.pageLanguage(req, consent),
+        accountEmail: account?.email ?? null,
+        restrictedOrgIds,
       }),
     );
     return true;
@@ -3182,10 +3199,23 @@ ${
     csrfToken: string;
     /** The page's language (see pageLanguage); English when absent. */
     lang?: PageLanguage | null;
+    /** The signed-in account, named above the choices with a switch link. */
+    accountEmail?: string | null;
+    /**
+     * Workspaces where member visibility narrows this user's view: there the
+     * whole-workspace option is the tools their roles allow, not "everything".
+     */
+    restrictedOrgIds?: string[];
   }): string {
     const { clientName, targets, csrfToken } = params;
     const lang: PageLanguage = params.lang ?? 'en';
     const T = serverPickerTexts(lang);
+    const S = signInTexts(lang);
+    const restricted = new Set(params.restrictedOrgIds ?? []);
+    const account = params.accountEmail
+      ? `
+    <div class="acct"><span>${fill(S.signedInAs, { email: `<strong>${this.escapeHtml(params.accountEmail)}</strong>` })}</span><a href="/auth/login?switch=1">${S.switchAccount}</a></div>`
+      : '';
 
     const groups = targets
       .map((t) => {
@@ -3199,10 +3229,15 @@ ${
             </label>`,
           )
           .join('');
+        // Same grant either way (the whole workspace, capped by the user's
+        // roles on every call); only what it is called differs.
+        const [wholeName, wholeSub] = restricted.has(t.organizationId)
+          ? [T.roleTools, T.roleToolsSub]
+          : [T.everything, T.everythingSub];
         const whole = `
             <label class="pick whole">
               <input type="radio" name="workspace" value="${this.escapeHtml(t.organizationId)}" />
-              <span class="pick-name">${T.everything}<span class="pick-sub">${T.everythingSub}</span></span>
+              <span class="pick-name">${wholeName}<span class="pick-sub">${wholeSub}</span></span>
             </label>`;
         return `
         <fieldset>
@@ -3215,7 +3250,7 @@ ${
     const card = `
     ${clientTilePair(clientName, params.redirectHost ?? '')}
     <h1>${T.heading}</h1>
-    <p class="sub">${fill(T.sub, { client: this.escapeHtml(clientName) })}</p>
+    <p class="sub">${fill(T.sub, { client: this.escapeHtml(clientName) })}</p>${account}
     <form method="POST" action="/auth/select-servers">
       <input type="hidden" name="csrf" value="${this.escapeHtml(csrfToken)}" />
       ${groups}
