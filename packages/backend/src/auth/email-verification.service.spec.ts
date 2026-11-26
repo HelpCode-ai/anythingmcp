@@ -1,6 +1,10 @@
 import { Reflector } from '@nestjs/core';
 import { EmailVerificationService, VERIFICATION_CODE_TTL_MS } from './email-verification.service';
-import { MAX_WRONG_CODES, VerificationAttemptsStore } from './verification-attempts.store';
+import {
+  MAX_WRONG_CODES,
+  VerificationAttemptsStore,
+  clearVerificationAttemptsMemory,
+} from './verification-attempts.store';
 import { AuthController } from './auth.controller';
 
 function setup(opts: { cloud?: boolean; record?: unknown; license?: unknown; redis?: unknown } = {}) {
@@ -39,6 +43,8 @@ function setup(opts: { cloud?: boolean; record?: unknown; license?: unknown; red
 }
 
 describe('EmailVerificationService', () => {
+  beforeEach(() => clearVerificationAttemptsMemory());
+
   it('voids open codes, stores a new 6-digit code and emails it with the instance link', async () => {
     const { service, prisma, emailService } = setup();
     expect(await service.sendCode('u1', 'a@b.com')).toBe(true);
@@ -145,6 +151,14 @@ describe('EmailVerificationService', () => {
       expect(voids(prisma)).toHaveLength(0);
     });
 
+    it('shares the count between two instances without Redis (dashboard and authorization page)', async () => {
+      const dashboard = setup();
+      const authorizationPage = setup();
+      for (let i = 1; i < MAX_WRONG_CODES; i++) await dashboard.service.verifyCode('u1', '000000');
+      await authorizationPage.service.verifyCode('u1', '000000');
+      expect(voids(authorizationPage.prisma)).toHaveLength(1);
+    });
+
     it('keeps the count in Redis when connected, expiring with the code', async () => {
       const store = new Map<string, number>();
       const redis = {
@@ -169,14 +183,14 @@ describe('EmailVerificationService', () => {
 
   describe('VerificationAttemptsStore without Redis', () => {
     it('forgets the count once the code would have expired', async () => {
-      const store = new VerificationAttemptsStore(1000);
+      const store = new VerificationAttemptsStore(1000, undefined, new Map());
       expect(await store.recordWrong('u1', 0)).toBe(1);
       expect(await store.recordWrong('u1', 500)).toBe(2);
       expect(await store.recordWrong('u1', 1500)).toBe(1);
     });
 
     it('stays under its size cap', async () => {
-      const store = new VerificationAttemptsStore(60_000);
+      const store = new VerificationAttemptsStore(60_000, undefined, new Map());
       const cap = VerificationAttemptsStore.MAX_MEMORY_ENTRIES;
       for (let i = 0; i < cap + 50; i++) await store.recordWrong(`u${i}`, 0);
       expect((store as unknown as { memory: Map<string, unknown> }).memory.size).toBeLessThanOrEqual(cap);

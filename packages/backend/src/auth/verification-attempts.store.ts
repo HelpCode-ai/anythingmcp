@@ -4,26 +4,40 @@ import type { RedisService } from '../common/redis.service';
 /** Wrong codes allowed per account before its open codes are voided. */
 export const MAX_WRONG_CODES = 5;
 
+type Entry = { count: number; expiresAt: number };
+
+/**
+ * One in-memory map per process, shared by every store instance: the
+ * dashboard's AuthController builds its own EmailVerificationService, and the
+ * authorization page uses the injected one. Both must count against the same
+ * account even without Redis.
+ */
+const processMemory = new Map<string, Entry>();
+
+/** Empties the in-process fallback (tests). */
+export function clearVerificationAttemptsMemory(): void {
+  processMemory.clear();
+}
+
 /**
  * Counts wrong email verification codes per account, for as long as a code
  * lives. EmailVerificationService voids the account's open codes once the
  * count reaches MAX_WRONG_CODES, so the user has to ask for a new one.
  *
  * Redis when connected (shared by every backend process; INCR is atomic),
- * else an in-memory map with expiry and a size cap (correct for a single
- * process). Errors fall back to memory: a lost count only means a few more
+ * else an in-memory map with expiry and a size cap, shared by every instance
+ * in the process. Errors fall back to memory: a lost count only means a few more
  * tries, never a failed request.
  */
 export class VerificationAttemptsStore {
   static readonly MAX_MEMORY_ENTRIES = 10_000;
 
   private readonly logger = new Logger(VerificationAttemptsStore.name);
-  /** Fallback while Redis is not connected. Insertion order = age. */
-  private readonly memory = new Map<string, { count: number; expiresAt: number }>();
-
   constructor(
     private readonly ttlMs: number,
     private readonly redis?: RedisService,
+    /** Fallback while Redis is not connected. Insertion order = age. */
+    private readonly memory: Map<string, Entry> = processMemory,
   ) {}
 
   private key(userId: string): string {
