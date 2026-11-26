@@ -45,6 +45,7 @@ function build(cached = false) {
     {
       getTool: (name: string) => tools.find((tool) => tool.name === name),
       getToolForOrg: (name: string) => tools.find((tool) => tool.name === name),
+      getToolsForConnectors: (ids: string[]) => tools.filter((tool) => ids.includes(tool.connectorId)),
     } as any,
     audit as any,
     redis as any,

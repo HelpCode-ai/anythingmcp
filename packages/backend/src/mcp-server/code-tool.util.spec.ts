@@ -146,5 +146,20 @@ describe('code-tool.util', () => {
       await expect(b.describe('read_a')).resolves.toEqual({ name: 'read_a' });
       await expect(b.describe('other')).rejects.toThrow(CodeToolAccessError);
     });
+
+    it('refuses a resolved tool of another organization, even when uses names its connector', async () => {
+      const foreign: BridgeResolvedTool = { ...tools.read_a, organizationId: 'org2' };
+      const own: BridgeResolvedTool = { ...tools.read_a, organizationId: 'org1' };
+      const refusing = buildCodeBridge(
+        spec({ runAs: 'definer' }),
+        deps({ organizationId: 'org1', resolveTool: () => foreign }),
+      );
+      await expect(refusing.run('read_a', {})).rejects.toThrow(/not a tool this code tool can use/);
+      await expect(refusing.describe('read_a')).rejects.toThrow(CodeToolAccessError);
+      expect(ran).toEqual([]);
+
+      const allowing = buildCodeBridge(spec(), deps({ organizationId: 'org1', resolveTool: () => own }));
+      await expect(allowing.run('read_a', {})).resolves.toEqual({ ran: 'read_a' });
+    });
   });
 });
