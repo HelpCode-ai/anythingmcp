@@ -104,6 +104,8 @@ interface BuildOptions {
   verified?: boolean;
   /** More than one server to choose from: the picker. */
   picker?: boolean;
+  /** Member visibility narrows the user's view of the workspace. */
+  restricted?: boolean;
   telegram?: boolean;
   /** An admin on the free trial who may add a payment method. */
   cardTrial?: boolean;
@@ -172,7 +174,7 @@ function build(opts: BuildOptions = {}) {
     ),
     resolve: jest.fn().mockResolvedValue(null),
     keepVisible: jest.fn(async (_u: string, servers: unknown[]) => servers),
-    restrictedIn: jest.fn().mockResolvedValue(false),
+    restrictedIn: jest.fn().mockResolvedValue(!!opts.restricted),
   };
   const social = {
     enabledProviders: jest.fn(() => [
@@ -386,6 +388,18 @@ describe('the pages after the sign-in page, in the browser\'s language', () => {
       expect(page).toContain(`<button type="submit">${T.connect}</button>`);
       expect(page).toContain(`<p class="note">${T.note}</p>`);
       expect(page).not.toContain('<img src=x');
+      expectNoEnglish(page);
+    });
+
+    it('"Choose what to connect" names the account and, for a restricted member, the tools their role allows', async () => {
+      const f = build({ picker: true, restricted: true });
+      const page = (await signIn(f, header))._sent as string;
+      const T = SERVER_PICKER_TEXTS[lang];
+      const S = SIGN_IN_TEXTS[lang];
+      expect(page).toContain(S.signedInAs.replace('{email}', '<strong>anna@example.com</strong>'));
+      expect(page).toContain(`<a href="/auth/login?switch=1">${S.switchAccount}</a>`);
+      expect(page).toContain(`<span class="pick-name">${T.roleTools}<span class="pick-sub">${T.roleToolsSub}</span></span>`);
+      expect(page).not.toContain(T.everythingSub);
       expectNoEnglish(page);
     });
 
