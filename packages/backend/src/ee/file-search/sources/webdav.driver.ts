@@ -68,10 +68,8 @@ export class WebdavDriver implements FileSourceDriver {
       } catch (err) {
         throw classifyNetworkError(err);
       }
-      if (res.status === 401) throw new SourceError('auth', 'Login refused. Check the user name and the app password.');
-      if (res.status === 403) throw new SourceError('permission', 'The account may not read this folder.');
-      if (res.status === 404) throw new SourceError('not_found', 'The folder does not exist. Check the WebDAV address and the folder.');
-      if (res.status !== 207) throw new SourceError('unknown', `The server answered ${res.status} instead of a WebDAV listing. Is this the WebDAV address?`);
+      const statusError = propfindStatusError(res.status);
+      if (statusError) throw statusError;
       const doc = parser.parse(String(res.data));
       const responses: any[] = doc?.multistatus?.response ?? [];
       const selfPath = trimSlashes(decodeURIComponent(new URL(urlOf(rel, true)).pathname), 'end');
@@ -127,4 +125,25 @@ export class WebdavDriver implements FileSourceDriver {
     };
     return { session };
   }
+}
+
+/**
+ * The wizard error for a PROPFIND answer other than 207 Multi-Status, or null
+ * for 207. A redirect, 405 Method Not Allowed or a plain 200 page mean the
+ * address is a web page (often a sign-in page), not the WebDAV folder: say so
+ * instead of "unknown", which left people guessing.
+ */
+export function propfindStatusError(status: number): SourceError | null {
+  if (status === 207) return null;
+  if (status === 401) return new SourceError('auth', 'Login refused. Check the user name and the app password.');
+  if (status === 403) return new SourceError('permission', 'The account may not read this folder.');
+  if (status === 404) return new SourceError('not_found', 'The folder does not exist. Check the WebDAV address and the folder.');
+  if ((status >= 300 && status < 400) || status === 405 || status === 200) {
+    return new SourceError(
+      'not_found',
+      `The server answered ${status}: this address is a web page, not a WebDAV folder. ` +
+        'Use the WebDAV address (Nextcloud: https://<host>/remote.php/dav/files/<user>/).',
+    );
+  }
+  return new SourceError('unknown', `The server answered ${status} instead of a WebDAV listing. Is this the WebDAV address?`);
 }
