@@ -35,6 +35,8 @@ const PUBLIC_URL_TTL_S = 60 * 60;
 const MAX_PUBLIC_DOWNLOADS = 50;
 /** Uploads received at the same time by one backend process. */
 const MAX_CONCURRENT_UPLOADS = 8;
+/** Seconds a client is asked to wait when every upload slot is taken. */
+export const UPLOAD_BUSY_RETRY_AFTER_S = 5;
 /** Tries to copy a received file to storage (Spaces/S3) before giving up. */
 const STORAGE_PUT_ATTEMPTS = 3;
 const STORAGE_RETRY_DELAY_MS = 300;
@@ -274,7 +276,13 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
       throw new PayloadTooLargeException(`The file is larger than ${(row.maxBytes / MB).toFixed(0)} MB, the limit of this plan.`);
     }
     if (this.active >= MAX_CONCURRENT_UPLOADS) {
-      throw new HttpException('Too many uploads right now. Try again in a minute.', HttpStatus.SERVICE_UNAVAILABLE);
+      // A full slot table is a busy server, not a failure: agents send 14-16
+      // files at once and every one gets through on a retry. 429 with
+      // Retry-After (set by the controller) says so; the link stays pending.
+      throw new HttpException(
+        `Too many uploads at the same time. Wait ${UPLOAD_BUSY_RETRY_AFTER_S} seconds and send this file again with the same link.`,
+        HttpStatus.TOO_MANY_REQUESTS,
+      );
     }
     const claimed = await this.prisma.fileUpload.updateMany({
       where: { id: row.id, organizationId: row.organizationId, state: 'pending' },

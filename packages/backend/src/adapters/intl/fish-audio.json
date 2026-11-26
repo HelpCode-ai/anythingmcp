@@ -279,11 +279,11 @@
               128,
               192
             ],
-            "description": "MP3 bitrate in kbps, default 128."
+            "description": "MP3 bitrate in kbps: 64, 128 or 192 only (default 128). Other values are refused."
           },
           "sample_rate": {
             "type": "integer",
-            "description": "Sample rate in Hz; default 44100 (48000 for opus)."
+            "description": "Sample rate in Hz. mp3 accepts only 32000 or 44100 (default 44100); opus uses 48000; wav and pcm accept 8000 to 48000. Leave it out unless the user asks for a rate."
           },
           "language": {
             "type": "string",

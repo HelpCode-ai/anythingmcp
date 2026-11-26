@@ -390,7 +390,7 @@
     },
     {
       "name": "odoo_create",
-      "description": "Create a record in any Odoo model and return its id (as a one-element list). Writes to the live database and fires Odoo's automations — mail, stock moves and accounting entries all behave as if a person had done it.",
+      "description": "Create a record in any Odoo model and return its id (as a one-element list). Writes to the live database and fires Odoo's automations — mail, stock moves and accounting entries all behave as if a person had done it. A few models take a single dict in create: if Odoo answers missing a required argument 'vals', call odoo_call_method with method create, ids [] and kwargs {\"vals\": {...}} instead.",
       "parameters": {
         "type": "object",
         "properties": {

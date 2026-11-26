@@ -1,8 +1,8 @@
-import { Controller, Get, Param, Post, Put, Req, Res } from '@nestjs/common';
+import { Controller, Get, HttpException, HttpStatus, Param, Post, Put, Req, Res } from '@nestjs/common';
 import { Throttle } from '@nestjs/throttler';
 import { ApiOperation, ApiTags } from '@nestjs/swagger';
 import type { Request, Response } from 'express';
-import { FileUploadService } from './file-upload.service';
+import { FileUploadService, UPLOAD_BUSY_RETRY_AFTER_S } from './file-upload.service';
 
 /**
  * Agent file uploads. Both routes are public on purpose: the upload token
@@ -25,23 +25,30 @@ export class FileUploadController {
   @Put('u/:token')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({ summary: 'Upload a file through a one-time link from file_upload_link (public)' })
-  put(@Param('token') token: string, @Req() req: Request) {
-    return this.receive(token, req);
+  put(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.receive(token, req, res);
   }
 
   @Post('u/:token')
   @Throttle({ default: { limit: 30, ttl: 60_000 } })
   @ApiOperation({ summary: 'Same as PUT, for clients that can only POST a raw body (public)' })
-  post(@Param('token') token: string, @Req() req: Request) {
-    return this.receive(token, req);
+  post(@Param('token') token: string, @Req() req: Request, @Res({ passthrough: true }) res: Response) {
+    return this.receive(token, req, res);
   }
 
-  private receive(token: string, req: Request) {
+  private async receive(token: string, req: Request, res: Response) {
     // A slow or stalled client must not hold an upload slot for long.
     req.setTimeout?.(120_000);
     const raw = req.headers['content-length'];
     const length = typeof raw === 'string' && /^\d+$/.test(raw) ? Number(raw) : null;
-    return this.uploads.receive(token, req, length);
+    try {
+      return await this.uploads.receive(token, req, length);
+    } catch (err) {
+      if (err instanceof HttpException && err.getStatus() === HttpStatus.TOO_MANY_REQUESTS) {
+        res.setHeader('Retry-After', String(UPLOAD_BUSY_RETRY_AFTER_S));
+      }
+      throw err;
+    }
   }
 
   @Get('f/:signed/:name')

@@ -1993,7 +1993,7 @@
           "offset": {
             "type": "integer",
             "minimum": 0,
-            "description": "Results to skip."
+            "description": "Results to skip. Keep it small: Etsy refuses large offsets on this public endpoint, so narrow the search with keywords or filters instead of paging deep."
           }
         }
       },
