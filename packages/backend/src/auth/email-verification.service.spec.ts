@@ -1,6 +1,9 @@
-import { EmailVerificationService } from './email-verification.service';
+import { Reflector } from '@nestjs/core';
+import { EmailVerificationService, VERIFICATION_CODE_TTL_MS } from './email-verification.service';
+import { MAX_WRONG_CODES, VerificationAttemptsStore } from './verification-attempts.store';
+import { AuthController } from './auth.controller';
 
-function setup(opts: { cloud?: boolean; record?: unknown; license?: unknown } = {}) {
+function setup(opts: { cloud?: boolean; record?: unknown; license?: unknown; redis?: unknown } = {}) {
   const prisma = {
     emailVerificationToken: {
       findFirst: jest.fn().mockResolvedValue(opts.record ?? null),
@@ -30,6 +33,7 @@ function setup(opts: { cloud?: boolean; record?: unknown; license?: unknown } = 
     config as any,
     licenseService as any,
     adsSignup as any,
+    opts.redis as any,
   );
   return { service, prisma, usersService, emailService, licenseService, adsSignup };
 }
@@ -96,5 +100,95 @@ describe('EmailVerificationService', () => {
     const where = prisma.emailVerificationToken.count.mock.calls[0][0].where;
     expect(where.userId).toBe('u1');
     expect(Date.now() - where.createdAt.gt.getTime()).toBeGreaterThanOrEqual(60_000 - 50);
+  });
+
+  describe('wrong codes', () => {
+    // Every voiding updateMany call (sendCode also voids, before a new code).
+    const voids = (prisma: any) =>
+      prisma.emailVerificationToken.updateMany.mock.calls.filter((c: any[]) => c[0]?.where?.usedAt === null);
+
+    it(`voids the open codes on the ${MAX_WRONG_CODES}th wrong code, not before`, async () => {
+      const { service, prisma } = setup();
+      for (let i = 1; i < MAX_WRONG_CODES; i++) {
+        expect(await service.verifyCode('u1', '000000')).toBe(false);
+      }
+      expect(voids(prisma)).toHaveLength(0);
+      expect(await service.verifyCode('u1', '000000')).toBe(false);
+      expect(prisma.emailVerificationToken.updateMany).toHaveBeenCalledWith({
+        where: { userId: 'u1', usedAt: null },
+        data: { usedAt: expect.any(Date) },
+      });
+    });
+
+    it('counts per account', async () => {
+      const { service, prisma } = setup();
+      for (let i = 1; i < MAX_WRONG_CODES; i++) await service.verifyCode('u1', '000000');
+      await service.verifyCode('u2', '000000');
+      expect(voids(prisma)).toHaveLength(0);
+    });
+
+    it('gives a new code the full number of tries', async () => {
+      const { service, prisma } = setup();
+      for (let i = 1; i < MAX_WRONG_CODES; i++) await service.verifyCode('u1', '000000');
+      await service.sendCode('u1', 'a@b.com');
+      prisma.emailVerificationToken.updateMany.mockClear();
+      for (let i = 1; i < MAX_WRONG_CODES; i++) await service.verifyCode('u1', '000000');
+      expect(voids(prisma)).toHaveLength(0);
+    });
+
+    it('starts again after the right code', async () => {
+      const { service, prisma } = setup();
+      for (let i = 1; i < MAX_WRONG_CODES; i++) await service.verifyCode('u1', '000000');
+      prisma.emailVerificationToken.findFirst.mockResolvedValueOnce({ id: 't1' });
+      expect(await service.verifyCode('u1', '123456')).toBe(true);
+      for (let i = 1; i < MAX_WRONG_CODES; i++) await service.verifyCode('u1', '000000');
+      expect(voids(prisma)).toHaveLength(0);
+    });
+
+    it('keeps the count in Redis when connected, expiring with the code', async () => {
+      const store = new Map<string, number>();
+      const redis = {
+        isConnected: true,
+        incr: jest.fn(async (k: string) => {
+          store.set(k, (store.get(k) ?? 0) + 1);
+          return store.get(k)!;
+        }),
+        expire: jest.fn(async () => undefined),
+        del: jest.fn(async (k: string) => void store.delete(k)),
+      };
+      // Two processes sharing one Redis count together.
+      const a = setup({ redis });
+      const b = setup({ redis });
+      for (let i = 1; i < MAX_WRONG_CODES; i++) await a.service.verifyCode('u1', '000000');
+      expect(redis.expire).toHaveBeenCalledWith('email-verify:wrong:u1', VERIFICATION_CODE_TTL_MS / 1000);
+      await b.service.verifyCode('u1', '000000');
+      expect(voids(b.prisma)).toHaveLength(1);
+      expect(redis.del).toHaveBeenCalledWith('email-verify:wrong:u1');
+    });
+  });
+
+  describe('VerificationAttemptsStore without Redis', () => {
+    it('forgets the count once the code would have expired', async () => {
+      const store = new VerificationAttemptsStore(1000);
+      expect(await store.recordWrong('u1', 0)).toBe(1);
+      expect(await store.recordWrong('u1', 500)).toBe(2);
+      expect(await store.recordWrong('u1', 1500)).toBe(1);
+    });
+
+    it('stays under its size cap', async () => {
+      const store = new VerificationAttemptsStore(60_000);
+      const cap = VerificationAttemptsStore.MAX_MEMORY_ENTRIES;
+      for (let i = 0; i < cap + 50; i++) await store.recordWrong(`u${i}`, 0);
+      expect((store as unknown as { memory: Map<string, unknown> }).memory.size).toBeLessThanOrEqual(cap);
+    });
+  });
+});
+
+describe('POST /api/auth/verify-email throttle', () => {
+  it('has the same 10 a minute as the authorization page code form', () => {
+    const handler = AuthController.prototype.verifyEmail;
+    const reflector = new Reflector();
+    expect(reflector.get('THROTTLER:LIMITdefault', handler)).toBe(10);
+    expect(reflector.get('THROTTLER:TTLdefault', handler)).toBe(60_000);
   });
 });

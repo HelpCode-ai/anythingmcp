@@ -615,6 +615,9 @@ export class AuthController {
 
   @Post('verify-email')
   @UseGuards(AuthGuard('jwt'))
+  // Same cap as the authorization page's code form (POST /auth/verify-email);
+  // both count wrong codes against the same account (EmailVerificationService).
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify email with 6-digit code' })
