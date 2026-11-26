@@ -65,6 +65,24 @@ describe('ConnectorsService.executeConnectorCall placeholders', () => {
     );
   });
 
+  it('passes the configured renderer through the Run Test execution path', async () => {
+    const mapping = { method: 'GET', path: '/me/onenote/pages/{page_id}/content' };
+    await service.executeConnectorCall(
+      { ...substack(null), baseUrl: 'https://graph.microsoft.com/v1.0' },
+      mapping,
+      { page_id: 'page' },
+      'preview',
+      undefined,
+      { responseMapping: { render: 'onenote-page' } },
+    );
+    expect(restEngine.execute).toHaveBeenCalledWith(
+      expect.objectContaining({ baseUrl: 'https://graph.microsoft.com/v1.0' }),
+      mapping,
+      { page_id: 'page' },
+      { render: 'onenote-page' },
+    );
+  });
+
   describe('outbound proxy', () => {
     const before = process.env.CONNECTOR_PROXY_URL;
     afterEach(() => {

@@ -45,7 +45,8 @@ For a page resource, copy only the ID from its `/resources/{id}/` link,
 preferring `data-fullres-src` for an original image. Supported images become
 MCP image content and other binary files become embedded resources. Files
 above 4 MiB are described without their bytes; the instance response-size
-limit also applies. Page HTML is capped at about 200 KB. Ink is not rendered.
+limit also applies. Page HTML is capped at about 200 KB. Ink is not rendered for site and group
+notebooks; page previews cover only the signed-in user's own notebooks.
 
 Cloud and self-hosted use the same Graph endpoints, permissions and sign-in.
 A Graph refusal fails the request; it does not fall back to another owner.

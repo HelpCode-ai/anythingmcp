@@ -37,7 +37,8 @@ type to make use of the attachment; the tool does not extract a PDF's text.
   attachments is outside this tool's scope.
 - Handwritten ink strokes are not rendered by this tool. An existing image
   of a printout can be read, but the tool does not render an entire page or
-  combine its text, images and ink.
+  combine its text, images and ink. For that, use
+  `microsoft_onenote_get_page_image` (see [page previews](onenote-page-previews.md)).
 
 See the [Graph resource API](https://learn.microsoft.com/en-us/graph/api/resource-get?view=graph-rest-1.0)
 and [OneNote content guide](https://learn.microsoft.com/en-us/graph/onenote-get-content)

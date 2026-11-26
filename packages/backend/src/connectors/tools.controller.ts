@@ -460,6 +460,10 @@ export class ToolsController {
    */
   private assertValidResponseMapping(responseMapping: unknown) {
     if (!responseMapping || typeof responseMapping !== 'object') return;
+    const render = (responseMapping as Record<string, unknown>).render;
+    if (render !== undefined && render !== null && render !== 'onenote-page') {
+      throw new BadRequestException('Invalid response mapping: render must be onenote-page');
+    }
     const decodeError = validateDecode((responseMapping as Record<string, unknown>).decode);
     if (decodeError) {
       throw new BadRequestException(`Invalid response mapping: ${decodeError}`);
@@ -750,7 +754,7 @@ export class ToolsController {
       }
     }
 
-    // A changed transform changes the shape clients receive, so the stored
+    // A changed transform or renderer changes the shape clients receive, so the stored
     // outputSchema (inferred from the previous shape) no longer describes it.
     // Drop it and let the next successful test re-infer it.
     if (dto.responseMapping !== undefined) {
@@ -758,10 +762,9 @@ export class ToolsController {
         where: { id: toolId, connectorId },
         select: { responseMapping: true },
       });
-      const before = JSON.stringify(
-        (current?.responseMapping as Record<string, unknown> | null)?.transform ?? null,
-      );
-      const after = JSON.stringify(dto.responseMapping?.transform ?? null);
+      const currentMapping = current?.responseMapping as Record<string, unknown> | null;
+      const before = JSON.stringify({ transform: currentMapping?.transform ?? null, render: currentMapping?.render ?? null });
+      const after = JSON.stringify({ transform: dto.responseMapping?.transform ?? null, render: dto.responseMapping?.render ?? null });
       if (before !== after) data.outputSchema = null;
     }
 
@@ -1143,7 +1146,13 @@ export class ToolsController {
           inputs,
           tool.name,
           tool.parameters,
-          { useProxy: tool.useProxy === true, userId: req.user?.sub },
+          {
+            useProxy: tool.useProxy === true,
+            userId: req.user?.sub,
+            ...((tool.responseMapping as Record<string, unknown> | null)?.render
+              ? { responseMapping: tool.responseMapping as { render?: unknown } }
+              : {}),
+          },
         ),
       );
       const durationMs = Date.now() - startTime;

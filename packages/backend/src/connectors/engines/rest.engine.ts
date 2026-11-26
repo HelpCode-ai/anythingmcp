@@ -6,9 +6,11 @@ import {
   Method,
 } from 'axios';
 import { createHash, createHmac, randomInt } from 'node:crypto';
+import { setTimeout as abortableDelay } from 'node:timers/promises';
 import FormData from 'form-data';
 import { createUnblockerProxyAgent } from './unblocker-proxy-agent';
-import { decodeResponseBody } from '../binary-response.util';
+import { decodeResponseBody, isBinaryBody, readBinaryConfig } from '../binary-response.util';
+import { renderOneNotePage } from '../onenote-page-renderer';
 import { stringifyWithIntegerLiterals } from './json-integers.util';
 import { buildOAuth1Header } from './oauth1-signer';
 import { hmacJwtHeader, isHmacJwtSignature } from './hmac-jwt.util';
@@ -197,8 +199,9 @@ export class RestEngine {
     config: Parameters<RestEngine['executeWithMeta']>[0],
     endpointMapping: Parameters<RestEngine['executeWithMeta']>[1],
     params: Record<string, unknown>,
+    responseMapping?: { render?: unknown },
   ): Promise<unknown> {
-    return (await this.executeWithMeta(config, endpointMapping, params)).body;
+    return (await this.executeWithMeta(config, endpointMapping, params, responseMapping)).body;
   }
 
   /** The file behind an `amcp-file:` reference, for a multipart part. */
@@ -289,7 +292,13 @@ export class RestEngine {
       bodyIntegers?: string[];
     },
     params: Record<string, unknown>,
+    responseMapping?: { render?: unknown },
+    requestPolicy?: Pick<OutboundRequestOptions, 'maxRedirects'> & { signal?: AbortSignal },
   ): Promise<{ body: unknown; headers: Record<string, string> }> {
+    if (responseMapping?.render !== undefined && responseMapping.render !== null) {
+      if (responseMapping.render !== 'onenote-page') throw new Error('render must be onenote-page');
+      return this.renderOneNoteCall(config, endpointMapping, params, responseMapping);
+    }
     if (endpointMapping.download) {
       const { download, ...apiCall } = endpointMapping;
       const res = await this.executeWithMeta(config, apiCall, params);
@@ -389,6 +398,7 @@ export class RestEngine {
 
     // Build request config
     const axiosConfig: AxiosRequestConfig = {
+      ...(requestPolicy?.signal ? { signal: requestPolicy.signal } : {}),
       method: endpointMapping.method as Method,
       url,
       headers: {
@@ -721,6 +731,7 @@ export class RestEngine {
       if (!headersBeforeSigning.includes(h)) credentialHeaders.add(h);
     }
     const outbound: OutboundRequestOptions = {
+      ...(requestPolicy?.maxRedirects !== undefined ? { maxRedirects: requestPolicy.maxRedirects } : {}),
       data: buildBody,
       credentialHeaders: [...credentialHeaders],
       // A body that carries the login token is not resent to another origin.
@@ -862,6 +873,82 @@ export class RestEngine {
       }
       throw restateProxyError(withLoginHeaderCollisionHint(error, loginHeaderCollision));
     }
+  }
+
+  private async renderOneNoteCall(
+    config: Parameters<RestEngine['executeWithMeta']>[0],
+    endpoint: Parameters<RestEngine['executeWithMeta']>[1],
+    params: Record<string, unknown>,
+    responseMapping: { render?: unknown },
+  ): Promise<{ body: unknown; headers: Record<string, string> }> {
+    const timeout = toolTimeoutMs(endpoint.timeoutMs);
+    const controller = new AbortController();
+    let timer: ReturnType<typeof setTimeout> | undefined;
+    try {
+      return await Promise.race([
+        this.renderOneNoteWithinDeadline(config, endpoint, params, responseMapping, Date.now() + timeout, controller.signal),
+        new Promise<never>((_resolve, reject) => {
+          timer = setTimeout(() => {
+            controller.abort();
+            reject(new Error('OneNote page rendering timed out'));
+          }, timeout);
+        }),
+      ]);
+    } finally {
+      if (timer) clearTimeout(timer);
+    }
+  }
+
+  private async renderOneNoteWithinDeadline(
+    config: Parameters<RestEngine['executeWithMeta']>[0],
+    endpoint: Parameters<RestEngine['executeWithMeta']>[1],
+    params: Record<string, unknown>,
+    responseMapping: { render?: unknown },
+    deadline: number,
+    signal: AbortSignal,
+  ): Promise<{ body: unknown; headers: Record<string, string> }> {
+    // Rendering is not a general authenticated URL fetcher. Both the page
+    // and every image stay under the same OneNote owner on public Graph.
+    if (config.baseUrl.replace(/\/$/, '') !== 'https://graph.microsoft.com/v1.0'
+      || endpoint.method.toUpperCase() !== 'GET' || endpoint.download) {
+      throw new Error('OneNote rendering requires a Graph v1.0 page-content GET');
+    }
+    // Exclude opening braces too: an unmatched nested opening must not
+    // rescan the rest of the template at every subsequent opening brace.
+    const path = (endpoint.path ?? '').replace(/\{([^{}]+)\}/g, (_match, key: string) => {
+      const value = params[key];
+      if (typeof value !== 'string' || !value || value === '.' || value === '..') throw new Error('OneNote rendering needs a valid page and owner id');
+      return encodeURIComponent(value);
+    });
+    const match = /^(\/(?:me|users\/[^/?#]+|sites\/[^/?#]+|groups\/[^/?#]+))\/onenote\/pages\/[^/?#]+\/content$/.exec(path);
+    if (path.includes('{') || path.includes('}') || !match || new URL(`https://graph.microsoft.com/v1.0${path}`).pathname !== `/v1.0${path}`) {
+      throw new Error('OneNote rendering requires a page-content path');
+    }
+    const fetchBody = async (mapping: Parameters<RestEngine['executeWithMeta']>[1], callParams: Record<string, unknown> = {}) => {
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) throw new Error('OneNote page rendering timed out');
+      const response = await this.executeWithMeta(config, {
+        ...mapping,
+        rawBody: true,
+        exposeHeaders: ['content-type'],
+        timeoutMs: remaining,
+      }, callParams, undefined, { maxRedirects: 0, signal });
+      const body = isBinaryBody(response.body)
+        ? Buffer.from(response.body.base64, 'base64')
+        : typeof response.body === 'string' ? Buffer.from(response.body, 'utf8') : undefined;
+      if (!body) throw new Error('OneNote page returned an unsupported body');
+      return { body, contentType: response.headers['content-type'] ?? (isBinaryBody(response.body) ? response.body.contentType : '') };
+    };
+    const document = () => fetchBody({
+      ...endpoint,
+      path,
+      queryParams: { ...endpoint.queryParams, includeInkML: true },
+      maxResponseBytes: Math.min(toolResponseLimitBytes(endpoint.maxResponseBytes), 10 * 1024 * 1024),
+    }, params);
+    const body = await renderOneNotePage(document, match[1], (resourcePath, _remaining, maxBytes) => fetchBody({
+      method: 'GET', path: resourcePath, maxResponseBytes: maxBytes,
+    }), deadline, { maxTileBytes: readBinaryConfig(responseMapping).maxBytes, signal });
+    return { body, headers: {} };
   }
 
   /**
@@ -1039,7 +1126,11 @@ export class RestEngine {
         this.logger.debug(
           `Transient error (attempt ${attempt + 1}), retrying in ${delay}ms`,
         );
-        await new Promise((resolve) => setTimeout(resolve, delay));
+        if (axiosConfig.signal instanceof AbortSignal) {
+          await abortableDelay(delay, undefined, { signal: axiosConfig.signal });
+        } else {
+          await new Promise((resolve) => setTimeout(resolve, delay));
+        }
       }
     }
   }

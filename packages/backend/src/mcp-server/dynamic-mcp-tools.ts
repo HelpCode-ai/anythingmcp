@@ -83,6 +83,7 @@ import {
   withoutBinaryData,
   type BinaryContent,
 } from '../connectors/binary-response.util';
+import { isOneNotePageResult, oneNotePageSummary } from '../connectors/onenote-page-renderer';
 
 /**
  * The content of a tool result: one text item, then the images taken out of
@@ -800,6 +801,7 @@ export class DynamicMcpTools {
           interpolatedMapping,
           mergedParams,
           {
+            responseMapping,
             connectorConfig: tool.connectorConfig.config,
             // OData settings may carry {{VAR}} (an adapter's SAP client).
             odataSettings: interpolateDeep(
@@ -1321,7 +1323,12 @@ export class DynamicMcpTools {
     // A file (image, PDF, …): described in the text and attached after it.
     // A response mapping has nothing to shape in raw bytes, so it is skipped.
     let binaryContent: BinaryContent[] = [];
-    const binary = isBinaryBody(raw);
+    const page = isOneNotePageResult(raw);
+    const binary = isBinaryBody(raw) || page;
+    if (isOneNotePageResult(raw)) {
+      binaryContent = raw.tiles.map((tile) => ({ type: 'image' as const, data: tile.data, mimeType: 'image/png' }));
+      raw = oneNotePageSummary(raw);
+    }
     if (isBinaryBody(raw)) {
       const rendered = renderBinaryBody(raw, readBinaryConfig(responseMapping), toolName);
       raw = rendered.value;
@@ -1438,10 +1445,16 @@ export class DynamicMcpTools {
   ): string {
     // Keys sorted at every depth: a nested filter is part of the request.
     const paramsHash = hashContent(params);
+    // A rendered page is not the raw HTML response. Enabling rendering or
+    // changing its byte budgets must not reuse a body cached in another mode.
+    const mapping = tool.responseMapping as ResponseMapping | undefined;
+    const renderer = mapping?.render ? `render:${hashContent({
+      version: 1, render: mapping.render, binary: readBinaryConfig(mapping), limit: toolMaxResponseBytes(),
+    })}:` : '';
     // v3: keyed by the tool's id, not its name. Two connectors (in one org or
     // in two) can expose a tool with the same name, and one connector's
     // answer must never be served for the other. v2 keys simply expire.
-    return `tool_cache:v3:${tool.id}:${scope ? `${scope}:` : ''}${paramsHash}`;
+    return `tool_cache:v3:${tool.id}:${scope ? `${scope}:` : ''}${renderer}${paramsHash}`;
   }
 
   /**
@@ -2046,6 +2059,7 @@ export class DynamicMcpTools {
     endpointMapping: any,
     params: Record<string, unknown>,
     extra?: {
+      responseMapping?: ResponseMapping;
       connectorConfig?: Record<string, unknown>;
       odataSettings?: unknown;
       emailSettings?: unknown;
@@ -2100,6 +2114,10 @@ export class DynamicMcpTools {
 
     switch (connectorType) {
       case 'REST': {
+        if (extra?.responseMapping?.render !== undefined && extra.responseMapping.render !== null) {
+          const out = await this.restEngine.executeWithMeta(config, endpointMapping, params, extra.responseMapping);
+          return { body: out.body };
+        }
         // Only a tool that asked for headers pays for them; every other REST
         // call stays on the body-only path it always had.
         const wanted = endpointMapping.exposeHeaders;

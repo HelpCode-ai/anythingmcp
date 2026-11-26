@@ -23,6 +23,7 @@
 
 /** Marks the object the engine hands back for a binary body. */
 import { parseJsonKeepingLargeIntegers } from './engines/json-integers.util';
+import { isOneNotePageResult, oneNotePageSummary } from './onenote-page-renderer';
 
 export const BINARY_MARKER = '__amcpBinary';
 
@@ -264,6 +265,7 @@ function renderBinaryParts(body: BinaryBody, config: BinaryConfig, uriHint: stri
  * audit log, the knowledge graph and the dashboard's tool test.
  */
 export function withoutBinaryData<T>(value: T): T {
+  if (isOneNotePageResult(value)) return oneNotePageSummary(value) as T;
   if (!isBinaryBody(value)) return value;
   return { ...value, base64: `[${formatBytes(value.bytes)} of binary data not stored]` } as T;
 }
