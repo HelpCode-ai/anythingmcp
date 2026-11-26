@@ -1087,6 +1087,8 @@ The Database connector lets AI clients query databases directly through MCP. It 
 | **MongoDB** | `mongodb://user:pass@host:27017/dbname` or `mongodb+srv://...` |
 | **SQLite** | `sqlite:///absolute/path/to/db.sqlite` |
 
+On AnythingMCP Cloud, SQLite is not available, and parameters that point at files on the server are ignored with a warning in the log: `sslcert`, `sslkey`, `sslrootcert` and `options` for PostgreSQL, `tlsCAFile`, `tlsCRLFile` and `tlsCertificateKeyFile` for MongoDB. `sslmode` and every other parameter work as usual. Self-hosted instances accept them all.
+
 ---
 
 ## Creating a Database Connector
@@ -9639,13 +9641,15 @@ See [Tool Definition Format](<https://github.com/HelpCode-ai/anythingmcp/blob/ma
 
 ### Query Invocations
 
+Filters: `toolId`, `status` (`SUCCESS`, `ERROR` or `TIMEOUT`; any other value answers 400), `search` (tool name contains), `connectorId`, `mcpServerId`. Paging: `limit` (1 to 200, default 100; a larger value returns 200 rows) and `offset`.
+
 ```bash
-# Filter by tool name
-curl -s "http://localhost:4000/api/audit/invocations?toolName=get_user" \
+# The last 20 failed calls
+curl -s "http://localhost:4000/api/audit/invocations?status=ERROR&limit=20" \
   -H "Authorization: Bearer $TOKEN"
 
-# Filter by date range
-curl -s "http://localhost:4000/api/audit/invocations?from=2026-01-01&to=2026-01-31" \
+# Calls of tools whose name contains "get_user", second page of 50
+curl -s "http://localhost:4000/api/audit/invocations?search=get_user&limit=50&offset=50" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

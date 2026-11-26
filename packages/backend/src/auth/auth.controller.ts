@@ -49,6 +49,7 @@ import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from './disposable-email.
 import { emailLookupWhere, normalizeEmail, sameEmail } from '../common/email.util';
 import { maskEmail } from './mcp-email-verification';
 import { EmailVerificationService, MAX_CODES_PER_HOUR } from './email-verification.service';
+import { RedisService } from '../common/redis.service';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -239,10 +240,13 @@ export class AuthController {
     private readonly edition: EditionService,
     @Optional() private readonly adsSignup?: AdsSignupService,
     @Optional() private readonly licenseGuard?: LicenseGuardService,
+    @Optional() redis?: RedisService,
   ) {
     // Built from this controller's own dependencies (it is stateless), so the
     // dashboard endpoints and the MCP authorization page share one
     // implementation without changing how this controller is constructed.
+    // Redis (or, without it, the per-process fallback) holds the wrong-code
+    // count, so both pages count against the same account.
     this.verification = new EmailVerificationService(
       prisma,
       usersService,
@@ -250,6 +254,7 @@ export class AuthController {
       configService,
       licenseService,
       adsSignup,
+      redis,
     );
   }
 
@@ -618,6 +623,9 @@ export class AuthController {
 
   @Post('verify-email')
   @UseGuards(AuthGuard('jwt'))
+  // Same cap as the authorization page's code form (POST /auth/verify-email);
+  // both count wrong codes against the same account (EmailVerificationService).
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify email with 6-digit code' })

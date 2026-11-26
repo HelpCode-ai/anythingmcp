@@ -15,6 +15,7 @@ import {
 } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiSecurity } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
+import { isApiKeyRequest, refuseApiKeyRequest } from '../auth/api-key-request.util';
 import { IsString, IsOptional, IsBoolean } from 'class-validator';
 import { OrganizationsService } from './organizations.service';
 import { AuthService } from '../auth/auth.service';
@@ -90,9 +91,17 @@ export class OrganizationsController {
   ) {}
 
   @Get('mine')
-  @ApiOperation({ summary: 'List organizations the current user belongs to' })
+  @ApiOperation({
+    summary: 'List organizations the current user belongs to',
+    description: 'Called with a management API key, only the key\'s own workspace is listed.',
+  })
   async listMine(@Req() req: any) {
-    return this.organizationsService.listUserOrgs(req.user.sub);
+    const orgs = await this.organizationsService.listUserOrgs(req.user.sub);
+    // An API key acts in the workspace it was created in: it sees only that one.
+    if (isApiKeyRequest(req)) {
+      return orgs.filter((o) => o.id === req.user.organizationId);
+    }
+    return orgs;
   }
 
   @Get('current')
@@ -116,8 +125,12 @@ export class OrganizationsController {
   }
 
   @Delete('current')
-  @ApiOperation({ summary: 'Delete current organization (ADMIN only)' })
+  @ApiOperation({
+    summary: 'Delete current organization (ADMIN only)',
+    description: 'Needs a dashboard sign-in: refused (403) with an API key, because it returns a new session.',
+  })
   async deleteCurrent(@Req() req: any, @Body() dto: DeleteOrgDto) {
+    refuseApiKeyRequest(req);
     if (req.user.role !== 'ADMIN') {
       throw new ForbiddenException('Only admins can delete the organization');
     }
@@ -193,8 +206,12 @@ export class OrganizationsController {
   }
 
   @Post('switch')
-  @ApiOperation({ summary: 'Switch active organization' })
+  @ApiOperation({
+    summary: 'Switch active organization',
+    description: 'Needs a dashboard sign-in: refused (403) with an API key, which stays in its own workspace.',
+  })
   async switchOrg(@Req() req: any, @Body() dto: SwitchOrgDto) {
+    refuseApiKeyRequest(req);
     const user = await this.organizationsService.switchOrg(req.user.sub, dto.organizationId);
     const org = await this.organizationsService.findById(dto.organizationId);
 
@@ -226,9 +243,11 @@ export class OrganizationsController {
     description:
       'The caller becomes the ADMIN of the new organization. Cloud: any signed-in user may create their own ' +
       'workspace. Self-hosted: only a caller who is an ADMIN of their active workspace (403 for a VIEWER or an ' +
-      'EDITOR), because a workspace ADMIN on a self-hosted instance also reaches instance-wide settings.',
+      'EDITOR), because a workspace ADMIN on a self-hosted instance also reaches instance-wide settings. ' +
+      'Needs a dashboard sign-in: refused (403) with an API key, which stays in its own workspace.',
   })
   async createOrg(@Req() req: any, @Body() dto: CreateOrgDto) {
+    refuseApiKeyRequest(req);
     // The creator becomes ADMIN of the new workspace. In Cloud every user
     // runs their own workspace and an ADMIN reaches nothing beyond it. On a
     // self-hosted instance a workspace ADMIN is the operator: they reach the

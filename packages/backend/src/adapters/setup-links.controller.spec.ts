@@ -1,4 +1,4 @@
-import { GoneException, UnauthorizedException } from '@nestjs/common';
+import { ForbiddenException, GoneException, UnauthorizedException } from '@nestjs/common';
 import { SetupLinksController } from './setup-links.controller';
 
 describe('SetupLinksController', () => {
@@ -75,6 +75,18 @@ describe('SetupLinksController', () => {
     it('answers an expired or foreign link with its reason', async () => {
       const { controller } = build({ link: { error: 'This link has expired.' } });
       await expect(controller.resolve({ user: { sub: 'u1', organizationId: 'o' } }, { token: 'tok' })).rejects.toBeInstanceOf(GoneException);
+    });
+
+    it('refuses a request made with an API key before reading the link', async () => {
+      const { controller, setup, recent } = build();
+      await expect(
+        controller.resolve(
+          { user: { sub: 'u1', organizationId: 'org-main' }, mcpKeyScope: 'MANAGEMENT_ADMIN' },
+          { token: 'tok' },
+        ),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(setup.resolveLink).not.toHaveBeenCalled();
+      expect(recent.session).not.toHaveBeenCalled();
     });
   });
 });

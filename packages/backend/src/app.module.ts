@@ -2,7 +2,8 @@ import { PlanCapsModule } from './plan-caps/plan-caps.module';
 import { Module, MiddlewareConsumer, NestModule, Logger, ClassSerializerInterceptor } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './common/app-throttler.guard';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import * as Sentry from '@sentry/nestjs';
 import { SentryModule } from '@sentry/nestjs/setup';
@@ -206,7 +207,8 @@ if (useOAuth) {
     // are logged as a warning. Must stay the first APP_FILTER.
     { provide: APP_FILTER, useClass: AppExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: SentryContextInterceptor },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // The stock ThrottlerGuard plus a stricter cap for POST /register.
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
     // Injected by McpServerService, which registers the tools defined in the
     // database once the app is up.
