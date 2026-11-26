@@ -11,6 +11,8 @@ const BACKEND_URL = process.env.BACKEND_INTERNAL_URL || 'http://localhost:4000';
 
 const nextConfig: NextConfig = {
   output: 'standalone',
+  // No `X-Powered-By: Next.js` on responses: it says nothing a visitor needs.
+  poweredByHeader: false,
   // Allow the Next dev server to be reached through a tunnel (ngrok/cloudflared)
   // from a different origin — otherwise dev assets/HMR misbehave and the page
   // doesn't fully hydrate (login form falls back to a native GET submit).

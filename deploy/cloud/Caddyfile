@@ -64,10 +64,13 @@
 	# Kept small on purpose, the droplet shares its RAM and disk with the app:
 	#   - written to a file in the caddy_data volume, not to stdout, so it
 	#     does not grow the Docker json log or `docker logs` output;
-	#   - rotated at 100 MiB, rotated files gzip-compressed (~12x), at most
-	#     40 kept and none older than 30 days. Measured 2026-11-25: ~7 req/s,
-	#     ~400 bytes a line, ~230 MB a day before compression, so 40 files
-	#     cover about two weeks in at most ~100 MB + 40 x ~9 MB on disk;
+	#   - rotated at 100 MiB, rotated files gzip-compressed (~12x, ~9 MB
+	#     each), at most 150 kept and none older than 30 days. The first
+	#     estimate (2026-11-25: ~7 req/s, ~400 bytes a line, ~230 MB a day)
+	#     made 40 files look like two weeks; the first 25 hours of the live
+	#     log rotated ~11 files, ~1 GB a day, so 40 files held under four
+	#     days. 150 files cover about two weeks, in at most
+	#     ~100 MB + 150 x ~9 MB, about 1.45 GB on disk;
 	#   - no request or response headers (they carry API keys, bearer tokens,
 	#     service tokens and webhook signatures under many names) and no query
 	#     string (OAuth codes, `?api_key=`); the user agent is appended alone;
@@ -77,7 +80,7 @@
 	log {
 		output file /data/access-log/access.log {
 			roll_size 100MiB
-			roll_keep 40
+			roll_keep 150
 			roll_keep_for 720h
 		}
 		format filter {
@@ -105,6 +108,23 @@
 		zstd
 		gzip
 		minimum_length 1024
+	}
+
+	# ── Security headers ───────────────────────────────────────────────────
+	# The backend sets its own through helmet; the frontend (Next.js) set
+	# none. `?` sets a header only when the upstream response has none, so
+	# the backend and the OAuth pages (CSP `frame-ancestors 'none'`) keep
+	# theirs and everything else, the frontend and Caddy's own answers
+	# included, gets these. Nothing on this site is meant to be framed by
+	# another origin: the MCP App upload box is a `ui://` resource the AI app
+	# renders on its own sandbox origin, not a page served here, and its
+	# fallback link opens /upload in a new tab; Stripe Checkout is a redirect.
+	header {
+		?Strict-Transport-Security "max-age=31536000; includeSubDomains"
+		?X-Content-Type-Options "nosniff"
+		?Referrer-Policy "strict-origin-when-cross-origin"
+		?X-Frame-Options "SAMEORIGIN"
+		?Permissions-Policy "camera=(), microphone=(), geolocation=(), payment=()"
 	}
 
 	# ── Backend ────────────────────────────────────────────────────────────
