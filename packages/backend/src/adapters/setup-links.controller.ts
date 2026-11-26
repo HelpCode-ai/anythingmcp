@@ -10,6 +10,7 @@ import {
   UseGuards,
 } from '@nestjs/common';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
+import { refuseApiKeyRequest } from '../auth/api-key-request.util';
 import { ApiBearerAuth, ApiExcludeEndpoint, ApiOperation, ApiSecurity } from '@nestjs/swagger';
 import { Throttle } from '@nestjs/throttler';
 import type { Request } from 'express';
@@ -48,6 +49,10 @@ export class SetupLinksController {
     @Req() req: any,
     @Body() body: { token?: string; from?: string },
   ): Promise<{ redirect: string; session?: RecentSignInSession }> {
+    // The dashboard page's route: it can hand out a session for another
+    // workspace, which an API key never becomes. Refused before the link is
+    // read, so a key leaves the link untouched.
+    refuseApiKeyRequest(req);
     // `from` only picks the setup page's way back, from a fixed list.
     const out = await this.setup.resolveLink(String(body?.token ?? ''), req.user.sub, body?.from, { signedIn: true });
     if ('error' in out) throw new GoneException(out.error);

@@ -1,4 +1,4 @@
-import { Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
+import { BadRequestException, Controller, Get, Query, Req, UseGuards } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiQuery, ApiSecurity, ApiResponse } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { AuditService } from './audit.service';
@@ -9,6 +9,37 @@ import {
 } from './analytics-query.dto';
 import { ToolPerformanceQueryDto } from './tool-performance-query.dto';
 import { MemberVisibilityService } from '../settings/member-visibility.service';
+
+/** Largest page `GET /api/audit/invocations` returns; the default stays 100. */
+export const INVOCATIONS_MAX_LIMIT = 200;
+export const INVOCATIONS_DEFAULT_LIMIT = 100;
+const INVOCATION_STATUSES = ['SUCCESS', 'ERROR', 'TIMEOUT'] as const;
+type InvocationStatusFilter = (typeof INVOCATION_STATUSES)[number];
+
+/**
+ * Paging and status of `GET /api/audit/invocations`. `limit` is clamped to
+ * 1..200 (missing or not a number: 100), `offset` to 0 or more (missing or not
+ * a number: 0). An unknown `status` is refused with 400 rather than reaching
+ * the database as an invalid enum value.
+ */
+export function parseInvocationsQuery(
+  limit?: string,
+  offset?: string,
+  status?: string,
+): { limit: number; offset: number; status?: InvocationStatusFilter } {
+  const parsedLimit = limit === undefined ? NaN : parseInt(limit, 10);
+  const parsedOffset = offset === undefined ? NaN : parseInt(offset, 10);
+  if (status !== undefined && status !== '' && !(INVOCATION_STATUSES as readonly string[]).includes(status)) {
+    throw new BadRequestException(`status must be one of ${INVOCATION_STATUSES.join(', ')}`);
+  }
+  return {
+    limit: Number.isFinite(parsedLimit)
+      ? Math.min(Math.max(parsedLimit, 1), INVOCATIONS_MAX_LIMIT)
+      : INVOCATIONS_DEFAULT_LIMIT,
+    offset: Number.isFinite(parsedOffset) ? Math.max(parsedOffset, 0) : 0,
+    status: status ? (status as InvocationStatusFilter) : undefined,
+  };
+}
 
 /**
  * Every read route of this controller is scoped by member visibility: in a
@@ -43,14 +74,20 @@ export class AuditController {
       'themselves; calls without a user are hidden. On a connector they do not own, `error` is the HTTP status and a ' +
       'fixed sentence instead of the stored text, which can name the connector\'s address.',
   })
-  @ApiQuery({ name: 'limit', required: false, type: Number, description: 'Rows to return (default 100).', example: 20 })
-  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip, for paging.', example: 0 })
+  @ApiQuery({
+    name: 'limit',
+    required: false,
+    type: Number,
+    description: 'Rows to return: 1 to 200 (default 100; larger values return 200).',
+    example: 20,
+  })
+  @ApiQuery({ name: 'offset', required: false, type: Number, description: 'Rows to skip, for paging (0 or more).', example: 0 })
   @ApiQuery({ name: 'toolId', required: false, type: String, description: 'Only calls of this tool.' })
   @ApiQuery({
     name: 'status',
     required: false,
     enum: ['SUCCESS', 'ERROR', 'TIMEOUT'],
-    description: 'Only calls with this outcome.',
+    description: 'Only calls with this outcome. Any other value is refused with 400.',
     example: 'ERROR',
   })
   @ApiQuery({
@@ -90,25 +127,27 @@ export class AuditController {
     @Query('limit') limit?: string,
     @Query('offset') offset?: string,
     @Query('toolId') toolId?: string,
-    @Query('status') status?: 'SUCCESS' | 'ERROR' | 'TIMEOUT',
+    @Query('status') rawStatus?: string,
     @Query('search') search?: string,
     @Query('connectorId') connectorId?: string,
     @Query('mcpServerId') mcpServerId?: string,
   ) {
+    const paging = parseInvocationsQuery(limit, offset, rawStatus);
+    const status = paging.status;
     const scope = await this.visibility.scopeFor(req.user);
     if (!scope.restricted) {
       return this.auditService.getRecentInvocations(
-        limit ? parseInt(limit, 10) : 100,
-        offset ? parseInt(offset, 10) : 0,
-        { toolId, status: status as any, search, connectorId, mcpServerId, organizationId: req.user.organizationId },
+        paging.limit,
+        paging.offset,
+        { toolId, status, search, connectorId, mcpServerId, organizationId: req.user.organizationId },
       );
     }
     return this.auditService.getRecentInvocations(
-      limit ? parseInt(limit, 10) : 100,
-      offset ? parseInt(offset, 10) : 0,
+      paging.limit,
+      paging.offset,
       {
         toolId,
-        status: status as any,
+        status,
         search,
         connectorId,
         mcpServerId,
