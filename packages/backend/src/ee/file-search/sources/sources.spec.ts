@@ -5,6 +5,7 @@ import { FtpDriver, parseListDate } from './ftp.driver';
 import { S3Driver } from './s3.driver';
 import { sshFingerprint } from './sftp.driver';
 import { classifyNetworkError, limitStream, remotePath, safeRel } from './source.types';
+import { propfindStatusError } from './webdav.driver';
 
 describe('source helpers', () => {
   it('keeps paths inside the root', () => {
@@ -20,6 +21,15 @@ describe('source helpers', () => {
     expect(classifyNetworkError(Object.assign(new Error('connect ECONNREFUSED'), { code: 'ECONNREFUSED' })).kind).toBe('unreachable');
     expect(classifyNetworkError(new Error('530 Login incorrect.')).kind).toBe('auth');
     expect(classifyNetworkError(Object.assign(new Error('SSRF guard: address 10.0.0.1 is not a public IP'), { name: 'SsrfBlockedError' })).kind).toBe('private_address');
+  });
+
+  it('maps WebDAV PROPFIND answers to the wizard error kinds', () => {
+    expect(propfindStatusError(207)).toBeNull();
+    expect(propfindStatusError(401)?.kind).toBe('auth');
+    expect(propfindStatusError(403)?.kind).toBe('permission');
+    for (const status of [404, 301, 302, 307, 405, 200]) expect(propfindStatusError(status)?.kind).toBe('not_found');
+    expect(propfindStatusError(302)?.message).toMatch(/not a WebDAV folder/);
+    expect(propfindStatusError(500)?.kind).toBe('unknown');
   });
 
   it('formats SSH fingerprints like ssh-keygen', () => {
