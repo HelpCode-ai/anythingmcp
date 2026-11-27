@@ -33,7 +33,8 @@
     "authType": "BEARER_TOKEN",
     "authConfig": {
       "token": "{{WHATSAPP_ACCESS_TOKEN}}"
-    }
+    },
+    "healthcheckPath": "/me?fields=id,name"
   },
   "tools": [
     {

@@ -76,7 +76,8 @@
         "configIdVar": "META_CONFIG_ID",
         "graphVersion": "v25.0"
       }
-    }
+    },
+    "healthcheckPath": "/me?fields=id,name"
   },
   "tools": [
     {
