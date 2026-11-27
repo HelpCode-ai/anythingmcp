@@ -177,6 +177,71 @@ describe('choosing what a client may reach', () => {
     expect(res.send).not.toHaveBeenCalled();
   });
 
+  // A named server that cannot be granted (gone, switched off, hidden from
+  // this member) must not end the step without a grant: the callback would
+  // then refuse to issue the code. The usual choice is made instead.
+  it('grants the only server as usual when the named server cannot be granted', async () => {
+    const { controller, grants, req, res } = build({
+      requestedServerId: 'srv-gone',
+      targets: [workspace('org-A', 'Acme', [server('srv-1', 'Default')])],
+    });
+    grants.grantRequestedServer.mockResolvedValue(false);
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.grantRequestedServer).toHaveBeenCalledWith('client-1', 'u1', 'srv-gone');
+    expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-1']);
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
+  it('shows the picker when the named server cannot be granted and there is a choice', async () => {
+    const { controller, grants, req, res } = build({
+      requestedServerId: 'srv-hidden',
+      targets: [workspace('org-A', 'Acme', [server('srv-1', 'ERP'), server('srv-2', 'CRM')])],
+    });
+    grants.grantRequestedServer.mockResolvedValue(false);
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    expect(res.send).toHaveBeenCalled();
+    expect(grants.grantServers).not.toHaveBeenCalled();
+  });
+
+  it('shows the picker to a user of several workspaces that have no server, instead of granting nothing', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [workspace('org-A', 'Acme', []), workspace('org-B', 'Globex', [])],
+    });
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    const html = res.send.mock.calls[0][0];
+    expect(html).toContain('Acme');
+    expect(html).toContain('Globex');
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+  });
+
+  it('shows the picker when the automatic grant could not be written', async () => {
+    const { controller, grants, req, res } = build({
+      targets: [workspace('org-A', 'Acme', [server('srv-1', 'Default')])],
+    });
+    grants.grantServers.mockResolvedValue([]);
+
+    await expect(ask(controller, req, res)).resolves.toBe(true);
+
+    expect(grants.grantServers).toHaveBeenCalledWith('client-1', 'u1', ['srv-1']);
+    expect(res.send).toHaveBeenCalled();
+  });
+
+  it('grants nothing and shows nothing to a user without a workspace (the callback ends the attempt)', async () => {
+    const { controller, grants, req, res } = build({ targets: [] });
+
+    await expect(ask(controller, req, res)).resolves.toBe(false);
+
+    expect(grants.grantServers).not.toHaveBeenCalled();
+    expect(grants.grantWholeOrganization).not.toHaveBeenCalled();
+    expect(res.send).not.toHaveBeenCalled();
+  });
+
   it('grants the workspace when it has no servers yet, so one added later is picked up', async () => {
     const { controller, grants, req, res } = build({
       targets: [workspace('org-A', 'Acme', [])],
@@ -562,5 +627,17 @@ describe('submitting the selection', () => {
     expect(res.redirect).toHaveBeenCalledWith(
       expect.stringContaining('error=noServersAvailable'),
     );
+  });
+
+  it('stops when the chosen workspace could not be granted, instead of going on to the callback', async () => {
+    const { controller, grants, req, res } = submitFixture({ pending_grant: 'u1' });
+    grants.grantWholeOrganization.mockResolvedValue(false);
+
+    await submit(controller, req, { workspace: 'org-not-mine', csrf: 'tok' }, res);
+
+    expect(grants.grantWholeOrganization).toHaveBeenCalledWith('client-1', 'u1', 'org-not-mine');
+    expect(res.redirect).toHaveBeenCalledTimes(1);
+    expect(res.redirect).toHaveBeenCalledWith(expect.stringContaining('error=noServersAvailable'));
+    expect(res.cookie).not.toHaveBeenCalledWith('login_user', expect.anything(), expect.anything());
   });
 });
