@@ -51,6 +51,9 @@ box appears only on a server's own URL (`/mcp/<id>`).
 | Cloud Enterprise | 200 MB | 5,000 | 50 GB |
 | Self-hosted (every edition) | 100 MB, `FILE_UPLOADS_MAX_FILE_BYTES` | no limit, `FILE_UPLOADS_PER_DAY` | no limit, `FILE_UPLOADS_MAX_STORED_BYTES` |
 
+- On Cloud, a workspace that needs more uploads per day than its plan can buy a higher daily
+  count as an add-on (ask support). It raises only the daily count; the largest file and the
+  space kept at once stay those of the plan.
 - An upload link works **once**, for **15 minutes**, whichever way the file is sent (sandbox, box or page).
 - A file is deleted **8 hours** after upload (`FILE_UPLOADS_TTL_HOURS` on self-hosted). Within
   that time the reference can be used again, for example for the same photo on several listings.

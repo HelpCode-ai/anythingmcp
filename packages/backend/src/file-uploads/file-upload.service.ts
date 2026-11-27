@@ -131,10 +131,10 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
     const lic = await this.prisma.license.findFirst({
       where: { organizationId, status: 'active' },
       orderBy: { createdAt: 'desc' },
-      select: { plan: true, expiresAt: true },
+      select: { plan: true, expiresAt: true, features: true },
     });
     if (!lic || (lic.expiresAt && lic.expiresAt < now)) return null;
-    return uploadQuotaFor(lic.plan, { cloud });
+    return uploadQuotaFor(lic.plan, { cloud, features: lic.features });
   }
 
   /** file_upload_link: a one-time upload URL and the reference the file will have. */

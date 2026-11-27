@@ -2,7 +2,10 @@
  * Limits for agent file uploads (file_upload_link). Files live a few hours, so
  * the caps protect bandwidth and the bucket, not long-term storage.
  *
- * Cloud: per plan, read from the workspace's active licence.
+ * Cloud: per plan, read from the workspace's active licence. One licence can
+ * carry its own daily upload count in the feature `uploadsPerDay` (a positive
+ * whole number, e.g. a "2,000 uploads/day" add-on): it replaces the plan's
+ * daily count and leaves every other limit to the plan.
  * Self-hosted: every edition, Community included; the operator's own storage,
  * so no daily or stored caps unless the env sets them.
  */
@@ -35,13 +38,26 @@ function positiveNumber(raw: string | undefined): number | null {
   return Number.isFinite(n) && n > 0 ? n : null;
 }
 
+/**
+ * The licence feature `uploadsPerDay` as a daily count, or null when it is
+ * missing or not a positive whole number (the plan default then applies).
+ * A digit-only string is accepted too: a value typed by hand into the licence
+ * record may arrive as one.
+ */
+export function uploadsPerDayOverride(features: unknown): number | null {
+  if (!features || typeof features !== 'object') return null;
+  const raw = (features as Record<string, unknown>).uploadsPerDay;
+  const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : NaN;
+  return Number.isSafeInteger(n) && n > 0 ? n : null;
+}
+
 export function uploadTtlHours(env: NodeJS.ProcessEnv = process.env): number {
   return positiveNumber(env.FILE_UPLOADS_TTL_HOURS) ?? 8;
 }
 
 export function uploadQuotaFor(
   plan: string | null,
-  opts: { cloud: boolean; env?: NodeJS.ProcessEnv },
+  opts: { cloud: boolean; env?: NodeJS.ProcessEnv; features?: unknown },
 ): FileUploadQuota | null {
   const env = opts.env ?? process.env;
   const ttlHours = uploadTtlHours(env);
@@ -56,7 +72,7 @@ export function uploadQuotaFor(
   }
   if (!plan) return null;
   const q = CLOUD[plan] ?? CLOUD.starter;
-  return { plan, ...q, ttlHours };
+  return { plan, ...q, uploadsPerDay: uploadsPerDayOverride(opts.features) ?? q.uploadsPerDay, ttlHours };
 }
 
 /** Instance-wide brakes. Defaults only on Cloud; self-hosted sets them if it wants. */
