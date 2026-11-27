@@ -1,0 +1,1313 @@
+{
+  "slug": "afterbuy",
+  "name": "Afterbuy",
+  "description": "Afterbuy multichannel e-commerce software (XML API): read orders from eBay, Amazon, Kaufland and the Afterbuy shop with payment, buyer and shipping data, products, stock, catalogs, shipping and payment methods; mark orders as shipped with tracking numbers, change order fields and delivery addresses, update stock, prices and product texts. Partner token and account token from the booked XML interface.",
+  "aliases": [
+    "Afterbuy XML",
+    "Afterbuy XML-Schnittstelle",
+    "ViA-Online Afterbuy"
+  ],
+  "region": "de",
+  "category": "e-commerce",
+  "icon": "afterbuy",
+  "docsUrl": "https://xmldoku.afterbuy.de/dokued/",
+  "instructions": "## Afterbuy\nThis connector works with the **Afterbuy XML API** (`https://api.afterbuy.de/afterbuy/ABInterface.aspx`), the bidirectional interface of the German multichannel e-commerce software Afterbuy (ViA-Online GmbH). It reads orders (eBay, Amazon, Kaufland, Afterbuy shop and other channels), products, stock, catalogs, shipping and payment methods, and writes shipping state and tracking numbers, order fields, delivery addresses, stock, prices and product texts. Typical uses are customer service (find an order, check payment and shipping, change the address) and product data upkeep.\n\n**Setup**: the XML interface is a paid Afterbuy add-on (EUR 20 a month plus VAT, 50,000 calls a day included). Book it in Afterbuy under **Management Center > Vertriebskanäle > Eigener Onlineshop > Schnittstellen zu Afterbuy (XML & Shop)**; Afterbuy then shows the access data, which can be looked up again under **Management Center > Einstellungen > Tarif und Rechnung > Tarifinformation und Afterbuyrechnung** (bottom of the page). Put the **partner token** in `AFTERBUY_PARTNER_TOKEN` and the **account token** in `AFTERBUY_ACCOUNT_TOKEN`. Every request carries both tokens in its XML `AfterbuyGlobal` block.\n\n**Answers** are XML, handed over as JSON under `Afterbuy`: `CallStatus` is Success, Warning or Error, the data sits in `Result`, every value is a string, and a repeated element (`Order`, `Product`, `SoldItem`) is a list when there are several and a single object when there is one, so handle both. Warnings come in `Result.WarningList.Warning` (code and text) and do not stop the call: read them after every write, because Afterbuy reports a product or order it could not update as a warning. Errors are reported as failed tool calls with Afterbuy's code and text; \"No items found\" (code 15) and the other \"nothing found\" codes come back as an answer with that error in `Result.ErrorList`, which means the filter matched nothing.\n\n**Identifiers**: an order is identified by its **OrderID** (Afterbuy's VorgangsID, a number such as 482915733), each order line by its **ItemID**. A product has a **ProductID** (Afterbuy's internal number), an article number **Anr** (numeric) and an **EAN** field, which many shops use for their SKU. Buyers have an AfterbuyUserID. Dates are written `DD.MM.YYYY HH:MM:SS` in German local time (`26.11.2026 14:30:00`); `afterbuy_get_time` gives the server time.\n\n**Paging**: orders come at most 250 per call; when `Result.HasMoreItems` is 1, call `afterbuy_list_orders` again with `after_order_id` set to `Result.LastOrderID`. Products work the same way with `HasMoreProducts`, `LastProductID` and `after_product_id` (or `page`). `detail_level` chooses which parts are returned (for orders: 2 payment, 4 buyer, 8 items, 16 shipping, 32 item attributes, added up); a smaller value makes the answer smaller. Afterbuy allows 50,000 calls a day per account: filter by date or status instead of reading everything.\n\n**Where to start**\n- New and open orders: `afterbuy_list_orders` with `status_filter` NewAuctions, PaidAuctions or ReadyToShip, or with `date_from` and `date_field` ModDate to see what changed. `newest_first` 1 with `max_items` up to 100 shows the latest orders first.\n- A customer asks about an order: `afterbuy_list_orders` with `buyer_email`, then `afterbuy_get_order` for the details (payment, items, shipping date, tracking).\n- Products and stock: `afterbuy_list_products` with `eans`, `anrs` or `product_ids` (or `changed_from` for recent changes); `afterbuy_get_stock` for stock only.\n\n**Writing** (all on the live account; confirm with the user first)\n- Ship an order: `afterbuy_mark_order_shipped` sets the shipping date (and can send Afterbuy's shipping e-mail with `send_shipping_mail` 1). `afterbuy_set_order_tracking` stores tracking numbers per order line and package; Afterbuy **replaces all parcel data** of the order on every call, so first read the order with `afterbuy_get_order` and send the existing parcels again together with the new ones. Package numbers run 1, 2, 3 without gaps.\n- `afterbuy_update_order` changes flags, memo, invoice data, payment (setting `payment_date` marks the order as paid) and the order info fields; `afterbuy_update_shipping_address` sets a new delivery address.\n- `afterbuy_update_stock_and_prices` sets stock (absolute `quantity`, or a booking with `add_quantity`) and prices; `afterbuy_update_product_details` changes names, descriptions and master data. Both identify products by ProductID, Anr or EAN, never create products, and take up to 250 products per call.\n- `afterbuy_cancel_order` cancels an order and is installed switched off.\n\n**Not covered**: creating products, orders or catalogs, images, variations and set composition, eBay listing (Lister) functions, mail templates and the one-way Shop interface (order import from an external shop). Other XML calls can be added as custom tools with the same request envelope.",
+  "prerequisites": "An Afterbuy account with the XML interface booked (EUR 20 a month plus VAT, 50,000 calls a day included). Booking it in the Afterbuy Management Center shows the partner token and the account token right away; entering them takes about 2 minutes.",
+  "requiredEnvVars": [
+    "AFTERBUY_PARTNER_TOKEN",
+    "AFTERBUY_ACCOUNT_TOKEN"
+  ],
+  "envVarMeta": {
+    "AFTERBUY_PARTNER_TOKEN": {
+      "label": "Partner token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The partner token of your Afterbuy XML interface. Afterbuy shows it when you book the interface; you find it again under Management Center > Einstellungen > Tarif und Rechnung > Tarifinformation und Afterbuyrechnung, at the bottom of the page.",
+      "link": "https://docs.afterbuy.de/Shop_und_XML_Schnittstelle",
+      "pattern": "^\\S{4,200}$",
+      "patternMessage": "Paste the partner token without spaces or line breaks."
+    },
+    "AFTERBUY_ACCOUNT_TOKEN": {
+      "label": "Account token",
+      "kind": "credential",
+      "secret": true,
+      "help": "The account token of your Afterbuy account, shown next to the partner token on the same page.",
+      "link": "https://docs.afterbuy.de/Shop_und_XML_Schnittstelle",
+      "pattern": "^\\S{4,200}$",
+      "patternMessage": "Paste the account token without spaces or line breaks."
+    }
+  },
+  "verifyHints": {
+    "401": "Afterbuy did not accept the tokens (for example 'Partner data is invalid', 'User is not authorised' or 'The interface is disabled'). Copy the partner token and the account token again from Management Center > Einstellungen > Tarif und Rechnung > Tarifinformation und Afterbuyrechnung, and check that the XML interface is booked and active.",
+    "503": "Afterbuy answered that the XML interface or this action is not available right now. Try again in a few minutes.",
+    "bad_request": "Afterbuy refused the request. The answer names the error code and its meaning."
+  },
+  "probe": {
+    "tool": "afterbuy_get_time",
+    "params": {}
+  },
+  "setupGuide": {
+    "effort": "api_key",
+    "minutes": 5,
+    "examples": [
+      "Which Afterbuy orders are paid but not shipped yet?",
+      "Find the orders of buyer anna.schmidt@example.de and tell me where her parcel is",
+      "Mark order 482915733 as shipped today with DHL tracking 00340434161234567890",
+      "Set the stock of EAN 4006381333931 to 25 and its price to 19.99"
+    ],
+    "needs": [
+      "An Afterbuy account",
+      "The Afterbuy XML interface, booked in the Management Center (EUR 20 a month plus VAT)"
+    ],
+    "why": "Afterbuy opens its data to other tools only through the XML interface, a paid add-on. Booking it gives you a partner token and an account token, which AnythingMCP sends with every request.",
+    "steps": [
+      {
+        "id": "book",
+        "title": "Book the XML interface",
+        "body": "In Afterbuy open **Management Center > Vertriebskanäle > Eigener Onlineshop > Schnittstellen zu Afterbuy (XML & Shop)**. Choose the **XML interface**, say what you use it for (for example \"AnythingMCP: AI assistant for orders and products\") and send the form. Afterbuy shows the access data right away.\n\nAlready booked? Find the tokens under **Management Center > Einstellungen > Tarif und Rechnung > Tarifinformation und Afterbuyrechnung**, at the bottom of the page.",
+        "action": {
+          "label": "Open the Afterbuy help page on the interfaces",
+          "url": "https://docs.afterbuy.de/Shop_und_XML_Schnittstelle"
+        },
+        "confirm": "I have the partner token and the account token",
+        "problems": [
+          {
+            "q": "What does the interface cost?",
+            "a": "Afterbuy charges EUR 20 a month plus VAT per interface, with 50,000 calls a day included."
+          },
+          {
+            "q": "I only see a PartnerID and passwords",
+            "a": "That is Afterbuy's older login. Ask Afterbuy support for the partner token and account token of your XML interface."
+          }
+        ]
+      },
+      {
+        "id": "tokens",
+        "title": "Enter the two tokens",
+        "body": "Paste the partner token and the account token exactly as Afterbuy shows them.",
+        "fields": [
+          "AFTERBUY_PARTNER_TOKEN",
+          "AFTERBUY_ACCOUNT_TOKEN"
+        ],
+        "problems": [
+          {
+            "q": "Afterbuy answers 'Partner data is invalid'",
+            "a": "One of the tokens is wrong or incomplete. Copy both again, without spaces."
+          },
+          {
+            "q": "Afterbuy answers 'The interface is disabled'",
+            "a": "The XML interface was cancelled or is not active for this account. Book it again in the Management Center."
+          }
+        ]
+      }
+    ]
+  },
+  "connector": {
+    "name": "Afterbuy XML API",
+    "type": "REST",
+    "baseUrl": "https://api.afterbuy.de/afterbuy",
+    "authType": "NONE",
+    "headers": {
+      "Content-Type": "application/xml; charset=utf-8"
+    },
+    "config": {
+      "errorWhen": [
+        {
+          "path": "Afterbuy.Result.ErrorList.Error.ErrorCode",
+          "in": [
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "35",
+            "38",
+            "60",
+            "71",
+            "72"
+          ],
+          "messagePath": [
+            "Afterbuy.Result.ErrorList.Error.ErrorCode",
+            "Afterbuy.Result.ErrorList.Error.ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorLongDescription"
+          ],
+          "status": 401
+        },
+        {
+          "path": "Afterbuy.Result.ErrorList.Error[0].ErrorCode",
+          "in": [
+            "4",
+            "5",
+            "6",
+            "7",
+            "8",
+            "9",
+            "10",
+            "11",
+            "35",
+            "38",
+            "60",
+            "71",
+            "72"
+          ],
+          "messagePath": [
+            "Afterbuy.Result.ErrorList.Error.ErrorCode",
+            "Afterbuy.Result.ErrorList.Error.ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorLongDescription"
+          ],
+          "status": 401
+        },
+        {
+          "path": "Afterbuy.Result.ErrorList.Error.ErrorCode",
+          "in": [
+            "13",
+            "14",
+            "52"
+          ],
+          "messagePath": [
+            "Afterbuy.Result.ErrorList.Error.ErrorCode",
+            "Afterbuy.Result.ErrorList.Error.ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorLongDescription"
+          ],
+          "status": 503
+        },
+        {
+          "path": "Afterbuy.CallStatus",
+          "equals": "Error",
+          "messagePath": [
+            "Afterbuy.Result.ErrorList.Error.ErrorCode",
+            "Afterbuy.Result.ErrorList.Error.ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[0].ErrorLongDescription",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorCode",
+            "Afterbuy.Result.ErrorList.Error[1].ErrorLongDescription"
+          ],
+          "messageMatches": "^(?!(15|24|25|34|51) \\D*$)",
+          "status": 400
+        }
+      ]
+    }
+  },
+  "tools": [
+    {
+      "name": "afterbuy_get_time",
+      "description": "Read the current Afterbuy server time (AfterbuyTimeStamp, local German time, and AfterbuyUniversalTimeStamp, UTC). Costs one call and needs no parameters: use it to check that the connector's tokens work, and to know the time base for date filters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetAfterbuyTime</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_list_orders",
+      "description": "List orders (Verkäufe/Vorgänge) from Afterbuy with GetSoldItems: Result.Orders.Order (one object, or a list) with OrderID (the VorgangsID), InvoiceNumber, OrderDate, PaymentInfo (method, status, AlreadyPaid, FullAmount, PaymentDate), BuyerInfo (BillingAddress with Mail and phone, ShippingAddress), SoldItems.SoldItem (ItemID, Anr, ItemTitle, ItemQuantity, ItemPrice, ItemPlatFormName) and ShippingInfo (method, cost, DeliveryDate, ParcelLabels). Result.HasMoreItems is 1 when more orders match and Result.LastOrderID is the id to continue from with after_order_id. Pass at least one filter: a date range, a status filter, order ids or after_order_id. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "date_from": {
+            "type": "string",
+            "pattern": "^\\d{2}\\.\\d{2}\\.\\d{4}( \\d{2}:\\d{2}(:\\d{2})?)?$",
+            "description": "Only orders whose date_field is on or after this moment. Afterbuy date format DD.MM.YYYY HH:MM:SS (German local time), e.g. 26.11.2026 14:30:00; the time may be left out."
+          },
+          "date_to": {
+            "type": "string",
+            "pattern": "^\\d{2}\\.\\d{2}\\.\\d{4}( \\d{2}:\\d{2}(:\\d{2})?)?$",
+            "description": "Only orders whose date_field is on or before this moment. Afterbuy date format DD.MM.YYYY HH:MM:SS (German local time), e.g. 26.11.2026 14:30:00; the time may be left out."
+          },
+          "date_field": {
+            "type": "string",
+            "enum": [
+              "AuctionEndDate",
+              "PayDate",
+              "ShippingDate",
+              "InvoiceDate",
+              "ModDate",
+              "FeedbackDate",
+              "XmlDate",
+              "MailDate",
+              "ReminderDate"
+            ],
+            "default": "AuctionEndDate",
+            "description": "Which date date_from and date_to filter on (default AuctionEndDate, the order date). ModDate: last change, useful to pick up updates; PayDate: payment; ShippingDate: shipping; InvoiceDate: invoice."
+          },
+          "status_filter": {
+            "type": "string",
+            "enum": [
+              "NewAuctions",
+              "ReadyToShip",
+              "PaidAuctions",
+              "CompletedAuctions",
+              "InvoicePrinted",
+              "NoXMLDate",
+              "not_NewAuctions",
+              "not_ReadyToShip",
+              "not_PaidAuctions",
+              "not_CompletedAuctions",
+              "not_InvoicePrinted",
+              "not_NoXMLDate"
+            ],
+            "description": "Afterbuy's default filter: NewAuctions new orders (no checkout, no first mail, not paid), ReadyToShip ready to ship, PaidAuctions paid in full, CompletedAuctions completed (invoice number, shipping date, fully paid), InvoicePrinted invoice printed, NoXMLDate not yet exported. A not_ prefix negates it."
+          },
+          "order_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only these orders, by OrderID (VorgangsID)."
+          },
+          "after_order_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only orders with an OrderID greater than this one. Pass Result.LastOrderID of the previous page to read the next one."
+          },
+          "to_order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "default": 2147483647,
+            "description": "Upper end of the OrderID range used with after_order_id (default: no limit)."
+          },
+          "platform": {
+            "type": "string",
+            "description": "Only orders from this sales channel, as Afterbuy names it: ebay, amazon, kaufland, store (Afterbuy shop), hood, add, import and others. A not_ prefix excludes it (not_ebay)."
+          },
+          "buyer_email": {
+            "type": "string",
+            "description": "Only orders of the buyer with this e-mail address."
+          },
+          "buyer_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only orders of these buyers, by AfterbuyUserID."
+          },
+          "user_defined_flag": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Only orders with this seller flag (Markierung); ids from afterbuy_list_user_defined_flags."
+          },
+          "shop_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 5,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only orders of these Afterbuy shops (at most 5)."
+          },
+          "tag": {
+            "type": "string",
+            "description": "Only orders that carry this tag."
+          },
+          "invoice_numbers": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 10,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only orders with these invoice numbers (at most 10)."
+          },
+          "max_items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Orders per call, 1 to 250 (default 50)."
+          },
+          "newest_first": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "1 sorts the newest orders first. Afterbuy applies it only when max_items is 100 or less."
+          },
+          "include_hidden": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 also returns orders hidden in Afterbuy."
+          },
+          "detail_level": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 62,
+            "default": 30,
+            "description": "Which parts of each order to return, as a sum: 2 payment, 4 buyer and addresses, 8 items, 16 shipping, 32 items with their attributes; 0 returns only the order head. Default 30 (payment, buyer, items and shipping). Lower values make the answer smaller."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetSoldItems</CallName><DetailLevel>${detail_level}</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><MaxSoldItems>${max_items}</MaxSoldItems><OrderDirection>${newest_first}</OrderDirection>${?include_hidden}<ReturnHiddenItems>${include_hidden}</ReturnHiddenItems>${/include_hidden}${?date_from|date_to|order_ids|after_order_id|status_filter|platform|buyer_email|buyer_ids|user_defined_flag|shop_ids|tag|invoice_numbers}<DataFilter>${?date_from|date_to}<Filter><FilterName>DateFilter</FilterName><FilterValues>${?date_from}<DateFrom>${date_from}</DateFrom>${/date_from}${?date_to}<DateTo>${date_to}</DateTo>${/date_to}<FilterValue>${date_field}</FilterValue></FilterValues></Filter>${/date_from|date_to}${?order_ids}<Filter><FilterName>OrderID</FilterName><FilterValues>${*order_ids}<FilterValue>${.}</FilterValue>${/order_ids}</FilterValues></Filter>${/order_ids}${?after_order_id}<Filter><FilterName>RangeID</FilterName><FilterValues><ValueFrom>${after_order_id}</ValueFrom><ValueTo>${to_order_id}</ValueTo></FilterValues></Filter>${/after_order_id}${?status_filter}<Filter><FilterName>DefaultFilter</FilterName><FilterValues><FilterValue>${status_filter}</FilterValue></FilterValues></Filter>${/status_filter}${?platform}<Filter><FilterName>Plattform</FilterName><FilterValues><FilterValue>${platform}</FilterValue></FilterValues></Filter>${/platform}${?buyer_email}<Filter><FilterName>AfterbuyUserEmail</FilterName><FilterValues><FilterValue>${buyer_email}</FilterValue></FilterValues></Filter>${/buyer_email}${?buyer_ids}<Filter><FilterName>AfterbuyUserID</FilterName><FilterValues>${*buyer_ids}<FilterValue>${.}</FilterValue>${/buyer_ids}</FilterValues></Filter>${/buyer_ids}${?user_defined_flag}<Filter><FilterName>UserDefinedFlag</FilterName><FilterValues><FilterValue>${user_defined_flag}</FilterValue></FilterValues></Filter>${/user_defined_flag}${?shop_ids}<Filter><FilterName>ShopId</FilterName><FilterValues>${*shop_ids}<FilterValue>${.}</FilterValue>${/shop_ids}</FilterValues></Filter>${/shop_ids}${?tag}<Filter><FilterName>Tag</FilterName><FilterValues><FilterValue>${tag}</FilterValue></FilterValues></Filter>${/tag}${?invoice_numbers}<Filter><FilterName>InvoiceNumber</FilterName><FilterValues>${*invoice_numbers}<FilterValue>${.}</FilterValue>${/invoice_numbers}</FilterValues></Filter>${/invoice_numbers}</DataFilter>${/date_from|date_to|order_ids|after_order_id|status_filter|platform|buyer_email|buyer_ids|user_defined_flag|shop_ids|tag|invoice_numbers}</Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_get_order",
+      "description": "Read one order by its OrderID (VorgangsID) with GetSoldItems, with payment, buyer, items with attributes and shipping: Result.Orders.Order with BuyerInfo (billing and shipping address, e-mail), SoldItems.SoldItem (ItemID per line, which afterbuy_set_order_tracking needs), PaymentInfo and ShippingInfo with ParcelLabels. Use it before changing an order and to answer customer questions. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The OrderID (VorgangsID), e.g. 482915733."
+          },
+          "detail_level": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 62,
+            "default": 62,
+            "description": "Which parts to return, as a sum: 2 payment, 4 buyer, 8 items, 16 shipping, 32 items with attributes. Default 62 (everything)."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetSoldItems</CallName><DetailLevel>${detail_level}</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><MaxSoldItems>1</MaxSoldItems><ReturnHiddenItems>1</ReturnHiddenItems><DataFilter><Filter><FilterName>OrderID</FilterName><FilterValues><FilterValue>${order_id}</FilterValue></FilterValues></Filter></DataFilter></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_list_products",
+      "description": "List or find products (Artikel) in Afterbuy with GetShopProducts: Result.Products.Product (one object, or a list) with ProductID, Anr (article number), EAN, Name, ShortDescription, Description, Keywords, Quantity (shop stock), AuctionQuantity, MinimumStock, Discontinued, SellingPrice, BuyingPrice, DealerPrice, TaxRate, Weight, stock locations, catalogs and attributes, depending on detail_level. Result.HasMoreProducts is 1 when more match; continue with after_product_id set to Result.LastProductID, or with page. Without a filter it pages through the whole catalogue. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only these products, by ProductID."
+          },
+          "anrs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+([.,][0-9]+)?$"
+            },
+            "description": "Only these products, by Afterbuy article number (Anr, a number)."
+          },
+          "eans": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 500,
+            "items": {
+              "type": "string"
+            },
+            "description": "Only these products, by EAN (Afterbuy's external article number field, which many shops use for the SKU)."
+          },
+          "tags": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 50,
+            "items": {
+              "type": "string"
+            },
+            "description": "Only products carrying these tags."
+          },
+          "set_filter": {
+            "type": "string",
+            "enum": [
+              "AllSets",
+              "VariationsSets",
+              "ProductSets",
+              "not_AllSets",
+              "not_VariationsSets",
+              "not_ProductSets"
+            ],
+            "description": "Only (or, with not_, no) set articles: AllSets every set, VariationsSets variation sets (parents of variants), ProductSets product bundles."
+          },
+          "changed_from": {
+            "type": "string",
+            "pattern": "^\\d{2}\\.\\d{2}\\.\\d{4}( \\d{2}:\\d{2}(:\\d{2})?)?$",
+            "description": "Only products whose date_field is on or after this moment. Afterbuy date format DD.MM.YYYY HH:MM:SS (German local time), e.g. 26.11.2026 14:30:00; the time may be left out."
+          },
+          "changed_to": {
+            "type": "string",
+            "pattern": "^\\d{2}\\.\\d{2}\\.\\d{4}( \\d{2}:\\d{2}(:\\d{2})?)?$",
+            "description": "Only products whose date_field is on or before this moment. Afterbuy date format DD.MM.YYYY HH:MM:SS (German local time), e.g. 26.11.2026 14:30:00; the time may be left out."
+          },
+          "date_field": {
+            "type": "string",
+            "enum": [
+              "ModDate",
+              "LastSale",
+              "LastStockChange"
+            ],
+            "default": "ModDate",
+            "description": "Which date changed_from and changed_to filter on: ModDate last change of the product (default), LastSale last sale, LastStockChange last stock change."
+          },
+          "after_product_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only products with a ProductID greater than this one. Pass Result.LastProductID of the previous page."
+          },
+          "page": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Page number when paging by pages instead of after_product_id; switches on Afterbuy's pagination output."
+          },
+          "max_items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 250,
+            "default": 50,
+            "description": "Products per call, 1 to 250 (default 50)."
+          },
+          "detail_level": {
+            "type": "integer",
+            "minimum": 0,
+            "maximum": 222,
+            "default": 2,
+            "description": "Which fields to return. 0 all fields; 2 all except the memo fields; 4 only stock fields; 8 prices, search terms, position and level; 16 catalog assignments; 64 availability; 128 texts in other languages. Values can be added (2 + 16 = 18). Default 2."
+          },
+          "suppress_set_data": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "0 (default) includes the relations of set and variation articles (BaseProducts); 1 leaves them out for a smaller answer."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetShopProducts</CallName><DetailLevel>${detail_level}</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><MaxShopItems>${max_items}</MaxShopItems><SuppressBaseProductRelatedData>${suppress_set_data}</SuppressBaseProductRelatedData>${?page}<PaginationEnabled>1</PaginationEnabled><PageNumber>${page}</PageNumber>${/page}${?product_ids|anrs|eans|tags|set_filter|changed_from|changed_to|after_product_id}<DataFilter>${?product_ids}<Filter><FilterName>ProductID</FilterName><FilterValues>${*product_ids}<FilterValue>${.}</FilterValue>${/product_ids}</FilterValues></Filter>${/product_ids}${?anrs}<Filter><FilterName>Anr</FilterName><FilterValues>${*anrs}<FilterValue>${.}</FilterValue>${/anrs}</FilterValues></Filter>${/anrs}${?eans}<Filter><FilterName>Ean</FilterName><FilterValues>${*eans}<FilterValue>${.}</FilterValue>${/eans}</FilterValues></Filter>${/eans}${?tags}<Filter><FilterName>Tag</FilterName><FilterValues>${*tags}<FilterValue>${.}</FilterValue>${/tags}</FilterValues></Filter>${/tags}${?set_filter}<Filter><FilterName>DefaultFilter</FilterName><FilterValues><FilterValue>${set_filter}</FilterValue></FilterValues></Filter>${/set_filter}${?changed_from|changed_to}<Filter><FilterName>DateFilter</FilterName><FilterValues>${?changed_from}<DateFrom>${changed_from}</DateFrom>${/changed_from}${?changed_to}<DateTo>${changed_to}</DateTo>${/changed_to}<FilterValue>${date_field}</FilterValue></FilterValues></Filter>${/changed_from|changed_to}${?after_product_id}<Filter><FilterName>RangeID</FilterName><FilterValues><ValueFrom>${after_product_id}</ValueFrom><ValueTo>2147483647</ValueTo></FilterValues></Filter>${/after_product_id}</DataFilter>${/product_ids|anrs|eans|tags|set_filter|changed_from|changed_to|after_product_id}</Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_get_stock",
+      "description": "Read the stock of specific products with GetStockInfo: Result.Products.Product with ProductID, Anr, EAN, Quantity (shop stock), AuctionQuantity, MinimumStock and, by detail_level, availability and real stock. Identify the products by ProductID, article number or EAN (at least one list). Read-only and lighter than afterbuy_list_products.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "product_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 250,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Products by ProductID."
+          },
+          "anrs": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 250,
+            "items": {
+              "type": "string",
+              "pattern": "^[0-9]+([.,][0-9]+)?$"
+            },
+            "description": "Products by Afterbuy article number (Anr)."
+          },
+          "eans": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 250,
+            "items": {
+              "type": "string"
+            },
+            "description": "Products by EAN."
+          },
+          "detail_level": {
+            "type": "integer",
+            "enum": [
+              0,
+              2,
+              4,
+              8,
+              10,
+              12,
+              14
+            ],
+            "default": 0,
+            "description": "0 stock fields without availability (default); 2 adds shop availability; 4 adds Afterbuy availability; 8 real stock. Values can be added."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetStockInfo</CallName><DetailLevel>${detail_level}</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><Products>${*product_ids}<Product><ProductID>${.}</ProductID></Product>${/product_ids}${*anrs}<Product><Anr>${.}</Anr></Product>${/anrs}${*eans}<Product><EAN>${.}</EAN></Product>${/eans}</Products></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_list_catalogs",
+      "description": "List the shop catalogs (categories) with GetShopCatalogs: Result.Catalogs.Catalog with CatalogID, Name, Description, Level, Position, ParentID and, with detail_level 2, the products assigned. Result.HasMoreCatalogs is 1 when more exist; continue with after_catalog_id set to Result.LastCatalogID. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "catalog_ids": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 200,
+            "items": {
+              "type": "integer",
+              "minimum": 1
+            },
+            "description": "Only these catalogs, by CatalogID."
+          },
+          "level": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only catalogs on this level of the tree."
+          },
+          "after_catalog_id": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Only catalogs with a CatalogID greater than this one, for paging."
+          },
+          "max_items": {
+            "type": "integer",
+            "minimum": 1,
+            "maximum": 200,
+            "default": 100,
+            "description": "Catalogs per call, 1 to 200 (default 100)."
+          },
+          "detail_level": {
+            "type": "integer",
+            "enum": [
+              0,
+              2
+            ],
+            "default": 0,
+            "description": "0 catalog data (default); 2 also the product assignments."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetShopCatalogs</CallName><DetailLevel>${detail_level}</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><MaxCatalogs>${max_items}</MaxCatalogs>${?catalog_ids|level|after_catalog_id}<DataFilter>${?catalog_ids}<Filter><FilterName>CatalogID</FilterName><FilterValues>${*catalog_ids}<FilterValue>${.}</FilterValue>${/catalog_ids}</FilterValues></Filter>${/catalog_ids}${?level}<Filter><FilterName>Level</FilterName><FilterValues><FilterValue>${level}</FilterValue></FilterValues></Filter>${/level}${?after_catalog_id}<Filter><FilterName>RangeID</FilterName><FilterValues><ValueFrom>${after_catalog_id}</ValueFrom><ValueTo>2147483647</ValueTo></FilterValues></Filter>${/after_catalog_id}</DataFilter>${/catalog_ids|level|after_catalog_id}</Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_list_shipping_services",
+      "description": "List the shipping groups and shipping methods (Versandarten) set up in the account with GetShippingServices: names, countries, prices and dispatch type ids. Use the exact names for shipping_method in afterbuy_mark_order_shipped. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "detail_level": {
+            "type": "integer",
+            "enum": [
+              0,
+              2,
+              4
+            ],
+            "default": 0,
+            "description": "0 all fields (default); 2 group names and dispatch type ids; 4 only the group names."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetShippingServices</CallName><DetailLevel>${detail_level}</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_list_payment_services",
+      "description": "List the payment methods (Zahlarten) set up in the account with GetPaymentServices, optionally only those allowed for a country, a channel or an order value. Use the names for payment_method in afterbuy_update_order. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "country": {
+            "type": "string",
+            "description": "Only methods assigned to this country code, e.g. DE."
+          },
+          "platform": {
+            "type": "string",
+            "enum": [
+              "ebay",
+              "shop"
+            ],
+            "description": "Only methods assigned to eBay or to the shop."
+          },
+          "order_value": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Only methods allowed for this value of goods, e.g. 149.90."
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetPaymentServices</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal>${?country|platform|order_value}<DataFilter>${?country}<Filter><FilterName>Land</FilterName><FilterValues><FilterValue>${country}</FilterValue></FilterValues></Filter>${/country}${?platform}<Filter><FilterName>Plattform</FilterName><FilterValues><FilterValue>${platform}</FilterValue></FilterValues></Filter>${/platform}${?order_value}<Filter><FilterName>ValueOfGoods</FilterName><FilterValues><FilterValue>${order_value}</FilterValue></FilterValues></Filter>${/order_value}</DataFilter>${/country|platform|order_value}</Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_list_user_defined_flags",
+      "description": "List the seller's own order flags (Markierungen) with GetUserDefinedFlags: id and name of each. The ids filter afterbuy_list_orders and are set with afterbuy_update_order. Read-only, no parameters.",
+      "parameters": {
+        "type": "object",
+        "properties": {}
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>GetUserDefinedFlags</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "afterbuy_mark_order_shipped",
+      "description": "Mark an order as shipped with UpdateSoldItems: sets the shipping date (DeliveryDate) and, optionally, the shipping method, and can let Afterbuy send its shipping e-mail to the buyer. Tracking numbers are a separate call (afterbuy_set_order_tracking): Afterbuy recommends sending parcel data on its own. The answer has CallStatus Success, or a WarningList.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The OrderID (VorgangsID) from afterbuy_list_orders or afterbuy_get_order."
+          },
+          "shipping_date": {
+            "type": "string",
+            "pattern": "^\\d{2}\\.\\d{2}\\.\\d{4}( \\d{2}:\\d{2}(:\\d{2})?)?$",
+            "description": "The shipping date to set. Afterbuy date format DD.MM.YYYY HH:MM:SS (German local time), e.g. 26.11.2026 14:30:00; the time may be left out."
+          },
+          "shipping_method": {
+            "type": "string",
+            "description": "Shipping method name as set up in Afterbuy (see afterbuy_list_shipping_services), e.g. DHL Paket."
+          },
+          "send_shipping_mail": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "1 lets Afterbuy send its shipping e-mail to the buyer. Default 0 (no e-mail)."
+          }
+        },
+        "required": [
+          "order_id",
+          "shipping_date"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>UpdateSoldItems</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><Orders><Order><OrderID>${order_id}</OrderID><ShippingInfo>${?shipping_method}<ShippingMethod>${shipping_method}</ShippingMethod>${/shipping_method}<DeliveryDate>${shipping_date}</DeliveryDate><SendShippingMail>${send_shipping_mail}</SendShippingMail></ShippingInfo></Order></Orders></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": false,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "afterbuy_set_order_tracking",
+      "description": "Set the parcel tracking numbers of an order with UpdateSoldItems (ShippingInfo.ParcelLabels). Afterbuy REPLACES all parcel data of the order with what is sent: read the order first with afterbuy_get_order and send every existing parcel again together with the new one, or the missing tracking numbers are deleted. Each parcel names the order line (ItemID from SoldItems.SoldItem) and a package number; package numbers run 1, 2, 3 without gaps (at most 15), and lines in the same package carry the same tracking number. Store tracking numbers here, not in AdditionalInfo.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The OrderID (VorgangsID) from afterbuy_list_orders or afterbuy_get_order."
+          },
+          "parcels": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 150,
+            "description": "Every parcel of the order, the existing ones included: one entry per order line and package.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "item_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "ItemID of the order line (SoldItems.SoldItem.ItemID)."
+                },
+                "package_number": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "maximum": 15,
+                  "description": "Package number, 1 to 15, consecutive across the order."
+                },
+                "tracking_number": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Tracking number of the package (ParcelLabelNumber)."
+                },
+                "return_tracking_number": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Tracking number of the return label, if there is one."
+                }
+              },
+              "required": [
+                "item_id",
+                "package_number"
+              ]
+            }
+          }
+        },
+        "required": [
+          "order_id",
+          "parcels"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>UpdateSoldItems</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><Orders><Order><OrderID>${order_id}</OrderID><ShippingInfo><ParcelLabels>${*parcels}<ParcelLabel><ItemID>${item_id}</ItemID><PackageNumber>${package_number}</PackageNumber>${?tracking_number}<ParcelLabelNumber>${tracking_number}</ParcelLabelNumber>${/tracking_number}${?return_tracking_number}<ReturnLabelNumber>${return_tracking_number}</ReturnLabelNumber>${/return_tracking_number}</ParcelLabel>${/parcels}</ParcelLabels></ShippingInfo></Order></Orders></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "afterbuy_update_order",
+      "description": "Change fields of one order with UpdateSoldItems: seller flag, memo, invoice note, invoice number and date, export and hidden state, payment (method, date, amount paid, transaction id, payment e-mail), the three order info fields (VorgangsInfo) and tags. Only the fields passed are sent, and a field sent replaces the stored value. Tracking numbers and the shipping date have their own tools. The answer has CallStatus Success, or a WarningList.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The OrderID (VorgangsID) from afterbuy_list_orders or afterbuy_get_order."
+          },
+          "user_defined_flag": {
+            "type": "integer",
+            "minimum": 0,
+            "description": "Seller flag (Markierung) id from afterbuy_list_user_defined_flags."
+          },
+          "user_comment": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Comment on the order (UserComment)."
+          },
+          "order_memo": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Internal memo of the order (OrderMemo); replaces the existing memo."
+          },
+          "invoice_memo": {
+            "type": "string",
+            "maxLength": 4000,
+            "description": "Note printed on the invoice (InvoiceMemo)."
+          },
+          "invoice_number": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "Invoice number to set."
+          },
+          "external_invoice": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Invoice number from an external system (ExternalInvoice)."
+          },
+          "order_exported": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 marks the order as exported, 0 clears it."
+          },
+          "invoice_date": {
+            "type": "string",
+            "pattern": "^\\d{2}\\.\\d{2}\\.\\d{4}( \\d{2}:\\d{2}(:\\d{2})?)?$",
+            "description": "Invoice date. Afterbuy date format DD.MM.YYYY HH:MM:SS (German local time), e.g. 26.11.2026 14:30:00; the time may be left out."
+          },
+          "hide_order": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 hides the order in Afterbuy, 0 shows it again."
+          },
+          "payment_method": {
+            "type": "string",
+            "description": "Payment method name (see afterbuy_list_payment_services)."
+          },
+          "payment_date": {
+            "type": "string",
+            "pattern": "^\\d{2}\\.\\d{2}\\.\\d{4}( \\d{2}:\\d{2}(:\\d{2})?)?$",
+            "description": "Date of payment; setting it marks the order as paid. Afterbuy date format DD.MM.YYYY HH:MM:SS (German local time), e.g. 26.11.2026 14:30:00; the time may be left out."
+          },
+          "already_paid": {
+            "type": "number",
+            "minimum": 0,
+            "description": "Amount already paid, e.g. 49.90."
+          },
+          "payment_transaction_id": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Transaction id of the payment provider."
+          },
+          "send_payment_mail": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "description": "1 lets Afterbuy send its payment confirmation e-mail to the buyer."
+          },
+          "order_info_1": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Order information field 1 (VorgangsInfo1); replaces the stored text."
+          },
+          "order_info_2": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Order information field 2 (VorgangsInfo2)."
+          },
+          "order_info_3": {
+            "type": "string",
+            "maxLength": 1000,
+            "description": "Order information field 3 (VorgangsInfo3)."
+          },
+          "tags": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "string"
+            },
+            "description": "Existing tags to assign to the order."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>UpdateSoldItems</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><Orders><Order><OrderID>${order_id}</OrderID>${?user_defined_flag}<UserDefinedFlag>${user_defined_flag}</UserDefinedFlag>${/user_defined_flag}${?user_comment}<UserComment>${user_comment}</UserComment>${/user_comment}${?order_memo}<OrderMemo>${order_memo}</OrderMemo>${/order_memo}${?invoice_memo}<InvoiceMemo>${invoice_memo}</InvoiceMemo>${/invoice_memo}${?invoice_number}<InvoiceNumber>${invoice_number}</InvoiceNumber>${/invoice_number}${?external_invoice}<ExternalInvoice>${external_invoice}</ExternalInvoice>${/external_invoice}${?order_exported}<OrderExported>${order_exported}</OrderExported>${/order_exported}${?invoice_date}<InvoiceDate>${invoice_date}</InvoiceDate>${/invoice_date}${?hide_order}<HideOrder>${hide_order}</HideOrder>${/hide_order}${?payment_method|payment_date|already_paid|payment_transaction_id|send_payment_mail}<PaymentInfo>${?payment_method}<PaymentMethod>${payment_method}</PaymentMethod>${/payment_method}${?payment_date}<PaymentDate>${payment_date}</PaymentDate>${/payment_date}${?payment_transaction_id}<PaymentTransactionID>${payment_transaction_id}</PaymentTransactionID>${/payment_transaction_id}${?already_paid}<AlreadyPaid>${already_paid}</AlreadyPaid>${/already_paid}${?send_payment_mail}<SendPaymentMail>${send_payment_mail}</SendPaymentMail>${/send_payment_mail}</PaymentInfo>${/payment_method|payment_date|already_paid|payment_transaction_id|send_payment_mail}${?order_info_1|order_info_2|order_info_3}<VorgangsInfo>${?order_info_1}<VorgangsInfo1>${order_info_1}</VorgangsInfo1>${/order_info_1}${?order_info_2}<VorgangsInfo2>${order_info_2}</VorgangsInfo2>${/order_info_2}${?order_info_3}<VorgangsInfo3>${order_info_3}</VorgangsInfo3>${/order_info_3}</VorgangsInfo>${/order_info_1|order_info_2|order_info_3}${?tags}<Tags>${*tags}<Tag>${.}</Tag>${/tags}</Tags>${/tags}</Order></Orders></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "afterbuy_update_shipping_address",
+      "description": "Set a different delivery address on an order with UpdateSoldItems (BuyerInfo.ShippingAddress), for example when a buyer asks to change it before shipping. The address is used for the order (UseShippingAddress 1). Read the order first with afterbuy_get_order and send the complete address. The answer has CallStatus Success, or a WarningList.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The OrderID (VorgangsID) from afterbuy_list_orders or afterbuy_get_order."
+          },
+          "first_name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "First name."
+          },
+          "last_name": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Last name."
+          },
+          "company": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "Company, if any."
+          },
+          "street": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Street and house number."
+          },
+          "street2": {
+            "type": "string",
+            "maxLength": 200,
+            "description": "Address line 2 (c/o, Packstation number), if any."
+          },
+          "postal_code": {
+            "type": "string",
+            "maxLength": 20,
+            "description": "Postal code."
+          },
+          "city": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "City."
+          },
+          "state": {
+            "type": "string",
+            "maxLength": 100,
+            "description": "State or province, if the country uses one."
+          },
+          "country_iso": {
+            "type": "string",
+            "pattern": "^[A-Za-z]{2}$",
+            "description": "Country as ISO 3166-1 alpha-2 code, e.g. DE."
+          },
+          "phone": {
+            "type": "string",
+            "maxLength": 50,
+            "description": "Phone number for the carrier, if any."
+          }
+        },
+        "required": [
+          "order_id",
+          "last_name",
+          "street",
+          "postal_code",
+          "city",
+          "country_iso"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>UpdateSoldItems</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><Orders><Order><OrderID>${order_id}</OrderID><BuyerInfo><ShippingAddress><UseShippingAddress>1</UseShippingAddress>${?first_name}<FirstName>${first_name}</FirstName>${/first_name}<LastName>${last_name}</LastName>${?company}<Company>${company}</Company>${/company}<Street>${street}</Street>${?street2}<Street2>${street2}</Street2>${/street2}${?state}<StateOfProvince>${state}</StateOfProvince>${/state}${?phone}<Phone>${phone}</Phone>${/phone}<PostalCode>${postal_code}</PostalCode><City>${city}</City><CountryISO>${country_iso}</CountryISO></ShippingAddress></BuyerInfo></Order></Orders></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "afterbuy_update_stock_and_prices",
+      "description": "Update stock and prices of existing products with UpdateShopProducts, up to 250 products per call. Each product is identified by ProductID, article number (Anr) or EAN; only the fields passed change. quantity sets the shop stock to an absolute value, add_quantity books a change (+5 or -2) instead. Products are never created here (ProductInsert 0): an unknown identifier comes back as a warning. The answer has CallStatus Success, or a WarningList per product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 250,
+            "description": "The products to change.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "ProductID of the product. Give product_id, anr or ean."
+                },
+                "anr": {
+                  "type": "string",
+                  "pattern": "^[0-9]+([.,][0-9]+)?$",
+                  "description": "Afterbuy article number (Anr) of the product."
+                },
+                "ean": {
+                  "type": "string",
+                  "description": "EAN of the product."
+                },
+                "quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New shop stock (absolute)."
+                },
+                "add_quantity": {
+                  "type": "integer",
+                  "description": "Change to the shop stock, e.g. 5 or -2. When given, quantity is ignored."
+                },
+                "auction_quantity": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "New auction stock (absolute)."
+                },
+                "minimum_stock": {
+                  "type": "integer",
+                  "minimum": 0,
+                  "description": "Minimum stock (reorder level)."
+                },
+                "selling_price": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Selling price (gross), e.g. 19.99."
+                },
+                "buying_price": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Purchase price."
+                },
+                "dealer_price": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Dealer price."
+                },
+                "discontinued": {
+                  "type": "integer",
+                  "enum": [
+                    0,
+                    1
+                  ],
+                  "description": "1 marks the product as discontinued (Auslaufartikel)."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>UpdateShopProducts</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><Products>${*products}<Product><ProductIdent><ProductInsert>0</ProductInsert>${?product_id}<ProductID>${product_id}</ProductID>${/product_id}${?anr}<Anr>${anr}</Anr>${/anr}${?ean}<EAN>${ean}</EAN>${/ean}</ProductIdent>${?quantity}<Quantity>${quantity}</Quantity>${/quantity}${?auction_quantity}<AuctionQuantity>${auction_quantity}</AuctionQuantity>${/auction_quantity}${?add_quantity}<AddQuantity>${add_quantity}</AddQuantity>${/add_quantity}${?discontinued}<Discontinued>${discontinued}</Discontinued>${/discontinued}${?minimum_stock}<MinimumStock>${minimum_stock}</MinimumStock>${/minimum_stock}${?selling_price}<SellingPrice>${selling_price}</SellingPrice>${/selling_price}${?buying_price}<BuyingPrice>${buying_price}</BuyingPrice>${/buying_price}${?dealer_price}<DealerPrice>${dealer_price}</DealerPrice>${/dealer_price}</Product>${/products}</Products></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      }
+    },
+    {
+      "name": "afterbuy_update_product_details",
+      "description": "Update the texts and master data of existing products with UpdateShopProducts (Artikelpflege), up to 250 products per call: name, descriptions, keywords, manufacturer part number, brand, tax rate, weight, delivery time, stock locations, country of origin and customs tariff number. Each product is identified by ProductID, article number (Anr) or EAN; only the fields passed change, and a field sent replaces the stored text. Products are never created here. Description accepts HTML. The answer has CallStatus Success, or a WarningList per product.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "products": {
+            "type": "array",
+            "minItems": 1,
+            "maxItems": 250,
+            "description": "The products to change.",
+            "items": {
+              "type": "object",
+              "properties": {
+                "product_id": {
+                  "type": "integer",
+                  "minimum": 1,
+                  "description": "ProductID of the product. Give product_id, anr or ean."
+                },
+                "anr": {
+                  "type": "string",
+                  "pattern": "^[0-9]+([.,][0-9]+)?$",
+                  "description": "Afterbuy article number (Anr) of the product."
+                },
+                "ean": {
+                  "type": "string",
+                  "description": "EAN of the product."
+                },
+                "name": {
+                  "type": "string",
+                  "maxLength": 200,
+                  "description": "Product name."
+                },
+                "manufacturer_part_number": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Manufacturer part number (MPN)."
+                },
+                "short_description": {
+                  "type": "string",
+                  "description": "Short description."
+                },
+                "description": {
+                  "type": "string",
+                  "description": "Full description; HTML is allowed."
+                },
+                "keywords": {
+                  "type": "string",
+                  "maxLength": 1000,
+                  "description": "Search keywords."
+                },
+                "product_brand": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Brand."
+                },
+                "tax_rate": {
+                  "type": "number",
+                  "minimum": 0,
+                  "maximum": 100,
+                  "description": "VAT rate in percent, e.g. 19."
+                },
+                "weight": {
+                  "type": "number",
+                  "minimum": 0,
+                  "description": "Weight in kg."
+                },
+                "delivery_time": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Delivery time text, e.g. 1-3 Werktage."
+                },
+                "stock_location_1": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Stock location 1 (Lagerort)."
+                },
+                "stock_location_2": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Stock location 2."
+                },
+                "country_of_origin": {
+                  "type": "string",
+                  "maxLength": 100,
+                  "description": "Country of origin."
+                },
+                "customs_tariff_number": {
+                  "type": "string",
+                  "maxLength": 20,
+                  "description": "Customs tariff number (Zolltarifnummer)."
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "products"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>UpdateShopProducts</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><Products>${*products}<Product><ProductIdent><ProductInsert>0</ProductInsert>${?product_id}<ProductID>${product_id}</ProductID>${/product_id}${?anr}<Anr>${anr}</Anr>${/anr}${?ean}<EAN>${ean}</EAN>${/ean}</ProductIdent>${?name}<Name>${name}</Name>${/name}${?manufacturer_part_number}<ManufacturerPartNumber>${manufacturer_part_number}</ManufacturerPartNumber>${/manufacturer_part_number}${?short_description}<ShortDescription>${short_description}</ShortDescription>${/short_description}${?description}<Description>${description}</Description>${/description}${?keywords}<Keywords>${keywords}</Keywords>${/keywords}${?tax_rate}<TaxRate>${tax_rate}</TaxRate>${/tax_rate}${?weight}<Weight>${weight}</Weight>${/weight}${?stock_location_1}<Stocklocation_1>${stock_location_1}</Stocklocation_1>${/stock_location_1}${?stock_location_2}<Stocklocation_2>${stock_location_2}</Stocklocation_2>${/stock_location_2}${?country_of_origin}<CountryOfOrigin>${country_of_origin}</CountryOfOrigin>${/country_of_origin}${?delivery_time}<DeliveryTime>${delivery_time}</DeliveryTime>${/delivery_time}${?product_brand}<ProductBrand>${product_brand}</ProductBrand>${/product_brand}${?customs_tariff_number}<CustomsTariffNumber>${customs_tariff_number}</CustomsTariffNumber>${/customs_tariff_number}</Product>${/products}</Products></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      }
+    },
+    {
+      "name": "afterbuy_cancel_order",
+      "description": "Cancel an order in Afterbuy with CancelOrders, optionally booking the stock back and hiding the order. A cancellation cannot be undone through the API, so this tool is installed switched off; an admin turns it on deliberately. Confirm with the user before calling it.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "order_id": {
+            "type": "integer",
+            "minimum": 1,
+            "description": "The OrderID (VorgangsID) from afterbuy_list_orders or afterbuy_get_order."
+          },
+          "stock_booking": {
+            "type": "integer",
+            "enum": [
+              -1,
+              0,
+              1
+            ],
+            "default": -1,
+            "description": "-1 no stock booking (default); 0 books the items back to the shop stock; 1 to the auction stock."
+          },
+          "hide_order": {
+            "type": "integer",
+            "enum": [
+              0,
+              1
+            ],
+            "default": 0,
+            "description": "1 also hides the order in Afterbuy."
+          },
+          "flag_id": {
+            "type": "integer",
+            "minimum": -1,
+            "default": -1,
+            "description": "-1 leaves the seller flag unchanged (default), 0 clears it, a flag id sets it."
+          }
+        },
+        "required": [
+          "order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/ABInterface.aspx",
+        "bodyEncoding": "xml",
+        "bodyTemplate": "<?xml version=\"1.0\" encoding=\"utf-8\"?><Request><AfterbuyGlobal><PartnerToken>{{AFTERBUY_PARTNER_TOKEN}}</PartnerToken><AccountToken>{{AFTERBUY_ACCOUNT_TOKEN}}</AccountToken><CallName>CancelOrders</CallName><DetailLevel>0</DetailLevel><ErrorLanguage>EN</ErrorLanguage></AfterbuyGlobal><OrderCancellations><OrderCancellation><OrderId>${order_id}</OrderId><StockBooking>${stock_booking}</StockBooking><HideOrder>${hide_order}</HideOrder><MarkId>${flag_id}</MarkId></OrderCancellation></OrderCancellations></Request>"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    }
+  ]
+}
