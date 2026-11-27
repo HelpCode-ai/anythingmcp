@@ -9,7 +9,12 @@ import {
   outboundRequest,
   ssrfGuardedFetch,
 } from './outbound-http';
-import { setDbAllowedHostsProvider, SsrfBlockedError, ssrfGuardedLookup } from './ssrf.util';
+import {
+  assertSafeOutboundUrl,
+  setDbAllowedHostsProvider,
+  SsrfBlockedError,
+  ssrfGuardedLookup,
+} from './ssrf.util';
 
 // Guard on. `localhost` and `api.other.test` are allowlisted and stand in for
 // two public hosts (the second is resolved to 127.0.0.1 by a mocked lookup).
@@ -441,20 +446,120 @@ describe('outbound HTTP', () => {
       expect(other.hits[0].headers.accept).toBe('application/json');
     });
 
-    it('does not re-check the starting URL (the caller does, once per call)', async () => {
+    it('checks the address the connection uses, not an earlier DNS answer', async () => {
+      const internal = await serve((_q, _b, res) => res.end('INTERNAL'));
+      // Public when the caller checks the URL, loopback when fetch connects.
+      const answers = ['93.184.216.34', '127.0.0.1'];
+      fakeHosts['rebind.test'] = () => answers.shift() ?? '127.0.0.1';
+      const url = `http://rebind.test:${internal.port}/mcp`;
+      await assertSafeOutboundUrl(url);
+      const call = ssrfGuardedFetch(url, { method: 'POST', body: '{}' });
+      await expect(call).rejects.toBeInstanceOf(SsrfBlockedError);
+      await expect(call).rejects.toThrow(/non-public address '127\.0\.0\.1'/);
+      expect(internal.hits).toHaveLength(0);
+    });
+
+    it('refuses a name that resolves to a link-local address at connect time', async () => {
+      fakeHosts['metadata.test'] = '169.254.169.254';
+      await expect(ssrfGuardedFetch('http://metadata.test/latest/meta-data/')).rejects.toThrow(
+        /non-public address '169\.254\.169\.254'/,
+      );
+    });
+
+    it('checks the starting URL itself: a literal internal IP is refused before connecting', async () => {
+      const internal = await serve((_q, _b, res) => res.end('INTERNAL'));
+      await expect(ssrfGuardedFetch(`http://127.0.0.1:${internal.port}/`)).rejects.toBeInstanceOf(
+        SsrfBlockedError,
+      );
+      await expect(ssrfGuardedFetch('file:///etc/passwd')).rejects.toThrow(/protocol 'file:'/);
+      expect(internal.hits).toHaveLength(0);
+    });
+
+    it('connects to the address it checked when the policy allows it', async () => {
       const s = await serve((_q, _b, res) => res.end('ok'));
-      jest.restoreAllMocks();
-      const spy = jest.spyOn(dns.promises, 'lookup');
+      // Loopback allowed stands in for a public address here.
       process.env.SSRF_ALLOW_LOCALHOST = 'true';
-      delete process.env.SSRF_ALLOWED_HOSTS;
+      fakeHosts['public.test'] = '127.0.0.1';
       try {
-        for (let i = 0; i < 5; i++) {
-          await (await ssrfGuardedFetch(`http://localhost:${s.port}/mcp`, { method: 'POST', body: '{}' })).text();
-        }
-        expect(spy).not.toHaveBeenCalled();
+        const res = await ssrfGuardedFetch(`http://public.test:${s.port}/`);
+        expect(await res.text()).toBe('ok');
+        expect(s.hits[0].headers.host).toBe(`public.test:${s.port}`);
       } finally {
         delete process.env.SSRF_ALLOW_LOCALHOST;
       }
+    });
+
+    it('resolves a name once per connection, not once per request', async () => {
+      const s = await serve((_q, _b, res) => res.end('ok'));
+      const connections = new Set<number>();
+      servers[servers.length - 1].on('connection', (socket) => connections.add(socket.remotePort!));
+      process.env.SSRF_ALLOW_LOCALHOST = 'true';
+      fakeHosts['session.test'] = '127.0.0.1';
+      try {
+        for (let i = 0; i < 10; i++) {
+          await (await ssrfGuardedFetch(`http://session.test:${s.port}/mcp`, { method: 'POST', body: '{}' })).text();
+        }
+        const lookups = (dns.promises.lookup as unknown as jest.Mock).mock.calls.filter(
+          ([host]) => host === 'session.test',
+        );
+        expect(s.hits).toHaveLength(10);
+        // Pooled connections are reused, and each new one is checked once.
+        expect(connections.size).toBeLessThan(10);
+        expect(lookups).toHaveLength(connections.size);
+      } finally {
+        delete process.env.SSRF_ALLOW_LOCALHOST;
+      }
+    });
+
+    it('lets an allowlisted host through, and refuses it with skipAllowlists', async () => {
+      const s = await serve((_q, _b, res) => res.end('ok'));
+      // api.other.test is in SSRF_ALLOWED_HOSTS and resolves to 127.0.0.1.
+      const res = await ssrfGuardedFetch(`http://api.other.test:${s.port}/`);
+      expect(await res.text()).toBe('ok');
+      await expect(
+        ssrfGuardedFetch(`http://api.other.test:${s.port}/`, {}, { skipAllowlists: true }),
+      ).rejects.toThrow(/non-public address '127\.0\.0\.1'/);
+      expect(s.hits).toHaveLength(1);
+    });
+
+    it('lets a host from the admin allowlist through', async () => {
+      const s = await serve((_q, _b, res) => res.end('ok'));
+      fakeHosts['admin-listed.test'] = '127.0.0.1';
+      setDbAllowedHostsProvider(async () => ['admin-listed.test']);
+      try {
+        const res = await ssrfGuardedFetch(`http://admin-listed.test:${s.port}/`);
+        expect(await res.text()).toBe('ok');
+      } finally {
+        setDbAllowedHostsProvider(async () => []);
+      }
+    });
+
+    it('streams a server-sent event response through the guarded connection', async () => {
+      let finish: () => void = () => undefined;
+      const s = await serve((_q, _b, res) => {
+        res.writeHead(200, { 'Content-Type': 'text/event-stream', 'Cache-Control': 'no-cache' });
+        res.write('event: message\ndata: {"n":1}\n\n');
+        finish = () => {
+          res.write('event: message\ndata: {"n":2}\n\n');
+          res.end();
+        };
+      });
+      const res = await ssrfGuardedFetch(`http://localhost:${s.port}/mcp`, {
+        headers: { Accept: 'text/event-stream' },
+      });
+      expect(res.headers.get('content-type')).toBe('text/event-stream');
+      const reader = res.body!.pipeThrough(new TextDecoderStream()).getReader();
+      // The first event arrives while the response is still open.
+      const first = await reader.read();
+      expect(first.value).toContain('data: {"n":1}');
+      finish();
+      let rest = '';
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        rest += value;
+      }
+      expect(rest).toContain('data: {"n":2}');
     });
 
     it('stops after five redirects', async () => {

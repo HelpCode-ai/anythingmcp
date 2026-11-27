@@ -9,8 +9,15 @@ import axios, {
 import * as http from 'http';
 import * as https from 'https';
 import {
+  type Dispatcher,
+  fetch as undiciFetch,
+  type RequestInit as UndiciRequestInit,
+} from 'undici';
+import {
+  assertOutboundUrlBeforeConnect,
   assertSafeOutboundUrl,
   createSsrfGuardedAgents,
+  createSsrfGuardedDispatcher,
   SsrfBlockedError,
 } from './ssrf.util';
 import { restateResponseTooLarge } from './response-size-limit';
@@ -25,7 +32,10 @@ import { restateResponseTooLarge } from './response-size-limit';
  *  - axios: `outboundRequest(config)`, or spread `outboundAxiosOptions()` into
  *    the config of `axios.get/post/...`; `axios.create(outboundAxiosOptions())`
  *    for libraries that take an axios instance (soap, see wsdl.parser.ts).
- *  - fetch: `ssrfGuardedFetch`, for libraries that take a fetch (the MCP SDK).
+ *  - fetch: `ssrfGuardedFetch`, for libraries that take a fetch (the MCP SDK)
+ *    and for our own fetch calls. Same checks as the axios path: the URL and
+ *    every redirect target are checked, and connections go through an undici
+ *    dispatcher with the same connect-time lookup.
  *  - Downloading a file or document for a user: `fetchOutbound`
  *    (outbound-fetch.util), which adds a byte cap and a deadline.
  *
@@ -333,24 +343,68 @@ function safeOrigin(url: string): string {
   }
 }
 
+let sharedDispatcher: Dispatcher | null = null;
+let sharedStrictDispatcher: Dispatcher | null = null;
+
+function guardedDispatcher(skipAllowlists?: boolean): Dispatcher {
+  // The lookup reads process.env on every call, so one dispatcher serves all.
+  if (skipAllowlists) {
+    sharedStrictDispatcher ??= createSsrfGuardedDispatcher(process.env, { skipAllowlists: true });
+    return sharedStrictDispatcher;
+  }
+  sharedDispatcher ??= createSsrfGuardedDispatcher();
+  return sharedDispatcher;
+}
+
+/** fetch wraps connection errors as `TypeError: fetch failed`; surface a guard refusal itself. */
+function guardRefusal(err: unknown): SsrfBlockedError | undefined {
+  for (let e: any = err, depth = 0; e && depth < 5; e = e.cause, depth++) {
+    if (e instanceof SsrfBlockedError) return e;
+  }
+  return undefined;
+}
+
 /**
- * A `fetch` that follows redirects itself and runs assertSafeOutboundUrl on
- * every redirect target. Same semantics as fetch otherwise: 307/308 keep
- * method and body, 303 (and 301/302 after a POST) turn into a body-less GET,
- * and credential headers are dropped when the redirect leaves the origin.
+ * A `fetch` for user-supplied URLs, the counterpart of the axios path above:
+ *  - the starting URL is checked here (scheme, allowlists, literal IPs, local
+ *    names) without a DNS lookup of its own;
+ *  - connections go through an undici dispatcher whose `lookup` applies the
+ *    outbound policy to the addresses actually connected to
+ *    (createSsrfGuardedDispatcher), so a name is checked against the same
+ *    DNS answer the socket uses, once per connection rather than per request
+ *    (an MCP transport calls this for every message of a session);
+ *  - redirects are followed here, with assertSafeOutboundUrl on every target.
+ *    Same semantics as fetch otherwise: 307/308 keep method and body, 303
+ *    (and 301/302 after a POST) turn into a body-less GET, and credential
+ *    headers are dropped when the redirect leaves the origin.
  *
- * The URL passed in is NOT checked here: the caller checks it once, as every
- * caller already does. An MCP transport calls this for each message of a
- * session, and a DNS lookup per message would be pure overhead.
+ * A refusal rejects with the SsrfBlockedError itself, also when it happens
+ * at connect time. `options.skipAllowlists` ignores the env/DB allowlists
+ * for the URL, every redirect hop and every connection, as for axios.
  */
 export async function ssrfGuardedFetch(
   input: string | URL,
   init: RequestInit = {},
+  options: Pick<OutboundRequestOptions, 'skipAllowlists'> = {},
 ): Promise<Response> {
   let url = typeof input === 'string' ? input : input.toString();
+  const vet = { skipAllowlists: options.skipAllowlists };
+  await assertOutboundUrlBeforeConnect(url, process.env, vet);
+  const dispatcher = guardedDispatcher(options.skipAllowlists);
   let current: RequestInit = { ...init };
   for (let hop = 0; ; hop++) {
-    const res = await fetch(url, { ...current, redirect: 'manual' });
+    let res: Response;
+    try {
+      // undici's own fetch, so the dispatcher and the fetch implementation
+      // always come from the same undici version.
+      res = (await undiciFetch(url, {
+        ...(current as UndiciRequestInit),
+        redirect: 'manual',
+        dispatcher,
+      })) as unknown as Response;
+    } catch (err) {
+      throw guardRefusal(err) ?? err;
+    }
     const location = res.headers.get('location');
     if (!REDIRECT_STATUSES.has(res.status) || !location) return res;
     if (init.redirect === 'manual') return res;
@@ -361,7 +415,7 @@ export async function ssrfGuardedFetch(
     await res.body?.cancel().catch(() => undefined);
 
     const next = new URL(location, url);
-    await assertSafeOutboundUrl(next.toString());
+    await assertSafeOutboundUrl(next.toString(), process.env, vet);
     const method = (current.method ?? 'GET').toUpperCase();
     const toGet =
       res.status === 303
