@@ -1116,6 +1116,20 @@ the identifier is itself a URL (a Search Console property such as `https://www.e
 URL), set `"encodePathParams": true` on the mapping and every substituted value is percent-encoded
 (`https%3A%2F%2Fwww.example.com%2F`). The model then passes the value raw, as the API returned it.
 
+A value fills its place in the path and nothing more:
+
+- Whether the request goes to the connector's `baseUrl` or to a URL of its own is decided on the `path`
+  as written, before any value is substituted. A `path` that is itself an absolute `https://` URL
+  (written out, or from a `{{VAR}}`) keeps that URL. Any other `path` is joined to `baseUrl`, and the
+  result must stay on the `baseUrl`'s scheme, host and port. A `{param}` cannot turn a relative path into
+  another host: put a connector variable that holds a URL in `{{VAR}}`, not `{VAR}`.
+- A value inserted verbatim (no `encodePathParams`) may contain `/`, but it is refused with a clear error
+  when it contains a `.` or `..` segment (also written `%2e`), `#`, `\`, a control character or `://`. It
+  may contain `?` only when its placeholder ends the `path` (`"/v2{next_url}"` for a `nextUrl` that the API
+  returns with its query string). A placeholder in the `path`'s own query string (`?tag_id={tag_id}`)
+  refuses only control characters and `#`.
+- With `encodePathParams`, a value that is a whole `.` or `..` segment is refused.
+
 ### File uploads (multipart/form-data)
 
 A `bodyMapping` entry can carry a `__file` marker instead of a plain `"$param"` string.

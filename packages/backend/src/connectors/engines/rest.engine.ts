@@ -33,6 +33,7 @@ import {
   loginTokenHeaderInterpolator,
 } from './login-token.service';
 import { assertSafeOutboundUrl } from '../../common/ssrf.util';
+import { assertSameOrigin, isAbsoluteHttpUrl, substitutePathParams } from './path-params.util';
 import { followDownload, type DownloadFollowConfig } from './download-follow.util';
 import { fetchOutbound } from '../../common/outbound-fetch.util';
 import { assertNoUnresolvedPlaceholders } from '../../common/unresolved-placeholders.util';
@@ -351,22 +352,24 @@ export class RestEngine {
       path,
       queryParams: endpointMapping.queryParams,
     });
-    for (const [key, value] of Object.entries(params)) {
-      const segment = endpointMapping.encodePathParams
-        ? encodeURIComponent(String(value))
-        : String(value);
-      // A replacer function, not a string: `$&` or `$'` inside a value would
-      // otherwise be read as a replacement pattern.
-      path = path.replace(`{${key}}`, () => segment);
-    }
+    // Values are checked so that they stay in their place in the path (see
+    // path-params.util.ts), and substituted in one pass.
+    path = substitutePathParams(path, params, !!endpointMapping.encodePathParams);
 
     // Allow per-tool absolute URLs to escape the connector's baseUrl. Useful
     // when a vendor publishes multiple distinct API hosts under one product
     // (e.g. Statsig: api.statsig.com for SDK + statsigapi.net for Console),
     // so a single adapter can cover both without two connector records.
-    const url = /^https?:\/\//i.test(path)
-      ? path
-      : joinBaseAndPath(config.baseUrl, path);
+    // Decided on the template, before substitution: a parameter value never
+    // makes a relative path absolute, and a relative path stays on the base
+    // URL's origin.
+    let url: string;
+    if (isAbsoluteHttpUrl(pathTemplate)) {
+      url = path;
+    } else {
+      url = joinBaseAndPath(config.baseUrl, path);
+      assertSameOrigin(url, config.baseUrl);
+    }
     await assertSafeOutboundUrl(url);
 
     // Resolve dynamic headers from endpoint mapping ($param references)
