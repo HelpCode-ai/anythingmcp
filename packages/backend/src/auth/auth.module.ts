@@ -33,6 +33,7 @@ import { CloudOnlyGuard } from '../common/cloud-only.guard';
 
 import { RecentSignInService } from './recent-sign-in.service';
 import { EmailVerificationService } from './email-verification.service';
+import { PasswordSignInLimiter } from './password-sign-in-limiter';
 import { RecentSignInController } from './recent-sign-in.controller';
 @Global()
 @Module({
@@ -71,6 +72,8 @@ import { RecentSignInController } from './recent-sign-in.controller';
     SsoEnforcementService,
     RecentSignInService,
     EmailVerificationService,
+    // Sign-in attempt limits per address, shared by every password sign-in.
+    PasswordSignInLimiter,
     JwtStrategy,
     McpAuthGuard,
     McpAuthMiddleware,
@@ -86,6 +89,7 @@ import { RecentSignInController } from './recent-sign-in.controller';
     AuthService,
     RecentSignInService,
     EmailVerificationService,
+    PasswordSignInLimiter,
     RecoveryCodesService,
     SsoEnforcementService,
     McpAuthGuard,

@@ -88,6 +88,7 @@ import { telegramAnswerText, telegramPanelTexts } from './auth-page-i18n.telegra
 import { edgePageTexts } from './auth-page-i18n.pages';
 import { boundLoginUser, clearLoginUserCookie, setLoginUserCookie } from './login-user-cookie';
 import { AuthPageThrottleFilter } from './auth-page-throttle.filter';
+import { PasswordSignInLimiter, type PasswordSignInContext } from './password-sign-in-limiter';
 import {
   attemptKey,
   connectedPageArm,
@@ -527,6 +528,9 @@ export class LoginController {
     @Optional() private readonly emailVerification?: EmailVerificationService,
     // Not @Optional: Nest refuses to boot without it. Missing only in specs that build the controller by hand.
     private readonly ssoEnforcement?: SsoEnforcementService,
+    // Sign-in attempt limits per address, shared with POST /api/auth/login.
+    // Optional only for specs that build the controller by hand.
+    @Optional() private readonly signInLimiter?: PasswordSignInLimiter,
   ) {}
 
   /**
@@ -1061,9 +1065,26 @@ export class LoginController {
     // must still sign in when typed in lower case, and the other way round.
     const user = await findUserByEmail<User>(this.prisma, email);
 
+    // Sign-in attempt limits per address (the same as POST /api/auth/login):
+    // while paused, the page says so and no password is compared. Only this
+    // password branch: the provider and single sign-on buttons, and approving
+    // with a dashboard session, are handled above and are never paused.
+    const signIn: PasswordSignInContext = {
+      surface: 'authorization_page',
+      ip: req.ip ?? null,
+      userAgent: req.headers?.['user-agent'] ?? null,
+    };
+    const pause = (await this.signInLimiter?.check(email)) ?? { paused: false as const };
+    if (pause.paused) {
+      this.logger.warn(`Password sign-in paused for: ${maskEmail(email)}`);
+      this.signInLimiter?.refused(email, signIn, user);
+      return res.redirect(`/auth/login?${again}error=${encodeURIComponent(pause.message)}`);
+    }
+
     if (!user) {
       this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
+      await this.signInLimiter?.failed(email, 'unknown_account', signIn);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
@@ -1075,6 +1096,7 @@ export class LoginController {
     // IdP's MFA and Conditional Access on exactly the surface that matters.
     if (user.passwordLoginDisabled) {
       this.logger.warn(`Password login refused for SSO-only account: ${maskEmail(email)}`);
+      await this.signInLimiter?.failed(email, 'password_login_disabled', signIn, user);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam('passwordDisabled')}`,
       );
@@ -1086,6 +1108,7 @@ export class LoginController {
     // The provider that requires it is active, so its button is on this page.
     if (await this.ssoEnforcement?.isPasswordLoginBlocked(user.id)) {
       this.logger.warn(`Password login refused, the workspace requires single sign-on: ${maskEmail(email)}`);
+      await this.signInLimiter?.failed(email, 'password_login_disabled', signIn, user);
       return res.redirect(`/auth/login?${again}error=${encodeURIComponent(SSO_REQUIRED_MESSAGE)}`);
     }
 
@@ -1093,6 +1116,7 @@ export class LoginController {
     if (!user.passwordHash) {
       this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
+      await this.signInLimiter?.failed(email, 'wrong_password', signIn, user);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
@@ -1106,10 +1130,12 @@ export class LoginController {
 
     if (!passwordValid) {
       this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
+      await this.signInLimiter?.failed(email, 'wrong_password', signIn, user);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
+    await this.signInLimiter?.succeeded(email, signIn, user);
 
     // Cloud: an address nobody verified gets no access token. The client
     // would hold a token that /mcp refuses on every call (EmailVerifiedGuard)

@@ -10,7 +10,7 @@ import { APP_VERSION } from './app-version';
  * behaviour changes:
  *   - auth and key scopes:      auth/jwt-or-management-key.guard.ts
  *   - per-key rate limit:       same file (MANAGEMENT_RATE_LIMIT_PER_MINUTE)
- *   - per-IP rate limit:        app.module.ts (ThrottlerModule.forRoot)
+ *   - per-IP rate limit:        app.module.ts (ThrottlerModule.forRootAsync)
  *   - key minting rules:        roles/mcp-api-keys.controller.ts
  *   - code mode values:         mcp-server/code-tool.util.ts (CODE_MODE_MODES)
  */
