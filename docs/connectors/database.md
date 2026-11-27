@@ -213,11 +213,32 @@ MongoDB connectors generate tools that support native MongoDB operations:
 
 > **Important:** Database connectors execute queries directly against your database.
 
-1. **Use read-only credentials** — Create a dedicated database user with SELECT-only permissions
+1. **Use read-only credentials** — Create a dedicated database user with SELECT-only permissions. This is the only control that holds for every engine, every function and every stored procedure: AnythingMCP's own checks narrow what a query can do, but they cannot replace the database's permissions.
 2. **Limit accessible tables** — Use database-level grants to restrict which tables are visible
 3. **Use static queries when possible** — Pre-define queries to prevent unexpected operations
 4. **Enable audit logging** — Every query executed through MCP is logged in the audit trail
 5. **Use role-based access** — Create MCP roles that whitelist only specific database tools
+
+### How read-only is enforced
+
+A read-only query tool (the default) is checked in two layers before and while it runs:
+
+1. **The statement text.** Only one `SELECT` (or `WITH … SELECT`) is accepted; writes, stacked statements, `SELECT … INTO` and row locks (`FOR UPDATE`) are refused.
+2. **The database session.** The text check cannot see what a function called by the `SELECT` does, so the statement also runs in a session where the database refuses or undoes writes:
+
+| Engine | How the session is made read-only |
+|---|---|
+| PostgreSQL | `BEGIN TRANSACTION READ ONLY`, then rolled back |
+| MySQL / MariaDB | `START TRANSACTION READ ONLY`, then rolled back (temporary tables can still be written) |
+| Oracle | `SET TRANSACTION READ ONLY`, never committed (a function with an autonomous transaction can still write) |
+| SAP HANA | `SET TRANSACTION READ ONLY` |
+| SQLite | the file is opened read-only |
+| Microsoft SQL Server | no read-only mode exists: the statement runs in a transaction that is always rolled back. Actions that leave the database (linked servers, mail, files) are not undone |
+| MongoDB | the engine only runs `find` queries |
+
+A read-only session also does not cover what leaves it: a function that opens its own connection (for example PostgreSQL `dblink`), a linked server (SQL Server `OPENQUERY` / `OPENROWSET`), or reading files on the database server (PostgreSQL `pg_read_file`, MySQL `LOAD_FILE()`). Whether those work depends only on the database user's privileges.
+
+The exceptions above are why a database user with SELECT-only permissions, and no rights on such functions, is still the recommendation for every engine.
 
 ---
 
