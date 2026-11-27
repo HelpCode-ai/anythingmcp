@@ -32,7 +32,7 @@ function apply(row: Record<string, any>, data: Record<string, any>) {
   }
 }
 
-function fakePrisma(plan: string | null = 'starter') {
+function fakePrisma(plan: string | null = 'starter', features: Record<string, unknown> | null = null) {
   const rows: Record<string, any>[] = [];
   const fileUpload = {
     rows,
@@ -65,7 +65,7 @@ function fakePrisma(plan: string | null = 'starter') {
     }),
   };
   const license = {
-    findFirst: jest.fn(async () => (plan ? { plan, expiresAt: null } : null)),
+    findFirst: jest.fn(async () => (plan ? { plan, expiresAt: null, features } : null)),
   };
   return { fileUpload, license } as any;
 }
@@ -76,8 +76,8 @@ describe('FileUploadService', () => {
   let svc: FileUploadService;
   const env = { ...process.env };
 
-  function make(opts: { cloud?: boolean; plan?: string | null } = {}) {
-    prisma = fakePrisma(opts.plan === undefined ? 'starter' : opts.plan);
+  function make(opts: { cloud?: boolean; plan?: string | null; features?: Record<string, unknown> | null } = {}) {
+    prisma = fakePrisma(opts.plan === undefined ? 'starter' : opts.plan, opts.features ?? null);
     const deployment = { isCloud: () => opts.cloud ?? true } as any;
     svc = new FileUploadService(prisma, deployment);
     (svc as any).storageInstance = new LocalFileStorage(dir);
@@ -142,6 +142,21 @@ describe('FileUploadService', () => {
     await expect(svc.createLink({ organizationId: OTHER, filename: 'other.png' })).resolves.toBeDefined();
     process.env.FILE_UPLOADS_ENABLED = 'false';
     await expect(svc.createLink({ organizationId: OTHER, filename: 'x.png' })).rejects.toThrow(/switched off/);
+  });
+
+  it('takes the daily count from the licence feature uploadsPerDay and the file size from the plan', async () => {
+    make({ plan: 'trial', features: { uploadsPerDay: 52 } });
+    for (let i = 0; i < 52; i++) await svc.createLink({ organizationId: ORG, filename: `f${i}.png` });
+    await expect(svc.createLink({ organizationId: ORG, filename: 'one-more.png' })).rejects.toThrow(/52 uploads per day/);
+    await expect(svc.createLink({ organizationId: OTHER, filename: 'big.zip', sizeBytes: 30 * 1024 * 1024 })).rejects.toThrow(/up to 25 MB/);
+    // With several active licences the newest one decides, plan and feature alike.
+    expect(prisma.license.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organizationId: ORG, status: 'active' },
+        orderBy: { createdAt: 'desc' },
+        select: expect.objectContaining({ plan: true, features: true }),
+      }),
+    );
   });
 
   it('receives the file once, sniffs its type and resolves it only for the same workspace', async () => {
