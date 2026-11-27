@@ -7,22 +7,43 @@ import * as mongoAdapter from '../../adapters/intl/mongodb.json';
 // Mock pg — use factory functions to avoid hoisting issues
 const mockQuery = jest.fn();
 const mockEnd = jest.fn();
+// Statements a read-only call wraps around the caller's SQL on its client.
+const mockTxStatements: string[] = [];
+const mockRelease = jest.fn();
 jest.mock('pg', () => ({
   Pool: jest.fn().mockImplementation(() => ({
     query: mockQuery,
     end: mockEnd,
+    connect: () =>
+      Promise.resolve({
+        query: (sql: string, values?: unknown[]) => {
+          if (/^(BEGIN|ROLLBACK)/.test(sql)) {
+            mockTxStatements.push(sql);
+            return Promise.resolve({});
+          }
+          return values === undefined ? mockQuery(sql) : mockQuery(sql, values);
+        },
+        release: mockRelease,
+      }),
   })),
 }));
 
 // Mock mssql — return lazy reference
 const mockMssqlQuery = jest.fn();
+const mockMssqlBegin = jest.fn().mockResolvedValue(undefined);
+const mockMssqlRollback = jest.fn().mockResolvedValue(undefined);
 jest.mock('mssql', () => ({
   connect: jest.fn().mockImplementation(() =>
     Promise.resolve({
-      request: () => ({ query: mockMssqlQuery }),
+      request: () => ({ query: mockMssqlQuery, input: jest.fn() }),
       close: jest.fn(),
     }),
   ),
+  Transaction: jest.fn().mockImplementation(() => ({
+    begin: mockMssqlBegin,
+    rollback: mockMssqlRollback,
+  })),
+  Request: jest.fn().mockImplementation(() => ({ query: mockMssqlQuery, input: jest.fn() })),
 }));
 
 // Mock mongodb
@@ -48,6 +69,9 @@ describe('DatabaseEngine', () => {
   beforeEach(() => {
     engine = new DatabaseEngine();
     jest.clearAllMocks();
+    mockTxStatements.length = 0;
+    mockMssqlBegin.mockResolvedValue(undefined);
+    mockMssqlRollback.mockResolvedValue(undefined);
     // Re-set default mock chain
     mockFind.mockReturnValue({ sort: mockSort, limit: mockLimit });
     mockSort.mockReturnValue({ limit: mockLimit });
@@ -405,6 +429,73 @@ describe('DatabaseEngine', () => {
           {},
         ),
       ).rejects.toThrow('Only SELECT queries are allowed');
+    });
+  });
+
+  /**
+   * The lexical guard only sees the statement text. A SELECT that calls a
+   * function can still write, so a read-only connector also makes the database
+   * itself refuse writes (or roll them back) for the statement.
+   */
+  describe('read-only enforced by the database', () => {
+    it('PostgreSQL: runs the statement in a read-only transaction and rolls back', async () => {
+      mockQuery.mockResolvedValue({ rows: [{ n: 1 }] });
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT some_function(1)' },
+      );
+      expect(mockTxStatements).toEqual(['BEGIN TRANSACTION READ ONLY', 'ROLLBACK']);
+      expect(mockQuery).toHaveBeenCalledWith('SELECT some_function(1)');
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('PostgreSQL: rolls back and releases the client when the statement fails', async () => {
+      mockQuery.mockRejectedValueOnce(
+        new Error('cannot execute INSERT in a read-only transaction'),
+      );
+      await expect(
+        engine.execute(
+          { baseUrl: 'postgres://host/db', authType: 'NONE' },
+          { method: 'query', path: '${query}' },
+          { query: 'SELECT some_function(1)' },
+        ),
+      ).rejects.toThrow('read-only transaction');
+      expect(mockTxStatements).toEqual(['BEGIN TRANSACTION READ ONLY', 'ROLLBACK']);
+      expect(mockRelease).toHaveBeenCalledTimes(1);
+    });
+
+    it('PostgreSQL: a read-write connector runs without a transaction', async () => {
+      mockQuery.mockResolvedValue({ rows: [], rowCount: 1, command: 'INSERT' });
+      await engine.execute(
+        { baseUrl: 'postgres://host/db', authType: 'NONE' },
+        { method: 'query', path: 'INSERT INTO t VALUES (1)' },
+        {},
+        { readOnly: false },
+      );
+      expect(mockTxStatements).toEqual([]);
+    });
+
+    it('SQL Server: runs the statement in a transaction that is always rolled back', async () => {
+      mockMssqlQuery.mockResolvedValue({ recordset: [{ n: 1 }], rowsAffected: [1] });
+      await engine.execute(
+        { baseUrl: 'mssql://sql.example.test:1433/sales', authType: 'CONNECTION_STRING' },
+        { method: 'query', path: '${query}' },
+        { query: 'SELECT dbo.some_function(1)' },
+      );
+      expect(mockMssqlBegin).toHaveBeenCalledTimes(1);
+      expect(mockMssqlRollback).toHaveBeenCalledTimes(1);
+    });
+
+    it('SQL Server: a read-write connector runs without a transaction', async () => {
+      mockMssqlQuery.mockResolvedValue({ recordset: [], rowsAffected: [1] });
+      await engine.execute(
+        { baseUrl: 'mssql://sql.example.test:1433/sales', authType: 'CONNECTION_STRING' },
+        { method: 'query', path: 'INSERT INTO t VALUES (1)' },
+        {},
+        { readOnly: false },
+      );
+      expect(mockMssqlBegin).not.toHaveBeenCalled();
     });
   });
 

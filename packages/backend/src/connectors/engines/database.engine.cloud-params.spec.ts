@@ -5,7 +5,20 @@ import { DatabaseEngine } from './database.engine';
 
 const mockQuery = jest.fn();
 jest.mock('pg', () => ({
-  Pool: jest.fn().mockImplementation(() => ({ query: mockQuery, end: jest.fn() })),
+  Pool: jest.fn().mockImplementation(() => ({
+    query: mockQuery,
+    end: jest.fn(),
+    connect: () =>
+      Promise.resolve({
+        query: (sql: string, values?: unknown[]) =>
+          /^(BEGIN|ROLLBACK)/.test(sql)
+            ? Promise.resolve({})
+            : values === undefined
+              ? mockQuery(sql)
+              : mockQuery(sql, values),
+        release: jest.fn(),
+      }),
+  })),
 }));
 
 const mockToArray = jest.fn();
