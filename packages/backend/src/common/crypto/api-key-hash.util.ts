@@ -1,4 +1,4 @@
-import { createHmac, hkdfSync } from 'node:crypto';
+import { createHmac, hkdfSync, randomBytes } from 'node:crypto';
 import { getRequiredSecret } from '../secrets.util';
 
 /**
@@ -42,14 +42,47 @@ export function apiKeySuffix(key: string): string {
   return key.slice(-API_KEY_SUFFIX_LENGTH);
 }
 
+/** Prefix of every key the server issues. Placeholders never start with it. */
+export const API_KEY_PREFIX = 'mcp_';
+
+/**
+ * Value written to the legacy `mcp_api_keys.key` column instead of the key.
+ *
+ * The column is still NOT NULL and unique until it is dropped, so each row
+ * gets a random, unique, non-secret value. It is not a credential: it never
+ * starts with `mcp_`, so it can never match a presented key (see
+ * apiKeyLookupWhere). `support` marks support keys (support-keys.ts),
+ * `hashed` a user's own key.
+ */
+export function apiKeyPlaceholder(kind: 'hashed' | 'support' = 'hashed'): string {
+  return `${kind}_${randomBytes(24).toString('hex')}`;
+}
+
+const PLACEHOLDER = /^(hashed|support)_[0-9a-f]{48}$/;
+
+/** True for a value written by apiKeyPlaceholder(). */
+export function isApiKeyPlaceholder(value: string | null | undefined): boolean {
+  return typeof value === 'string' && PLACEHOLDER.test(value);
+}
+
 /**
  * Prisma `where` that finds the key row for a presented key.
  *
- * Transition (phase 1 of the hashing rollout): rows are matched by hash, and
- * by the plaintext column for rows not backfilled yet. Both columns are
+ * Rows are matched by hash. Rows created before keys stopped being written to
+ * the plaintext column still hold the key there until the one-off clean-up
+ * (roles/api-key-placeholders.cli.ts) replaces it, so a presented key is also
+ * matched against that column. Only a value shaped like an issued key
+ * (`mcp_…`) is compared there: a placeholder never matches. Both columns are
  * unique, so at most one row matches. The plaintext branch is removed when
  * the column is dropped.
  */
 export function apiKeyLookupWhere(key: string, pepper: Buffer = apiKeyPepper()) {
-  return { OR: [{ keyHash: hashApiKey(key, pepper) }, { key }] };
+  const keyHash = hashApiKey(key, pepper);
+  if (!key.startsWith(API_KEY_PREFIX) || isApiKeyPlaceholder(key)) return { keyHash };
+  return { OR: [{ keyHash }, { key }] };
+}
+
+/** Masked display of a key from its stored suffix: `mcp_••••…<suffix>`. */
+export function maskApiKey(suffix: string | null | undefined): string {
+  return `${API_KEY_PREFIX}${'•'.repeat(24)}${suffix ?? ''}`;
 }

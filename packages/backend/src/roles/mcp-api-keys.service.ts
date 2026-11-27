@@ -7,7 +7,13 @@ import {
 } from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
-import { apiKeyLookupWhere, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
+import {
+  API_KEY_PREFIX,
+  apiKeyLookupWhere,
+  apiKeyPlaceholder,
+  apiKeySuffix,
+  hashApiKey,
+} from '../common/crypto/api-key-hash.util';
 import { isKeyExpired } from './support-keys';
 import type { McpApiKeyScope } from '../generated/prisma/client';
 
@@ -98,21 +104,25 @@ export class McpApiKeysService implements OnApplicationBootstrap {
       organizationId = server!.organizationId;
     }
 
-    const key = `mcp_${randomBytes(32).toString('hex')}`;
+    const key = `${API_KEY_PREFIX}${randomBytes(32).toString('hex')}`;
 
-    return this.prisma.mcpApiKey.create({
+    const row = await this.prisma.mcpApiKey.create({
       data: {
         userId,
         organizationId,
-        key,
+        // The legacy column gets a non-secret placeholder, never the key:
+        // lookups match the hash.
+        key: apiKeyPlaceholder(),
         keyHash: hashApiKey(key),
         keySuffix: apiKeySuffix(key),
         name,
         mcpServerId: mcpServerId || null,
         scope,
       },
-      select: { id: true, key: true, name: true, isActive: true, mcpServerId: true, scope: true, createdAt: true },
+      select: { id: true, name: true, isActive: true, mcpServerId: true, scope: true, createdAt: true },
     });
+    // The clear key exists only in this response.
+    return { ...row, key };
   }
 
   /**
@@ -154,7 +164,7 @@ export class McpApiKeysService implements OnApplicationBootstrap {
         isActive: true,
         lastUsedAt: true,
         createdAt: true,
-        key: true,
+        keySuffix: true,
         scope: true,
         mcpServerId: true,
         mcpServer: { select: { id: true, name: true } },

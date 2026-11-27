@@ -15,6 +15,7 @@ import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
 import { isApiKeyRequest } from '../auth/api-key-request.util';
 import { IsString, IsOptional, IsIn } from 'class-validator';
 import { McpApiKeysService } from './mcp-api-keys.service';
+import { maskApiKey } from '../common/crypto/api-key-hash.util';
 import {
   MemberVisibilityService,
   canSeeServer,
@@ -108,11 +109,12 @@ export class McpApiKeysController {
       req,
       keys.map((k) => k.mcpServerId).filter((id): id is string => !!id),
     );
-    // Mask keys for display: show only last 8 chars
-    return keys.map((k) => ({
+    // Mask keys for display from the stored suffix (last 8 characters): the
+    // key itself is not stored.
+    return keys.map(({ keySuffix, ...k }) => ({
       ...k,
       ...(k.mcpServerId && hidden.has(k.mcpServerId) ? { mcpServer: null } : {}),
-      key: `mcp_${'•'.repeat(24)}${k.key.slice(-8)}`,
+      key: maskApiKey(keySuffix),
     }));
   }
 

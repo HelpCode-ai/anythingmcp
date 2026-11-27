@@ -1,5 +1,13 @@
 import { createHmac, hkdfSync } from 'node:crypto';
-import { apiKeyLookupWhere, apiKeyPepper, apiKeySuffix, hashApiKey } from './api-key-hash.util';
+import {
+  apiKeyLookupWhere,
+  apiKeyPepper,
+  apiKeyPlaceholder,
+  apiKeySuffix,
+  hashApiKey,
+  isApiKeyPlaceholder,
+  maskApiKey,
+} from './api-key-hash.util';
 
 const SECRET_A = 'unit-test-encryption-key-0123456789abcdef';
 const SECRET_B = 'another-unit-test-encryption-key-9876543210';
@@ -48,5 +56,32 @@ describe('api-key-hash.util', () => {
     expect(apiKeyLookupWhere(KEY, pepper)).toEqual({
       OR: [{ keyHash: hashApiKey(KEY, pepper) }, { key: KEY }],
     });
+  });
+
+  it('builds unique, non-secret placeholders that are never shaped like a key', () => {
+    const a = apiKeyPlaceholder();
+    const b = apiKeyPlaceholder();
+    const s = apiKeyPlaceholder('support');
+    expect(a).toMatch(/^hashed_[0-9a-f]{48}$/);
+    expect(s).toMatch(/^support_[0-9a-f]{48}$/);
+    expect(a).not.toBe(b);
+    for (const p of [a, b, s]) {
+      expect(p.startsWith('mcp_')).toBe(false);
+      expect(isApiKeyPlaceholder(p)).toBe(true);
+    }
+    expect(isApiKeyPlaceholder(KEY)).toBe(false);
+    expect(isApiKeyPlaceholder(null)).toBe(false);
+  });
+
+  it('matches a placeholder or any value not shaped like a key by hash only', () => {
+    const pepper = apiKeyPepper(SECRET_A);
+    for (const presented of [apiKeyPlaceholder(), apiKeyPlaceholder('support'), 'abc', '']) {
+      expect(apiKeyLookupWhere(presented, pepper)).toEqual({ keyHash: hashApiKey(presented, pepper) });
+    }
+  });
+
+  it('masks a key from its stored suffix', () => {
+    expect(maskApiKey('89abcdef')).toBe(`mcp_${'•'.repeat(24)}89abcdef`);
+    expect(maskApiKey(null)).toBe(`mcp_${'•'.repeat(24)}`);
   });
 });
