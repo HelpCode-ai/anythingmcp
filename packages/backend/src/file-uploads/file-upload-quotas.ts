@@ -2,10 +2,14 @@
  * Limits for agent file uploads (file_upload_link). Files live a few hours, so
  * the caps protect bandwidth and the bucket, not long-term storage.
  *
- * Cloud: per plan, read from the workspace's active licence. One licence can
- * carry its own daily upload count in the feature `uploadsPerDay` (a positive
- * whole number, e.g. a "2,000 uploads/day" add-on): it replaces the plan's
- * daily count and leaves every other limit to the plan.
+ * Cloud: per plan, read from the workspace's active licence. When a workspace
+ * has several active licences, the newest one (by creation) decides, as it
+ * does for the plan everywhere else (LicenseService.getCurrentLicense); the
+ * features of older licences are ignored. That licence can carry its own
+ * daily upload count in the feature `uploadsPerDay` (a positive whole number,
+ * e.g. a "2,000 uploads/day" add-on): it raises the plan's daily count, never
+ * lowers it, is capped at MAX_UPLOADS_PER_DAY, and leaves every other limit
+ * to the plan.
  * Self-hosted: every edition, Community included; the operator's own storage,
  * so no daily or stored caps unless the env sets them.
  */
@@ -32,6 +36,13 @@ const CLOUD: Record<string, Omit<FileUploadQuota, 'plan' | 'ttlHours'>> = {
   enterprise: { maxFileBytes: 200 * MB, uploadsPerDay: 5_000, maxStoredBytes: 50 * GB },
 };
 
+/**
+ * Upper bound for the licence feature `uploadsPerDay`: twice the Enterprise
+ * daily count. A larger value (e.g. a typo in Stripe price metadata) is
+ * clamped to it, so a single workspace never loses its daily cap.
+ */
+export const MAX_UPLOADS_PER_DAY = 10_000;
+
 function positiveNumber(raw: string | undefined): number | null {
   if (raw === undefined || raw.trim() === '') return null;
   const n = Number(raw);
@@ -42,13 +53,13 @@ function positiveNumber(raw: string | undefined): number | null {
  * The licence feature `uploadsPerDay` as a daily count, or null when it is
  * missing or not a positive whole number (the plan default then applies).
  * A digit-only string is accepted too: a value typed by hand into the licence
- * record may arrive as one.
+ * record may arrive as one. Values above MAX_UPLOADS_PER_DAY are clamped.
  */
 export function uploadsPerDayOverride(features: unknown): number | null {
   if (!features || typeof features !== 'object') return null;
   const raw = (features as Record<string, unknown>).uploadsPerDay;
   const n = typeof raw === 'number' ? raw : typeof raw === 'string' && /^\d+$/.test(raw.trim()) ? Number(raw) : NaN;
-  return Number.isSafeInteger(n) && n > 0 ? n : null;
+  return Number.isSafeInteger(n) && n > 0 ? Math.min(n, MAX_UPLOADS_PER_DAY) : null;
 }
 
 export function uploadTtlHours(env: NodeJS.ProcessEnv = process.env): number {
@@ -72,7 +83,10 @@ export function uploadQuotaFor(
   }
   if (!plan) return null;
   const q = CLOUD[plan] ?? CLOUD.starter;
-  return { plan, ...q, uploadsPerDay: uploadsPerDayOverride(opts.features) ?? q.uploadsPerDay, ttlHours };
+  const override = uploadsPerDayOverride(opts.features);
+  const uploadsPerDay =
+    override != null && q.uploadsPerDay != null ? Math.max(override, q.uploadsPerDay) : q.uploadsPerDay;
+  return { plan, ...q, uploadsPerDay, ttlHours };
 }
 
 /** Instance-wide brakes. Defaults only on Cloud; self-hosted sets them if it wants. */

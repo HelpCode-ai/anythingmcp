@@ -124,7 +124,11 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
     return createHash('sha256').update(`file-upload-public:${secret}`).digest();
   }
 
-  /** The workspace's limits, or null when it may not upload (Cloud without an active plan). */
+  /**
+   * The workspace's limits, or null when it may not upload (Cloud without an
+   * active plan). With several active licences the newest one decides: its
+   * plan and its `uploadsPerDay` feature (see file-upload-quotas.ts).
+   */
   async quota(organizationId: string, now = new Date()): Promise<FileUploadQuota | null> {
     const cloud = this.deployment.isCloud();
     if (!cloud) return uploadQuotaFor(null, { cloud });
@@ -179,7 +183,7 @@ export class FileUploadService implements OnModuleInit, OnModuleDestroy {
         : Promise.resolve(null),
     ]);
     if (quota.uploadsPerDay != null && today >= quota.uploadsPerDay) {
-      throw new ForbiddenException(`This plan allows ${quota.uploadsPerDay} uploads per day. Try again tomorrow or upgrade.`);
+      throw new ForbiddenException(`This workspace allows ${quota.uploadsPerDay} uploads per day. Try again tomorrow, or ask a workspace administrator about a higher plan or more uploads per day.`);
     }
     if (quota.maxStoredBytes != null && (stored?._sum.bytes ?? 0) >= quota.maxStoredBytes) {
       throw new ForbiddenException(

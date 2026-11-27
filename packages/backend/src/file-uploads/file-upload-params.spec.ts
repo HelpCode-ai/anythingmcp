@@ -1,6 +1,6 @@
 import { fileParamNames, isFileRef, withFileRefHints } from './file-upload-params';
 import { publicAllowed, sniffType } from './file-upload-sniff';
-import { uploadQuotaFor, uploadsPerDayOverride } from './file-upload-quotas';
+import { MAX_UPLOADS_PER_DAY, uploadQuotaFor, uploadsPerDayOverride } from './file-upload-quotas';
 
 describe('file upload helpers', () => {
   it('finds the parameters behind __file markers only', () => {
@@ -67,8 +67,24 @@ describe('file upload helpers', () => {
       for (const uploadsPerDay of [0, -5, 1.5, NaN, Infinity, '', 'lots', '20 00', null, true, {}]) {
         expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay } })?.uploadsPerDay).toBe(500);
       }
+      // The argument is the features object, not the field: a bare string or
+      // array is not a features object, so there is no override.
       expect(uploadsPerDayOverride('2000')).toBeNull();
       expect(uploadsPerDayOverride([2000])).toBeNull();
+    });
+
+    it('clamps a value above the documented maximum', () => {
+      expect(MAX_UPLOADS_PER_DAY).toBe(10_000);
+      expect(uploadsPerDayOverride({ uploadsPerDay: 20_000_000 })).toBe(MAX_UPLOADS_PER_DAY);
+      expect(uploadsPerDayOverride({ uploadsPerDay: '20000000' })).toBe(MAX_UPLOADS_PER_DAY);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay: 20_000_000 } })?.uploadsPerDay).toBe(10_000);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay: 10_000 } })?.uploadsPerDay).toBe(10_000);
+    });
+
+    it('raises the plan count but never lowers it', () => {
+      expect(uploadQuotaFor('enterprise', { cloud: true, env: {}, features: { uploadsPerDay: 2000 } })?.uploadsPerDay).toBe(5_000);
+      expect(uploadQuotaFor('enterprise', { cloud: true, env: {}, features: { uploadsPerDay: 8000 } })?.uploadsPerDay).toBe(8000);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay: 100 } })?.uploadsPerDay).toBe(500);
     });
 
     it('needs an active plan on Cloud and leaves self-hosted to its env', () => {

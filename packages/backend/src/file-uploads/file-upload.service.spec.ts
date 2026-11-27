@@ -149,7 +149,14 @@ describe('FileUploadService', () => {
     for (let i = 0; i < 52; i++) await svc.createLink({ organizationId: ORG, filename: `f${i}.png` });
     await expect(svc.createLink({ organizationId: ORG, filename: 'one-more.png' })).rejects.toThrow(/52 uploads per day/);
     await expect(svc.createLink({ organizationId: OTHER, filename: 'big.zip', sizeBytes: 30 * 1024 * 1024 })).rejects.toThrow(/up to 25 MB/);
-    expect(prisma.license.findFirst).toHaveBeenCalledWith(expect.objectContaining({ select: expect.objectContaining({ features: true }) }));
+    // With several active licences the newest one decides, plan and feature alike.
+    expect(prisma.license.findFirst).toHaveBeenCalledWith(
+      expect.objectContaining({
+        where: { organizationId: ORG, status: 'active' },
+        orderBy: { createdAt: 'desc' },
+        select: expect.objectContaining({ plan: true, features: true }),
+      }),
+    );
   });
 
   it('receives the file once, sniffs its type and resolves it only for the same workspace', async () => {
