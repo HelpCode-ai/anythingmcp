@@ -44,8 +44,10 @@ export const SecurityEvents = {
   SOCIAL_IDENTITY_UNLINKED: 'SOCIAL_IDENTITY_UNLINKED',
   /**
    * A provider-verified email took over a local account whose address had
-   * never been verified: its password and sessions were dropped, because
-   * whoever set them never proved they own the mailbox.
+   * never been verified: its password, sessions, other connected sign-in
+   * providers and API keys were dropped, because whoever set them never
+   * proved they own the mailbox. Metadata: `removedIdentities` (providers),
+   * `deactivatedApiKeys` (count).
    */
   SOCIAL_ACCOUNT_RECLAIMED: 'SOCIAL_ACCOUNT_RECLAIMED',
   /** A bearer token was refused — e.g. an MCP-issued token sent to the dashboard API. */

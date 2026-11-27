@@ -82,7 +82,12 @@ function setup(opts: {
     user: { update: jest.fn(async (_a: any) => ({})) },
     emailVerificationToken: { updateMany: jest.fn(async () => ({ count: 0 })) },
     passwordResetToken: { updateMany: jest.fn(async () => ({ count: 0 })) },
-    socialIdentity: { create: jest.fn(async () => ({})) },
+    socialIdentity: {
+      create: jest.fn(async () => ({})),
+      findMany: jest.fn(async (_a: any) => [] as { id: string; provider: string }[]),
+      deleteMany: jest.fn(async (_a: any) => ({ count: 0 })),
+    },
+    mcpApiKey: { updateMany: jest.fn(async (_a: any) => ({ count: 0 })) },
   };
   const prisma: any = {
     socialLoginAttempt: {
@@ -334,6 +339,47 @@ describe('SocialAuthService — account resolution', () => {
     expect(accounts.ensureCloudTrial).toHaveBeenCalledWith('u1');
   });
 
+  it('reclaiming also removes the other connected providers and deactivates API keys', async () => {
+    const { service, tx, securityEvents } = setup({ owners: [makeUser({ emailVerified: false })] });
+    tx.socialIdentity.findMany.mockResolvedValueOnce([{ id: 'i-gh', provider: 'github' }]);
+    tx.mcpApiKey.updateMany.mockResolvedValueOnce({ count: 2 });
+    await complete(service);
+
+    expect(tx.socialIdentity.findMany.mock.calls[0][0]).toMatchObject({ where: { userId: 'u1' } });
+    expect(tx.socialIdentity.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['i-gh'] } } });
+    expect(tx.mcpApiKey.updateMany).toHaveBeenCalledWith({
+      where: { userId: 'u1', isActive: true, isSupport: false },
+      data: { isActive: false },
+    });
+    // The identity of this sign-in is created after the others were removed.
+    expect(tx.socialIdentity.create.mock.invocationCallOrder[0]).toBeGreaterThan(
+      tx.socialIdentity.deleteMany.mock.invocationCallOrder[0],
+    );
+    const reclaimed = securityEvents.log.mock.calls
+      .map((c: any[]) => c[0])
+      .find((e: any) => e.event === 'SOCIAL_ACCOUNT_RECLAIMED');
+    expect(reclaimed.metadata).toEqual({ provider: 'google', removedIdentities: ['github'], deactivatedApiKeys: 2 });
+  });
+
+  it('reclaims an unverified account even when it already has this provider connected', async () => {
+    const { service, prisma, tx } = setup({ owners: [makeUser({ emailVerified: false })] });
+    prisma.socialIdentity.findUnique.mockImplementation(async (args: any) =>
+      args.where.userId_provider ? { id: 'i-old' } : null,
+    );
+    tx.socialIdentity.findMany.mockResolvedValueOnce([{ id: 'i-old', provider: 'google' }]);
+    await complete(service);
+    expect(tx.socialIdentity.deleteMany).toHaveBeenCalledWith({ where: { id: { in: ['i-old'] } } });
+    expect(tx.socialIdentity.create).toHaveBeenCalled();
+  });
+
+  it('leaves identities and API keys of a verified account alone', async () => {
+    const { service, tx } = setup({ owners: [makeUser()] });
+    await complete(service);
+    expect(tx.socialIdentity.deleteMany).not.toHaveBeenCalled();
+    expect(tx.mcpApiKey.updateMany).not.toHaveBeenCalled();
+    expect(tx.user.update).not.toHaveBeenCalled();
+  });
+
   it('refuses an address with several legacy accounts', async () => {
     const { service } = setup({ owners: [makeUser(), makeUser({ id: 'u2' })] });
     await expect(complete(service)).rejects.toMatchObject({ reason: 'ambiguous_email' });
@@ -363,6 +409,13 @@ describe('SocialAuthService — connected accounts', () => {
     const { service, prisma } = setup({ attempt: { surface: 'LINK', linkUserId: 'u1', returnTo: '/settings' } });
     await expect(complete(service)).resolves.toEqual({ kind: 'LINK', returnTo: '/settings', provider: 'google' });
     expect(prisma.socialIdentity.create.mock.calls[0][0].data).toMatchObject({ userId: 'u1', subject: 'sub-1' });
+  });
+
+  it('refuses to link a provider to an account whose email is not verified', async () => {
+    const { service, prisma } = setup({ attempt: { surface: 'LINK', linkUserId: 'u1' } });
+    prisma.user.findUnique.mockResolvedValue(makeUser({ emailVerified: false }));
+    await expect(complete(service)).rejects.toMatchObject({ reason: 'link_requires_verified_email', surface: 'LINK' });
+    expect(prisma.socialIdentity.create).not.toHaveBeenCalled();
   });
 
   it('refuses a provider account already linked to someone else', async () => {

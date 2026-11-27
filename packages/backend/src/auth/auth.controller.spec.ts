@@ -3,6 +3,7 @@ import { Reflector } from '@nestjs/core';
 import { AuthController, NEUTRAL_PASSWORD_RESET, NEUTRAL_REGISTRATION } from './auth.controller';
 import { ProductEventService } from '../audit/product-event.service';
 import { findUserByEmail, normalizeEmail } from '../common/email.util';
+import { hashInviteToken } from './invite-token.util';
 
 /**
  * Sign-up, password reset and login must not say — by their answer or by how
@@ -659,6 +660,40 @@ describe('AuthController — accept-invite ownership check', () => {
     ).rejects.toBeTruthy();
   });
 
+  it('creates a Cloud account unverified and sends it the email code', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [] });
+    a.invites.push(makeInvite({ email: 'fresh@example.com' }));
+    const res: any = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: 'invite-token', password: 'Brand#New123', name: 'Fresh' },
+    );
+    await flush();
+    const created = a.users.find((u) => u.email === 'fresh@example.com')!;
+    expect(created.emailVerified).toBe(false);
+    expect(a.usersService.update).not.toHaveBeenCalledWith(created.id, { emailVerified: true });
+    expect(a.sent).toContain('verify fresh@example.com');
+    expect(res.user.emailVerified).toBe(false);
+    expect(res.verificationRequired).toBe(true);
+    // The membership in the inviting workspace is created as before.
+    expect(a.organizationsService.addMember).toHaveBeenCalledWith(created.id, 'org-new', 'EDITOR');
+    expect(a.invites[0].usedAt).toBeInstanceOf(Date);
+  });
+
+  it('creates a self-hosted account verified, as before, with no code sent', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [] });
+    a.invites.push(makeInvite({ email: 'fresh@example.com' }));
+    const res: any = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: 'invite-token', password: 'Brand#New123', name: 'Fresh' },
+    );
+    await flush();
+    const created = a.users.find((u) => u.email === 'fresh@example.com')!;
+    expect(created.emailVerified).toBe(true);
+    expect(a.sent).not.toContain('verify fresh@example.com');
+    expect(res.user.emailVerified).toBe(true);
+    expect(res.verificationRequired).toBeUndefined();
+  });
+
   it('verifyInvite reports whether the address already exists', async () => {
     const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
     a.invites.push(makeInvite());
@@ -831,7 +866,7 @@ describe('AuthController — email addresses ignore case', () => {
     });
 
     const reused = await a.controller.inviteUser(req, { email: 'INVITEE@example.com', role: 'EDITOR' as any });
-    expect(reused.inviteUrl).toContain('token=old-token');
+    expect(reused.inviteUrl).not.toContain('old-token');
     expect(a.invites).toHaveLength(1);
 
     const created = await a.controller.inviteUser(req, { email: 'Other.Person@Example.com', role: 'EDITOR' as any });
@@ -862,10 +897,12 @@ describe('AuthController — email addresses ignore case', () => {
       mcpRoleIds: ['role-sales'],
     });
 
-    // Same link, so the first mail keeps working, but it now grants what the
-    // second mail says.
-    expect(again.inviteUrl).toContain('token=old-token');
+    // A new link (the old one cannot be read back from its hash), on the
+    // same row and expiry, granting what the second mail says.
+    const newToken = new URL(again.inviteUrl).searchParams.get('token')!;
+    expect(newToken).not.toBe('old-token');
     expect(a.invites).toHaveLength(1);
+    expect(a.invites[0].token).toBe(hashInviteToken(newToken));
     expect(a.invites[0]).toMatchObject({
       role: 'VIEWER',
       mcpRoleId: 'role-sales',
@@ -900,5 +937,75 @@ describe('AuthController — email addresses ignore case', () => {
     });
     await a.controller.inviteUser(req, { email: 'invitee@example.com', role: 'VIEWER' as any });
     expect(a.invites[0]).toMatchObject({ role: 'VIEWER', mcpRoleId: null, mcpRoleIds: [] });
+  });
+});
+
+describe('AuthController — invitation tokens are stored as hashes', () => {
+  const req = { user: { sub: 'u-existing', organizationId: 'org-x' } };
+
+  it('stores only the hash of a new invitation link and accepts the link', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    const res = await a.controller.inviteUser(req, { email: 'new.member@example.com', role: 'EDITOR' as any });
+    const token = new URL(res.inviteUrl).searchParams.get('token')!;
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.invites[0].token).toBe(hashInviteToken(token));
+    expect(JSON.stringify(a.invites)).not.toContain(token);
+
+    expect(await a.controller.verifyInvite(token)).toMatchObject({ email: 'new.member@example.com', valid: true });
+    const accepted: any = await a.controller.acceptInvite(
+      { headers: {} },
+      { token, password: 'Brand#New123', name: 'New Member' },
+    );
+    expect(accepted.accessToken).toBe('jwt');
+  });
+
+  it('refuses the stored hash presented as the link token', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    await a.controller.inviteUser(req, { email: 'new.member@example.com', role: 'EDITOR' as any });
+    const stored = a.invites[0].token as string;
+    await expect(a.controller.verifyInvite(stored)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(a.controller.verifyInvite(stored.slice('sha256:'.length))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: stored, password: 'Brand#New123', name: 'X' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('still accepts a pending invitation stored in plain text by the previous release', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [] });
+    const legacyToken = 'a'.repeat(64);
+    a.invites.push({
+      id: 'inv-legacy',
+      token: legacyToken,
+      email: 'legacy.invitee@example.com',
+      role: 'EDITOR',
+      mcpRoleId: null,
+      mcpRoleIds: [],
+      organizationId: 'org-x',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+    expect(await a.controller.verifyInvite(legacyToken)).toMatchObject({ valid: true });
+    const res = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: legacyToken, password: 'Brand#New123', name: 'Legacy' },
+    );
+    expect(res.accessToken).toBe('jwt');
+    expect(a.invites[0].usedAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses an expired plain-text invitation of the previous release', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [] });
+    a.invites.push({
+      id: 'inv-legacy',
+      token: 'b'.repeat(64),
+      email: 'legacy.invitee@example.com',
+      role: 'EDITOR',
+      organizationId: 'org-x',
+      expiresAt: new Date(Date.now() - 1000),
+      usedAt: null,
+    });
+    await expect(a.controller.verifyInvite('b'.repeat(64))).rejects.toThrow('This invitation has expired');
   });
 });

@@ -8,6 +8,7 @@ import { useAuth } from '@/lib/auth-context';
 import { LogoIcon } from '@/components/logo-icon';
 import { Card } from '@/components/ui/card';
 import { Button } from '@/components/ui/button';
+import { saveInviteEmailCodeSession } from '@/lib/invite-email-code';
 
 /** Small AnythingMCP brand mark for the top of pre-auth cards. */
 function BrandMark() {
@@ -79,6 +80,15 @@ function AcceptInviteContent() {
         { token, ...payload },
         signedInAsInvitee ? sessionToken ?? undefined : undefined,
       );
+      if (result.user?.emailVerified === false) {
+        // Cloud: the account must still enter the code sent to its address,
+        // in the same step a password sign-up uses. Without session storage
+        // the person signs in with the password just chosen and gets there
+        // the same way.
+        const handedOver = saveInviteEmailCodeSession({ accessToken: result.accessToken, user: result.user });
+        router.push(handedOver ? '/login?verify=invite' : '/login?mode=login');
+        return;
+      }
       login(result.accessToken, result.user);
       router.push('/');
     } catch (err: any) {

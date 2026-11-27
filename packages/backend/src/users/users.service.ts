@@ -312,11 +312,16 @@ export class UsersService {
     if (cascadableOrgIds.length > 0) this.licenseRelease.releaseInBackground();
   }
 
+  /**
+   * Pending and expired invitations, without their token: the link is shown
+   * to the inviting admin once, when the invitation is created.
+   */
   async findAllInvitations(organizationId?: string) {
-    return this.prisma.invitationToken.findMany({
+    const rows = await this.prisma.invitationToken.findMany({
       where: { usedAt: null, ...(organizationId ? { organizationId } : {}) },
       orderBy: { createdAt: 'desc' },
     });
+    return rows.map(({ token: _token, ...rest }) => rest);
   }
 
   async deleteInvitation(id: string): Promise<void> {

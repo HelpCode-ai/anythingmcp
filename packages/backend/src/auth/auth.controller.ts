@@ -50,6 +50,7 @@ import { emailLookupWhere, normalizeEmail, sameEmail } from '../common/email.uti
 import { maskEmail } from './mcp-email-verification';
 import { EmailVerificationService, MAX_CODES_PER_HOUR } from './email-verification.service';
 import { RedisService } from '../common/redis.service';
+import { findInvitationByToken, hashInviteToken, newInviteToken } from './invite-token.util';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -742,9 +743,10 @@ export class AuthController {
     });
     const existingInvite = pendingInvites.find((i) => sameEmail(i.email, inviteEmail)) ?? null;
 
-    const inviteToken = existingInvite
-      ? existingInvite.token
-      : crypto.randomBytes(32).toString('hex');
+    // Only the token's hash is stored, so a pending invitation's link cannot
+    // be read back: inviting again issues a new link, and the earlier one
+    // stops working. The admin sees the link once, in this response.
+    const inviteToken = newInviteToken();
 
     // `mcpRoleIds` supersedes the single `mcpRoleId`; accept either so an older
     // frontend bundle keeps working.
@@ -756,14 +758,15 @@ export class AuthController {
       // Inviting the same address again states a role in the mail it sends:
       // the pending invitation must grant that role, not the one of the first
       // attempt. An admin who first picked EDITOR and corrected it to VIEWER
-      // otherwise got an EDITOR, with the mail saying VIEWER. The link and its
-      // expiry stay, so the first mail keeps working. `existingInvite` was
-      // found inside this workspace, so its id is this workspace's row.
-      // Written every time: an invitation of the previous release can hold
-      // its role in `mcpRoleId` alone, which an empty list must clear too.
+      // otherwise got an EDITOR, with the mail saying VIEWER. The expiry stays;
+      // the link is the new one sent now. `existingInvite` was found inside
+      // this workspace, so its id is this workspace's row. Written every
+      // time: an invitation of the previous release can hold its role in
+      // `mcpRoleId` alone, which an empty list must clear too.
       await this.prisma.invitationToken.update({
         where: { id: existingInvite.id },
         data: {
+          token: hashInviteToken(inviteToken),
           role: dto.role,
           mcpRoleId: invitedMcpRoleIds[0] ?? null,
           mcpRoleIds: invitedMcpRoleIds,
@@ -775,7 +778,7 @@ export class AuthController {
       await this.prisma.invitationToken.create({
         data: {
           email: inviteEmail,
-          token: inviteToken,
+          token: hashInviteToken(inviteToken),
           role: dto.role,
           mcpRoleId: invitedMcpRoleIds[0] ?? null,
           mcpRoleIds: invitedMcpRoleIds,
@@ -822,7 +825,7 @@ export class AuthController {
     return {
       message: emailResult.sent
         ? existingInvite
-          ? `${created} for ${inviteEmail} — the email was re-sent.`
+          ? `${created} for ${inviteEmail} — a new link was sent; the earlier one no longer works.`
           : `Invitation sent to ${inviteEmail}`
         : `${created} for ${inviteEmail}, but the email could not be sent. Share the link manually.`,
       inviteUrl,
@@ -836,9 +839,7 @@ export class AuthController {
   async verifyInvite(@Query('token') token: string) {
     if (!token) throw new BadRequestException('Token is required');
 
-    const invite = await this.prisma.invitationToken.findUnique({
-      where: { token },
-    });
+    const invite = await findInvitationByToken(this.prisma, token);
 
     if (!invite) throw new BadRequestException('Invalid invitation token');
     if (invite.usedAt) throw new BadRequestException('This invitation has already been used');
@@ -867,9 +868,7 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Accept an invitation and create account' })
   async acceptInvite(@Req() req: any, @Body() dto: AcceptInviteDto) {
-    const invite = await this.prisma.invitationToken.findUnique({
-      where: { token: dto.token },
-    });
+    const invite = await findInvitationByToken(this.prisma, dto.token);
 
     if (!invite) throw new BadRequestException('Invalid invitation token');
     if (invite.usedAt) throw new BadRequestException('This invitation has already been used');
@@ -877,8 +876,11 @@ export class AuthController {
 
     // Check if email already registered
     const existing = await this.usersService.findByEmail(invite.email);
+    const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
 
     let user: any;
+    /** A Cloud account created just now: it still has to enter its email code. */
+    let newAccountUnverified = false;
     if (existing) {
       // SECURITY: an invitation link is not proof that the holder controls the
       // invited address. Before attaching an *existing* account to the new org
@@ -959,11 +961,19 @@ export class AuthController {
       // Create organization membership
       await this.organizationsService.addMember(user.id, invite.organizationId, invite.role);
 
-      // Mark email as verified (invited users don't need to verify)
-      await this.usersService.update(user.id, { emailVerified: true });
-
       // Create default MCP server for new user
       await this.mcpServersService.createDefaultForUser(user.id, invite.organizationId);
+
+      if (isCloud) {
+        // Cloud: the account starts unverified, like a password sign-up, and
+        // is sent the usual code; until it is entered the account is limited
+        // as any unverified one.
+        await this.createAndSendVerificationCode(user.id, user.email, req, { sendInBackground: true });
+      } else {
+        // Self-hosted: invited users are trusted as before.
+        await this.usersService.update(user.id, { emailVerified: true });
+      }
+      newAccountUnverified = isCloud;
     }
 
     // Apply the MCP roles the inviting admin chose. This sits OUTSIDE the
@@ -1008,8 +1018,11 @@ export class AuthController {
         name: user.name,
         role: user.role,
         organizationId: invite.organizationId,
-        emailVerified: true,
+        // Cloud: what the account really is, so the page asks a new (or
+        // never verified) account for its email code.
+        emailVerified: !newAccountUnverified && !(isCloud && existing && !existing.emailVerified),
       },
+      ...(newAccountUnverified && { verificationRequired: true }),
     };
   }
 
