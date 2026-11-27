@@ -9430,6 +9430,38 @@ Response:
 }
 ```
 
+### Sign-in attempt limits
+
+Every email and password sign-in counts against the address it names:
+`POST /api/auth/login`, the password form of the MCP authorization page
+(`/auth/login`), and accepting an invitation with an existing account's
+password. Failed attempts are counted per address (trimmed, lower case)
+whether or not it has an account, so the answer never says which addresses
+have one.
+
+- 10 failed attempts within 15 minutes pause password sign-in for that address
+  for 15 minutes; 20 within an hour pause it for an hour.
+- While paused, `POST /api/auth/login` answers `429` with `Retry-After` and
+  "Too many sign-in attempts. Try again in N minutes, or reset your password."
+  The authorization page shows the same text on the sign-in form.
+- A successful sign-in starts the count again. Completing a password reset
+  starts it again and ends any pause.
+- A pause never affects signing in with Google, Microsoft, GitHub or single
+  sign-on, an existing session, or the password reset flow.
+- When an existing account's password sign-in is paused, its owner gets one
+  email (at most one an hour) with the time and a link to reset the password.
+- `POST /api/auth/forgot-password` sends at most 3 reset emails per address an
+  hour. Further requests get the same answer, and no new link is made.
+- Sign-ins are recorded as security events: `PASSWORD_LOGIN_SUCCESS`,
+  `PASSWORD_LOGIN_FAILED` (with a `reason`) and `SIGN_IN_PAUSED`. For an
+  address with no account, only a SHA-256 hash of the address is stored.
+
+The per-address request limits (for example 5 sign-in requests a minute) apply
+as before. Cloud and self-hosted behave the same. With `REDIS_URL` set, the
+counters and the request limits live in Redis, are shared by every backend
+process and survive a restart; without it, they are kept in memory per process
+(bounded) and start again on restart.
+
 ### Invite User (Admin)
 
 ```bash

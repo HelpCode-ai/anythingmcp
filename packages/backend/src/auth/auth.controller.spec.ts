@@ -4,6 +4,7 @@ import { AuthController, NEUTRAL_PASSWORD_RESET, NEUTRAL_REGISTRATION } from './
 import { ProductEventService } from '../audit/product-event.service';
 import { findUserByEmail, normalizeEmail } from '../common/email.util';
 import { hashInviteToken } from './invite-token.util';
+import { PasswordSignInLimiter } from './password-sign-in-limiter';
 
 /**
  * Sign-up, password reset and login must not say — by their answer or by how
@@ -30,6 +31,7 @@ function makeController({
   openRegistration = true,
   orgLicense = null,
   orgEndedLicense = null,
+  signInLimiter,
 }: {
   mode: 'cloud' | 'self-hosted';
   accounts?: Account[];
@@ -38,6 +40,8 @@ function makeController({
   orgLicense?: { plan: string } | null;
   /** Its latest ended licence (cloud), if any. */
   orgEndedLicense?: { plan: string; status: string } | null;
+  /** Sign-in attempt limits; left out (as before) unless a test is about them. */
+  signInLimiter?: PasswordSignInLimiter;
 }) {
   const users = [...accounts];
   const sent: string[] = [];
@@ -212,6 +216,10 @@ function makeController({
     // The real service, so the test sees what would actually be stored.
     new ProductEventService(prisma as any),
     { assertSeatAvailable: jest.fn(async () => undefined), getState: jest.fn(async () => ({ trialAvailable: true })) } as any, // edition
+    undefined, // adsSignup
+    undefined, // licenseGuard
+    undefined, // redis
+    signInLimiter,
   );
   return {
     controller,
@@ -1007,5 +1015,190 @@ describe('AuthController — invitation tokens are stored as hashes', () => {
       usedAt: null,
     });
     await expect(a.controller.verifyInvite('b'.repeat(64))).rejects.toThrow('This invitation has expired');
+  });
+});
+
+/**
+ * Sign-in attempt limits per address: every password sign-in of this
+ * controller goes through the one PasswordSignInLimiter, and while an
+ * address is paused no password is compared.
+ */
+describe('AuthController — sign-in attempt limits', () => {
+  const OLD_FLOOR = process.env.AUTH_NEUTRAL_FLOOR_MS;
+  beforeEach(() => {
+    process.env.AUTH_NEUTRAL_FLOOR_MS = '0';
+  });
+  afterAll(() => {
+    process.env.AUTH_NEUTRAL_FLOOR_MS = OLD_FLOOR;
+  });
+
+  const PAUSED = 'Too many sign-in attempts. Try again in 15 minutes, or reset your password.';
+
+  function setup(accounts: Account[] = [EXISTING]) {
+    const securityEvents = { log: jest.fn(async (_input: any) => undefined) };
+    const limiterMail = { sendSignInPausedEmail: jest.fn(async (_to: string, _input: any) => true) };
+    const signInLimiter = new PasswordSignInLimiter(undefined, securityEvents as any, limiterMail as any, undefined);
+    const made = makeController({ mode: 'cloud', accounts, signInLimiter });
+    return { ...made, signInLimiter, securityEvents, limiterMail };
+  }
+
+  const request = () => {
+    const sent: Record<string, string> = {};
+    return {
+      ip: '203.0.113.7',
+      headers: {},
+      res: { setHeader: (k: string, v: string) => (sent[k] = v) },
+      sent,
+    };
+  };
+
+  async function failLogins(controller: AuthController, email: string, times: number) {
+    for (let i = 0; i < times; i++) {
+      await expect(controller.login(request(), { email, password: 'Wrong#Pass1' })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    }
+  }
+
+  it('refuses POST /api/auth/login with 429 while paused, without comparing the password', async () => {
+    const { controller, authService } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+
+    const req = request();
+    const err: any = await controller
+      .login(req, { email: 'Taken@Example.com', password: 'Correct#Horse1' })
+      .catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(err.getResponse().message).toBe(PAUSED);
+    expect(req.sent['Retry-After']).toBe('900');
+    // Even the right password is not compared while paused.
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+  });
+
+  it('answers an address with no account the same way', async () => {
+    const { controller, authService } = setup();
+    await failLogins(controller, 'nobody@example.com', 10);
+    const err: any = await controller
+      .login(request(), { email: 'nobody@example.com', password: 'Correct#Horse1' })
+      .catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(err.getResponse().message).toBe(PAUSED);
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+  });
+
+  it('records a failed sign-in with its reason and a successful one', async () => {
+    const { controller, securityEvents } = setup();
+    await failLogins(controller, 'nobody@example.com', 1);
+    await failLogins(controller, 'taken@example.com', 1);
+    await controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' });
+    const events = securityEvents.log.mock.calls.map((c) => [c[0].event, c[0].metadata.reason ?? null]);
+    expect(events).toEqual([
+      ['PASSWORD_LOGIN_FAILED', 'unknown_account'],
+      ['PASSWORD_LOGIN_FAILED', 'wrong_password'],
+      ['PASSWORD_LOGIN_SUCCESS', null],
+    ]);
+    expect(JSON.stringify(securityEvents.log.mock.calls)).not.toContain('nobody@example.com');
+  });
+
+  it('records an SSO-only account as password_login_disabled', async () => {
+    const sso: Account = { ...EXISTING, id: 'u-sso', email: 'sso@example.com', passwordLoginDisabled: true };
+    const { controller, securityEvents } = setup([sso]);
+    await expect(
+      controller.login(request(), { email: 'sso@example.com', password: 'Wrong#Pass1' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(securityEvents.log.mock.calls[0][0].metadata.reason).toBe('password_login_disabled');
+  });
+
+  it('starts the count again after a successful sign-in', async () => {
+    const { controller } = setup();
+    await failLogins(controller, 'taken@example.com', 9);
+    await controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' });
+    await failLogins(controller, 'taken@example.com', 9);
+    await expect(
+      controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' }),
+    ).resolves.toMatchObject({ accessToken: 'jwt' });
+  });
+
+  it('emails the owner once when the account is paused', async () => {
+    const { controller, limiterMail } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    await flush();
+    expect(limiterMail.sendSignInPausedEmail).toHaveBeenCalledTimes(1);
+    expect(limiterMail.sendSignInPausedEmail.mock.calls[0][0]).toBe('taken@example.com');
+  });
+
+  it('ends the pause when the password is reset', async () => {
+    const { controller, prisma } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    (prisma.passwordResetToken as any).findUnique = jest.fn(async () => ({
+      id: 'r1',
+      userId: EXISTING.id,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    }));
+    (prisma.passwordResetToken as any).update = jest.fn(async () => undefined);
+    (prisma.user as any).update = jest.fn(async () => ({ ...EXISTING, passwordHash: 'hash:New#Horse22' }));
+    (controller as any).securityEvents = { log: jest.fn(async () => undefined) };
+    await controller.resetPassword(request(), { token: 'reset-token', newPassword: 'New#Horse22' });
+    await expect(
+      controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' }),
+    ).resolves.toMatchObject({ accessToken: 'jwt' });
+  });
+
+  it('refuses the password branch of accept-invite while paused, without comparing the password', async () => {
+    const { controller, authService, invites, organizationsService } = setup();
+    invites.push({
+      id: 'inv1',
+      token: hashInviteToken('invite-token'),
+      email: 'taken@example.com',
+      role: 'EDITOR',
+      mcpRoleId: null,
+      mcpRoleIds: [],
+      organizationId: 'org-new',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+    for (let i = 0; i < 10; i++) {
+      await expect(
+        controller.acceptInvite(request(), { token: 'invite-token', password: 'Wrong#Pass9' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    }
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+    const err: any = await controller
+      .acceptInvite(request(), { token: 'invite-token', password: 'Correct#Horse1' })
+      .catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+    expect(organizationsService.addMember).not.toHaveBeenCalled();
+
+    // An owner who is already signed in is not affected by the pause.
+    const res = await controller.acceptInvite(
+      { ...request(), headers: { authorization: 'Bearer sess:taken@example.com' } },
+      { token: 'invite-token' },
+    );
+    expect(res.accessToken).toBe('jwt');
+  });
+
+  it('sends at most 3 reset emails per address an hour, with the same answer after', async () => {
+    const { controller, sent, prisma } = setup();
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        controller.forgotPassword({}, { email: i % 2 ? 'Taken@example.com' : 'taken@example.com' }),
+      ).resolves.toEqual(NEUTRAL_PASSWORD_RESET);
+    }
+    await flush();
+    expect(sent).toEqual(['reset taken@example.com', 'reset taken@example.com', 'reset taken@example.com']);
+    expect(prisma.passwordResetToken.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('still lets a paused address ask for a reset email', async () => {
+    const { controller, sent } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    await expect(controller.forgotPassword({}, { email: 'taken@example.com' })).resolves.toEqual(
+      NEUTRAL_PASSWORD_RESET,
+    );
+    await flush();
+    expect(sent).toEqual(['reset taken@example.com']);
   });
 });
