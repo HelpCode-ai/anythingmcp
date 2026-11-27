@@ -1296,7 +1296,9 @@ A read-only query tool (the default) is checked in two layers before and while i
 | Microsoft SQL Server | no read-only mode exists: the statement runs in a transaction that is always rolled back. Actions that leave the database (linked servers, mail, files) are not undone |
 | MongoDB | the engine only runs `find` queries |
 
-The exceptions in the table are why a database user with SELECT-only permissions is still the recommendation for every engine.
+A read-only session also does not cover what leaves it: a function that opens its own connection (for example PostgreSQL `dblink`), a linked server (SQL Server `OPENQUERY` / `OPENROWSET`), or reading files on the database server (PostgreSQL `pg_read_file`, MySQL `LOAD_FILE()`). Whether those work depends only on the database user's privileges.
+
+The exceptions above are why a database user with SELECT-only permissions, and no rights on such functions, is still the recommendation for every engine.
 
 ---
 
