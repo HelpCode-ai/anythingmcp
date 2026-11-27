@@ -9290,6 +9290,12 @@ choose a plan. File Search and code mode have their own limits, described in
 [File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#limits-and-pauses>) and
 [code mode](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md#limits>).
 
+A Cloud workspace gets its trial when its address is verified. Community
+licences and trial licences issued for a self-hosted instance are for
+self-hosted installations: entering one under **Settings → License** (or
+`PUT /api/license/key`) answers 400 "This licence is for self-hosted
+installations".
+
 Only **active** connectors and MCP servers count. A File Search folder counts
 against the File Search folders, not against the connectors.
 
