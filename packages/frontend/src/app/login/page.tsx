@@ -21,6 +21,7 @@ import { startTrialPath } from '@/lib/checkout-source';
 import { captureSignupAttribution, clearSignupAttribution, getSignupAttribution } from '@/lib/attribution';
 import { pushSignUpVerified } from '@/lib/conversion';
 import { signUpClientName } from '@/lib/pending-authorization';
+import { takeInviteEmailCodeSession } from '@/lib/invite-email-code';
 import {
   cardTrialEligible,
   clearAuthorizationReturn,
@@ -84,6 +85,9 @@ function LoginForm() {
   const [resendCooldown, setResendCooldown] = useState(0);
   // "I opened the link in the email" is being checked.
   const [checkingLink, setCheckingLink] = useState(false);
+  // Cloud: the code step was reached from an accepted invitation. The
+  // account joins an existing workspace, so no trial step follows.
+  const [joinedByInvite, setJoinedByInvite] = useState(false);
   const [registrationEnabled, setRegistrationEnabled] = useState(false);
   // No account exists yet: this sign-up is the instance's first-user setup.
   const [firstUserSetup, setFirstUserSetup] = useState(false);
@@ -142,6 +146,7 @@ function LoginForm() {
     } else router.push(target);
   };
   const emailVerifiedParam = searchParams.get('emailVerified');
+  const verifyParam = searchParams.get('verify');
   const modeParam = searchParams.get('mode'); // 'register' or 'login'
   const ssoCode = searchParams.get('sso');
   const socialCode = searchParams.get('social');
@@ -325,6 +330,23 @@ function LoginForm() {
       setRecentContinuing(false);
     }
   };
+
+  // `?verify=invite`: the accept-invite page created a Cloud account that
+  // still has to enter its email code. Its session was handed over in this
+  // tab; the code step below is the one a password sign-up uses.
+  const inviteHandoverRead = useRef(false);
+  useEffect(() => {
+    if (verifyParam !== 'invite' || inviteHandoverRead.current) return;
+    inviteHandoverRead.current = true;
+    const handedOver = takeInviteEmailCodeSession();
+    if (!handedOver) return;
+    setAuthToken(handedOver.accessToken);
+    setStoredUser(handedOver.user);
+    setUserEmail(handedOver.user.email);
+    setJoinedByInvite(true);
+    setResendCooldown(60);
+    setSetupStep('verify-email');
+  }, [verifyParam]);
 
   // Surface a failure the SSO callback redirected back with.
   useEffect(() => {
@@ -582,6 +604,12 @@ function LoginForm() {
   const continueVerified = async () => {
     const verifiedUser = { ...storedUser, emailVerified: true };
     login(authToken, verifiedUser);
+
+    if (joinedByInvite) {
+      // The workspace the invitation was for already has its plan.
+      goTo(redirectTo);
+      return;
+    }
 
     if (isCloudMode && returningToAuthorization) {
       // Verification already created the trial; the user is in the middle
