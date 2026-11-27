@@ -95,7 +95,7 @@
       },
       "endpointMapping": {
         "method": "GET",
-        "path": "{DOCUSIGN_AUTH_URL}/oauth/userinfo"
+        "path": "{{DOCUSIGN_AUTH_URL}}/oauth/userinfo"
       }
     },
     {

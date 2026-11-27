@@ -1,5 +1,6 @@
 import { ConflictException, Injectable, Logger, Optional } from '@nestjs/common';
 import { PrismaService } from '../common/prisma.service';
+import { maskApiKey } from '../common/crypto/api-key-hash.util';
 import {
   KgSkillService,
   SKILLS_DELIVERY_MODES,
@@ -285,14 +286,14 @@ export class McpServersService {
       select: {
         id: true,
         name: true,
-        key: true,
+        keySuffix: true,
         isActive: true,
         lastUsedAt: true,
         createdAt: true,
       },
       orderBy: { createdAt: 'desc' },
     });
-    return keys.map((k) => ({ ...k, key: `mcp_${'•'.repeat(24)}${k.key.slice(-8)}` }));
+    return keys.map(({ keySuffix, ...k }) => ({ ...k, key: maskApiKey(keySuffix) }));
   }
 
   async create(userId: string, organizationId: string, data: { name: string; slug?: string; description?: string; instructions?: string }) {

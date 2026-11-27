@@ -11,6 +11,7 @@ import { DeploymentService } from '../common/deployment.service';
 import { encrypt, decrypt } from '../common/crypto/encryption.util';
 import { getRequiredSecret } from '../common/secrets.util';
 import { assertSafeOutboundUrl } from '../common/ssrf.util';
+import { ssrfGuardedFetch } from '../common/outbound-http';
 import {
   parseProviderConfig,
   deriveIssuer,
@@ -313,7 +314,8 @@ export class IdentityProvidersService {
       // ranges, resolving DNS so a public name pointing inward is caught too.
       await assertSafeOutboundUrl(discoveryUrl);
 
-      const response = await fetch(discoveryUrl, {
+      // The same check again on the address the connection actually uses.
+      const response = await ssrfGuardedFetch(discoveryUrl, {
         redirect: 'error', // a redirect could walk us off the allowlisted host
         signal: AbortSignal.timeout(10_000),
       });

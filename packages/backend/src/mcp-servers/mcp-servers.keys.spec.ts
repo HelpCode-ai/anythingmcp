@@ -31,9 +31,19 @@ describe('MCP server detail: API keys', () => {
   }
 
   const rows = [
-    { id: 'k-admin', userId: 'admin', organizationId: 'org-1', mcpServerId: 's1', name: 'Admin', key: FULL_KEY },
-    { id: 'k-viewer', userId: 'viewer', organizationId: 'org-1', mcpServerId: 's1', name: 'Viewer', key: `mcp_${'b'.repeat(56)}cafebabe` },
+    { id: 'k-admin', userId: 'admin', organizationId: 'org-1', mcpServerId: 's1', name: 'Admin', key: FULL_KEY, keySuffix: 'deadbeef' },
+    { id: 'k-viewer', userId: 'viewer', organizationId: 'org-1', mcpServerId: 's1', name: 'Viewer', key: `hashed_${'b'.repeat(48)}`, keySuffix: 'cafebabe' },
   ];
+
+  it('masks from the stored suffix and never selects the key column', async () => {
+    const { service, prisma } = makeService(rows);
+    const res = await service.listOwnKeysForServer('s1', 'viewer', 'org-1');
+    const args = (prisma.mcpApiKey.findMany as jest.Mock).mock.calls[0][0];
+    expect(args.select.key).toBeUndefined();
+    expect(args.select.keySuffix).toBe(true);
+    expect(res).toEqual([expect.objectContaining({ id: 'k-viewer', key: `mcp_${'•'.repeat(24)}cafebabe` })]);
+    expect(res[0]).not.toHaveProperty('keySuffix');
+  });
 
   it('does not load API keys in findById', async () => {
     const { service, prisma } = makeService(rows);
