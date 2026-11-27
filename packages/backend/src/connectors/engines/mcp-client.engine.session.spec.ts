@@ -2,9 +2,11 @@ import { createServer, type Server } from 'node:http';
 import { McpClientEngine } from './mcp-client.engine';
 import { OAuth2TokenService } from './oauth2-token.service';
 
-// Skip the SSRF preflight for this loopback fixture. The SDK and HTTP transport
-// are real, including the engine's guarded fetch (there are no redirects).
+// Skip the engine's preflight for this loopback fixture. The SDK and HTTP
+// transport are real, including the engine's guarded fetch and its dispatcher
+// (the outbound policy is off under jest unless a test enables it).
 jest.mock('../../common/ssrf.util', () => ({
+  ...jest.requireActual('../../common/ssrf.util'),
   assertSafeOutboundUrl: jest.fn().mockResolvedValue(undefined),
 }));
 

@@ -1,5 +1,5 @@
 import { randomBytes } from 'crypto';
-import { apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
+import { apiKeyPlaceholder, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
 import type { McpApiKeyScope } from '../generated/prisma/client';
 
 /**
@@ -171,7 +171,7 @@ export async function mintSupportKey(
       mcpServerId: plan.mcpServerId,
       // The plaintext column is still NOT NULL until it is dropped. Store an
       // unusable unique placeholder, never the key: lookups match the hash.
-      key: `support_${randomBytes(24).toString('hex')}`,
+      key: apiKeyPlaceholder('support'),
       keyHash: hashApiKey(key),
       keySuffix: apiKeySuffix(key),
       name,

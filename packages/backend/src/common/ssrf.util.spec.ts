@@ -1,4 +1,14 @@
-import { CONNECT_ATTEMPT_TIMEOUT_MS, createSsrfGuardedAgents, extractSsrfBlockedHostname } from './ssrf.util';
+import * as dns from 'dns';
+import { Agent } from 'undici';
+import {
+  assertOutboundUrlBeforeConnect,
+  CONNECT_ATTEMPT_TIMEOUT_MS,
+  createSsrfGuardedAgents,
+  createSsrfGuardedDispatcher,
+  extractSsrfBlockedHostname,
+} from './ssrf.util';
+
+const ENV_ON = { SSRF_GUARD: 'enabled' } as NodeJS.ProcessEnv;
 
 describe('extractSsrfBlockedHostname', () => {
   // The allowlist is checked before the IP / loopback / DNS checks, so every
@@ -93,5 +103,46 @@ describe('createSsrfGuardedAgents', () => {
     }
     expect(CONNECT_ATTEMPT_TIMEOUT_MS).toBeGreaterThan(3000);
     expect(CONNECT_ATTEMPT_TIMEOUT_MS).toBeLessThan(5000);
+  });
+});
+
+describe('assertOutboundUrlBeforeConnect', () => {
+  const ENV = { SSRF_GUARD: 'enabled' } as NodeJS.ProcessEnv;
+
+  afterEach(() => jest.restoreAllMocks());
+
+  it('checks scheme, literal IPs and local names without a DNS lookup', async () => {
+    const spy = jest.spyOn(dns.promises, 'lookup');
+    await expect(assertOutboundUrlBeforeConnect('http://127.0.0.1/', ENV)).rejects.toThrow(/not a public IP/);
+    await expect(assertOutboundUrlBeforeConnect('http://[fe80::1]/', ENV)).rejects.toThrow(/not a public IP/);
+    await expect(assertOutboundUrlBeforeConnect('http://169.254.169.254/', ENV)).rejects.toThrow(/not a public IP/);
+    await expect(assertOutboundUrlBeforeConnect('http://localhost/', ENV)).rejects.toThrow(/loopback/);
+    await expect(assertOutboundUrlBeforeConnect('ftp://example.com/', ENV)).rejects.toThrow(/protocol/);
+    await expect(assertOutboundUrlBeforeConnect('not a url', ENV)).rejects.toThrow(/invalid URL/);
+    await expect(assertOutboundUrlBeforeConnect('https://mcp.example.com/mcp', ENV)).resolves.toBeUndefined();
+    await expect(assertOutboundUrlBeforeConnect('https://8.8.8.8/', ENV)).resolves.toBeUndefined();
+    expect(spy).not.toHaveBeenCalled();
+  });
+
+  it('follows the allowlist, unless skipAllowlists is set', async () => {
+    const env = { ...ENV, SSRF_ALLOWED_HOSTS: '10.0.0.5' } as NodeJS.ProcessEnv;
+    await expect(assertOutboundUrlBeforeConnect('http://10.0.0.5/', env)).resolves.toBeUndefined();
+    await expect(
+      assertOutboundUrlBeforeConnect('http://10.0.0.5/', env, { skipAllowlists: true }),
+    ).rejects.toThrow(/not a public IP/);
+  });
+
+  it('does nothing when the guard is off', async () => {
+    await expect(
+      assertOutboundUrlBeforeConnect('http://127.0.0.1/', { SSRF_GUARD: 'disabled' } as NodeJS.ProcessEnv),
+    ).resolves.toBeUndefined();
+  });
+});
+
+describe('createSsrfGuardedDispatcher', () => {
+  it('builds an undici dispatcher', async () => {
+    const dispatcher = createSsrfGuardedDispatcher(ENV_ON);
+    expect(dispatcher).toBeInstanceOf(Agent);
+    await dispatcher.close();
   });
 });

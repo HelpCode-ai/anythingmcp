@@ -1,6 +1,6 @@
 import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { McpApiKeysService } from './mcp-api-keys.service';
-import { hashApiKey } from '../common/crypto/api-key-hash.util';
+import { hashApiKey, isApiKeyPlaceholder } from '../common/crypto/api-key-hash.util';
 
 process.env.ENCRYPTION_KEY ??= 'unit-test-encryption-key-0123456789abcdef';
 
@@ -271,6 +271,44 @@ describe('McpApiKeysService', () => {
       expect(data.keyHash).toMatch(/^[0-9a-f]{64}$/);
       expect(data.keyHash).not.toContain(result.key.slice(4));
       expect(data.keySuffix).toBe(result.key.slice(-8));
+    });
+
+    it('stores a placeholder instead of the key and returns the key once', async () => {
+      mockPrisma.mcpApiKey.create.mockImplementation((args: any) =>
+        Promise.resolve({ id: 'key-1', name: args.data.name }),
+      );
+      const result = await service.generate('user-1', 'org-1', 'Key');
+      const args = mockPrisma.mcpApiKey.create.mock.calls[0][0];
+      expect(result.key).toMatch(/^mcp_[0-9a-f]{64}$/);
+      expect(args.data.key).toMatch(/^hashed_[0-9a-f]{48}$/);
+      expect(isApiKeyPlaceholder(args.data.key)).toBe(true);
+      expect(args.data.key).not.toContain(result.key.slice(4));
+      expect(args.select.key).toBeUndefined();
+    });
+
+    it('gives each new key its own placeholder', async () => {
+      mockPrisma.mcpApiKey.create.mockResolvedValue({ id: 'k' });
+      await service.generate('user-1', 'org-1', 'A');
+      await service.generate('user-1', 'org-1', 'B');
+      const [a, b] = mockPrisma.mcpApiKey.create.mock.calls.map((c: any[]) => c[0].data.key);
+      expect(a).not.toBe(b);
+    });
+
+    it('lists keys with the stored suffix, not the key column', async () => {
+      mockPrisma.mcpApiKey.findMany.mockResolvedValue([]);
+      await service.listByUser('user-1');
+      const select = mockPrisma.mcpApiKey.findMany.mock.calls[0][0].select;
+      expect(select.key).toBeUndefined();
+      expect(select.keySuffix).toBe(true);
+    });
+
+    it('never compares a placeholder against the plaintext column', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(null);
+      const placeholder = `hashed_${'a'.repeat(48)}`;
+      await expect(service.resolveUserByKey(placeholder)).resolves.toBeNull();
+      expect(mockPrisma.mcpApiKey.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { keyHash: hashApiKey(placeholder) } }),
+      );
     });
 
     it('looks a key up by hash, falling back to the plaintext column', async () => {
