@@ -388,7 +388,9 @@ export class SocialAuthService {
         where: { userId_provider: { userId: owner.id, provider: adapter.id } },
         select: { id: true },
       });
-      if (sameProvider) {
+      // An unverified account's connected providers are removed below, the
+      // same provider included, so only a verified account refuses here.
+      if (sameProvider && owner.emailVerified) {
         throw fail(
           'user_already_linked_at_provider',
           `Your account is already connected to a different ${adapter.label} account.`,
@@ -403,13 +405,28 @@ export class SocialAuthService {
 
       // An address nobody ever verified was typed by someone who never proved
       // they own the mailbox; the provider just did. Whatever that someone set
-      // up (a password, live sessions) is dropped, so a sign-up made in
-      // advance with a victim's address cannot be used to get into the
-      // account the victim is now taking over.
+      // up (a password, live sessions, other connected sign-in providers, API
+      // keys) is dropped; the account continues with this provider only.
       const reclaim = !owner.emailVerified;
       const now = new Date();
+      const dropped = { identities: [] as string[], apiKeys: 0 };
       await this.prisma.$transaction(async (tx) => {
         if (reclaim) {
+          const others = await tx.socialIdentity.findMany({
+            where: { userId: owner.id },
+            select: { id: true, provider: true },
+          });
+          if (others.length > 0) {
+            await tx.socialIdentity.deleteMany({ where: { id: { in: others.map((i) => i.id) } } });
+            dropped.identities = others.map((i) => i.provider);
+          }
+          // Revoked, not deleted: the rows stay for the audit trail. Keys an
+          // operator minted for support are theirs, and left alone.
+          const keys = await tx.mcpApiKey.updateMany({
+            where: { userId: owner.id, isActive: true, isSupport: false },
+            data: { isActive: false },
+          });
+          dropped.apiKeys = keys.count;
           await tx.user.update({
             where: { id: owner.id },
             data: { passwordHash: null, sessionsValidFrom: now, emailVerified: true },
@@ -442,7 +459,11 @@ export class SocialAuthService {
           organizationId: owner.organizationId,
           actorUserId: owner.id,
           targetUserId: owner.id,
-          metadata: { provider: adapter.id },
+          metadata: {
+            provider: adapter.id,
+            removedIdentities: dropped.identities,
+            deactivatedApiKeys: dropped.apiKeys,
+          },
           ip: ctx.ip,
           userAgent: ctx.userAgent,
         });
@@ -556,6 +577,14 @@ export class SocialAuthService {
 
     const user = await this.prisma.user.findUnique({ where: { id: userId } });
     if (!user) throw fail('link_without_user', 'Please sign in again.');
+    // Social sign-in exists on Cloud only. A provider is connected only to an
+    // account whose address is verified.
+    if (!user.emailVerified) {
+      throw fail(
+        'link_requires_verified_email',
+        'Verify your email address first, then connect this account.',
+      );
+    }
     await this.prisma.socialIdentity.create({
       data: {
         userId,

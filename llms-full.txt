@@ -9412,8 +9412,23 @@ curl -s http://localhost:4000/api/auth/invite \
   -d '{"email":"user@example.com","role":"EDITOR","mcpRoleId":"optional-role-id"}'
 ```
 
-Inviting an address that already has a pending invitation reuses its link,
-sends the mail again and applies the `role` and MCP roles of this call to it.
+The response carries `inviteUrl`, the invitation link. It is shown this once:
+only a hash of its token is stored, and `GET /api/users/invitations` lists
+invitations without it. Inviting an address that already has a pending
+invitation keeps that invitation and its expiry, applies the `role` and MCP
+roles of this call to it and sends a new link; the earlier link stops working.
+Links expire 48 hours after the invitation was created.
+
+### Accept an invitation
+
+`POST /api/auth/accept-invite` with `{"token":"…","password":"…","name":"…"}`
+creates an account for an address that has none and adds it to the workspace;
+an existing account proves itself with its current password or a dashboard
+session. On AnythingMCP Cloud a new account starts with an unverified address:
+the answer has `user.emailVerified: false` and `verificationRequired: true`, a
+verification code is sent to the address, and the account is limited like any
+unverified one until the code is entered (`POST /api/auth/verify-email`). On a
+self-hosted instance the new account is verified straight away, as before.
 
 ### Create a workspace
 
