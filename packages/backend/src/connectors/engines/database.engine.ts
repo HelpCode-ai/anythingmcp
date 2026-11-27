@@ -215,20 +215,20 @@ export class DatabaseEngine {
       return this.executeHana(config, sql, values, readOnly);
     }
     if (this.isMssql(config.baseUrl)) {
-      return this.executeMssql(config, sql, values);
+      return this.executeMssql(config, sql, values, readOnly);
     }
     if (this.isMysql(config.baseUrl)) {
-      return this.executeMysql(config, sql, values);
+      return this.executeMysql(config, sql, values, readOnly);
     }
     if (this.isOracle(config.baseUrl)) {
-      return this.executeOracle(config, sql, values);
+      return this.executeOracle(config, sql, values, readOnly);
     }
     if (this.isSqlite(config.baseUrl)) {
       return Promise.resolve(
         this.executeSqlite(config.baseUrl, sql, values, readOnly),
       );
     }
-    return this.executePostgres(config, sql, values);
+    return this.executePostgres(config, sql, values, readOnly);
   }
 
   /** Test connectivity — runs SELECT 1 (SQL) or ping (MongoDB) */
@@ -303,6 +303,7 @@ export class DatabaseEngine {
     config: { baseUrl: string; authConfig?: Record<string, unknown> },
     sql: string,
     values: unknown[] = [],
+    readOnly = true,
   ): Promise<unknown> {
     const connectionString = this.postgresConnectionString(config);
     // The host only. What follows the first `@` can be the rest of a
@@ -311,7 +312,7 @@ export class DatabaseEngine {
     this.logger.debug(`PostgreSQL query → ${safeHost}`);
 
     try {
-      return await this.runPostgres(connectionString, sql, values, true);
+      return await this.runPostgres(connectionString, sql, values, true, readOnly);
     } catch (err) {
       // PgBouncer refuses statement_timeout as a startup parameter
       // ("unsupported startup parameter: statement_timeout"). Retry with
@@ -322,15 +323,23 @@ export class DatabaseEngine {
       this.logger.debug(
         `PostgreSQL ${safeHost} refused statement_timeout; using a client-side timeout`,
       );
-      return this.runPostgres(connectionString, sql, values, false);
+      return this.runPostgres(connectionString, sql, values, false, readOnly);
     }
   }
 
+  /**
+   * A read-only connector runs its statement inside `BEGIN READ ONLY` and
+   * always rolls back: PostgreSQL then refuses any write the statement causes,
+   * including one done by a function it calls (`SELECT some_function()`),
+   * which the lexical guard cannot see. The database user's grants remain the
+   * real boundary.
+   */
   private async runPostgres(
     connectionString: string,
     sql: string,
     values: unknown[],
     serverTimeout: boolean,
+    readOnly = true,
   ): Promise<unknown> {
     const pool = new Pool({
       connectionString,
@@ -340,8 +349,21 @@ export class DatabaseEngine {
       connectionTimeoutMillis: this.CONNECT_TIMEOUT_MS,
     });
     try {
-      const result =
-        values.length > 0 ? await pool.query(sql, values) : await pool.query(sql);
+      let result: any;
+      if (readOnly) {
+        const client = await pool.connect();
+        try {
+          await client.query('BEGIN TRANSACTION READ ONLY');
+          result =
+            values.length > 0 ? await client.query(sql, values) : await client.query(sql);
+        } finally {
+          await client.query('ROLLBACK').catch(() => undefined);
+          client.release();
+        }
+      } else {
+        result =
+          values.length > 0 ? await pool.query(sql, values) : await pool.query(sql);
+      }
       if (result.rows && result.rows.length > 0) {
         const rows = Array.isArray(result.rows) ? result.rows : [result.rows];
         return this.truncateRows(rows);
@@ -365,13 +387,20 @@ export class DatabaseEngine {
     },
     sql: string,
     values: unknown[] = [],
+    readOnly = true,
   ): Promise<unknown> {
     const mssqlConfig = this.buildMssqlConfig(config);
     this.logger.debug(`MSSQL query → ${mssqlConfig.server}/${mssqlConfig.database}`);
 
     const pool = await mssql.connect(mssqlConfig);
+    // SQL Server has no read-only transaction mode. A read-only connector runs
+    // its statement in a transaction that is always rolled back, so a write
+    // caused by the statement does not persist. Only a database user without
+    // write rights stops writes that leave the database (linked servers, mail).
+    const transaction = readOnly ? new mssql.Transaction(pool) : undefined;
     try {
-      const request = pool.request();
+      if (transaction) await transaction.begin();
+      const request = transaction ? new mssql.Request(transaction) : pool.request();
       values.forEach((value, idx) => {
         request.input(`p${idx}`, value as any);
       });
@@ -382,6 +411,7 @@ export class DatabaseEngine {
       // Write operations return rowsAffected
       return { rowsAffected: result.rowsAffected?.[0] ?? 0 };
     } finally {
+      if (transaction) await transaction.rollback().catch(() => undefined);
       await pool.close();
     }
   }
@@ -617,6 +647,7 @@ export class DatabaseEngine {
     },
     sql: string,
     values: unknown[] = [],
+    readOnly = true,
   ): Promise<unknown> {
     const uri = this.mysqlUri(config.baseUrl, config.authConfig);
     this.logger.debug(`MySQL query → ${new URL(uri).hostname}`);
@@ -626,6 +657,10 @@ export class DatabaseEngine {
       connectTimeout: this.CONNECT_TIMEOUT_MS,
     });
     try {
+      // A read-only connector runs its statement in a read-only transaction
+      // that is rolled back, so MySQL refuses writes made through a function
+      // the statement calls (temporary tables excepted).
+      if (readOnly) await conn.query('START TRANSACTION READ ONLY');
       const [result] =
         values.length > 0
           ? await conn.execute({ sql, timeout: this.STATEMENT_TIMEOUT_MS }, values as any[])
@@ -637,6 +672,7 @@ export class DatabaseEngine {
       const info = result as any;
       return { affectedRows: info.affectedRows, insertId: info.insertId };
     } finally {
+      if (readOnly) await conn.query('ROLLBACK').catch(() => undefined);
       await conn.end();
     }
   }
@@ -667,6 +703,7 @@ export class DatabaseEngine {
     },
     sql: string,
     values: unknown[] = [],
+    readOnly = true,
   ): Promise<unknown> {
     const oraConfig = this.buildOracleConfig(config);
     this.logger.debug(`Oracle query → ${oraConfig.connectString}`);
@@ -675,9 +712,14 @@ export class DatabaseEngine {
     // Round-trip ceiling; oracledb cancels the call and raises DPI-1067.
     conn.callTimeout = this.STATEMENT_TIMEOUT_MS;
     try {
+      // A read-only connector runs its statement in a read-only transaction
+      // that is rolled back, never committed. Oracle refuses writes made
+      // through a function the statement calls, except in an autonomous
+      // transaction: only the database user's grants stop those.
+      if (readOnly) await conn.execute('SET TRANSACTION READ ONLY');
       const result = await conn.execute(sql, values as any[], {
         outFormat: oracledb.OUT_FORMAT_OBJECT,
-        autoCommit: true,
+        autoCommit: !readOnly,
       });
       if (result.rows && result.rows.length > 0) {
         return this.truncateRows(result.rows as Record<string, unknown>[]);
@@ -685,6 +727,7 @@ export class DatabaseEngine {
       // Write operations return rowsAffected
       return { rowsAffected: result.rowsAffected ?? 0 };
     } finally {
+      if (readOnly) await conn.rollback().catch(() => undefined);
       await conn.close();
     }
   }
