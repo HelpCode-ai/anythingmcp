@@ -1,3 +1,4 @@
+import { enableToolProgress } from './tool-progress';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
 import { RegisteredTool, isListable } from './tool-registry';
@@ -164,6 +165,7 @@ export function registerFileSearchAppToolset(
   mcpServer: McpServer,
   scopeTools: RegisteredTool[],
   deps: FileSearchAppDeps,
+  progressEnabled = true,
 ): void {
   const ready = scopeTools.filter((t) => isListable(t) && !excludedOnSharedEndpoint(t, 'chatgpt'));
 
@@ -291,7 +293,7 @@ export function registerFileSearchAppToolset(
     return { content, ...(results.every((r) => r.result.isError) ? { isError: true } : {}) };
   };
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'list_file_sources',
     {
       description: `List the folders connected to the user's workspace (${FILE_SEARCH_APP_SOURCES_TEXT}): their id, name and protocol, what they contain, how many files are indexed, when they were last synced, and the admin's notes on them. Call it first when unsure which folder to search.`,
@@ -330,9 +332,9 @@ export function registerFileSearchAppToolset(
       );
       return json({ sources: out });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'search_documents',
     {
       description: `Search the text of every document in the connected folders (PDF, Word, Excel, PowerPoint, Outlook messages, text). Returns the files ranked by relevance with the best page, other matching pages, a snippet and the file date. Without \`source\` it searches every folder.${UNTRUSTED}`,
@@ -352,9 +354,9 @@ export function registerFileSearchAppToolset(
       annotations: { title: 'Search documents', ...READ_ONLY },
     },
     async ({ source, ...args }) => run(source, 'search', args, true),
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'find_files',
     {
       description:
@@ -372,9 +374,9 @@ export function registerFileSearchAppToolset(
       annotations: { title: 'Find files', ...READ_ONLY },
     },
     async ({ source, ...args }) => run(source, 'find', args, true),
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'list_folder',
     {
       description:
@@ -387,9 +389,9 @@ export function registerFileSearchAppToolset(
       annotations: { title: 'List folder', ...READ_ONLY },
     },
     async ({ source, ...args }) => run(source, 'list', args, false),
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'read_document',
     {
       description: `Read the text of one file: whole (in windows of max_chars) or only some pages ("1-3,7"). Page markers show where each page starts. Read the pages a search returned before answering.${UNTRUSTED}`,
@@ -403,9 +405,9 @@ export function registerFileSearchAppToolset(
       annotations: { title: 'Read document', ...READ_ONLY },
     },
     async ({ source, ...args }) => run(source, 'read', args, false),
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'find_exact_text',
     {
       description: `Exact search for a code, number or phrase, with the matching lines and two lines of context; in spreadsheets each line is a whole row with its column names. Use it for article numbers, order numbers and norms. Without \`source\` it looks in every folder.${UNTRUSTED}`,
@@ -420,9 +422,9 @@ export function registerFileSearchAppToolset(
       annotations: { title: 'Find exact text', ...READ_ONLY },
     },
     async ({ source, ...args }) => run(source, 'grep', args, true),
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'view_document_page',
     {
       description:
@@ -435,9 +437,9 @@ export function registerFileSearchAppToolset(
       annotations: { title: 'View document page', ...READ_ONLY },
     },
     async ({ source, ...args }) => run(source, 'view', args, false),
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'get_file_link',
     {
       description:
@@ -457,5 +459,5 @@ export function registerFileSearchAppToolset(
       },
     },
     async ({ source, ...args }) => run(source, 'get', args, false),
-  );
+  ), progressEnabled);
 }

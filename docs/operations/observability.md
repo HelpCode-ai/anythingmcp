@@ -233,6 +233,25 @@ The connector page's "Inbound webhooks" card (`webhook-card.tsx`) is this featur
 
 Same behavior on both: ingestion, verification, storage and retention all run the same code path, with no Cloud-only or self-hosted-only branch. The one difference: on Cloud, the plan caps how many active connectors may have webhooks turned on (Starter 1, Team and the trial 5, Business and Enterprise no limit; see [Cloud plan limits](../cloud-plans.md)). The cap follows `PLAN_CAPS_ENFORCE` like the other plan caps: `dry-run` only logs. Self-hosted has no cap.
 
+## Progress during long MCP calls
+
+On SSE connections, a `tools/call` request that includes `_meta.progressToken`
+receives `notifications/progress` after five seconds and every five seconds
+while it runs. The notification echoes the token, with elapsed seconds in
+`progress` and a message such as `Running for 5 seconds`. Tool results arrive
+on completion; updates carry elapsed time, with no estimated total or tool data.
+
+Progress stops when the call completes, fails or is cancelled. Cancelling a
+request stops its progress timer even if the upstream operation is still
+finishing. Upstream cancellation and client timeout policies keep their existing
+behavior. Progress delivery is best-effort; notification failures do not change
+the tool result.
+
+With `MCP_STREAMABLE_JSON_RESPONSE=true`, calls return their usual final JSON
+response and create no progress timer, including when a client supplies a token.
+Cloud and self-hosted instances follow the same rule: progress depends on SSE
+mode and the client's token, independently of external telemetry settings.
+
 ## Fatal crash reports (always on in the Docker image)
 
 A fatal V8 error, such as an out-of-memory abort, ends the backend before any JavaScript handler runs, so the log has no stack. `start.sh` therefore starts the backend with `--report-on-fatalerror`: on such a crash Node writes a diagnostic report (`report.<date>.<time>.<pid>...json`) with the native stack, heap spaces and resource usage, plus the JavaScript stack when V8 can still produce one. It goes to `HEAP_SNAPSHOT_DIR` (`/app/diagnostics` in the image, a volume on AnythingMCP Cloud), next to the heap snapshots. Environment variables are left out of the report (`--report-exclude-env`); a Node older than 22.13 cannot do that, so on such a build the report stays off. Self-hosted and Cloud behave the same; to keep the reports across container recreation on a self-hosted install, mount a volume at `/app/diagnostics`.

@@ -1,3 +1,4 @@
+import { enableToolProgress } from './tool-progress';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
 import { RegisteredTool, isListable } from './tool-registry';
@@ -172,6 +173,7 @@ export function registerChatgptAppToolset(
   mcpServer: McpServer,
   scopeTools: RegisteredTool[],
   deps: ChatgptAppDeps,
+  progressEnabled = true,
 ): void {
   const served = scopeTools.filter((t) => !excludedOnSharedEndpoint(t, 'chatgpt'));
   const ready = served.filter(isListable);
@@ -265,7 +267,7 @@ export function registerChatgptAppToolset(
     return { db, name };
   };
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_list_connectors',
     {
       description:
@@ -319,9 +321,9 @@ export function registerChatgptAppToolset(
           : {}),
       });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_list_databases',
     {
       description:
@@ -361,9 +363,9 @@ export function registerChatgptAppToolset(
           : {}),
       });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_get_database_schema',
     {
       description:
@@ -382,9 +384,9 @@ export function registerChatgptAppToolset(
       if ('error' in found) return found.error;
       return deps.execute(found.db.schema!, {});
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_get_query_examples',
     {
       description:
@@ -403,9 +405,9 @@ export function registerChatgptAppToolset(
       if ('error' in found) return found.error;
       return deps.execute(found.db.examples!, {});
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_query_database',
     {
       description:
@@ -430,9 +432,9 @@ export function registerChatgptAppToolset(
       if ('error' in found) return found.error;
       return deps.execute(found.db.query!, { query: args.query });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_get_connector_activity',
     {
       description:
@@ -477,9 +479,9 @@ export function registerChatgptAppToolset(
         .sort((a, b) => b.calls - a.calls || a.name.localeCompare(b.name));
       return json({ days, connectors });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_get_workspace_guide',
     {
       description:
@@ -508,9 +510,9 @@ export function registerChatgptAppToolset(
           : guide;
       return { content: [{ type: 'text' as const, text }] };
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_get_configuration_url',
     {
       description:
@@ -531,5 +533,5 @@ export function registerChatgptAppToolset(
         note: 'Credentials are entered only in the dashboard, never in the chat. Changes there are available here right away.',
       });
     },
-  );
+  ), progressEnabled);
 }

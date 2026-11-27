@@ -44,6 +44,7 @@ import { CrossWorkspaceRefusalStore } from '../auth/cross-workspace-refusal.stor
 import { userReachesOrganization } from '../auth/server-reachability.util';
 import { mcpHttpTransport } from './mcp-strategy';
 import { createQuietMcpHandler } from './mcp-handler.util';
+import { enableToolProgress, type ProgressRegistration } from './tool-progress';
 import { toolVisibilityRole } from './mcp-server.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { McpSessionManager } from '../mcp-servers/mcp-session.manager';
@@ -197,7 +198,7 @@ const DEMO_RESULT_FOOTER =
 
 /** Minimal handle returned by McpServer.tool()/registerTool() that we keep so a
  * live (stateful) session can drop a tool when its surface changes. */
-type ToolHandle = { remove: () => void };
+type ToolHandle = { remove: () => void } & ProgressRegistration;
 
 /** A planned tool registration: its name, a content signature (changes when the
  * tool's shape changes), and a thunk that performs the registration. */
@@ -799,7 +800,7 @@ export class McpEndpointController {
             connectors: deps.connectors,
             guide: deps.guide,
             setupUrl: `${dashboardBase}/connectors/new/file-search?from=chat`,
-          });
+          }, !this.jsonResponseEnabled());
           return mcpServer;
         },
         'file-search',
@@ -820,7 +821,7 @@ export class McpEndpointController {
           registerChatgptAppToolset(mcpServer, scopeTools, {
             ...deps,
             activity: (ids, days) => this.mcpServersService.activityByConnector(ids, days),
-          });
+          }, !this.jsonResponseEnabled());
           return mcpServer;
         },
         'chatgpt-app',
@@ -837,7 +838,7 @@ export class McpEndpointController {
           { name: 'AnythingMCP', version: APP_VERSION },
           { instructions: sharedToolsetInstructions(profile) },
         );
-        registerSharedToolset(mcpServer, scopeTools, deps, profile);
+        registerSharedToolset(mcpServer, scopeTools, deps, profile, !this.jsonResponseEnabled());
         return mcpServer;
       },
       'shared /mcp',
@@ -1262,7 +1263,7 @@ export class McpEndpointController {
           { name: 'AnythingMCP Demo', version: APP_VERSION },
           { instructions },
         );
-        registerDemoTools(mcpServer);
+        registerDemoTools(mcpServer, !this.jsonResponseEnabled());
         this.registerAll(mcpServer, liveEntries, 'demo');
         return mcpServer;
       },
@@ -3403,7 +3404,9 @@ export class McpEndpointController {
     const handles: SessionHandles = new Map();
     for (const e of entries) {
       try {
-        handles.set(e.name, { handle: e.register(mcpServer), sig: e.sig });
+        const handle = e.register(mcpServer);
+        enableToolProgress(handle, !this.jsonResponseEnabled());
+        handles.set(e.name, { handle, sig: e.sig });
       } catch (err: any) {
         this.logger.warn(
           `Failed to register a tool on server ${serverId}: ${err.message}`,

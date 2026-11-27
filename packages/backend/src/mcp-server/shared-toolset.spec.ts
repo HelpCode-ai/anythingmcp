@@ -105,12 +105,13 @@ async function connect(
   scope: RegisteredTool[],
   deps = makeDeps(),
   profile: SharedToolsetProfile = 'default',
+  progressEnabled = true,
 ) {
   const server = new McpServer(
     { name: 'AnythingMCP', version: 'test' },
     { instructions: sharedToolsetInstructions(profile) },
   );
-  registerSharedToolset(server, scope, deps, profile);
+  registerSharedToolset(server, scope, deps, profile, progressEnabled);
   const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
   await server.connect(serverSide);
   const client = new Client({ name: 'spec', version: '1.0.0' });
@@ -1089,5 +1090,35 @@ describe('shared toolset — agent file uploads', () => {
     expect((await call(client, 'anythingmcp_run_write_tool', { tool: 'file_upload_link', arguments: { filename: 'a.png' } })).body.error).toMatch(/No tool named/);
     const etsy = await call(client, 'anythingmcp_describe_tool', { tool: 'etsy_upload_listing_file' });
     expect(etsy.body.inputSchema.properties.file_url.description).toBe('Public URL of the file.');
+  });
+});
+
+describe('shared tool progress registrations', () => {
+  it.each([true, false])('reports progress only when SSE is enabled=%p', async (enabled) => {
+    let finish!: (value: { content: Array<{ type: 'text'; text: string }> }) => void;
+    let started!: () => void;
+    const pending = new Promise<{ content: Array<{ type: 'text'; text: string }> }>((resolve) => { finish = resolve; });
+    const running = new Promise<void>((resolve) => { started = resolve; });
+    const deps = makeDeps({ execute: jest.fn(() => { started(); return pending; }) });
+    const { client } = await connect([CRM_READ], deps, 'default', enabled);
+    const result = { content: [{ type: 'text' as const, text: 'customer result' }] };
+    try {
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick', 'setImmediate'] });
+      const onprogress = jest.fn();
+      const call = client.callTool({
+        name: 'anythingmcp_run_read_tool',
+        arguments: { tool: 'crm_find_customer', arguments: { email: 'synthetic@example.test' } },
+      }, { onprogress });
+      void call.catch(() => undefined);
+      await running;
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(onprogress).toHaveBeenCalledTimes(enabled ? 1 : 0);
+      finish(result);
+      await expect(call).resolves.toEqual(result);
+    } finally {
+      finish(result);
+      await client.close();
+      jest.useRealTimers();
+    }
   });
 });

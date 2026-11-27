@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
+import { enableToolProgress } from './tool-progress';
 import { getAdapter, listAdapters } from '../adapters/catalog';
 import { RegisteredTool, isListable } from './tool-registry';
 import { deriveToolAnnotations } from './tool-annotations';
@@ -742,6 +743,7 @@ export function registerSharedToolset(
   scopeTools: RegisteredTool[],
   deps: SharedToolsetDeps,
   profile: SharedToolsetProfile = 'default',
+  progressEnabled = true,
 ): void {
   // The default set's annotations are passed through untouched: they are what
   // the Claude directory reviewed.
@@ -1067,7 +1069,7 @@ export function registerSharedToolset(
     return deps.execute(tool, parsed.data as Record<string, unknown>);
   };
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_list_connectors',
     {
       description:
@@ -1172,9 +1174,9 @@ export function registerSharedToolset(
           : {}),
       });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_search_tools',
     {
       description:
@@ -1267,9 +1269,9 @@ export function registerSharedToolset(
         }),
       });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_describe_tool',
     {
       description:
@@ -1306,9 +1308,9 @@ export function registerSharedToolset(
         runWith: runWith(t),
       });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_run_read_tool',
     {
       description:
@@ -1324,9 +1326,9 @@ export function registerSharedToolset(
       called('anythingmcp_run_read_tool', args.tool);
       return run('read', args);
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_run_write_tool',
     {
       description:
@@ -1344,9 +1346,9 @@ export function registerSharedToolset(
       called('anythingmcp_run_write_tool', args.tool);
       return run('write', args);
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_get_workspace_guide',
     {
       description:
@@ -1394,9 +1396,9 @@ export function registerSharedToolset(
         .join('\n');
       return { content: [{ type: 'text' as const, text: first ? `${first}\n\n${text}` : text }] };
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'kg_how_to_obtain',
     {
       description:
@@ -1421,9 +1423,9 @@ export function registerSharedToolset(
       }
       return json(result);
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_get_configuration_url',
     {
       description:
@@ -1444,9 +1446,9 @@ export function registerSharedToolset(
         note: 'Changes made in the dashboard are available here right away. A server\'s own URL lists its tools directly instead of through these tools.',
       });
     },
-  );
+  ), progressEnabled);
 
-  if (profile === 'chatgpt') registerChatgptTools(mcpServer, deps, run, called);
+  if (profile === 'chatgpt') registerChatgptTools(mcpServer, deps, run, called, progressEnabled);
 }
 
 type CallReporter = (tool: string, inner?: unknown) => void;
@@ -1508,6 +1510,7 @@ function registerChatgptTools(
   deps: SharedToolsetDeps,
   run: (mode: 'read' | 'write', args: RunArgs) => Promise<TextResult>,
   called: CallReporter,
+  progressEnabled: boolean,
 ): void {
   // Always listed, so every ChatGPT user sees the same tools; a caller who may
   // not add connectors gets this answer instead.
@@ -1536,7 +1539,7 @@ function registerChatgptTools(
     };
   };
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_run_read_steps',
     {
       description: `Run up to ${RUN_STEPS_MAX} read-only tools of the user's workspace in one call, for requests that combine several systems (for example orders from the shop, the matching customers from the ERP and their open invoices from accounting). Steps run in parallel and each step's result is returned separately; a failing step does not stop the others. Tools that change data are refused here.`,
@@ -1572,9 +1575,9 @@ function registerChatgptTools(
         failed: results.filter((r) => !r.ok).length,
       });
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_find_connectors',
     {
       description:
@@ -1593,9 +1596,9 @@ function registerChatgptTools(
       called('anythingmcp_find_connectors');
       return setupOrRefuse('setup_find_connectors', args);
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_add_connector',
     {
       description:
@@ -1619,9 +1622,9 @@ function registerChatgptTools(
       called('anythingmcp_add_connector');
       return setupOrRefuse('setup_install_connector', args);
     },
-  );
+  ), progressEnabled);
 
-  mcpServer.registerTool(
+  enableToolProgress(mcpServer.registerTool(
     'anythingmcp_connection_status',
     {
       description:
@@ -1637,5 +1640,5 @@ function registerChatgptTools(
       called('anythingmcp_connection_status');
       return setupOrRefuse('setup_get_status', {});
     },
-  );
+  ), progressEnabled);
 }
