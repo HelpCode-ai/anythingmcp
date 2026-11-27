@@ -30,6 +30,8 @@ import { FileSearchModule } from './file-search/file-search.module';
 import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
+import { RedisService } from './common/redis.service';
+import { throttlerModuleOptions } from './common/redis-throttler.storage';
 import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { ClientCredentialsMiddleware } from './auth/client-credentials.middleware';
@@ -166,7 +168,13 @@ if (useOAuth) {
     // Note: do NOT add additional named buckets here. With nestjs/throttler
     // v6, ALL configured buckets apply to every request, which means a
     // strict bucket would also throttle the MCP endpoints.
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // With REDIS_URL set the counters live in Redis (shared by every backend
+    // process, kept across deploys); without it, in memory as before.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService, RedisService],
+      useFactory: (config: ConfigService, redis: RedisService) =>
+        throttlerModuleOptions(config.get<string>('REDIS_URL'), redis),
+    }),
 
     // OAuth2 module (conditionally loaded)
     ...conditionalImports,
