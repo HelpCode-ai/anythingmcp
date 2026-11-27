@@ -73,7 +73,7 @@
     "mailparser": "^3.15.0",
     "mongodb": "^7.9.1",
     "mssql": "^12.7.16",
-    "mysql2": "^3.24.4",
+    "mysql2": "^3.24.6",
     "nestjs-pino": "^4.6.1",
     "nodemailer": "^10.1.4",
     "openid-client": "^6.8.9",
