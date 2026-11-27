@@ -2,6 +2,7 @@ import { promises as dns, LookupAddress } from 'dns';
 import * as http from 'http';
 import * as https from 'https';
 import { isIP, LookupFunction } from 'net';
+import { Agent } from 'undici';
 import { urlForLog } from './log-safe-url.util';
 
 /**
@@ -227,6 +228,34 @@ export async function assertSafeOutboundUrl(
 }
 
 /**
+ * The part of {@link assertSafeOutboundUrl} that needs no DNS answer: URL
+ * syntax, scheme, the allowlists, a literal IP and local names. For clients
+ * whose sockets connect through {@link ssrfGuardedLookup}, which checks the
+ * addresses a name resolves to when the connection opens; Node does not call
+ * `lookup` for a literal IP, so that case is covered here.
+ */
+export async function assertOutboundUrlBeforeConnect(
+  url: string,
+  env: NodeJS.ProcessEnv = process.env,
+  opts: VetHostOptions = {},
+): Promise<void> {
+  const policy = readPolicy(env);
+  if (!policy.enabled) return;
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new SsrfBlockedError(`SSRF guard: invalid URL '${urlForLog(url)}'`);
+  }
+  if (parsed.protocol !== 'http:' && parsed.protocol !== 'https:') {
+    throw new SsrfBlockedError(
+      `SSRF guard: protocol '${parsed.protocol}' is not allowed`,
+    );
+  }
+  await vetHost(parsed.hostname.replace(/^\[|\]$/g, ''), policy, opts, false);
+}
+
+/**
  * Protocol-agnostic SSRF guard for a bare hostname / IP literal. Same policy and
  * checks as {@link assertSafeOutboundUrl} (env + DB allowlists, literal-IP check,
  * loopback/local block, DNS resolution against blocked ranges) — but without the
@@ -265,11 +294,15 @@ export async function resolveSafeOutboundHost(
  * Apply the policy to `hostname`. Returns null when the host is allowlisted
  * (env or DB), otherwise the addresses it resolves to, every one of them
  * checked. Throws SsrfBlockedError when the host is not allowed.
+ *
+ * `resolve: false` stops before the DNS step and returns null for a name
+ * that passed the other checks (see assertOutboundUrlBeforeConnect).
  */
 async function vetHost(
   hostname: string,
   policy: SsrfPolicy,
   opts: VetHostOptions = {},
+  resolve = true,
 ): Promise<LookupAddress[] | null> {
   if (!hostname) {
     throw new SsrfBlockedError('SSRF guard: empty hostname');
@@ -316,6 +349,8 @@ async function vetHost(
       `SSRF guard: hostname '${hostname}' is loopback / local`,
     );
   }
+
+  if (!resolve) return null;
 
   let resolved: LookupAddress[];
   try {
@@ -445,6 +480,24 @@ export function createSsrfGuardedAgents(
     httpAgent: new http.Agent(options),
     httpsAgent: new https.Agent(options),
   };
+}
+
+/**
+ * The fetch counterpart of {@link createSsrfGuardedAgents}: an undici
+ * dispatcher whose connections go through {@link ssrfGuardedLookup}, so the
+ * addresses a name resolves to are checked when each connection opens, and
+ * the socket connects to exactly those. Timeouts and pooling are undici's
+ * defaults, the same as the global fetch.
+ */
+export function createSsrfGuardedDispatcher(
+  env: NodeJS.ProcessEnv = process.env,
+  opts: VetHostOptions = {},
+): Agent {
+  return new Agent({
+    connect: { lookup: ssrfGuardedLookup(env, opts) },
+    autoSelectFamily: true,
+    autoSelectFamilyAttemptTimeout: CONNECT_ATTEMPT_TIMEOUT_MS,
+  });
 }
 
 /**

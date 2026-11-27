@@ -4,6 +4,8 @@ import {
 } from './identity-providers.service';
 import { PrismaService } from '../common/prisma.service';
 import { DeploymentService } from '../common/deployment.service';
+import * as outboundHttp from '../common/outbound-http';
+import { SsrfBlockedError } from '../common/ssrf.util';
 
 const TENANT = 'aaaabbbb-cccc-dddd-eeee-ffff11112222';
 
@@ -262,6 +264,37 @@ describe('IdentityProvidersService', () => {
       for (const select of selects) {
         expect(select).not.toHaveProperty('clientSecretEnc');
       }
+    });
+  });
+
+  describe('testConnection', () => {
+    const issuer = `https://login.microsoftonline.com/${TENANT}/v2.0`;
+
+    afterEach(() => jest.restoreAllMocks());
+
+    it('fetches the discovery document through the guarded fetch, refusing redirects', async () => {
+      prisma.identityProvider.findFirst.mockResolvedValue({ id: 'p1', type: 'ENTRA', issuer });
+      const fetchSpy = jest
+        .spyOn(outboundHttp, 'ssrfGuardedFetch')
+        .mockResolvedValue(new Response(JSON.stringify({ issuer, token_endpoint: 't' })));
+      const result = await service.testConnection('p1', 'org-1');
+      expect(result.ok).toBe(true);
+      expect(fetchSpy).toHaveBeenCalledWith(
+        `${issuer}/.well-known/openid-configuration`,
+        expect.objectContaining({ redirect: 'error' }),
+      );
+    });
+
+    it('answers with the generic message when the address is refused at connect time', async () => {
+      prisma.identityProvider.findFirst.mockResolvedValue({ id: 'p1', type: 'ENTRA', issuer });
+      jest
+        .spyOn(outboundHttp, 'ssrfGuardedFetch')
+        .mockRejectedValue(
+          new SsrfBlockedError("SSRF guard: hostname 'x' resolves to non-public address '10.0.3.7'"),
+        );
+      const result = await service.testConnection('p1', 'org-1');
+      expect(result.ok).toBe(false);
+      expect(result.message).not.toContain('10.0.3.7');
     });
   });
 });
