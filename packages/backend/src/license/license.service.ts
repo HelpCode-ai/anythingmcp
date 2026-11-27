@@ -48,6 +48,18 @@ export function licenseServiceHeaders(): Record<string, string> {
   return token ? { 'x-amcp-service-token': token } : {};
 }
 
+/** What a Cloud workspace is told when it enters a self-hosted licence key. */
+export const SELF_HOSTED_LICENCE_MESSAGE = 'This licence is for self-hosted installations';
+
+/**
+ * Plans issued for self-hosted installations: the free community licence and
+ * the trial a self-hosted instance requests. Cloud workspaces get their trial
+ * from requestTrialLicense and pay through Cloud plans.
+ */
+export function isSelfHostedPlan(plan: string | null | undefined): boolean {
+  return plan === 'community' || plan === 'trial';
+}
+
 /**
  * How hard we chase a trial licence before giving up. The licence API is a
  * different machine behind its own rate limits, and a trial lost to one bad
@@ -178,7 +190,7 @@ export function periodEndCheckDue(
 
 /**
  * A workspace licence that means the workspace pays, or is about to: a paid
- * licence that is active (a card trial included: it is a 'starter' or 'team'
+ * licence (not a trial or community licence) that is active (a card trial included: it is a 'starter' or 'team'
  * licence while Stripe says trialing), or one stopped on a declined card
  * while Stripe still retries its subscription (isPaymentFailedBilling, the
  * same rule as the app's "Update card" wall).
@@ -191,7 +203,8 @@ export function isLivePaidLicence(
   licence: { plan: string; status: string; expiresAt: Date | null; billing?: unknown },
   now: Date = new Date(),
 ): boolean {
-  if (licence.plan === 'trial') return false;
+  // Neither is paid; a community licence is not a Cloud plan at all.
+  if (licence.plan === 'trial' || licence.plan === 'community') return false;
   if (licence.status === 'active') return !licence.expiresAt || licence.expiresAt.getTime() > now.getTime();
   return isPaymentFailedBilling(parseLicenseBilling(licence.billing));
 }
@@ -1331,6 +1344,17 @@ export class LicenseService implements OnModuleInit, OnModuleDestroy {
 
     if (!verification.valid) {
       throw new Error(verification.error || 'Invalid license key');
+    }
+
+    // Cloud: community and trial keys belong to self-hosted installations.
+    // A Cloud workspace's own trial is stored by requestTrialLicense, never
+    // through here. `community` is also what an answer without a plan would
+    // be stored as below.
+    if (this.deployment.isCloud() && organizationId && isSelfHostedPlan(verification.plan || 'community')) {
+      this.logger.warn(
+        `Refused licence …${licenseKey.slice(-4)} (plan ${verification.plan || 'none'}) for workspace ${organizationId}: self-hosted plan`,
+      );
+      throw new Error(SELF_HOSTED_LICENCE_MESSAGE);
     }
 
     const instanceId = await this.getInstanceId();
