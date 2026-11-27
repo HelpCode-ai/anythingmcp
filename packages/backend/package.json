@@ -88,7 +88,7 @@
     "qrcode-generator": "2.0.4",
     "reflect-metadata": "^0.2.2",
     "rxjs": "7.8.1",
-    "soap": "^1.14.0",
+    "soap": "^1.14.1",
     "ssh2": "1.17.0",
     "swagger-parser": "^10.0.3",
     "undici": "^7.30.2",
