@@ -221,6 +221,38 @@ describe('LicenseService — a licence key stays with its workspace', () => {
     expect(arg.update).not.toHaveProperty('billing');
   });
 
+  it.each(['community', 'trial'])('refuses a %s key on Cloud with a clear message, storing nothing', async (plan) => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+    (ctx.svc.verifyLicense as jest.Mock).mockResolvedValue({ valid: true, plan });
+
+    await expect(ctx.svc.setLicenseKey(KEY, 'org-new')).rejects.toThrow('This licence is for self-hosted installations');
+    expect(upsert).not.toHaveBeenCalled();
+    expect(ctx.svc.activateLicense).not.toHaveBeenCalled();
+    expect(licenses).toHaveLength(0);
+  });
+
+  it('refuses a Cloud key whose answer names no plan (it would be stored as community)', async () => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: true, licenses });
+    const upsert = withUpsert(ctx, licenses);
+    (ctx.svc.verifyLicense as jest.Mock).mockResolvedValue({ valid: true });
+
+    await expect(ctx.svc.setLicenseKey(KEY, 'org-new')).rejects.toThrow('This licence is for self-hosted installations');
+    expect(upsert).not.toHaveBeenCalled();
+  });
+
+  it.each(['community', 'trial'])('still activates a %s key on self-hosted', async (plan) => {
+    const licenses: MockLicense[] = [];
+    const ctx = makeService({ isCloud: false, licenses });
+    const upsert = withUpsert(ctx, licenses);
+    (ctx.svc.verifyLicense as jest.Mock).mockResolvedValue({ valid: true, plan });
+
+    await expect(ctx.svc.setLicenseKey(KEY, 'org-a')).resolves.toMatchObject({ licenseKey: KEY, plan });
+    expect(upsert).toHaveBeenCalledTimes(1);
+  });
+
   it('does not apply to self-hosted, where one admin owns every workspace', async () => {
     const licenses = [mkLicense({ licenseKey: KEY, organizationId: 'org-a' })];
     const ctx = makeService({ isCloud: false, licenses });
@@ -1010,6 +1042,7 @@ describe('isLivePaidLicence', () => {
 
   it('does not count a free trial, an ended plan, or a stopped licence with an old snapshot', () => {
     expect(isLivePaidLicence(lic({ plan: 'trial' }), NOW)).toBe(false);
+    expect(isLivePaidLicence(lic({ plan: 'community' }), NOW)).toBe(false);
     expect(isLivePaidLicence(lic({ status: 'revoked', billing: { status: 'canceled' } }), NOW)).toBe(false);
     expect(isLivePaidLicence(lic({ status: 'revoked', billing: { status: 'past_due', cancelling: true } }), NOW)).toBe(false);
     expect(isLivePaidLicence(lic({ status: 'revoked', billing: null }), NOW)).toBe(false);

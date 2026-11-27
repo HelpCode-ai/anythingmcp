@@ -105,6 +105,16 @@ export class LicenseGuardService {
       );
     }
 
+    // A community licence is for self-hosted installations: on Cloud it is
+    // not an active plan. (Cloud refuses such keys when they are entered;
+    // this covers one stored before that.) Trials are left to the checks
+    // below: a Cloud workspace's own trial is stored with plan `trial` too.
+    if (license.plan === 'community') {
+      throw new ForbiddenException(
+        'This workspace\'s license is for self-hosted installations. Ask a workspace administrator to activate a Cloud plan.',
+      );
+    }
+
     // Every plan, not only trials: a paid licence carries an expiresAt while
     // its renewal payment is failing (the end of the grace period), and must
     // stop on that date even if nobody has re-verified it since.

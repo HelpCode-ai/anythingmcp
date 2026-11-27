@@ -36,6 +36,22 @@ describe('LicenseGuardService.checkLicenseActive (cloud)', () => {
     );
   });
 
+  it('does not count a community licence as an active plan on Cloud', async () => {
+    await expect(
+      make({ plan: 'community', status: 'active', expiresAt: null }).checkLicenseActive('o1'),
+    ).rejects.toThrow("This workspace's license is for self-hosted installations");
+  });
+
+  it('still lets a running Cloud trial through', async () => {
+    const until = new Date(Date.now() + 3 * day);
+    await expect(make({ plan: 'trial', status: 'active', expiresAt: until }).checkLicenseActive('o1')).resolves.toBeUndefined();
+  });
+
+  it('leaves self-hosted alone, community licence included', async () => {
+    const guard = make({ plan: 'community', status: 'active', expiresAt: null }, null, false);
+    await expect(guard.checkLicenseActive('o1')).resolves.toBeUndefined();
+  });
+
   it('stops a licence that is not active, and a workspace with none', async () => {
     await expect(make({ plan: 'starter', status: 'revoked' }).checkLicenseActive('o1')).rejects.toBeInstanceOf(ForbiddenException);
     await expect(make(null).checkLicenseActive('o1')).rejects.toBeInstanceOf(ForbiddenException);
