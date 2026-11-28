@@ -61,7 +61,7 @@ jobs:
                   ``,
                   `A maintainer will triage this within ~48h. To help us help you faster:`,
                   `- For "how do I…" questions, [Discussions / Q&A](https://github.com/${owner}/${repo}/discussions/categories/q-a) usually gets faster answers.`,
-                  `- For feature requests, vote on [Which integrations should we build next?](https://github.com/${owner}/${repo}/discussions/148) so we can prioritise based on demand.`,
+                  `- For feature requests, include the problem, proposed solution and alternatives covered by our [feature request form](https://github.com/${owner}/${repo}/issues/new?template=feature_request.yml).`,
                   `- Bug? Please confirm the version and deployment mode (Docker / Railway / DO / Cloud) if you haven't already.`,
                   ``,
                   `⭐ If AnythingMCP has been useful to you, a star helps others find it.`,
