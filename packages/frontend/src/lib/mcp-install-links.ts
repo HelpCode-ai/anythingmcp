@@ -1,5 +1,5 @@
 /**
- * One-click MCP install links for Cursor and VS Code.
+ * One-click MCP install links for Cursor, VS Code and Raycast.
  *
  * The in-app "Open in …" buttons use the editors' custom-scheme deep links;
  * the README badges use the https variants, because GitHub's Markdown
@@ -9,6 +9,8 @@
  * Docs:
  * - Cursor: https://cursor.com/docs/context/mcp/install-links
  * - VS Code: https://code.visualstudio.com/docs/copilot/customization/mcp-servers
+ * - Raycast: https://manual.raycast.com/ai/model-context-protocol (the install
+ *   deeplink itself is not documented there; see raycastInstallLink)
  */
 
 export interface McpInstallTarget {
@@ -42,6 +44,24 @@ export function cursorDeepLink(target: McpInstallTarget): string {
 
 export function vscodeDeepLink(target: McpInstallTarget): string {
   return `vscode:mcp/install?${encodeURIComponent(vscodeConfig(target))}`;
+}
+
+/**
+ * Whether the MCP server page offers the "Open in Raycast" deeplink button.
+ *
+ * Off until the link is confirmed on Raycast 2.x. `raycast://mcp/install?`
+ * is used in the wild, but every public example installs a stdio server;
+ * the field names for a remote HTTP server (`type: "http"` + `url`) are a
+ * guess. Until then Raycast users get the copy-the-URL instructions only.
+ */
+export const RAYCAST_DEEPLINK_ENABLED = false;
+
+/**
+ * Raycast's install deeplink: the server config as percent-encoded JSON.
+ * Unverified for HTTP servers, so only used behind RAYCAST_DEEPLINK_ENABLED.
+ */
+export function raycastInstallLink(name: string, url: string): string {
+  return `raycast://mcp/install?${encodeURIComponent(JSON.stringify({ name, type: 'http', url }))}`;
 }
 
 // encodeURIComponent leaves ( ) ! * ' alone; a raw ")" would end a Markdown

@@ -16,6 +16,7 @@ Per-adapter setup guides (English, German, Italian and more) live at **[anything
 | **Google Gemini** | [Setup →](integrations/gemini.md) | HTTP / SSE |
 | **GitHub Copilot** | [Setup →](integrations/copilot.md) | Streamable HTTP |
 | **Cursor** | [Setup →](integrations/claude.md#cursor) | Streamable HTTP |
+| **Raycast** (Pro) | [Setup →](integrations/raycast.md) | Streamable HTTP |
 | **Any MCP client** | [Setup →](integrations/claude.md#any-mcp-client) | Streamable HTTP |
 
 ### Share a server with your team

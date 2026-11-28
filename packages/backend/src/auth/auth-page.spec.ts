@@ -1,4 +1,10 @@
-import { directoryBadgeHtml, directoryBadgesFor, signupClientFor } from './auth-page';
+import {
+  directoryBadgeHtml,
+  directoryBadgesFor,
+  isRaycastClient,
+  knownClientFor,
+  signupClientFor,
+} from './auth-page';
 
 describe('directory badges on the authorization page', () => {
   it("shows each assistant only its own listing, Muse neither, and anyone else both", () => {
@@ -33,5 +39,32 @@ describe('directory badges on the authorization page', () => {
     expect(both).toContain('fill="#10A37F"');
 
     expect(directoryBadgeHtml([])).toBe('');
+  });
+});
+
+describe('Raycast on the authorization page', () => {
+  it('is recognised by its name, its raycast:// redirect or a raycast.com redirect', () => {
+    expect(signupClientFor('Raycast', 'localhost:1234')).toBe('raycast');
+    expect(signupClientFor('Raycast AI (MCP)', '')).toBe('raycast');
+    expect(signupClientFor('My app', 'oauth', 'raycast://oauth?package_name=Extension')).toBe('raycast');
+    expect(signupClientFor('My app', 'raycast.com', 'https://raycast.com/redirect?packageName=Extension')).toBe('raycast');
+    expect(isRaycastClient('raycast', '', '')).toBe(true);
+  });
+
+  it('does not take a lookalike for Raycast', () => {
+    expect(signupClientFor('Raycaster', 'example.com')).toBe('other');
+    expect(signupClientFor('My app', 'raycast.com.evil.example', 'https://raycast.com.evil.example/cb')).toBe('other');
+    expect(signupClientFor('My app', 'evil.example', 'https://evil.example/raycast://')).toBe('other');
+  });
+
+  it('never outranks a client judged by its redirect host', () => {
+    // A code sent to claude.ai goes to Claude, whatever the client calls itself.
+    expect(signupClientFor('Raycast', 'claude.ai', 'https://claude.ai/api/mcp/auth_callback')).toBe('claude');
+    expect(signupClientFor('Raycast', 'chatgpt.com', 'https://chatgpt.com/connector_platform_oauth_redirect')).toBe('chatgpt');
+  });
+
+  it('only labels the client: Raycast sees the same badges as any other client', () => {
+    expect(directoryBadgesFor('raycast')).toEqual(directoryBadgesFor('other'));
+    expect(knownClientFor('raycast.com')).toBeNull();
   });
 });

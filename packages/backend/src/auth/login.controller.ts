@@ -3389,7 +3389,9 @@ ${
     const server = this.escapeHtml(serverName);
     const client = consent ? this.escapeHtml(consent.clientName) : '';
     const known = consent ? knownClientFor(consent.redirectHost) : null;
-    const signupClient = consent ? signupClientFor(consent.clientName, consent.redirectHost) : null;
+    const signupClient = consent
+      ? signupClientFor(consent.clientName, consent.redirectHost, consent.redirectUri)
+      : null;
 
     // `error` is the key of a message (or, from a page that was already
     // open, its English text): shown in the page's language.
