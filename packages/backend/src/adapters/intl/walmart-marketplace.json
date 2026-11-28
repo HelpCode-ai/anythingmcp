@@ -1,8 +1,8 @@
 {
   "slug": "walmart-marketplace",
   "name": "Walmart Marketplace",
-  "description": "Walmart Marketplace API for US sellers: orders with acknowledge and ship with tracking, returns, items and catalog search, inventory, prices, bulk feeds, on-request reports, WFS inbound shipments and shipping settings. Client ID and secret.",
-  "instructions": "## Walmart Marketplace\nThis connector works with the **Walmart Marketplace API** for sellers on the **US marketplace** (`https://marketplace.walmartapis.com`): orders, returns, items, inventory, prices, feeds, on-request reports, Walmart Fulfillment Services (WFS) and shipping settings. Walmart Canada and Walmart Mexico have their own APIs and are not covered.\n\n**Setup (about 5 minutes)**\n1. Sign in at https://developer.walmart.com with your **Seller Center** login (choose Marketplace seller).\n2. Open **My Account**, then **API Keys** (key management), and create or copy the **production** client ID and client secret.\n3. Paste the client ID into `WALMART_CLIENT_ID` and the client secret into `WALMART_CLIENT_SECRET`.\n\nThe connector exchanges them at `POST /v3/token` (HTTP Basic, client credentials) for an access token that lasts **15 minutes**, reuses it until shortly before it expires and fetches a new one by itself. Every call carries `WM_SEC.ACCESS_TOKEN`, `WM_SVC.NAME` and a new `WM_QOS.CORRELATION_ID`. Use your own seller client credentials: Delegated Access keys for solution providers are being retired (new ones can no longer be created, existing ones stop working after 30 April 2027).\n\n**Where to start**: `walmart_marketplace_list_released_orders` (orders waiting for you), then `walmart_marketplace_get_order`. `walmart_marketplace_list_items` lists your catalog and `walmart_marketplace_get_inventory` the stock of a SKU.\n\n**Orders**: `walmart_marketplace_list_orders` (all statuses), `walmart_marketplace_list_released_orders` (lines in Created), `walmart_marketplace_get_order`. A line goes **Created, Acknowledged, Shipped, Delivered**, or **Cancelled**. Acknowledge new orders promptly with `walmart_marketplace_acknowledge_order`, then ship each line with `walmart_marketplace_ship_order_line` (carrier, method, tracking number, ship time in epoch milliseconds); shipping captures the customer payment. `walmart_marketplace_cancel_order_line` and `walmart_marketplace_refund_order_lines` are installed switched off: a cancellation hurts your seller metrics and a refund moves money. Order lists reach 180 days back, at most 10,000 orders, and default to the last 7 days.\n\n**Paging**: orders and returns answer with `meta.nextCursor`, a ready query string that starts with `?`. Pass it unchanged as `next_cursor` and leave the other filters out. Items use `nextCursor` (start with `*`, valid 2 minutes) or limit and offset.\n\n**Returns**: `walmart_marketplace_list_returns` (statuses INITIATED, DELIVERED, COMPLETED). `walmart_marketplace_refund_return` is switched off because it refunds the customer.\n\n**Items and catalog**: `walmart_marketplace_list_items`, `walmart_marketplace_get_item`, `walmart_marketplace_count_items`, `walmart_marketplace_search_my_catalog` (your catalog with filters such as UNPUBLISHED items) and `walmart_marketplace_search_walmart_catalog` (the public Walmart.com catalog by keyword, UPC or GTIN). `walmart_marketplace_retire_item` is switched off: retiring removes the listing.\n\n**Inventory and prices**: `walmart_marketplace_get_inventory`, `walmart_marketplace_get_inventory_by_ship_node`, `walmart_marketplace_update_inventory` (absolute quantity, unit EACH), `walmart_marketplace_get_wfs_inventory` (stock held by WFS). `walmart_marketplace_update_price` sets the BASE price of one SKU in USD (100 calls per hour); `walmart_marketplace_get_promotional_prices` shows sale prices.\n\n**Feeds**: bulk changes go through feeds. `walmart_marketplace_submit_item_feed`, `walmart_marketplace_submit_price_feed` and `walmart_marketplace_update_lag_time` (fulfillment lag time of many SKUs in one lagtime feed) are installed switched off, because one feed changes many live listings and bulk price feeds are limited per hour and per day (10 per hour, shared by all price and promotion feeds). Check results with `walmart_marketplace_list_feeds` and `walmart_marketplace_get_feed_status` (per-item errors with include_details).\n\n**Reports**: `walmart_marketplace_request_report`, then `walmart_marketplace_list_report_requests` or `walmart_marketplace_get_report_request` until READY, then `walmart_marketplace_get_report_download_url`. Status and download calls are limited to 20 per hour each, so wait several minutes between checks. The link is a short-lived zipped CSV.\n\n**WFS**: `walmart_marketplace_list_inbound_shipments`, `walmart_marketplace_list_inbound_shipment_items`, `walmart_marketplace_create_inbound_shipment_label` (receiving labels as PDF or ZPL, free).\n\n**Settings (read only)**: `walmart_marketplace_list_ship_nodes` (ship node ids), `walmart_marketplace_list_carrier_methods`, `walmart_marketplace_list_shipping_templates`, `walmart_marketplace_get_lag_time` (20 calls per hour). Lag time is changed with the `walmart_marketplace_update_lag_time` feed: 0 or 1 day for any item, 2 days or more only with Walmart approval.\n\n**Rate limits**: each API has its own token bucket (all orders 5,000 per minute, released orders 60 per minute, ship, acknowledge and cancel 60 per minute, inventory 200 per minute, items 300 per minute). A 429 means the bucket is empty; the headers `x-current-token-count` and `X-Next-Replenishment-Time` say when to retry.\n\n**Formats**: dates are ISO 8601 in UTC; order dates in answers are epoch milliseconds. Money is in USD. SKUs are your own seller SKUs; Walmart ids are purchaseOrderId (orders), returnOrderId (returns), wpid and itemId (catalog). Errors come back as `errors.error[]` with code, field and description; a 400 INVALID_REQUEST_HEADER usually means a token or header problem.",
+  "description": "Walmart Marketplace API for US sellers: orders with acknowledge and ship with tracking, returns, items and catalog search, inventory, prices, bulk feeds, on-request reports, WFS inbound shipments with Walmart Preferred Carrier freight, and shipping settings. Client ID and secret.",
+  "instructions": "## Walmart Marketplace\nThis connector works with the **Walmart Marketplace API** for sellers on the **US marketplace** (`https://marketplace.walmartapis.com`): orders, returns, items, inventory, prices, feeds, on-request reports, Walmart Fulfillment Services (WFS) and shipping settings. Walmart Canada and Walmart Mexico have their own APIs and are not covered.\n\n**Setup (about 5 minutes)**\n1. Sign in at https://developer.walmart.com with your **Seller Center** login (choose Marketplace seller).\n2. Open **My Account**, then **API Keys** (key management), and create or copy the **production** client ID and client secret.\n3. Paste the client ID into `WALMART_CLIENT_ID` and the client secret into `WALMART_CLIENT_SECRET`.\n\nThe connector exchanges them at `POST /v3/token` (HTTP Basic, client credentials) for an access token that lasts **15 minutes**, reuses it until shortly before it expires and fetches a new one by itself. Every call carries `WM_SEC.ACCESS_TOKEN`, `WM_SVC.NAME` and a new `WM_QOS.CORRELATION_ID`. Use your own seller client credentials: Delegated Access keys for solution providers are being retired (new ones can no longer be created, existing ones stop working after 30 April 2027).\n\n**Where to start**: `walmart_marketplace_list_released_orders` (orders waiting for you), then `walmart_marketplace_get_order`. `walmart_marketplace_list_items` lists your catalog and `walmart_marketplace_get_inventory` the stock of a SKU.\n\n**Orders**: `walmart_marketplace_list_orders` (all statuses), `walmart_marketplace_list_released_orders` (lines in Created), `walmart_marketplace_get_order`. A line goes **Created, Acknowledged, Shipped, Delivered**, or **Cancelled**. Acknowledge new orders promptly with `walmart_marketplace_acknowledge_order`, then ship each line with `walmart_marketplace_ship_order_line` (carrier, method, tracking number, ship time in epoch milliseconds); shipping captures the customer payment. `walmart_marketplace_cancel_order_line` and `walmart_marketplace_refund_order_lines` are installed switched off: a cancellation hurts your seller metrics and a refund moves money. Order lists reach 180 days back, at most 10,000 orders, and default to the last 7 days.\n\n**Paging**: orders and returns answer with `meta.nextCursor`, a ready query string that starts with `?`. Pass it unchanged as `next_cursor` and leave the other filters out. Items use `nextCursor` (start with `*`, valid 2 minutes) or limit and offset.\n\n**Returns**: `walmart_marketplace_list_returns` (statuses INITIATED, DELIVERED, COMPLETED). `walmart_marketplace_refund_return` is switched off because it refunds the customer.\n\n**Items and catalog**: `walmart_marketplace_list_items`, `walmart_marketplace_get_item`, `walmart_marketplace_count_items`, `walmart_marketplace_search_my_catalog` (your catalog with filters such as UNPUBLISHED items) and `walmart_marketplace_search_walmart_catalog` (the public Walmart.com catalog by keyword, UPC or GTIN). `walmart_marketplace_retire_item` is switched off: retiring removes the listing.\n\n**Inventory and prices**: `walmart_marketplace_get_inventory`, `walmart_marketplace_get_inventory_by_ship_node`, `walmart_marketplace_update_inventory` (absolute quantity, unit EACH), `walmart_marketplace_get_wfs_inventory` (stock held by WFS). `walmart_marketplace_update_price` sets the BASE price of one SKU in USD (100 calls per hour); `walmart_marketplace_get_promotional_prices` shows sale prices.\n\n**Feeds**: bulk changes go through feeds. `walmart_marketplace_submit_item_feed`, `walmart_marketplace_submit_price_feed` and `walmart_marketplace_update_lag_time` (fulfillment lag time of many SKUs in one lagtime feed) are installed switched off, because one feed changes many live listings and bulk price feeds are limited per hour and per day (10 per hour, shared by all price and promotion feeds). Check results with `walmart_marketplace_list_feeds` and `walmart_marketplace_get_feed_status` (per-item errors with include_details).\n\n**Reports**: `walmart_marketplace_request_report`, then `walmart_marketplace_list_report_requests` or `walmart_marketplace_get_report_request` until READY, then `walmart_marketplace_get_report_download_url`. Status and download calls are limited to 20 per hour each, so wait several minutes between checks. The link is a short-lived zipped CSV.\n\n**WFS inbound (shipping plans)**: only for sellers enrolled in Walmart Fulfillment Services, with the SKUs already converted to WFS items. `walmart_marketplace_create_inbound_shipment` submits an inbound order (your own inboundOrderId, return address, SKUs with units and case packs); Walmart answers with one or more shipmentId values and the fulfillment center (shipToAddress) of each. If it fails, `walmart_marketplace_get_inbound_shipment_errors` says why. Follow up with `walmart_marketplace_list_inbound_shipments`, `walmart_marketplace_list_inbound_shipment_items`, `walmart_marketplace_update_inbound_shipment_quantities` (before arrival, at most 6 more units per SKU, 0 removes a SKU) and `walmart_marketplace_create_inbound_shipment_label` (receiving labels as PDF or ZPL, free). With your own carrier, send the parcel tracking numbers with `walmart_marketplace_update_inbound_shipment_tracking` (2 calls per minute). `walmart_marketplace_cancel_inbound_shipment` cancels a whole inbound order with all its shipments, only before receiving starts, and is installed switched off.\n\n**Walmart Preferred Carrier**: Walmart-negotiated freight from your pickup point to the fulfillment center, as Parcel (FedEx small parcel), LTL (less than truckload) or FTL (full truckload). The charges are deducted from your WFS sales proceeds. `walmart_marketplace_create_carrier_rate_quote` (a free estimate, 10 calls per minute) and `walmart_marketplace_get_carrier_rate_quote` give the quoteId and netCharge. `walmart_marketplace_create_carrier_booking` accepts the charges and `walmart_marketplace_cancel_carrier_booking` withdraws them, only within 24 hours for Parcel and 1 hour for LTL and FTL. Both are installed switched off: every freight charge needs a person to switch the tool on, and the person should confirm each booking. `walmart_marketplace_get_carrier_booking` shows the booking. Parcel: `walmart_marketplace_generate_carrier_label`, then `walmart_marketplace_download_carrier_label` (202 while the labels are being made, then the PDF). LTL: `walmart_marketplace_get_bill_of_lading` (PDF for the driver), `walmart_marketplace_get_pickup_schedule` and `walmart_marketplace_update_pickup_schedule` (new pickup windows). `walmart_marketplace_get_carrier_shipment_tracking` follows the freight.\n\n**Settings (read only)**: `walmart_marketplace_list_ship_nodes` (ship node ids), `walmart_marketplace_list_carrier_methods`, `walmart_marketplace_list_shipping_templates`, `walmart_marketplace_get_lag_time` (20 calls per hour). Lag time is changed with the `walmart_marketplace_update_lag_time` feed: 0 or 1 day for any item, 2 days or more only with Walmart approval.\n\n**Rate limits**: each API has its own token bucket (all orders 5,000 per minute, released orders 60 per minute, ship, acknowledge and cancel 60 per minute, inventory 200 per minute, items 300 per minute). A 429 means the bucket is empty; the headers `x-current-token-count` and `X-Next-Replenishment-Time` say when to retry.\n\n**Formats**: dates are ISO 8601 in UTC; order dates in answers are epoch milliseconds. Money is in USD. SKUs are your own seller SKUs; Walmart ids are purchaseOrderId (orders), returnOrderId (returns), wpid and itemId (catalog). Errors come back as `errors.error[]` with code, field and description; a 400 INVALID_REQUEST_HEADER usually means a token or header problem.",
   "aliases": [
     "Walmart",
     "Walmart Seller",
@@ -1793,6 +1793,209 @@
       }
     },
     {
+      "name": "walmart_marketplace_create_inbound_shipment",
+      "description": "Create a WFS inbound order (shipping plan): tell Walmart which SKUs and how many units you will send to its fulfillment centers. Only for SKUs already converted to WFS items. Walmart answers with payload[] holding one or more shipmentId values, the shipToAddress (fulfillment center) of each, the units per shipment and the expected delivery date; a plan can be split across several centers. Use those shipmentId values for receiving labels, tracking and Preferred Carrier quotes. If the call fails, read walmart_marketplace_get_inbound_shipment_errors with the same inbound_order_id. Free; nothing is charged until a carrier booking.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbound_order_id": {
+            "type": "string",
+            "description": "Your own unique id for this inbound order (at most 100 characters). It can be used only once; reuse it only to resubmit an order that failed.",
+            "minLength": 1,
+            "maxLength": 100
+          },
+          "return_address": {
+            "type": "object",
+            "description": "Your return address, used if Walmart has to send goods back.",
+            "properties": {
+              "addressLine1": {
+                "type": "string",
+                "description": "Street address."
+              },
+              "addressLine2": {
+                "type": "string",
+                "description": "Address line 2 (optional)."
+              },
+              "city": {
+                "type": "string",
+                "description": "City."
+              },
+              "stateCode": {
+                "type": "string",
+                "description": "State code, e.g. CA."
+              },
+              "countryCode": {
+                "type": "string",
+                "description": "Country code, e.g. US."
+              },
+              "postalCode": {
+                "type": "string",
+                "description": "ZIP code."
+              }
+            },
+            "required": [
+              "addressLine1",
+              "city",
+              "stateCode",
+              "countryCode",
+              "postalCode"
+            ]
+          },
+          "order_items": {
+            "type": "array",
+            "description": "One entry per SKU you send (1 to 5000).",
+            "minItems": 1,
+            "maxItems": 5000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "Your seller SKU, converted to WFS."
+                },
+                "productId": {
+                  "type": "string",
+                  "description": "GTIN of the item."
+                },
+                "productType": {
+                  "type": "string",
+                  "description": "Product id type. Walmart documents GTIN.",
+                  "default": "GTIN"
+                },
+                "itemDesc": {
+                  "type": "string",
+                  "description": "Item description."
+                },
+                "itemQty": {
+                  "type": "integer",
+                  "description": "Total sellable units of this SKU in the order.",
+                  "minimum": 1
+                },
+                "vendorPackQty": {
+                  "type": "integer",
+                  "description": "Number of cases (vendor packs).",
+                  "minimum": 1
+                },
+                "innerPackQty": {
+                  "type": "integer",
+                  "description": "Sellable units per case.",
+                  "minimum": 1
+                },
+                "expectedDeliveryDate": {
+                  "type": "string",
+                  "description": "When you expect the goods at Walmart, ISO 8601 date-time, e.g. 2026-12-15T00:00:00.000Z."
+                },
+                "addOnServices": {
+                  "type": "array",
+                  "description": "Prep services Walmart should do, e.g. [{\"serviceType\": \"LABEL\"}].",
+                  "items": {
+                    "type": "object",
+                    "properties": {
+                      "serviceType": {
+                        "type": "string",
+                        "description": "LABEL, BAG, TAPE or WRAP.",
+                        "enum": [
+                          "LABEL",
+                          "BAG",
+                          "TAPE",
+                          "WRAP"
+                        ]
+                      }
+                    }
+                  }
+                }
+              },
+              "required": [
+                "sku",
+                "productId",
+                "productType",
+                "itemDesc",
+                "itemQty",
+                "vendorPackQty",
+                "innerPackQty",
+                "expectedDeliveryDate"
+              ]
+            }
+          },
+          "inbound_services": {
+            "type": "object",
+            "description": "Optional inbound services, e.g. {\"inventoryTransferService\": \"Y\"} to request the Inventory Transfer Service (ITS).",
+            "properties": {
+              "inventoryTransferService": {
+                "type": "string",
+                "description": "ITS flag."
+              }
+            }
+          },
+          "shipping_summary": {
+            "type": "object",
+            "description": "Optional packing summary: boxes[] with noOfBoxes, totalNoOfUnits, weight, weightUnit, longestSide, medianSide, shortestSide, lengthUnit and items[] (sku, productId, productType, gtin, unitsPerBox).",
+            "properties": {
+              "boxes": {
+                "type": "array",
+                "description": "Box configurations in the shipment.",
+                "items": {
+                  "type": "object"
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "inbound_order_id",
+          "return_address",
+          "order_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/fulfillment/inbound-shipments",
+        "bodyMapping": {
+          "inboundOrderId": "$inbound_order_id",
+          "inboundServices": "$inbound_services",
+          "returnAddress": "$return_address",
+          "orderItems": "$order_items",
+          "shippingSummary": "$shipping_summary"
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_inbound_shipment_errors",
+      "description": "List the errors of inbound orders that WFS refused (SKU not converted to WFS, missing data, invalid GTIN, inbound order id already used, duplicate product ids): headers.totalCount and payload[] with inboundOrderId, createdDate, orderItems and errors[] (code, field, description). Fix the request and resubmit with walmart_marketplace_create_inbound_shipment; once it succeeds the old errors of that id disappear. Read-only, 10 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbound_order_id": {
+            "type": "string",
+            "description": "Only the errors of this inbound order id (the inbound_order_id you sent)."
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip.",
+            "minimum": 0
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page (Walmart default 10).",
+            "minimum": 1,
+            "maximum": 100
+          }
+        }
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-shipment-errors",
+        "queryParams": {
+          "inboundOrderId": "$inbound_order_id",
+          "offset": "$offset",
+          "limit": "$limit"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
       "name": "walmart_marketplace_list_inbound_shipments",
       "description": "List WFS inbound shipments (your stock on its way to Walmart fulfillment centers): headers.totalCount and payload[] with inboundOrderId, shipmentId, shipToAddress (fulfillment center), status, createdDate, shipmentUnits, receivedUnits, expectedDeliveryDate, actualDeliveryDate, trackingNo and carrierName. Read-only, 32 calls per minute.",
       "parameters": {
@@ -1903,6 +2106,132 @@
       }
     },
     {
+      "name": "walmart_marketplace_update_inbound_shipment_quantities",
+      "description": "Change the unit quantities of SKUs in one WFS inbound shipment before it reaches the fulfillment center. Give the new total per SKU: at most 6 shipment units more than before, 0 removes the SKU, and not every SKU may be 0 (cancel the inbound order instead). Not possible once the shipment is Receiving in progress, Closed or Cancelled. Returns status and errors[].",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbound_order_id": {
+            "type": "string",
+            "description": "inboundOrderId of the order (from walmart_marketplace_list_inbound_shipments).",
+            "minLength": 1
+          },
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_list_inbound_shipments), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "order_items": {
+            "type": "array",
+            "description": "New quantities, e.g. [{\"sku\": \"SKU-1\", \"updatedShipmentQty\": 24}].",
+            "minItems": 1,
+            "maxItems": 5000,
+            "items": {
+              "type": "object",
+              "properties": {
+                "sku": {
+                  "type": "string",
+                  "description": "Seller SKU in the shipment."
+                },
+                "updatedShipmentQty": {
+                  "type": "integer",
+                  "description": "New total units of this SKU in the shipment (0 removes it).",
+                  "minimum": 0
+                }
+              },
+              "required": [
+                "sku",
+                "updatedShipmentQty"
+              ]
+            }
+          }
+        },
+        "required": [
+          "inbound_order_id",
+          "shipment_id",
+          "order_items"
+        ]
+      },
+      "endpointMapping": {
+        "method": "PUT",
+        "path": "/v3/fulfillment/shipment-quantities",
+        "bodyMapping": {
+          "inboundOrderId": "$inbound_order_id",
+          "shipmentId": "$shipment_id",
+          "orderItems": "$order_items"
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_update_inbound_shipment_tracking",
+      "description": "Send the carrier and tracking numbers of a WFS inbound shipment you ship with your own carrier (small parcel). WFS uses them to update the expected delivery date and plan receiving; the new date shows in walmart_marketplace_list_inbound_shipment_items. Not needed for Walmart Preferred Carrier bookings. Returns status and errors[]. Only 2 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_inbound_shipment or walmart_marketplace_list_inbound_shipments), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "carrier_name": {
+            "type": "string",
+            "description": "Carrier name, e.g. UPS, FedEx or USPS.",
+            "minLength": 1
+          },
+          "tracking_numbers": {
+            "type": "array",
+            "description": "Tracking numbers of the parcels (1 to 100).",
+            "minItems": 1,
+            "maxItems": 100,
+            "items": {
+              "type": "string"
+            }
+          }
+        },
+        "required": [
+          "shipment_id",
+          "carrier_name",
+          "tracking_numbers"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/fulfillment/shipment-tracking",
+        "bodyMapping": {
+          "shipmentId": "$shipment_id",
+          "carrierName": "$carrier_name",
+          "trackingInfo": "$tracking_numbers"
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_cancel_inbound_shipment",
+      "description": "Cancel a whole WFS inbound order: every shipment of the order is cancelled, a single shipment cannot be. Only possible before any of its shipments is Receiving in progress, Closed or Cancelled. It cannot be undone. Check the shipments with walmart_marketplace_list_inbound_shipments first. Returns status and errors[]. 10 calls per minute. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "inbound_order_id": {
+            "type": "string",
+            "description": "inboundOrderId of the order to cancel (from walmart_marketplace_list_inbound_shipments).",
+            "minLength": 1
+          }
+        },
+        "required": [
+          "inbound_order_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/fulfillment/inbound-shipments/{inbound_order_id}"
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
       "name": "walmart_marketplace_create_inbound_shipment_label",
       "description": "Generate the WFS receiving labels for an inbound shipment (not a carrier label: these let the fulfillment center match boxes or pallets to the shipment). Returns the label file, PDF or ZPL, to print and stick on each box or pallet. Costs nothing. 20 calls per minute.",
       "parameters": {
@@ -1966,6 +2295,1042 @@
         "headers": {
           "Accept": "application/pdf, application/octet-stream, */*"
         }
+      }
+    },
+    {
+      "name": "walmart_marketplace_create_carrier_rate_quote",
+      "description": "Ask Walmart Preferred Carrier for a freight estimate to send a WFS inbound shipment from your pickup point to the fulfillment center: Parcel (FedEx small parcel), LTL (less than truckload) or FTL (full truckload). Returns payload.rateQuotes[] with quoteId, carrier, netCharge, currency, estimatedDeliveryDateTime and status. A quote charges nothing; accepting it is walmart_marketplace_create_carrier_booking. The destination is the shipToAddress of the shipment (walmart_marketplace_list_inbound_shipments). 10 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_inbound_shipment or walmart_marketplace_list_inbound_shipments), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "quote_type": {
+            "type": "string",
+            "description": "Parcel, LTL or FTL.",
+            "enum": [
+              "Parcel",
+              "LTL",
+              "FTL"
+            ]
+          },
+          "units": {
+            "type": "array",
+            "description": "Usually one unit: origin (your pickup address), destination (the fulfillment center) and unitDetails. Parcel: unitDetails.shipmentPackages[] per box. LTL and FTL: also declaredValue, totalPalletCount, noOfSingleSkuBoxes, noOfMixedSkuBoxes, freightClass, and pallets in shipmentPackages[]. FTL units also take sequenceNbr, mode (\"TL\") and serviceLevel (\"WFS\").",
+            "minItems": 1,
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "origin": {
+                  "type": "object",
+                  "description": "Pickup address (addressLine1, city, stateOrProvince, country and postalCode are required).",
+                  "properties": {
+                    "addressLine1": {
+                      "type": "string",
+                      "description": "Street address."
+                    },
+                    "addressLine2": {
+                      "type": "string",
+                      "description": "Address line 2 (optional)."
+                    },
+                    "city": {
+                      "type": "string",
+                      "description": "City."
+                    },
+                    "stateOrProvince": {
+                      "type": "string",
+                      "description": "State code, e.g. CA."
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "Country code, e.g. US."
+                    },
+                    "postalCode": {
+                      "type": "string",
+                      "description": "ZIP code."
+                    },
+                    "phone": {
+                      "type": "string",
+                      "description": "Phone number at the location."
+                    },
+                    "locationName": {
+                      "type": "string",
+                      "description": "Name of the location (optional)."
+                    },
+                    "locationType": {
+                      "type": "string",
+                      "description": "VNDR for your pickup location, DC for the Walmart fulfillment center (as in Walmart's examples)."
+                    }
+                  }
+                },
+                "destination": {
+                  "type": "object",
+                  "description": "The fulfillment center: shipToAddress of the shipment.",
+                  "properties": {
+                    "addressLine1": {
+                      "type": "string",
+                      "description": "Street address."
+                    },
+                    "addressLine2": {
+                      "type": "string",
+                      "description": "Address line 2 (optional)."
+                    },
+                    "city": {
+                      "type": "string",
+                      "description": "City."
+                    },
+                    "stateOrProvince": {
+                      "type": "string",
+                      "description": "State code, e.g. CA."
+                    },
+                    "country": {
+                      "type": "string",
+                      "description": "Country code, e.g. US."
+                    },
+                    "postalCode": {
+                      "type": "string",
+                      "description": "ZIP code."
+                    },
+                    "phone": {
+                      "type": "string",
+                      "description": "Phone number at the location."
+                    },
+                    "locationName": {
+                      "type": "string",
+                      "description": "Name of the location (optional)."
+                    },
+                    "locationType": {
+                      "type": "string",
+                      "description": "VNDR for your pickup location, DC for the Walmart fulfillment center (as in Walmart's examples)."
+                    }
+                  }
+                },
+                "unitDetails": {
+                  "type": "object",
+                  "description": "What is shipped.",
+                  "properties": {
+                    "shipmentPackages": {
+                      "type": "array",
+                      "description": "Boxes (Parcel) or pallets (LTL, FTL), 1 to 500.",
+                      "minItems": 1,
+                      "maxItems": 500,
+                      "items": {
+                        "type": "object",
+                        "properties": {
+                          "packageSequenceNumber": {
+                            "type": "integer",
+                            "description": "Package number, starting at 1."
+                          },
+                          "packageType": {
+                            "type": "string",
+                            "description": "Package type, e.g. \"MIXED SKUS\" or \"SINGLE SKU\" for parcel boxes, PALLET for LTL and FTL."
+                          },
+                          "weight": {
+                            "type": "number",
+                            "description": "Weight of one package in pounds (at most 150).",
+                            "maximum": 150
+                          },
+                          "weightUOM": {
+                            "type": "string",
+                            "description": "Weight unit, always \"lb\".",
+                            "default": "lb"
+                          },
+                          "length": {
+                            "type": "number",
+                            "description": "Length in inches."
+                          },
+                          "width": {
+                            "type": "number",
+                            "description": "Width in inches."
+                          },
+                          "height": {
+                            "type": "number",
+                            "description": "Height in inches."
+                          },
+                          "lengthUOM": {
+                            "type": "string",
+                            "description": "Length unit, always \"in\".",
+                            "default": "in"
+                          },
+                          "isStackable": {
+                            "type": "boolean",
+                            "description": "LTL and FTL: whether the pallets can be stacked."
+                          },
+                          "noOfPackages": {
+                            "type": "integer",
+                            "description": "FTL: number of identical packages (pallets) of this size."
+                          }
+                        },
+                        "required": [
+                          "packageSequenceNumber",
+                          "packageType",
+                          "weight",
+                          "length",
+                          "width",
+                          "height"
+                        ]
+                      }
+                    },
+                    "declaredValue": {
+                      "type": "number",
+                      "description": "LTL and FTL: declared value of the freight in USD."
+                    },
+                    "totalPalletCount": {
+                      "type": "number",
+                      "description": "LTL and FTL: number of pallets."
+                    },
+                    "noOfSingleSkuBoxes": {
+                      "type": "number",
+                      "description": "LTL and FTL: boxes holding one SKU."
+                    },
+                    "noOfMixedSkuBoxes": {
+                      "type": "number",
+                      "description": "LTL and FTL: boxes holding several SKUs."
+                    },
+                    "freightClass": {
+                      "type": "number",
+                      "description": "LTL and FTL: NMFC freight class (Walmart default 50 for FTL)."
+                    }
+                  }
+                },
+                "sequenceNbr": {
+                  "type": "integer",
+                  "description": "FTL: sequence number of this unit."
+                },
+                "mode": {
+                  "type": "string",
+                  "description": "FTL: transport mode, \"TL\" in Walmart's example."
+                },
+                "serviceLevel": {
+                  "type": "string",
+                  "description": "FTL: service level, \"WFS\" in Walmart's example."
+                }
+              }
+            }
+          },
+          "pick_up_from_date": {
+            "type": "string",
+            "description": "LTL and FTL: start of the pickup window, ISO 8601 date-time, e.g. 2026-12-10T15:00:00.000Z."
+          },
+          "pick_up_to_date": {
+            "type": "string",
+            "description": "LTL and FTL: end of the pickup window, ISO 8601 date-time."
+          },
+          "equipment_details": {
+            "type": "array",
+            "description": "FTL only: trailer, e.g. [{\"type\": \"VAN53\", \"protectionLevel\": \"Dry\", \"length\": {\"unitOfMeasure\": \"FT\", \"measurementValue\": 53}}].",
+            "maxItems": 20,
+            "items": {
+              "type": "object",
+              "properties": {
+                "type": {
+                  "type": "string",
+                  "description": "Equipment code, e.g. VAN53."
+                },
+                "protectionLevel": {
+                  "type": "string",
+                  "description": "Protection level, e.g. Dry."
+                },
+                "length": {
+                  "type": "object",
+                  "description": "Trailer length.",
+                  "properties": {
+                    "unitOfMeasure": {
+                      "type": "string",
+                      "description": "Unit, e.g. FT."
+                    },
+                    "measurementValue": {
+                      "type": "integer",
+                      "description": "Length value, e.g. 53."
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "shipment_id",
+          "quote_type",
+          "units"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/fulfillment/inbound-shipments-quote",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "bodyMapping": {
+          "payload": {
+            "shipmentId": "$shipment_id",
+            "quoteType": "$quote_type",
+            "pickUpFromDate": "$pick_up_from_date",
+            "pickUpToDate": "$pick_up_to_date",
+            "equipmentDetails": "$equipment_details",
+            "units": "$units"
+          }
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_carrier_rate_quote",
+      "description": "Read the Walmart Preferred Carrier quote of a WFS inbound shipment: payload with quoteId, quoteType, quoteCreationDate, carrier, originLocation, destinationLocation, shipmentPackages[] (billing weight and charges per package) and rateQuote (netCharge, discountCharge, currency, estimatedDeliveryDateTime, status). Use it to show the person the price before a booking. Read-only, 150 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_rate_quote), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "quote_type": {
+            "type": "string",
+            "description": "Parcel, LTL or FTL, as quoted.",
+            "enum": [
+              "Parcel",
+              "LTL",
+              "FTL"
+            ]
+          }
+        },
+        "required": [
+          "shipment_id",
+          "quote_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-shipments-quote",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "queryParams": {
+          "quoteType": "$quote_type",
+          "shipmentId": "$shipment_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_create_carrier_booking",
+      "description": "Book Walmart Preferred Carrier freight for a WFS inbound shipment by accepting a rate quote. This commits a real freight charge, deducted from your WFS sales proceeds: show the person the quote (walmart_marketplace_get_carrier_rate_quote) and get an explicit yes first. It can be withdrawn with walmart_marketplace_cancel_carrier_booking only within 24 hours (Parcel) or 1 hour (LTL, FTL). Parcel needs quote_id and unit_details (box counts); LTL also pickup_details (ranked pickup windows), shipper_info and locations; FTL also schedule. Returns status OK; then check walmart_marketplace_get_carrier_booking. 8 calls per minute. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_rate_quote), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "quote_type": {
+            "type": "string",
+            "description": "Parcel, LTL or FTL, as quoted.",
+            "enum": [
+              "Parcel",
+              "LTL",
+              "FTL"
+            ]
+          },
+          "quote_id": {
+            "type": "string",
+            "description": "quoteId of the accepted quote (from walmart_marketplace_create_carrier_rate_quote or walmart_marketplace_get_carrier_rate_quote).",
+            "minLength": 1
+          },
+          "terms_accepted_time": {
+            "type": "string",
+            "description": "When the person accepted the estimated charges, ISO 8601 with offset, e.g. 2026-12-08T16:08:46.314Z. Walmart's examples always send it."
+          },
+          "unit_details": {
+            "type": "array",
+            "description": "Parcel: [{\"noOfSingleSkuBoxes\": 1, \"noOfMixedSkuBoxes\": 1}]. LTL: also declaredValue, totalPalletCount and shipmentPackages[] (pallets with packageSequenceNumber, packageType PALLET, weight, length, width, height, isStackable, noOfPackages). FTL: also equipmentCode (e.g. VAN53), equipmentType (e.g. DRYV), length, protectionLevel (DRY or REF).",
+            "minItems": 1,
+            "items": {
+              "type": "object"
+            }
+          },
+          "pickup_details": {
+            "type": "object",
+            "description": "LTL: {\"businessLocationName\": \"...\", \"pickupInstruction\": \"...\", \"pickupDateInfo\": [{\"pickupDate\": \"2026-12-18\", \"readyTime\": \"08:00:00\", \"closeTime\": \"17:00:00\", \"priority\": 1}]}. FTL: {\"businessLocationName\": \"...\", \"pickUpWindow\": \"Morning 8 AM to 12 PM\", \"pickUpInstruction\": \"...\"}."
+          },
+          "shipper_info": {
+            "type": "object",
+            "description": "LTL and FTL: the shipper contact, e.g. {\"contactInfo\": {\"primaryContactPhoneNumber\": \"...\", \"primaryContactEmailAddress\": \"...\"}, \"name\": \"...\", \"firstName\": \"...\", \"lastName\": \"...\", \"requesterType\": \"IWFS\"}."
+          },
+          "locations": {
+            "type": "object",
+            "description": "LTL and FTL: origin (your pickup location, with operationHours[] of dayOfWeekCode, operationType \"OPR\", openStrTime, closeStrTime) and destination (the fulfillment center). Address fields: locationType, addressLine1, addressLine2, city, state, countryCode, postalCode, locationName.",
+            "properties": {
+              "origin": {
+                "type": "object",
+                "description": "Pickup location.",
+                "properties": {
+                  "locationType": {
+                    "type": "string",
+                    "description": "VNDR (your pickup location) or DC (Walmart fulfillment center)."
+                  },
+                  "addressLine1": {
+                    "type": "string",
+                    "description": "Street address."
+                  },
+                  "addressLine2": {
+                    "type": "string",
+                    "description": "Address line 2 (optional)."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "City."
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "State code, e.g. CA."
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "description": "Country code, e.g. US."
+                  },
+                  "postalCode": {
+                    "type": "string",
+                    "description": "ZIP code."
+                  },
+                  "locationName": {
+                    "type": "string",
+                    "description": "Location name (optional)."
+                  }
+                }
+              },
+              "destination": {
+                "type": "object",
+                "description": "Fulfillment center (shipToAddress of the shipment).",
+                "properties": {
+                  "locationType": {
+                    "type": "string",
+                    "description": "VNDR (your pickup location) or DC (Walmart fulfillment center)."
+                  },
+                  "addressLine1": {
+                    "type": "string",
+                    "description": "Street address."
+                  },
+                  "addressLine2": {
+                    "type": "string",
+                    "description": "Address line 2 (optional)."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "City."
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "State code, e.g. CA."
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "description": "Country code, e.g. US."
+                  },
+                  "postalCode": {
+                    "type": "string",
+                    "description": "ZIP code."
+                  },
+                  "locationName": {
+                    "type": "string",
+                    "description": "Location name (optional)."
+                  }
+                }
+              }
+            }
+          },
+          "schedule": {
+            "type": "object",
+            "description": "FTL only: requested window, ISO 8601 with milliseconds and offset.",
+            "properties": {
+              "minPickupTs": {
+                "type": "string",
+                "description": "Earliest pickup, e.g. 2026-12-16T12:00:00.000+00:00."
+              },
+              "maxPickupTs": {
+                "type": "string",
+                "description": "Latest pickup."
+              },
+              "minDueTs": {
+                "type": "string",
+                "description": "Earliest delivery at the fulfillment center."
+              },
+              "maxDueTs": {
+                "type": "string",
+                "description": "Latest delivery at the fulfillment center."
+              }
+            }
+          }
+        },
+        "required": [
+          "shipment_id",
+          "quote_type",
+          "quote_id",
+          "unit_details"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/fulfillment/inbound-shipments-booking",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "bodyMapping": {
+          "payload": {
+            "shipmentId": "$shipment_id",
+            "bookingDetails": {
+              "quoteType": "$quote_type",
+              "quoteId": "$quote_id",
+              "termsAcceptedTime": "$terms_accepted_time",
+              "unitDetails": "$unit_details",
+              "pickupDetails": "$pickup_details",
+              "shipperInfo": "$shipper_info",
+              "locations": "$locations",
+              "schedule": "$schedule"
+            }
+          }
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": false
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_get_carrier_booking",
+      "description": "Read the Walmart Preferred Carrier booking of a WFS inbound shipment after the charges were accepted: payload.bookingDetails with mode, status, quoteId, cargoReadyDate, bookingSubmittedDate, totalAmount, discountedAmount, carrierInfo, locations and unitDetails. Walmart documents it for FTL bookings. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_booking), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "description": "Shipment mode of the booking, e.g. FTL.",
+            "enum": [
+              "Parcel",
+              "LTL",
+              "FTL"
+            ]
+          }
+        },
+        "required": [
+          "shipment_id",
+          "mode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-shipments-booking",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "queryParams": {
+          "mode": "$mode",
+          "shipmentId": "$shipment_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_cancel_carrier_booking",
+      "description": "Cancel a Walmart Preferred Carrier booking and withdraw the accepted freight charges. Walmart allows it only within 24 hours of booking for Parcel and within 1 hour for LTL and FTL; after that the charge stays. Confirm with the person first. Returns status OK. 10 calls per minute. Installed switched off.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_booking), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "description": "Parcel, LTL or FTL, as booked.",
+            "enum": [
+              "Parcel",
+              "LTL",
+              "FTL"
+            ]
+          }
+        },
+        "required": [
+          "shipment_id",
+          "mode"
+        ]
+      },
+      "endpointMapping": {
+        "method": "DELETE",
+        "path": "/v3/fulfillment/inbound-shipments-booking",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "queryParams": {
+          "shipmentId": "$shipment_id",
+          "mode": "$mode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": false,
+        "destructiveHint": true,
+        "idempotentHint": true
+      },
+      "enabled": false
+    },
+    {
+      "name": "walmart_marketplace_generate_carrier_label",
+      "description": "Request the carrier labels of a booked Walmart Preferred Carrier small parcel (Parcel) shipment. Then fetch them with walmart_marketplace_download_carrier_label, which answers 202 while they are still being made. The answer can already be the label PDF, attached as a file. LTL and FTL use walmart_marketplace_get_bill_of_lading instead. 20 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_booking), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "label_type": {
+            "type": "string",
+            "description": "Label type; Walmart documents \"Carrier\".",
+            "default": "Carrier"
+          },
+          "ship_date": {
+            "type": "string",
+            "description": "Planned ship date, ISO 8601 date-time, e.g. 2026-12-10T07:34:11.037Z (optional)."
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/fulfillment/generate-label",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US",
+          "Accept": "application/pdf, application/json, */*"
+        },
+        "bodyMapping": {
+          "payload": {
+            "shipmentId": "$shipment_id",
+            "labelType": "$label_type",
+            "shipDate": "$ship_date"
+          }
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_download_carrier_label",
+      "description": "Download the carrier labels of a booked Walmart Preferred Carrier small parcel shipment as a PDF, attached to the result as a file, after walmart_marketplace_generate_carrier_label. A 202 answer means the labels are still being made: wait a little and call again. Read-only, 300 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_generate_carrier_label), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "label_type": {
+            "type": "string",
+            "description": "Label type; Walmart documents \"Carrier\".",
+            "default": "Carrier"
+          },
+          "label_size": {
+            "type": "string",
+            "description": "Label size; Walmart documents X4_6 (4 x 6 in).",
+            "default": "X4_6"
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/download-label",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US",
+          "Accept": "application/pdf, application/json, */*"
+        },
+        "queryParams": {
+          "shipmentId": "$shipment_id",
+          "labelType": "$label_type",
+          "labelSize": "$label_size"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_bill_of_lading",
+      "description": "Download the Bill of Lading (BOL) of a booked Walmart Preferred Carrier LTL shipment as a PDF, attached to the result as a file. The driver needs it at pickup; print it and keep it with the freight. Read-only, 10 calls per minute.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_booking), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "mode": {
+            "type": "string",
+            "description": "Shipment mode of the booking; Walmart documents the BOL for LTL.",
+            "default": "LTL"
+          }
+        },
+        "required": [
+          "shipment_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-shipments-bol",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US",
+          "Accept": "application/pdf, application/json, */*"
+        },
+        "queryParams": {
+          "shipmentId": "$shipment_id",
+          "mode": "$mode"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_pickup_schedule",
+      "description": "Read the carrier pickup scheduled for a booked Walmart Preferred Carrier LTL shipment: payload with pickupConfirmationNumber, pickupDate, readyTime, closeTime and status. Change it with walmart_marketplace_update_pickup_schedule. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_booking), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "quote_id": {
+            "type": "string",
+            "description": "quoteId of the booked quote (from walmart_marketplace_get_carrier_booking or walmart_marketplace_get_carrier_rate_quote).",
+            "minLength": 1
+          },
+          "quote_type": {
+            "type": "string",
+            "description": "Quote type of the booking; Walmart documents LTL.",
+            "default": "LTL"
+          }
+        },
+        "required": [
+          "shipment_id",
+          "quote_id"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-seller-schedule",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "queryParams": {
+          "quoteType": "$quote_type",
+          "shipmentId": "$shipment_id",
+          "quoteId": "$quote_id"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
+      }
+    },
+    {
+      "name": "walmart_marketplace_update_pickup_schedule",
+      "description": "Move the confirmed carrier pickup of a booked Walmart Preferred Carrier LTL shipment: propose new pickup windows ranked by priority and, if needed, a new contact or pickup address. Returns the confirmed pickup (pickupConfirmationNumber, pickupDate, readyTime, closeTime). Read the current one first with walmart_marketplace_get_pickup_schedule.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_booking), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "quote_id": {
+            "type": "string",
+            "description": "quoteId of the booked quote.",
+            "minLength": 1
+          },
+          "quote_type": {
+            "type": "string",
+            "description": "Quote type of the booking; Walmart documents LTL.",
+            "default": "LTL"
+          },
+          "carrier": {
+            "type": "string",
+            "description": "Carrier code of the booking, e.g. CTII (optional)."
+          },
+          "pickup_date_info": {
+            "type": "array",
+            "description": "Proposed pickup windows, ranked, e.g. [{\"pickupDate\": \"2026-12-18\", \"readyTime\": \"08:00:00\", \"closeTime\": \"17:00:00\", \"priority\": 1}].",
+            "minItems": 1,
+            "items": {
+              "type": "object",
+              "properties": {
+                "pickupDate": {
+                  "type": "string",
+                  "description": "Pickup date, local time at the pickup location, YYYY-MM-DD."
+                },
+                "readyTime": {
+                  "type": "string",
+                  "description": "Earliest time the freight is ready, 24-hour HH:MM:SS."
+                },
+                "closeTime": {
+                  "type": "string",
+                  "description": "Latest pickup time, 24-hour HH:MM:SS, later than readyTime."
+                },
+                "priority": {
+                  "type": "integer",
+                  "description": "Rank of this window, 1 = preferred.",
+                  "minimum": 1
+                }
+              },
+              "required": [
+                "pickupDate",
+                "readyTime",
+                "closeTime",
+                "priority"
+              ]
+            }
+          },
+          "pickup_instruction": {
+            "type": "string",
+            "description": "Action for the pickup; Walmart's example uses \"update\".",
+            "default": "update"
+          },
+          "contact_details": {
+            "type": "object",
+            "description": "Pickup contact (optional): firstname, lastname, email (required), secondaryEmail, areaCode, number (required), extension.",
+            "properties": {
+              "firstname": {
+                "type": "string",
+                "description": "First name."
+              },
+              "lastname": {
+                "type": "string",
+                "description": "Last name."
+              },
+              "email": {
+                "type": "string",
+                "description": "Email for notifications."
+              },
+              "secondaryEmail": {
+                "type": "string",
+                "description": "Second email (optional)."
+              },
+              "areaCode": {
+                "type": "string",
+                "description": "Phone area code, e.g. 809."
+              },
+              "number": {
+                "type": "string",
+                "description": "Phone number without area code."
+              },
+              "extension": {
+                "type": "string",
+                "description": "Phone extension (optional)."
+              }
+            },
+            "required": [
+              "email",
+              "number"
+            ]
+          },
+          "locations": {
+            "type": "object",
+            "description": "Optional new pickup address (origin) and the destination fulfillment center, fields locationType, addressLine1, addressLine2, city, state, countryCode, postalCode, locationName.",
+            "properties": {
+              "origin": {
+                "type": "object",
+                "description": "Pickup location (locationType VNDR).",
+                "properties": {
+                  "locationType": {
+                    "type": "string",
+                    "description": "VNDR (your pickup location) or DC (Walmart fulfillment center)."
+                  },
+                  "addressLine1": {
+                    "type": "string",
+                    "description": "Street address."
+                  },
+                  "addressLine2": {
+                    "type": "string",
+                    "description": "Address line 2 (optional)."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "City."
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "State code, e.g. CA."
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "description": "Country code, e.g. US."
+                  },
+                  "postalCode": {
+                    "type": "string",
+                    "description": "ZIP code."
+                  },
+                  "locationName": {
+                    "type": "string",
+                    "description": "Location name (optional)."
+                  }
+                }
+              },
+              "destination": {
+                "type": "object",
+                "description": "Fulfillment center (locationType DC).",
+                "properties": {
+                  "locationType": {
+                    "type": "string",
+                    "description": "VNDR (your pickup location) or DC (Walmart fulfillment center)."
+                  },
+                  "addressLine1": {
+                    "type": "string",
+                    "description": "Street address."
+                  },
+                  "addressLine2": {
+                    "type": "string",
+                    "description": "Address line 2 (optional)."
+                  },
+                  "city": {
+                    "type": "string",
+                    "description": "City."
+                  },
+                  "state": {
+                    "type": "string",
+                    "description": "State code, e.g. CA."
+                  },
+                  "countryCode": {
+                    "type": "string",
+                    "description": "Country code, e.g. US."
+                  },
+                  "postalCode": {
+                    "type": "string",
+                    "description": "ZIP code."
+                  },
+                  "locationName": {
+                    "type": "string",
+                    "description": "Location name (optional)."
+                  }
+                }
+              }
+            }
+          }
+        },
+        "required": [
+          "shipment_id",
+          "quote_id",
+          "pickup_date_info"
+        ]
+      },
+      "endpointMapping": {
+        "method": "POST",
+        "path": "/v3/fulfillment/inbound-schedule-update",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "bodyMapping": {
+          "payload": {
+            "shipmentId": "$shipment_id",
+            "bookingDetails": {
+              "quoteType": "$quote_type",
+              "quoteId": "$quote_id",
+              "carrier": "$carrier",
+              "pickupDetails": {
+                "pickupDateInfo": "$pickup_date_info",
+                "pickupInstruction": "$pickup_instruction"
+              },
+              "contactDetails": "$contact_details",
+              "locations": "$locations"
+            }
+          }
+        }
+      }
+    },
+    {
+      "name": "walmart_marketplace_get_carrier_shipment_tracking",
+      "description": "Track Walmart Preferred Carrier freight of a WFS inbound shipment: payload.modeType and trackingList[] with trackingNo, status, carrierName and, for LTL and FTL, proNumber, currentLocation, eventDateTime, estimatedDeliveryDate and actualDeliveryDate. For shipments with your own carrier use walmart_marketplace_list_inbound_shipments. Read-only.",
+      "parameters": {
+        "type": "object",
+        "properties": {
+          "shipment_id": {
+            "type": "string",
+            "description": "shipmentId of the WFS inbound shipment (from walmart_marketplace_create_carrier_booking), e.g. 0606271GDM.",
+            "minLength": 1
+          },
+          "mode_type": {
+            "type": "string",
+            "description": "Parcel, LTL or FTL, as booked.",
+            "enum": [
+              "Parcel",
+              "LTL",
+              "FTL"
+            ]
+          },
+          "limit": {
+            "type": "integer",
+            "description": "Records per page, 1 to 50.",
+            "minimum": 1,
+            "maximum": 50
+          },
+          "offset": {
+            "type": "integer",
+            "description": "Records to skip, 0 to 50000.",
+            "minimum": 0,
+            "maximum": 50000
+          }
+        },
+        "required": [
+          "shipment_id",
+          "mode_type"
+        ]
+      },
+      "endpointMapping": {
+        "method": "GET",
+        "path": "/v3/fulfillment/inbound-shipments-tracking",
+        "headers": {
+          "WM_GLOBAL_VERSION": "3.1",
+          "WM_MARKET": "US"
+        },
+        "queryParams": {
+          "shipmentId": "$shipment_id",
+          "modeType": "$mode_type",
+          "limit": "$limit",
+          "offset": "$offset"
+        }
+      },
+      "annotations": {
+        "readOnlyHint": true
       }
     },
     {

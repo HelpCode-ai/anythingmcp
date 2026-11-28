@@ -10,6 +10,7 @@ import { deriveToolAnnotations } from '../../mcp-server/tool-annotations';
 import { applySchemaDefaults } from '../../common/schema-defaults.util';
 import { interpolateConnectorConfig, interpolateDeep } from '../../common/env-interpolation.util';
 import { getAdapter, listAdapters } from '../catalog';
+import { isBinaryBody, type BinaryBody } from '../../connectors/binary-response.util';
 
 /**
  * Walmart Marketplace API adapter (US marketplace).
@@ -22,8 +23,9 @@ import { getAdapter, listAdapters } from '../catalog';
  * Walmart US Marketplace API reference
  * (https://developer.walmart.com/us-marketplace/reference), the request
  * bodies of the writes, the nextCursor paging, and which tools install
- * switched off (cancellation, refunds, retiring items, bulk feeds). No tool
- * moves money unless a seller switches a refund tool on.
+ * switched off (cancellation, refunds, retiring items, bulk feeds, WFS
+ * inbound order cancellation and Walmart Preferred Carrier bookings). No tool
+ * moves money unless a seller switches a refund or carrier booking tool on.
  *
  * Live checks run only with RUN_WALMART_MARKETPLACE_LIVE=1. Without
  * credentials they confirm the token endpoint refuses wrong credentials; with
@@ -190,9 +192,26 @@ const ROUTES: Record<string, string> = {
   walmart_marketplace_list_report_requests: 'GET /v3/reports/reportRequests',
   walmart_marketplace_get_report_request: 'GET /v3/reports/reportRequests/{request_id}',
   walmart_marketplace_get_report_download_url: 'GET /v3/reports/downloadReport',
+  walmart_marketplace_create_inbound_shipment: 'POST /v3/fulfillment/inbound-shipments',
+  walmart_marketplace_get_inbound_shipment_errors: 'GET /v3/fulfillment/inbound-shipment-errors',
   walmart_marketplace_list_inbound_shipments: 'GET /v3/fulfillment/inbound-shipments',
   walmart_marketplace_list_inbound_shipment_items: 'GET /v3/fulfillment/inbound-shipment-items',
+  walmart_marketplace_update_inbound_shipment_quantities: 'PUT /v3/fulfillment/shipment-quantities',
+  walmart_marketplace_update_inbound_shipment_tracking: 'POST /v3/fulfillment/shipment-tracking',
+  walmart_marketplace_cancel_inbound_shipment: 'DELETE /v3/fulfillment/inbound-shipments/{inbound_order_id}',
   walmart_marketplace_create_inbound_shipment_label: 'POST /v3/fulfillment/shipment-label',
+  // Walmart Preferred Carrier, the "(New)" operations of the Fulfillment reference.
+  walmart_marketplace_create_carrier_rate_quote: 'POST /v3/fulfillment/inbound-shipments-quote',
+  walmart_marketplace_get_carrier_rate_quote: 'GET /v3/fulfillment/inbound-shipments-quote',
+  walmart_marketplace_create_carrier_booking: 'POST /v3/fulfillment/inbound-shipments-booking',
+  walmart_marketplace_get_carrier_booking: 'GET /v3/fulfillment/inbound-shipments-booking',
+  walmart_marketplace_cancel_carrier_booking: 'DELETE /v3/fulfillment/inbound-shipments-booking',
+  walmart_marketplace_generate_carrier_label: 'POST /v3/fulfillment/generate-label',
+  walmart_marketplace_download_carrier_label: 'GET /v3/fulfillment/download-label',
+  walmart_marketplace_get_bill_of_lading: 'GET /v3/fulfillment/inbound-shipments-bol',
+  walmart_marketplace_get_pickup_schedule: 'GET /v3/fulfillment/inbound-seller-schedule',
+  walmart_marketplace_update_pickup_schedule: 'POST /v3/fulfillment/inbound-schedule-update',
+  walmart_marketplace_get_carrier_shipment_tracking: 'GET /v3/fulfillment/inbound-shipments-tracking',
   walmart_marketplace_list_ship_nodes: 'GET /v3/settings/shipping/shipnodes',
   walmart_marketplace_list_carrier_methods: 'GET /v3/settings/shipping/carriers',
   walmart_marketplace_list_shipping_templates: 'GET /v3/settings/shipping/templates',
@@ -206,7 +225,15 @@ const SWITCHED_OFF = [
   'walmart_marketplace_submit_item_feed',
   'walmart_marketplace_submit_price_feed',
   'walmart_marketplace_update_lag_time',
+  'walmart_marketplace_cancel_inbound_shipment',
+  // Every freight charge needs a person to switch these on.
+  'walmart_marketplace_create_carrier_booking',
+  'walmart_marketplace_cancel_carrier_booking',
 ];
+// The Walmart Preferred Carrier operations require these two headers.
+const WPC_TOOLS = Object.keys(ROUTES).filter((name) =>
+  /inbound-shipments-(quote|booking|bol|tracking)|generate-label|download-label|inbound-seller-schedule|inbound-schedule-update/.test(ROUTES[name]),
+);
 
 describe('walmart-marketplace adapter: static contract', () => {
   beforeEach(() => mockedAxios.mockReset());
@@ -319,7 +346,7 @@ describe('walmart-marketplace adapter: static contract', () => {
     }
   });
 
-  it('marks reads read-only, installs cancellation, refunds, retiring and bulk feeds switched off', () => {
+  it('marks reads read-only, installs cancellation, refunds, retiring, bulk feeds and carrier bookings switched off', () => {
     for (const entry of a.tools) {
       const read = entry.endpointMapping.method === 'GET' || entry.name === 'walmart_marketplace_search_my_catalog';
       expect(`${entry.name}:${annotationsOf(entry).readOnlyHint}`).toBe(`${entry.name}:${read}`);
@@ -331,9 +358,17 @@ describe('walmart-marketplace adapter: static contract', () => {
       if (/refund|cancel/.test(p) || entry.endpointMapping.method === 'DELETE' || (p === '/v3/feeds' && entry.endpointMapping.method === 'POST')) {
         expect(entry.enabled).toBe(false);
       }
-      // No payments, settlement downloads or carrier-label purchases.
+      // Committing a Walmart Preferred Carrier freight charge stays switched off.
+      if (p === '/v3/fulfillment/inbound-shipments-booking' && entry.endpointMapping.method !== 'GET') {
+        expect(entry.enabled).toBe(false);
+        expect(entry.description).toContain('Installed switched off');
+        expect(annotationsOf(entry)).toMatchObject({ readOnlyHint: false, destructiveHint: true });
+      }
+      // No payments, settlement downloads, Ship with Walmart label purchases
+      // or the legacy carrier-quote endpoints.
       expect(p).not.toMatch(/payment|recon|statement|shipping\/labels|carrier-label|carrier-rate/);
     }
+    expect(annotationsOf(tool('walmart_marketplace_cancel_inbound_shipment'))).toMatchObject({ readOnlyHint: false, destructiveHint: true });
   });
 
   it('names every tool and the setup facts in the instructions', () => {
@@ -591,6 +626,173 @@ describe('walmart-marketplace adapter: static contract', () => {
     expect(sent().url).toBe(`${BASE}/v3/fulfillment/shipment-label`);
     expect(sent().data).toEqual({ shipmentId: 'SHIP-1', labelSize: 'X4_6', labelFormat: 'PDF', loadTypes: [{ loadType: 'BOX', count: 2 }] });
     expect(header(sent(), 'Accept')).toContain('application/pdf');
+  });
+
+  it('builds the WFS inbound order requests as Walmart documents them', async () => {
+    const returnAddress = { addressLine1: '1 Main St', city: 'Sunnyvale', stateCode: 'CA', countryCode: 'US', postalCode: '94086' };
+    const item = {
+      sku: 'SKU-1',
+      productId: '00012345678905',
+      itemDesc: 'Mug',
+      itemQty: 24,
+      vendorPackQty: 2,
+      innerPackQty: 12,
+      expectedDeliveryDate: '2026-12-15T00:00:00.000Z',
+    };
+    ok();
+    await call('walmart_marketplace_create_inbound_shipment', { inbound_order_id: 'IO-1', return_address: returnAddress, order_items: [item] });
+    expect(String(sent().method).toUpperCase()).toBe('POST');
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipments`);
+    // Optional sections left out are not sent at all.
+    expect(sent().data).toEqual({ inboundOrderId: 'IO-1', returnAddress, orderItems: [item] });
+
+    ok();
+    await call('walmart_marketplace_get_inbound_shipment_errors', { inbound_order_id: 'IO-1', limit: 5 });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipment-errors`);
+    expect(sent().params).toEqual({ inboundOrderId: 'IO-1', limit: 5 });
+
+    ok();
+    await call('walmart_marketplace_update_inbound_shipment_quantities', {
+      inbound_order_id: 'IO-1',
+      shipment_id: '0606271GDM',
+      order_items: [{ sku: 'SKU-1', updatedShipmentQty: 0 }],
+    });
+    expect(String(sent().method).toUpperCase()).toBe('PUT');
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/shipment-quantities`);
+    expect(sent().data).toEqual({ inboundOrderId: 'IO-1', shipmentId: '0606271GDM', orderItems: [{ sku: 'SKU-1', updatedShipmentQty: 0 }] });
+
+    ok();
+    await call('walmart_marketplace_update_inbound_shipment_tracking', { shipment_id: '0606271GDM', carrier_name: 'UPS', tracking_numbers: ['1Z999', '1Z998'] });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/shipment-tracking`);
+    expect(sent().data).toEqual({ shipmentId: '0606271GDM', carrierName: 'UPS', trackingInfo: ['1Z999', '1Z998'] });
+
+    ok();
+    await call('walmart_marketplace_cancel_inbound_shipment', { inbound_order_id: 'IO-1' });
+    expect(String(sent().method).toUpperCase()).toBe('DELETE');
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipments/IO-1`);
+  });
+
+  it('sends the Walmart Preferred Carrier requests with WM_GLOBAL_VERSION 3.1 and WM_MARKET US', async () => {
+    expect(WPC_TOOLS).toHaveLength(11);
+    for (const name of WPC_TOOLS) expect(tool(name).endpointMapping.headers).toMatchObject({ WM_GLOBAL_VERSION: '3.1', WM_MARKET: 'US' });
+
+    const units = [
+      {
+        origin: { addressLine1: '123 Main St', city: 'Sunnyvale', stateOrProvince: 'CA', country: 'US', postalCode: '95126' },
+        destination: { locationType: 'DC', addressLine1: '6720 Kimball Ave', city: 'Chino', stateOrProvince: 'CA', country: 'US', postalCode: '91708' },
+        unitDetails: {
+          shipmentPackages: [{ packageSequenceNumber: 1, weight: 10, weightUOM: 'lb', length: 12, height: 16, width: 5, lengthUOM: 'in', packageType: 'MIXED SKUS' }],
+        },
+      },
+    ];
+    ok();
+    await call('walmart_marketplace_create_carrier_rate_quote', { shipment_id: '0606271GDM', quote_type: 'Parcel', units });
+    expect(String(sent().method).toUpperCase()).toBe('POST');
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipments-quote`);
+    expect(sent().data).toEqual({ payload: { shipmentId: '0606271GDM', quoteType: 'Parcel', units } });
+    expect(header(sent(), 'WM_GLOBAL_VERSION')).toBe('3.1');
+    expect(header(sent(), 'WM_MARKET')).toBe('US');
+    expect(header(sent(), 'WM_SEC.ACCESS_TOKEN')).toBe(FAKE_TOKEN);
+
+    ok();
+    await call('walmart_marketplace_get_carrier_rate_quote', { shipment_id: '0606271GDM', quote_type: 'LTL' });
+    expect(sent().params).toEqual({ quoteType: 'LTL', shipmentId: '0606271GDM' });
+
+    ok();
+    await call('walmart_marketplace_create_carrier_booking', {
+      shipment_id: '0721708GDM',
+      quote_type: 'Parcel',
+      quote_id: '313dfsd',
+      terms_accepted_time: '2026-12-08T16:08:46.314Z',
+      unit_details: [{ noOfSingleSkuBoxes: 1, noOfMixedSkuBoxes: 1 }],
+    });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipments-booking`);
+    expect(sent().data).toEqual({
+      payload: {
+        shipmentId: '0721708GDM',
+        bookingDetails: {
+          quoteType: 'Parcel',
+          quoteId: '313dfsd',
+          termsAcceptedTime: '2026-12-08T16:08:46.314Z',
+          unitDetails: [{ noOfSingleSkuBoxes: 1, noOfMixedSkuBoxes: 1 }],
+        },
+      },
+    });
+
+    ok();
+    await call('walmart_marketplace_get_carrier_booking', { shipment_id: '0800803GDM', mode: 'FTL' });
+    expect(String(sent().method).toUpperCase()).toBe('GET');
+    expect(sent().params).toEqual({ mode: 'FTL', shipmentId: '0800803GDM' });
+
+    ok();
+    await call('walmart_marketplace_cancel_carrier_booking', { shipment_id: '0721708GDM', mode: 'Parcel' });
+    expect(String(sent().method).toUpperCase()).toBe('DELETE');
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipments-booking`);
+    expect(sent().params).toEqual({ shipmentId: '0721708GDM', mode: 'Parcel' });
+
+    ok();
+    await call('walmart_marketplace_generate_carrier_label', { shipment_id: '0721708GDM' });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/generate-label`);
+    expect(sent().data).toEqual({ payload: { shipmentId: '0721708GDM', labelType: 'Carrier' } });
+    expect(header(sent(), 'Accept')).toContain('application/pdf');
+
+    ok();
+    await call('walmart_marketplace_download_carrier_label', { shipment_id: '0716575GDM' });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/download-label`);
+    expect(sent().params).toEqual({ shipmentId: '0716575GDM', labelType: 'Carrier', labelSize: 'X4_6' });
+    expect(header(sent(), 'Accept')).toContain('application/pdf');
+
+    ok();
+    await call('walmart_marketplace_get_bill_of_lading', { shipment_id: '0716575GDM' });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipments-bol`);
+    expect(sent().params).toEqual({ shipmentId: '0716575GDM', mode: 'LTL' });
+    expect(header(sent(), 'Accept')).toContain('application/pdf');
+
+    ok();
+    await call('walmart_marketplace_get_pickup_schedule', { shipment_id: '0716575GDM', quote_id: '1385226257027837952' });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-seller-schedule`);
+    expect(sent().params).toEqual({ quoteType: 'LTL', shipmentId: '0716575GDM', quoteId: '1385226257027837952' });
+
+    const windows = [{ pickupDate: '2026-12-18', readyTime: '08:00:00', closeTime: '17:00:00', priority: 1 }];
+    ok();
+    await call('walmart_marketplace_update_pickup_schedule', {
+      shipment_id: '0764456GDM',
+      quote_id: '1385226257027837952',
+      pickup_date_info: windows,
+      contact_details: { email: 'ops@example.com', number: '5550100' },
+    });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-schedule-update`);
+    expect(sent().data).toEqual({
+      payload: {
+        shipmentId: '0764456GDM',
+        bookingDetails: {
+          quoteType: 'LTL',
+          quoteId: '1385226257027837952',
+          pickupDetails: { pickupDateInfo: windows, pickupInstruction: 'update' },
+          contactDetails: { email: 'ops@example.com', number: '5550100' },
+        },
+      },
+    });
+
+    ok();
+    await call('walmart_marketplace_get_carrier_shipment_tracking', { shipment_id: '0569761GDM', mode_type: 'LTL', limit: 10 });
+    expect(sent().url).toBe(`${BASE}/v3/fulfillment/inbound-shipments-tracking`);
+    expect(sent().params).toEqual({ shipmentId: '0569761GDM', modeType: 'LTL', limit: 10 });
+  });
+
+  it('hands a label or bill of lading PDF over as a file, not as text', async () => {
+    const pdf = Buffer.concat([Buffer.from('%PDF-1.4\n%'), Buffer.from([0xe2, 0xe3, 0xcf, 0xd3]), Buffer.from('\n%%EOF\n')]);
+    const headers = { 'content-type': 'application/pdf' };
+    // The mock stands in for axios, so run the engine's own response decoding
+    // (arraybuffer + transformResponse) on the PDF bytes as axios would.
+    mockedAxios.mockImplementationOnce(async (req: { responseType?: string; transformResponse: Array<(d: unknown, h: unknown) => unknown> }) => {
+      expect(req.responseType).toBe('arraybuffer');
+      return { status: 200, data: req.transformResponse[0](pdf, headers), headers };
+    });
+    const result = await call('walmart_marketplace_get_bill_of_lading', { shipment_id: '0716575GDM' });
+    expect(isBinaryBody(result)).toBe(true);
+    expect(result).toMatchObject({ contentType: 'application/pdf', bytes: pdf.length });
+    expect(Buffer.from((result as BinaryBody).base64, 'base64').equals(pdf)).toBe(true);
   });
 });
 
