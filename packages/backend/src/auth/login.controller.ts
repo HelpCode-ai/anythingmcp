@@ -88,6 +88,7 @@ import { telegramAnswerText, telegramPanelTexts } from './auth-page-i18n.telegra
 import { edgePageTexts } from './auth-page-i18n.pages';
 import { boundLoginUser, clearLoginUserCookie, setLoginUserCookie } from './login-user-cookie';
 import { AuthPageThrottleFilter } from './auth-page-throttle.filter';
+import { PasswordSignInLimiter, type PasswordSignInContext } from './password-sign-in-limiter';
 import {
   attemptKey,
   connectedPageArm,
@@ -527,6 +528,9 @@ export class LoginController {
     @Optional() private readonly emailVerification?: EmailVerificationService,
     // Not @Optional: Nest refuses to boot without it. Missing only in specs that build the controller by hand.
     private readonly ssoEnforcement?: SsoEnforcementService,
+    // Sign-in attempt limits per address, shared with POST /api/auth/login.
+    // Optional only for specs that build the controller by hand.
+    @Optional() private readonly signInLimiter?: PasswordSignInLimiter,
   ) {}
 
   /**
@@ -1061,9 +1065,26 @@ export class LoginController {
     // must still sign in when typed in lower case, and the other way round.
     const user = await findUserByEmail<User>(this.prisma, email);
 
+    // Sign-in attempt limits per address (the same as POST /api/auth/login):
+    // while paused, the page says so and no password is compared. Only this
+    // password branch: the provider and single sign-on buttons, and approving
+    // with a dashboard session, are handled above and are never paused.
+    const signIn: PasswordSignInContext = {
+      surface: 'authorization_page',
+      ip: req.ip ?? null,
+      userAgent: req.headers?.['user-agent'] ?? null,
+    };
+    const pause = (await this.signInLimiter?.check(email)) ?? { paused: false as const };
+    if (pause.paused) {
+      this.logger.warn(`Password sign-in paused for: ${maskEmail(email)}`);
+      this.signInLimiter?.refused(email, signIn, user);
+      return res.redirect(`/auth/login?${again}error=${encodeURIComponent(pause.message)}`);
+    }
+
     if (!user) {
       this.logger.warn(`Login attempt for non-existent user: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
+      await this.signInLimiter?.failed(email, 'unknown_account', signIn);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
@@ -1075,6 +1096,7 @@ export class LoginController {
     // IdP's MFA and Conditional Access on exactly the surface that matters.
     if (user.passwordLoginDisabled) {
       this.logger.warn(`Password login refused for SSO-only account: ${maskEmail(email)}`);
+      await this.signInLimiter?.failed(email, 'password_login_disabled', signIn, user);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam('passwordDisabled')}`,
       );
@@ -1086,6 +1108,7 @@ export class LoginController {
     // The provider that requires it is active, so its button is on this page.
     if (await this.ssoEnforcement?.isPasswordLoginBlocked(user.id)) {
       this.logger.warn(`Password login refused, the workspace requires single sign-on: ${maskEmail(email)}`);
+      await this.signInLimiter?.failed(email, 'password_login_disabled', signIn, user);
       return res.redirect(`/auth/login?${again}error=${encodeURIComponent(SSO_REQUIRED_MESSAGE)}`);
     }
 
@@ -1093,6 +1116,7 @@ export class LoginController {
     if (!user.passwordHash) {
       this.logger.warn(`Login attempt for passwordless account: ${maskEmail(email)}`);
       await this.spendPasswordCheck(password);
+      await this.signInLimiter?.failed(email, 'wrong_password', signIn, user);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
@@ -1106,10 +1130,12 @@ export class LoginController {
 
     if (!passwordValid) {
       this.logger.warn(`Failed login attempt for user: ${maskEmail(email)}`);
+      await this.signInLimiter?.failed(email, 'wrong_password', signIn, user);
       return res.redirect(
         `/auth/login?${again}error=${loginErrorParam(this.signInFailedMessage())}`,
       );
     }
+    await this.signInLimiter?.succeeded(email, signIn, user);
 
     // Cloud: an address nobody verified gets no access token. The client
     // would hold a token that /mcp refuses on every call (EmailVerifiedGuard)
@@ -2262,14 +2288,17 @@ ${
     if (plugin) await markDirectorySignup(this.prisma, this.productEvents, userId, plugin);
 
     // The client asked for one specific server via RFC 8707. It has already
-    // said what it wants; asking again would be noise. An id this user cannot
-    // reach is dropped, and the server is added to what this client was
-    // already allowed, so its other server URLs keep working.
+    // said what it wants; asking again would be noise. The server is added to
+    // what this client was already allowed, so its other server URLs keep
+    // working. When it cannot be granted (it no longer exists, is switched
+    // off, or this user may not see it), the decision below is made as if no
+    // server had been asked for, so the authorization still ends with a
+    // grant (the callback refuses to issue a code without one).
     const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
       .signedCookies?.[MCP_RESOURCE_COOKIE];
     if (typeof requestedServerId === 'string' && requestedServerId) {
-      await this.grants.grantRequestedServer(consent.clientId, userId, requestedServerId);
-      return false;
+      if (await this.grants.grantRequestedServer(consent.clientId, userId, requestedServerId)) return false;
+      this.logger.warn('The requested MCP server cannot be granted; choosing as if none had been requested');
     }
 
     const targets = await this.grants.listSelectableTargets(userId);
@@ -2278,23 +2307,27 @@ ${
     // Nothing to choose between: one server, or one workspace whose servers are
     // the only thing on offer. Grant it and carry on without a screen.
     if (servers.length <= 1) {
+      let granted = false;
       if (targets.length === 1 && (await this.grants.restrictedIn(userId, targets[0].organizationId))) {
         // Member visibility: a restricted member is offered only their own
         // server, which often holds none of the connectors shared with them.
         // The whole workspace gives them every tool their roles allow.
-        await this.grants.grantWholeOrganization(consent.clientId, userId, targets[0].organizationId);
+        granted = await this.grants.grantWholeOrganization(consent.clientId, userId, targets[0].organizationId);
       } else if (servers.length === 1) {
-        await this.grants.grantServers(consent.clientId, userId, [servers[0].id]);
+        granted = (await this.grants.grantServers(consent.clientId, userId, [servers[0].id])).length > 0;
       } else if (targets.length === 1) {
         // No servers yet — grant the workspace, so a server created later is
         // picked up without having to reconnect.
-        await this.grants.grantWholeOrganization(
+        granted = await this.grants.grantWholeOrganization(
           consent.clientId,
           userId,
           targets[0].organizationId,
         );
       }
-      return false;
+      // Several workspaces without a server, or a grant that could not be
+      // written: the person chooses on the picker below. With no workspace at
+      // all there is nothing to grant, and the callback ends the attempt.
+      if (granted || targets.length === 0) return false;
     }
 
     // A server without connectors is not a choice. In one workspace where at
@@ -2317,20 +2350,21 @@ ${
       withConnectors.length <= 1 &&
       !(await this.grants.hasActiveGrant(consent.clientId, userId))
     ) {
+      // Each choice falls through to the picker when its grant is not written.
       const organizationId = targets[0].organizationId;
       if (await this.grants.restrictedIn(userId, organizationId)) {
-        await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId);
-        return false;
-      }
-      if (withConnectors.length === 1) {
+        if (await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId)) return false;
+      } else if (withConnectors.length === 1) {
         const only = withConnectors[0].id;
         const own = await this.grants.firstOwnServerId(userId, organizationId);
-        await this.grants.grantServers(consent.clientId, userId, own && own !== only ? [only, own] : [only]);
-        return false;
-      }
-      if ((await this.prisma.connector.count({ where: { organizationId } })) === 0) {
-        await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId);
-        return false;
+        const granted = await this.grants.grantServers(
+          consent.clientId,
+          userId,
+          own && own !== only ? [only, own] : [only],
+        );
+        if (granted.length > 0) return false;
+      } else if ((await this.prisma.connector.count({ where: { organizationId } })) === 0) {
+        if (await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId)) return false;
       }
     }
 
@@ -2440,8 +2474,13 @@ ${
 
     if (body.workspace) {
       // "Everything in this workspace" — covers connectors not yet attached to
-      // any server. Refused outright if the user is not a member.
-      await this.grants.grantWholeOrganization(consent.clientId, userId, body.workspace);
+      // any server. Refused outright if the user is not a member, and then
+      // no code is issued: there is no grant to issue it for.
+      if (!(await this.grants.grantWholeOrganization(consent.clientId, userId, body.workspace))) {
+        return res.redirect(
+          `/auth/login?error=${loginErrorParam('noServersAvailable')}`,
+        );
+      }
     } else if (selected.length > 0) {
       const granted = await this.grants.grantServers(consent.clientId, userId, selected);
       if (granted.length === 0) {

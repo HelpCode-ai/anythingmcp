@@ -186,6 +186,73 @@ describe('RestEngine', () => {
     });
   });
 
+  describe('path parameter values', () => {
+    const base = { baseUrl: 'https://api.example.com/v1', authType: 'NONE' };
+
+    it('keeps a relative path on the base URL even when a value is a full URL', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await expect(
+        engine.execute(base, { method: 'GET', path: '{next}' }, { next: 'https://other.example.net/x' }),
+      ).rejects.toThrow(/path parameter "next".*URL scheme/);
+      await expect(
+        engine.execute(base, { method: 'GET', path: '/{id}' }, { id: '//other.example.net/x' }),
+      ).resolves.toBeDefined();
+      expect(mockedAxios).toHaveBeenCalledTimes(1);
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://api.example.com/v1/other.example.net/x' }),
+      );
+    });
+
+    it.each([
+      ['a ".." segment', '../admin'],
+      ['an encoded ".." segment', '%2e%2e/admin'],
+      ['"?"', 'x?admin=true'],
+      ['"#"', 'x#frag'],
+      ['"\\"', 'x\\..\\admin'],
+      ['a control character', 'x\r\nHost: other'],
+    ])('refuses %s in a value substituted as is, before any request', async (_what, value) => {
+      await expect(
+        engine.execute(base, { method: 'GET', path: '/items/{id}/details' }, { id: value }),
+      ).rejects.toThrow(/path parameter "id"/);
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+
+    it('still accepts a sub-path with slashes when the tool does not encode', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(base, { method: 'GET', path: '/repos/{repo_path}/files' }, { repo_path: 'org/team/repo' });
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://api.example.com/v1/repos/org/team/repo/files' }),
+      );
+    });
+
+    it('accepts a query string in a placeholder that ends the template', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(base, { method: 'GET', path: '/v2{next_url}' }, { next_url: '/returns?page=2&token=a' });
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://api.example.com/v1/v2/returns?page=2&token=a' }),
+      );
+    });
+
+    it('keeps an absolute template as it is, with values substituted', async () => {
+      mockedAxios.mockResolvedValue({ data: {} });
+      await engine.execute(
+        base,
+        { method: 'GET', path: 'https://{index_host}.vendor.example/stats/{id}' },
+        { index_host: 'idx-1', id: '42' },
+      );
+      expect(mockedAxios).toHaveBeenCalledWith(
+        expect.objectContaining({ url: 'https://idx-1.vendor.example/stats/42' }),
+      );
+    });
+
+    it('refuses a value that is a whole ".." segment even when the tool encodes', async () => {
+      await expect(
+        engine.execute(base, { method: 'GET', path: '/items/{id}', encodePathParams: true }, { id: '..' }),
+      ).rejects.toThrow(/path parameter "id"/);
+      expect(mockedAxios).not.toHaveBeenCalled();
+    });
+  });
+
   it('hands back only the response headers the mapping asked for, lower-cased', async () => {
     mockedAxios.mockResolvedValue({
       data: [{ id: 1 }],

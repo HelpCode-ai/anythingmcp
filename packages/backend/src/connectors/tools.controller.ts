@@ -65,13 +65,15 @@ import {
   type SecretMoveSummary,
   type ToolDraft,
 } from './secret-extraction.util';
+import { isCodeMethod, parseCodeToolMapping } from '../mcp-server/code-tool.util';
 import {
-  isCodeMethod,
-  parseCodeToolMapping,
-  validateCodeToolMapping,
-} from '../mcp-server/code-tool.util';
+  assertCodeToolBatch,
+  assertValidCodeTool,
+  type CodeToolSaveDeps,
+} from './code-tool-save.util';
 import { EditionService } from '../ee/licensing/edition.service';
 import { LicenseGuardService } from '../license/license-guard.service';
+import { RolesService } from '../roles/roles.service';
 
 const RESPONSE_MAPPING_DESC =
   'Optional response handling for this tool. Keys: `cacheTtl` (seconds), ' +
@@ -341,6 +343,9 @@ export class ToolsController {
     // Not @Optional: Nest refuses to boot without it. It is missing only in
     // unit specs that build the controller by hand and predate the setting.
     private readonly visibility?: MemberVisibilityService,
+    // Same as visibility: required by Nest, missing only in hand-built specs.
+    // Without it a non-admin's test run of a code tool reaches no inner tool.
+    private readonly roles?: RolesService,
   ) {}
 
   /** The caller's member visibility; unrestricted for admins and open workspaces. */
@@ -378,45 +383,17 @@ export class ToolsController {
     }
   }
 
-  /**
-   * Validate and authorize a code tool at save time (shape + authority gates).
-   * Shape: validateCodeToolMapping. Authority: `definer` is admin-only;
-   * `allowWrites` is Enterprise-only; and every connector in `uses` must belong
-   * to this connector's organization, or a code tool could reach another
-   * tenant's tools at call time (the registry is global, scoped by the ids the
-   * tool carries).
-   */
-  private async assertValidCodeTool(
+  /** Save-time code tool checks (code-tool-save.util.ts), shared with the imports. */
+  private get codeToolDeps(): CodeToolSaveDeps {
+    return { prisma: this.prisma, edition: this.edition, licenseGuard: this.licenseGuard };
+  }
+
+  private assertValidCodeTool(
     endpointMapping: unknown,
     connector: { organizationId: string },
     req: any,
   ): Promise<void> {
-    const error = validateCodeToolMapping(endpointMapping);
-    if (error) throw new BadRequestException(error);
-    const spec = parseCodeToolMapping(endpointMapping);
-    if (!spec) return;
-
-    if (spec.runAs === 'definer' && req.user.role !== 'ADMIN') {
-      throw new ForbiddenException('Only an admin can save a code tool that runs with definer rights.');
-    }
-    if (spec.allowWrites) {
-      await this.edition.assertEnterprise(connector.organizationId, 'Code tools that write');
-    }
-
-    const usesIds = [...new Set(spec.uses.map((u) => u.connectorId))];
-    if (usesIds.length > 0) {
-      const found = await this.prisma.connector.findMany({
-        where: { id: { in: usesIds }, organizationId: connector.organizationId },
-        select: { id: true },
-      });
-      const okIds = new Set(found.map((c) => c.id));
-      const foreign = usesIds.filter((id) => !okIds.has(id));
-      if (foreign.length > 0) {
-        throw new BadRequestException(
-          `A code tool can only use connectors from its own workspace. Unknown or foreign connector(s): ${foreign.join(', ')}.`,
-        );
-      }
-    }
+    return assertValidCodeTool(this.codeToolDeps, endpointMapping, connector, req.user);
   }
 
   private async assertConnectorOrgMatch(connectorId: string, req: any) {
@@ -668,9 +645,21 @@ export class ToolsController {
       return { error: 'Provide a "tools" array with at least one tool definition' };
     }
     for (const dto of body.tools) this.assertValidResponseMapping(dto.responseMapping);
-    const { tools: toolDefs, summary } = await this.guardToolSecrets(
+    // Code tools get the same checks and plan cap as a single create, for the
+    // whole batch before anything is written.
+    await assertCodeToolBatch(this.codeToolDeps, body.tools, connector, req.user, {
+      label: (i) => `tools[${i}]`,
+    });
+    // As in create: a code tool's program is not an upstream request, so only
+    // the other tools go through secret extraction. Order is kept.
+    const drafts = body.tools.map((t) => ({ ...t }));
+    const { tools: guardedPlain, summary } = await this.guardToolSecrets(
       connector,
-      body.tools.map((t) => ({ ...t })),
+      drafts.filter((t) => !isCodeMethod(t.endpointMapping)),
+    );
+    let plainIndex = 0;
+    const toolDefs = drafts.map((t) =>
+      isCodeMethod(t.endpointMapping) ? t : guardedPlain[plainIndex++],
     );
 
     const created = [];
@@ -1096,6 +1085,16 @@ export class ToolsController {
     if (isCodeMethod(tool.endpointMapping)) {
       const codeStart = Date.now();
       const uses = parseCodeToolMapping(tool.endpointMapping)?.uses ?? [];
+      // An admin tests unrestricted (invoker mode then behaves like ADMIN). The
+      // connector owner may also be a member who is not an admin: they test
+      // with their own roles, as their AI client would call it. Either way the
+      // run is still bounded by the tool's `uses` and its write setting.
+      const allowedToolIds =
+        req.user?.role === 'ADMIN'
+          ? null
+          : this.roles
+            ? await this.roles.getAllowedToolIds(req.user.sub, tool.connector.organizationId)
+            : [];
       const codeRes = await this.toolExecutor.runSavedCodeTool(
         {
           id: tool.id,
@@ -1111,11 +1110,7 @@ export class ToolsController {
           userEmail: req.user?.email,
           organizationId: tool.connector.organizationId,
           authMethod: 'dashboard-test',
-          // The dashboard tester is an admin on this connector, so run
-          // unrestricted (invoker mode then behaves like ADMIN). The run is
-          // still bounded by the tool's `uses` and its write setting inside the
-          // bridge.
-          allowedToolIds: null,
+          allowedToolIds,
           connectorIds: uses.map((u) => u.connectorId),
         },
       );

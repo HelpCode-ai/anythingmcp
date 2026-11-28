@@ -170,7 +170,9 @@ export const auth = {
       `/api/auth/invite/verify?token=${token}`,
     ),
   acceptInvite: (data: { token: string; password?: string; name?: string }, token?: string) =>
-    request<{ accessToken: string; user: any }>('/api/auth/accept-invite', {
+    // Cloud: a new account answers `user.emailVerified: false` and
+    // `verificationRequired: true`; it then enters the code sent to it.
+    request<{ accessToken: string; user: any; verificationRequired?: boolean }>('/api/auth/accept-invite', {
       method: 'POST',
       body: data,
       // When the invitee is already signed in (accepting an invite to another

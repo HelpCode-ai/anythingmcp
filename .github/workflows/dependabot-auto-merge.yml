@@ -1,10 +1,11 @@
 name: Dependabot auto-merge
 
-# Auto-merge low-risk Dependabot PRs (npm patch/minor and github-actions
-# patch/minor) once required CI checks pass. Higher-risk bumps — major
-# updates, Docker base-image bumps (e.g. node 22 → 25), or any major bump
-# of a GitHub Action (deploy, scp, etc.) — are labelled `needs-review` and
-# left for a human.
+# Auto-merge low-risk Dependabot PRs once required CI checks pass: patch and
+# minor bumps of npm packages that are only development dependencies, and
+# patch/minor bumps of GitHub Actions. Everything else is labelled
+# `needs-review` and left for a human: npm packages that ship in the runtime
+# image (they run next to every workspace's connector credentials), major
+# updates, and Docker base-image bumps (e.g. node 22 → 25).
 #
 # Safety model:
 #   - Uses `gh pr merge --auto`, which only fires once GitHub's required
@@ -39,6 +40,7 @@ jobs:
           UPDATE_TYPE: ${{ steps.meta.outputs.update-type }}
           ECOSYSTEM: ${{ steps.meta.outputs.package-ecosystem }}
           DEP_NAMES: ${{ steps.meta.outputs.dependency-names }}
+          DEPS_JSON: ${{ steps.meta.outputs.updated-dependencies-json }}
         run: |
           set -euo pipefail
           echo "update-type=$UPDATE_TYPE"
@@ -49,12 +51,24 @@ jobs:
           AUTO=false
           REASON="default-deny"
 
-          # Allow patch+minor for npm and github-actions.
+          # Allow patch+minor for GitHub Actions, and for npm only when every
+          # package in the PR (grouped PRs carry several) is a development
+          # dependency. Runtime packages ("direct:production", "indirect")
+          # are reviewed by a human.
           if [[ "$UPDATE_TYPE" == "version-update:semver-patch" \
              || "$UPDATE_TYPE" == "version-update:semver-minor" ]]; then
-            if [[ "$ECOSYSTEM" == "npm_and_yarn" || "$ECOSYSTEM" == "github_actions" ]]; then
+            if [[ "$ECOSYSTEM" == "github_actions" ]]; then
               AUTO=true
-              REASON="patch-or-minor-on-low-risk-ecosystem"
+              REASON="patch-or-minor-github-action"
+            elif [[ "$ECOSYSTEM" == "npm_and_yarn" ]]; then
+              RUNTIME=$(jq -r '[.[] | select(.dependencyType != "direct:development") | .dependencyName] | join(", ")' <<<"${DEPS_JSON:-[]}")
+              TOTAL=$(jq -r 'length' <<<"${DEPS_JSON:-[]}")
+              if [[ "$TOTAL" -gt 0 && -z "$RUNTIME" ]]; then
+                AUTO=true
+                REASON="patch-or-minor-dev-dependencies-only"
+              else
+                REASON="runtime dependency ($RUNTIME)"
+              fi
             else
               REASON="ecosystem-not-allowlisted ($ECOSYSTEM)"
             fi

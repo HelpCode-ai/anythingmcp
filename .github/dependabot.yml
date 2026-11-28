@@ -11,6 +11,10 @@ updates:
       time: "07:00"
       timezone: Etc/UTC
     open-pull-requests-limit: 10
+    # Wait a week after a release before proposing it: a hijacked package is
+    # usually spotted and pulled within days. Security updates are not delayed.
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
     groups:
@@ -62,6 +66,8 @@ updates:
       day: monday
       time: "07:00"
       timezone: Etc/UTC
+    cooldown:
+      default-days: 7
     labels:
       - dependencies
       - github-actions

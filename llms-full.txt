@@ -1,6 +1,6 @@
 # AnythingMCP
 
-> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 958 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
+> Turn any REST/OpenAPI, SOAP/WSDL, GraphQL, OData or SQL API into MCP tools for Claude, ChatGPT and Copilot, no code. 959 pre-built adapters for ERP, e-commerce and more (SAP S/4HANA, SAP Business One, Odoo, Xentral, JTL-Wawi, Shopware, WooCommerce, Amazon Seller). Self-hosted, open source (AGPL-3.0).
 
 ---
 
@@ -93,7 +93,7 @@ Tools register at runtime, without a restart. Per-connector `{{VAR}}` values are
 
 ## Connector catalog
 
-958 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
+959 adapters, exposing 12,000+ tools. Every one has a setup guide on [anythingmcp.com/guides](<https://anythingmcp.com/guides>), in seven languages. The [full catalog by category](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/catalog/README.md>) lists every Cloud connector with links to its guides for Claude, ChatGPT, Copilot, Cursor and Gemini, and the [connector marketplace](<https://anythingmcp.com/marketplace>) has a page for each one.
 
 | Category | Examples |
 |---|---|
@@ -1087,6 +1087,8 @@ The Database connector lets AI clients query databases directly through MCP. It 
 | **MongoDB** | `mongodb://user:pass@host:27017/dbname` or `mongodb+srv://...` |
 | **SQLite** | `sqlite:///absolute/path/to/db.sqlite` |
 
+On AnythingMCP Cloud, SQLite is not available, and parameters that point at files on the server are ignored with a warning in the log: `sslcert`, `sslkey`, `sslrootcert` and `options` for PostgreSQL, `tlsCAFile`, `tlsCRLFile` and `tlsCertificateKeyFile` for MongoDB. `sslmode` and every other parameter work as usual. Self-hosted instances accept them all.
+
 ---
 
 ## Creating a Database Connector
@@ -1271,11 +1273,32 @@ MongoDB connectors generate tools that support native MongoDB operations:
 
 > **Important:** Database connectors execute queries directly against your database.
 
-1. **Use read-only credentials** — Create a dedicated database user with SELECT-only permissions
+1. **Use read-only credentials** — Create a dedicated database user with SELECT-only permissions. This is the only control that holds for every engine, every function and every stored procedure: AnythingMCP's own checks narrow what a query can do, but they cannot replace the database's permissions.
 2. **Limit accessible tables** — Use database-level grants to restrict which tables are visible
 3. **Use static queries when possible** — Pre-define queries to prevent unexpected operations
 4. **Enable audit logging** — Every query executed through MCP is logged in the audit trail
 5. **Use role-based access** — Create MCP roles that whitelist only specific database tools
+
+### How read-only is enforced
+
+A read-only query tool (the default) is checked in two layers before and while it runs:
+
+1. **The statement text.** Only one `SELECT` (or `WITH … SELECT`) is accepted; writes, stacked statements, `SELECT … INTO` and row locks (`FOR UPDATE`) are refused.
+2. **The database session.** The text check cannot see what a function called by the `SELECT` does, so the statement also runs in a session where the database refuses or undoes writes:
+
+| Engine | How the session is made read-only |
+|---|---|
+| PostgreSQL | `BEGIN TRANSACTION READ ONLY`, then rolled back |
+| MySQL / MariaDB | `START TRANSACTION READ ONLY`, then rolled back (temporary tables can still be written) |
+| Oracle | `SET TRANSACTION READ ONLY`, never committed (a function with an autonomous transaction can still write) |
+| SAP HANA | `SET TRANSACTION READ ONLY` |
+| SQLite | the file is opened read-only |
+| Microsoft SQL Server | no read-only mode exists: the statement runs in a transaction that is always rolled back. Actions that leave the database (linked servers, mail, files) are not undone |
+| MongoDB | the engine only runs `find` queries |
+
+A read-only session also does not cover what leaves it: a function that opens its own connection (for example PostgreSQL `dblink`), a linked server (SQL Server `OPENQUERY` / `OPENROWSET`), or reading files on the database server (PostgreSQL `pg_read_file`, MySQL `LOAD_FILE()`). Whether those work depends only on the database user's privileges.
+
+The exceptions above are why a database user with SELECT-only permissions, and no rights on such functions, is still the recommendation for every engine.
 
 ---
 
@@ -1789,6 +1812,11 @@ box appears only on a server's own URL (`/mcp/<id>`).
 | Cloud Enterprise | 200 MB | 5,000 | 50 GB |
 | Self-hosted (every edition) | 100 MB, `FILE_UPLOADS_MAX_FILE_BYTES` | no limit, `FILE_UPLOADS_PER_DAY` | no limit, `FILE_UPLOADS_MAX_STORED_BYTES` |
 
+- On Cloud, a workspace that needs more uploads per day than its plan can buy a higher daily
+  count as an add-on (ask support), up to 10,000 uploads per day. It raises only the daily
+  count, never lowers it below the plan's; the largest file and the space kept at once stay
+  those of the plan. If a workspace has more than one active licence, the newest one sets the
+  plan and the add-on, so the add-on belongs on the newest subscription.
 - An upload link works **once**, for **15 minutes**, whichever way the file is sent (sandbox, box or page).
 - A file is deleted **8 hours** after upload (`FILE_UPLOADS_TTL_HOURS` on self-hosted). Within
   that time the reference can be used again, for example for the same photo on several listings.
@@ -5570,6 +5598,20 @@ the identifier is itself a URL (a Search Console property such as `https://www.e
 URL), set `"encodePathParams": true` on the mapping and every substituted value is percent-encoded
 (`https%3A%2F%2Fwww.example.com%2F`). The model then passes the value raw, as the API returned it.
 
+A value fills its place in the path and nothing more:
+
+- Whether the request goes to the connector's `baseUrl` or to a URL of its own is decided on the `path`
+  as written, before any value is substituted. A `path` that is itself an absolute `https://` URL
+  (written out, or from a `{{VAR}}`) keeps that URL. Any other `path` is joined to `baseUrl`, and the
+  result must stay on the `baseUrl`'s scheme, host and port. A `{param}` cannot turn a relative path into
+  another host: put a connector variable that holds a URL in `{{VAR}}`, not `{VAR}`.
+- A value inserted verbatim (no `encodePathParams`) may contain `/`, but it is refused with a clear error
+  when it contains a `.` or `..` segment (also written `%2e`), `#`, `\`, a control character or `://`. It
+  may contain `?` only when its placeholder ends the `path` (`"/v2{next_url}"` for a `nextUrl` that the API
+  returns with its query string). A placeholder in the `path`'s own query string (`?tag_id={tag_id}`)
+  refuses only control characters and `#`.
+- With `encodePathParams`, a value that is a whole `.` or `..` segment is refused.
+
 ### File uploads (multipart/form-data)
 
 A `bodyMapping` entry can carry a `__file` marker instead of a plain `"$param"` string.
@@ -9006,7 +9048,9 @@ and can be exported), created in the dashboard under a connector's tools with
 the **Code** tool type. A saved code tool declares:
 
 - **Uses** — the connectors (optionally specific tools) the program may call.
-  Only connectors from the same workspace.
+  Only connectors from the same workspace: this is checked whenever a code tool
+  is saved (single create, bulk create, JSON tool import, backup import) and
+  again on every run.
 - **Run as** — `invoker` re-checks the calling user's own permissions on every
   inner call; `definer` runs with the author's curation instead (like a stored
   procedure), still limited to *Uses* and the write setting. Definer is
@@ -9073,7 +9117,8 @@ Then set a server's `codeMode` to `tools` or `inline` (on the server's settings
 page or via the API). The runner holds no secrets and needs no inbound internet;
 it accepts only the backend's connection on the internal network. A saved code
 tool's **Test** button in the tool editor runs the program through the runner,
-so you can check it before a client does.
+so you can check it before a client does. An admin tests without role limits;
+a connector owner who is not an admin tests with their own roles.
 
 ## Limits
 
@@ -9285,6 +9330,12 @@ choose a plan. File Search and code mode have their own limits, described in
 [File Search](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/connectors/file-search.md#limits-and-pauses>) and
 [code mode](<https://github.com/HelpCode-ai/anythingmcp/blob/main/docs/code-mode.md#limits>).
 
+A Cloud workspace gets its trial when its address is verified. Community
+licences and trial licences issued for a self-hosted instance are for
+self-hosted installations: entering one under **Settings → License** (or
+`PUT /api/license/key`) answers 400 "This licence is for self-hosted
+installations".
+
 Only **active** connectors and MCP servers count. A File Search folder counts
 against the File Search folders, not against the connectors.
 
@@ -9398,6 +9449,38 @@ Response:
 }
 ```
 
+### Sign-in attempt limits
+
+Every email and password sign-in counts against the address it names:
+`POST /api/auth/login`, the password form of the MCP authorization page
+(`/auth/login`), and accepting an invitation with an existing account's
+password. Failed attempts are counted per address (trimmed, lower case)
+whether or not it has an account, so the answer never says which addresses
+have one.
+
+- 10 failed attempts within 15 minutes pause password sign-in for that address
+  for 15 minutes; 20 within an hour pause it for an hour.
+- While paused, `POST /api/auth/login` answers `429` with `Retry-After` and
+  "Too many sign-in attempts. Try again in N minutes, or reset your password."
+  The authorization page shows the same text on the sign-in form.
+- A successful sign-in starts the count again. Completing a password reset
+  starts it again and ends any pause.
+- A pause never affects signing in with Google, Microsoft, GitHub or single
+  sign-on, an existing session, or the password reset flow.
+- When an existing account's password sign-in is paused, its owner gets one
+  email (at most one an hour) with the time and a link to reset the password.
+- `POST /api/auth/forgot-password` sends at most 3 reset emails per address an
+  hour. Further requests get the same answer, and no new link is made.
+- Sign-ins are recorded as security events: `PASSWORD_LOGIN_SUCCESS`,
+  `PASSWORD_LOGIN_FAILED` (with a `reason`) and `SIGN_IN_PAUSED`. For an
+  address with no account, only a SHA-256 hash of the address is stored.
+
+The per-address request limits (for example 5 sign-in requests a minute) apply
+as before. Cloud and self-hosted behave the same. With `REDIS_URL` set, the
+counters and the request limits live in Redis, are shared by every backend
+process and survive a restart; without it, they are kept in memory per process
+(bounded) and start again on restart.
+
 ### Invite User (Admin)
 
 ```bash
@@ -9407,8 +9490,23 @@ curl -s http://localhost:4000/api/auth/invite \
   -d '{"email":"user@example.com","role":"EDITOR","mcpRoleId":"optional-role-id"}'
 ```
 
-Inviting an address that already has a pending invitation reuses its link,
-sends the mail again and applies the `role` and MCP roles of this call to it.
+The response carries `inviteUrl`, the invitation link. It is shown this once:
+only a hash of its token is stored, and `GET /api/users/invitations` lists
+invitations without it. Inviting an address that already has a pending
+invitation keeps that invitation and its expiry, applies the `role` and MCP
+roles of this call to it and sends a new link; the earlier link stops working.
+Links expire 48 hours after the invitation was created.
+
+### Accept an invitation
+
+`POST /api/auth/accept-invite` with `{"token":"…","password":"…","name":"…"}`
+creates an account for an address that has none and adds it to the workspace;
+an existing account proves itself with its current password or a dashboard
+session. On AnythingMCP Cloud a new account starts with an unverified address:
+the answer has `user.emailVerified: false` and `verificationRequired: true`, a
+verification code is sent to the address, and the account is limited like any
+unverified one until the code is entered (`POST /api/auth/verify-email`). On a
+self-hosted instance the new account is verified straight away, as before.
 
 ### Create a workspace
 
@@ -9636,13 +9734,15 @@ See [Tool Definition Format](<https://github.com/HelpCode-ai/anythingmcp/blob/ma
 
 ### Query Invocations
 
+Filters: `toolId`, `status` (`SUCCESS`, `ERROR` or `TIMEOUT`; any other value answers 400), `search` (tool name contains), `connectorId`, `mcpServerId`. Paging: `limit` (1 to 200, default 100; a larger value returns 200 rows) and `offset`.
+
 ```bash
-# Filter by tool name
-curl -s "http://localhost:4000/api/audit/invocations?toolName=get_user" \
+# The last 20 failed calls
+curl -s "http://localhost:4000/api/audit/invocations?status=ERROR&limit=20" \
   -H "Authorization: Bearer $TOKEN"
 
-# Filter by date range
-curl -s "http://localhost:4000/api/audit/invocations?from=2026-01-01&to=2026-01-31" \
+# Calls of tools whose name contains "get_user", second page of 50
+curl -s "http://localhost:4000/api/audit/invocations?search=get_user&limit=50&offset=50" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

@@ -1,7 +1,19 @@
-import { Injectable, Logger, NotFoundException, OnApplicationBootstrap } from '@nestjs/common';
+import {
+  ForbiddenException,
+  Injectable,
+  Logger,
+  NotFoundException,
+  OnApplicationBootstrap,
+} from '@nestjs/common';
 import { randomBytes } from 'crypto';
 import { PrismaService } from '../common/prisma.service';
-import { apiKeyLookupWhere, apiKeySuffix, hashApiKey } from '../common/crypto/api-key-hash.util';
+import {
+  API_KEY_PREFIX,
+  apiKeyLookupWhere,
+  apiKeyPlaceholder,
+  apiKeySuffix,
+  hashApiKey,
+} from '../common/crypto/api-key-hash.util';
 import { isKeyExpired } from './support-keys';
 import type { McpApiKeyScope } from '../generated/prisma/client';
 
@@ -59,6 +71,7 @@ export class McpApiKeysService implements OnApplicationBootstrap {
     name: string,
     mcpServerId?: string,
     scope: McpApiKeyScope = 'MCP',
+    options: { keyOrganizationId?: string } = {},
   ) {
     // A key for a server is limited to that server, so the server must be one
     // the user can reach: an existing server of an organization they are an
@@ -78,27 +91,38 @@ export class McpApiKeysService implements OnApplicationBootstrap {
       if (!membership || membership.deactivatedAt) {
         throw new NotFoundException('MCP server not found');
       }
+      // Requested with an API key: the key acts in one workspace, so it may
+      // only create keys for servers of that workspace.
+      if (options.keyOrganizationId && server!.organizationId !== options.keyOrganizationId) {
+        throw new ForbiddenException(
+          "This API key can only create keys for MCP servers of its own workspace",
+        );
+      }
       // A server's key belongs to the server's workspace (resolveUserByKey
       // scopes a key to its organization), whichever workspace the owner
       // happened to be in when creating it.
       organizationId = server!.organizationId;
     }
 
-    const key = `mcp_${randomBytes(32).toString('hex')}`;
+    const key = `${API_KEY_PREFIX}${randomBytes(32).toString('hex')}`;
 
-    return this.prisma.mcpApiKey.create({
+    const row = await this.prisma.mcpApiKey.create({
       data: {
         userId,
         organizationId,
-        key,
+        // The legacy column gets a non-secret placeholder, never the key:
+        // lookups match the hash.
+        key: apiKeyPlaceholder(),
         keyHash: hashApiKey(key),
         keySuffix: apiKeySuffix(key),
         name,
         mcpServerId: mcpServerId || null,
         scope,
       },
-      select: { id: true, key: true, name: true, isActive: true, mcpServerId: true, scope: true, createdAt: true },
+      select: { id: true, name: true, isActive: true, mcpServerId: true, scope: true, createdAt: true },
     });
+    // The clear key exists only in this response.
+    return { ...row, key };
   }
 
   /**
@@ -140,7 +164,7 @@ export class McpApiKeysService implements OnApplicationBootstrap {
         isActive: true,
         lastUsedAt: true,
         createdAt: true,
-        key: true,
+        keySuffix: true,
         scope: true,
         mcpServerId: true,
         mcpServer: { select: { id: true, name: true } },
@@ -184,6 +208,11 @@ export class McpApiKeysService implements OnApplicationBootstrap {
     });
 
     if (!record || !record.isActive || isKeyExpired(record.expiresAt)) return null;
+    // Only MCP-scoped keys call tools. MANAGEMENT_READ / MANAGEMENT_ADMIN keys
+    // are for the management API (JwtOrManagementKeyGuard); every caller of
+    // this method serves /mcp. Support keys carry a scope too and follow the
+    // same rule. Same answer as an unknown key.
+    if (record.scope !== 'MCP') return null;
 
     // Defence in depth: a key is bound to one organization, and it must not
     // authenticate a user who has been deactivated there — even if the key row

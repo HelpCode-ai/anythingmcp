@@ -9,6 +9,8 @@ import type { CodeBridge } from './code-executor.service';
  * with every access rule in one tested place.
  *
  * The bridge is where a code run's authority is decided:
+ *   - organization — only connectors of the code tool's own organization,
+ *     checked again at run time (a stored `uses` id is not trusted alone).
  *   - `uses` — the only connectors/tools a run may touch.
  *   - read vs write — a run may call a write tool only when the tool is
  *     `allowWrites` (and that is itself admin/Enterprise-gated at save time).
@@ -121,6 +123,8 @@ export interface BridgeResolvedTool {
   id: string;
   name: string;
   connectorId: string;
+  /** Organization of the tool's connector. */
+  organizationId?: string;
   readOnly: boolean;
   /** True for another code tool — never callable from inside a code run. */
   isCode: boolean;
@@ -129,6 +133,11 @@ export interface BridgeResolvedTool {
 export interface CodeBridgeDeps {
   /** The tool registry, already narrowed to the caller's reachable set. */
   resolveTool(name: string): BridgeResolvedTool | undefined;
+  /**
+   * The organization the run belongs to. When set, a resolved tool of any
+   * other organization is refused, whatever `uses` says.
+   */
+  organizationId?: string;
   /** The caller's allowed tool ids for this org, or null = unrestricted. */
   allowedToolIds: string[] | null;
   /** Run a resolved tool (delegates to executeTool); returns its value or throws. */
@@ -168,7 +177,8 @@ export function buildCodeBridge(spec: CodeToolSpec, deps: CodeBridgeDeps): CodeB
 
   const assertAllowed = (name: string): BridgeResolvedTool => {
     const tool = deps.resolveTool(name);
-    if (!tool) {
+    // A tool of another organization reads exactly like an unknown name.
+    if (!tool || (deps.organizationId !== undefined && tool.organizationId !== deps.organizationId)) {
       throw new CodeToolAccessError(`'${name}' is not a tool this code tool can use.`);
     }
     if (tool.isCode) {

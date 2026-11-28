@@ -12,8 +12,10 @@ import {
 import { ForbiddenException } from '@nestjs/common';
 import { ApiTags, ApiBearerAuth, ApiOperation, ApiProperty, ApiPropertyOptional, ApiSecurity, ApiBody, ApiResponse } from '@nestjs/swagger';
 import { JwtOrManagementKeyGuard } from '../auth/jwt-or-management-key.guard';
+import { isApiKeyRequest } from '../auth/api-key-request.util';
 import { IsString, IsOptional, IsIn } from 'class-validator';
 import { McpApiKeysService } from './mcp-api-keys.service';
+import { maskApiKey } from '../common/crypto/api-key-hash.util';
 import {
   MemberVisibilityService,
   canSeeServer,
@@ -107,11 +109,12 @@ export class McpApiKeysController {
       req,
       keys.map((k) => k.mcpServerId).filter((id): id is string => !!id),
     );
-    // Mask keys for display: show only last 8 chars
-    return keys.map((k) => ({
+    // Mask keys for display from the stored suffix (last 8 characters): the
+    // key itself is not stored.
+    return keys.map(({ keySuffix, ...k }) => ({
       ...k,
       ...(k.mcpServerId && hidden.has(k.mcpServerId) ? { mcpServer: null } : {}),
-      key: `mcp_${'•'.repeat(24)}${k.key.slice(-8)}`,
+      key: maskApiKey(keySuffix),
     }));
   }
 
@@ -127,7 +130,8 @@ export class McpApiKeysController {
       'A key always acts with its owner\'s role and never grants more. `amcp login --browser` creates a management key ' +
       'for the CLI the same way. Revoke with `POST /api/mcp-keys/{id}/revoke`.\n\n' +
       '404 when `mcpServerId` is not a server of a workspace you belong to; in a workspace with restricted member ' +
-      'visibility where you are not an admin, also for a server you do not own.',
+      'visibility where you are not an admin, also for a server you do not own. Called with a management API key, ' +
+      '`mcpServerId` must be a server of the key\'s own workspace (403 otherwise).',
   })
   @ApiBody({
     type: CreateKeyDto,
@@ -176,6 +180,8 @@ export class McpApiKeysController {
       dto.name,
       dto.mcpServerId,
       scope,
+      // With an API key, a server key may only be for the key's workspace.
+      isApiKeyRequest(req) ? { keyOrganizationId: req.user.organizationId } : {},
     );
   }
 

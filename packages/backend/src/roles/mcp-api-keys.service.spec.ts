@@ -1,5 +1,6 @@
+import { ForbiddenException, NotFoundException } from '@nestjs/common';
 import { McpApiKeysService } from './mcp-api-keys.service';
-import { hashApiKey } from '../common/crypto/api-key-hash.util';
+import { hashApiKey, isApiKeyPlaceholder } from '../common/crypto/api-key-hash.util';
 
 process.env.ENCRYPTION_KEY ??= 'unit-test-encryption-key-0123456789abcdef';
 
@@ -34,7 +35,7 @@ describe('McpApiKeysService', () => {
           id: 'key-1',
           key: args.data.key,
           name: args.data.name,
-          isActive: true,
+          isActive: true, scope: 'MCP',
           mcpServerId: args.data.mcpServerId,
           createdAt: new Date(),
         });
@@ -123,7 +124,7 @@ describe('McpApiKeysService', () => {
     it('should return user data with mcpServerId when key is active', async () => {
       const record = {
         id: 'key-1',
-        isActive: true,
+        isActive: true, scope: 'MCP',
         organizationId: 'org-1',
         mcpServerId: 'srv-1',
         name: 'My Key',
@@ -164,7 +165,7 @@ describe('McpApiKeysService', () => {
     it('should not throw if lastUsedAt update fails', async () => {
       const record = {
         id: 'key-1',
-        isActive: true,
+        isActive: true, scope: 'MCP',
         mcpServerId: null,
         name: 'Key',
         user: { id: 'u1', email: 'a@b.com', role: 'USER', mcpRoleId: null },
@@ -180,7 +181,7 @@ describe('McpApiKeysService', () => {
 
   describe('resolveUserByKey — membership guard', () => {
     const record = {
-      id: 'k1', key: 'mcp_x', isActive: true, userId: 'u1', organizationId: 'org-1', name: 'n', mcpServerId: null,
+      id: 'k1', key: 'mcp_x', isActive: true, scope: 'MCP', userId: 'u1', organizationId: 'org-1', name: 'n', mcpServerId: null,
       user: { id: 'u1', email: 'a@x', role: 'VIEWER', organizationId: 'org-1', mcpRoleId: null },
     };
 
@@ -272,6 +273,44 @@ describe('McpApiKeysService', () => {
       expect(data.keySuffix).toBe(result.key.slice(-8));
     });
 
+    it('stores a placeholder instead of the key and returns the key once', async () => {
+      mockPrisma.mcpApiKey.create.mockImplementation((args: any) =>
+        Promise.resolve({ id: 'key-1', name: args.data.name }),
+      );
+      const result = await service.generate('user-1', 'org-1', 'Key');
+      const args = mockPrisma.mcpApiKey.create.mock.calls[0][0];
+      expect(result.key).toMatch(/^mcp_[0-9a-f]{64}$/);
+      expect(args.data.key).toMatch(/^hashed_[0-9a-f]{48}$/);
+      expect(isApiKeyPlaceholder(args.data.key)).toBe(true);
+      expect(args.data.key).not.toContain(result.key.slice(4));
+      expect(args.select.key).toBeUndefined();
+    });
+
+    it('gives each new key its own placeholder', async () => {
+      mockPrisma.mcpApiKey.create.mockResolvedValue({ id: 'k' });
+      await service.generate('user-1', 'org-1', 'A');
+      await service.generate('user-1', 'org-1', 'B');
+      const [a, b] = mockPrisma.mcpApiKey.create.mock.calls.map((c: any[]) => c[0].data.key);
+      expect(a).not.toBe(b);
+    });
+
+    it('lists keys with the stored suffix, not the key column', async () => {
+      mockPrisma.mcpApiKey.findMany.mockResolvedValue([]);
+      await service.listByUser('user-1');
+      const select = mockPrisma.mcpApiKey.findMany.mock.calls[0][0].select;
+      expect(select.key).toBeUndefined();
+      expect(select.keySuffix).toBe(true);
+    });
+
+    it('never compares a placeholder against the plaintext column', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue(null);
+      const placeholder = `hashed_${'a'.repeat(48)}`;
+      await expect(service.resolveUserByKey(placeholder)).resolves.toBeNull();
+      expect(mockPrisma.mcpApiKey.findFirst).toHaveBeenCalledWith(
+        expect.objectContaining({ where: { keyHash: hashApiKey(placeholder) } }),
+      );
+    });
+
     it('looks a key up by hash, falling back to the plaintext column', async () => {
       mockPrisma.mcpApiKey.findFirst.mockResolvedValue(null);
       await service.resolveUserByKey('mcp_abc');
@@ -284,7 +323,7 @@ describe('McpApiKeysService', () => {
 
     it('hashes a row found through the plaintext fallback', async () => {
       mockPrisma.mcpApiKey.findFirst.mockResolvedValue({
-        id: 'k1', isActive: true, userId: 'u1', organizationId: 'org-1', keyHash: null,
+        id: 'k1', isActive: true, scope: 'MCP', userId: 'u1', organizationId: 'org-1', keyHash: null,
         name: 'n', mcpServerId: null, user: { id: 'u1' },
       });
       mockPrisma.mcpApiKey.update.mockResolvedValue({});
@@ -301,7 +340,7 @@ describe('McpApiKeysService', () => {
 
     it('only stamps lastUsedAt for a row that is already hashed', async () => {
       mockPrisma.mcpApiKey.findFirst.mockResolvedValue({
-        id: 'k1', isActive: true, userId: 'u1', organizationId: 'org-1', keyHash: 'h',
+        id: 'k1', isActive: true, scope: 'MCP', userId: 'u1', organizationId: 'org-1', keyHash: 'h',
         name: 'n', mcpServerId: null, user: { id: 'u1' },
       });
       mockPrisma.mcpApiKey.update.mockResolvedValue({});
@@ -353,7 +392,7 @@ describe('McpApiKeysService', () => {
 
   describe('support keys and expiry', () => {
     const base = {
-      id: 'k1', isActive: true, userId: 'u1', organizationId: 'org-1', keyHash: 'h',
+      id: 'k1', isActive: true, scope: 'MCP', userId: 'u1', organizationId: 'org-1', keyHash: 'h',
       name: 'support:matteo:2026-11-06T12:00Z', mcpServerId: 'srv-1',
       user: { id: 'u1', email: 'a@x', role: 'EDITOR', organizationId: 'org-1', mcpRoleId: null },
     };
@@ -396,6 +435,62 @@ describe('McpApiKeysService', () => {
       mockPrisma.mcpApiKey.deleteMany.mockResolvedValue({ count: 0 });
       await service.deleteKey('k1', 'u1');
       expect(mockPrisma.mcpApiKey.deleteMany).toHaveBeenCalledWith({ where: { id: 'k1', userId: 'u1', isSupport: false } });
+    });
+  });
+
+  describe('resolveUserByKey — key scope', () => {
+    const record = {
+      id: 'k1', isActive: true, userId: 'u1', organizationId: 'org-1', keyHash: 'h', name: 'n', mcpServerId: null,
+      user: { id: 'u1', email: 'a@x', role: 'EDITOR', organizationId: 'org-1', mcpRoleId: null },
+    };
+
+    it('accepts an MCP-scoped key on /mcp', async () => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...record, scope: 'MCP' });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      expect(await service.resolveUserByKey('mcp_x')).toMatchObject({ id: 'u1', organizationId: 'org-1' });
+    });
+
+    it.each(['MANAGEMENT_READ', 'MANAGEMENT_ADMIN'])('refuses a %s key, as it would an unknown key', async (scope) => {
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...record, scope });
+      expect(await service.resolveUserByKey('mcp_x')).toBeNull();
+      expect(mockPrisma.mcpApiKey.update).not.toHaveBeenCalled();
+    });
+
+    it('applies the same rule to support keys', async () => {
+      const support = { ...record, isSupport: true, expiresAt: new Date(Date.now() + 60_000) };
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...support, scope: 'MANAGEMENT_READ' });
+      expect(await service.resolveUserByKey('mcp_x')).toBeNull();
+      mockPrisma.mcpApiKey.findFirst.mockResolvedValue({ ...support, scope: 'MCP' });
+      mockPrisma.mcpApiKey.update.mockResolvedValue({});
+      expect(await service.resolveUserByKey('mcp_x')).toMatchObject({ supportKeyId: 'k1' });
+    });
+  });
+
+  describe('generate — requested with an API key', () => {
+    beforeEach(() => {
+      mockPrisma.mcpApiKey.create.mockImplementation((args: any) => Promise.resolve({ id: 'k', key: args.data.key }));
+    });
+
+    it("refuses a server outside the key's workspace and creates nothing", async () => {
+      mockPrisma.mcpServerConfig.findUnique.mockResolvedValue({ organizationId: 'org-B' });
+      await expect(
+        service.generate('user-1', 'org-A', 'Key', 'srv-B', 'MCP', { keyOrganizationId: 'org-A' }),
+      ).rejects.toBeInstanceOf(ForbiddenException);
+      expect(mockPrisma.mcpApiKey.create).not.toHaveBeenCalled();
+    });
+
+    it("creates a key for a server of the key's own workspace", async () => {
+      mockPrisma.mcpServerConfig.findUnique.mockResolvedValue({ organizationId: 'org-A' });
+      await service.generate('user-1', 'org-A', 'Key', 'srv-A', 'MCP', { keyOrganizationId: 'org-A' });
+      expect(mockPrisma.mcpApiKey.create.mock.calls[0][0].data).toMatchObject({ organizationId: 'org-A', mcpServerId: 'srv-A' });
+    });
+
+    it('keeps answering 404 for a server of a workspace the owner is not in', async () => {
+      mockPrisma.mcpServerConfig.findUnique.mockResolvedValue({ organizationId: 'org-B' });
+      mockPrisma.organizationMember.findUnique.mockResolvedValue(null);
+      await expect(
+        service.generate('user-1', 'org-A', 'Key', 'srv-B', 'MCP', { keyOrganizationId: 'org-A' }),
+      ).rejects.toBeInstanceOf(NotFoundException);
     });
   });
 });

@@ -305,4 +305,18 @@ describe('UsersService', () => {
       expect(mockPrisma.user.delete).not.toHaveBeenCalled();
     });
   });
+
+  describe('findAllInvitations', () => {
+    it('lists the invitations of the workspace without their token', async () => {
+      mockPrisma.invitationToken = {
+        findMany: jest.fn().mockResolvedValue([
+          { id: 'inv1', email: 'a@example.com', token: 'sha256:abc', role: 'EDITOR', organizationId: 'org-1' },
+        ]),
+      };
+      const rows = await service.findAllInvitations('org-1');
+      expect(mockPrisma.invitationToken.findMany.mock.calls[0][0].where).toEqual({ usedAt: null, organizationId: 'org-1' });
+      expect(rows).toEqual([{ id: 'inv1', email: 'a@example.com', role: 'EDITOR', organizationId: 'org-1' }]);
+      expect(rows[0]).not.toHaveProperty('token');
+    });
+  });
 });

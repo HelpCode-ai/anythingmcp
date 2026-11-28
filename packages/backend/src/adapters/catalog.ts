@@ -1,6 +1,7 @@
 // === AUTOGEN-IMPORTS-BEGIN === run scripts/regenerate-catalog.mjs ===
 import * as aBoss from './de/a-boss.json';
 import * as ablefy from './de/ablefy.json';
+import * as afterbuy from './de/afterbuy.json';
 import * as apaleo from './de/apaleo.json';
 import * as autodoc from './de/autodoc.json';
 import * as billbee from './de/billbee.json';
@@ -1278,6 +1279,7 @@ function withFileSearchBuiltins(adapter: AdapterDefinition): AdapterDefinition {
 const RAW_ADAPTERS: AdapterDefinition[] = [
   aBoss as unknown as AdapterDefinition,
   ablefy as unknown as AdapterDefinition,
+  afterbuy as unknown as AdapterDefinition,
   apaleo as unknown as AdapterDefinition,
   autodoc as unknown as AdapterDefinition,
   billbee as unknown as AdapterDefinition,

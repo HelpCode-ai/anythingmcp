@@ -206,6 +206,11 @@ describe('DatabaseEngine with a guarded table prefix (MySQL path)', () => {
       [42],
     );
     expect(out).toEqual({ rows: [{ order_id: 42, total: '10.0000' }], totalRows: 1 });
+    // Read-only by default: MySQL itself refuses writes for the statement.
+    expect(mockQuery.mock.calls.map((c) => c[0])).toEqual([
+      'START TRANSACTION READ ONLY',
+      'ROLLBACK',
+    ]);
   });
 
   it('still applies the denied-tables list to the prefixed name', async () => {

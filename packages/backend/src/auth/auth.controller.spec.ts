@@ -1,7 +1,10 @@
 import { BadRequestException, ConflictException, ForbiddenException, UnauthorizedException } from '@nestjs/common';
+import { Reflector } from '@nestjs/core';
 import { AuthController, NEUTRAL_PASSWORD_RESET, NEUTRAL_REGISTRATION } from './auth.controller';
 import { ProductEventService } from '../audit/product-event.service';
 import { findUserByEmail, normalizeEmail } from '../common/email.util';
+import { hashInviteToken } from './invite-token.util';
+import { PasswordSignInLimiter } from './password-sign-in-limiter';
 
 /**
  * Sign-up, password reset and login must not say — by their answer or by how
@@ -18,6 +21,8 @@ type Account = {
   emailVerified: boolean;
   passwordHash: string | null;
   passwordLoginDisabled: boolean;
+  /** Revocation watermark (JwtStrategy): tokens issued before it are refused. */
+  sessionsValidFrom?: Date | null;
 };
 
 function makeController({
@@ -26,6 +31,7 @@ function makeController({
   openRegistration = true,
   orgLicense = null,
   orgEndedLicense = null,
+  signInLimiter,
 }: {
   mode: 'cloud' | 'self-hosted';
   accounts?: Account[];
@@ -34,6 +40,8 @@ function makeController({
   orgLicense?: { plan: string } | null;
   /** Its latest ended licence (cloud), if any. */
   orgEndedLicense?: { plan: string; status: string } | null;
+  /** Sign-in attempt limits; left out (as before) unless a test is about them. */
+  signInLimiter?: PasswordSignInLimiter;
 }) {
   const users = [...accounts];
   const sent: string[] = [];
@@ -45,10 +53,21 @@ function makeController({
     hashPassword: jest.fn(async (p: string) => `hash:${p}`),
     comparePassword: jest.fn(async (p: string, h: string) => h === `hash:${p}`),
     generateToken: jest.fn(() => 'jwt'),
-    // Test sessions are the literal string `sess:<email>`; anything else is an
-    // invalid token.
+    // Test sessions are the literal string `sess:<email>` (a dashboard token of
+    // the account with that address, issued now) or `mcp:<email>` (a token of
+    // the MCP authorization server for it); anything else is an invalid token.
     verifyToken: jest.fn((t: string) => {
-      if (typeof t === 'string' && t.startsWith('sess:')) return { email: t.slice(5) };
+      const iat = Math.floor(Date.now() / 1000);
+      if (typeof t === 'string' && t.startsWith('sess:')) {
+        const email = t.slice(5);
+        const sub = users.find((u) => u.email.toLowerCase() === email.toLowerCase())?.id ?? `u-unknown-${email}`;
+        return { sub, email, tokenUse: 'dashboard', iat };
+      }
+      if (typeof t === 'string' && t.startsWith('mcp:')) {
+        const email = t.slice(4);
+        const sub = users.find((u) => u.email.toLowerCase() === email.toLowerCase())?.id ?? `u-unknown-${email}`;
+        return { sub, email, type: 'access', user_data: { email }, iat };
+      }
       throw new Error('invalid token');
     }),
   };
@@ -82,6 +101,20 @@ function makeController({
     }),
   };
   const prisma = {
+    // What JwtStrategy reads for a session: the user, its revocation
+    // watermark and its active memberships.
+    user: {
+      findUnique: jest.fn(async ({ where }: any) => {
+        const u = users.find((x) => x.id === where.id);
+        if (!u) return null;
+        return {
+          ...u,
+          sessionsValidFrom: u.sessionsValidFrom ?? null,
+          memberships: [{ organizationId: u.organizationId ?? 'org-1', role: u.role }],
+        };
+      }),
+      update: jest.fn(async () => undefined),
+    },
     organization: { findFirst: jest.fn(async () => ({ id: 'org-first' })) },
     emailVerificationToken: {
       updateMany: jest.fn(async () => ({ count: 0 })),
@@ -183,6 +216,10 @@ function makeController({
     // The real service, so the test sees what would actually be stored.
     new ProductEventService(prisma as any),
     { assertSeatAvailable: jest.fn(async () => undefined), getState: jest.fn(async () => ({ trialAvailable: true })) } as any, // edition
+    undefined, // adsSignup
+    undefined, // licenseGuard
+    undefined, // redis
+    signInLimiter,
   );
   return {
     controller,
@@ -194,6 +231,7 @@ function makeController({
     usersService,
     emailService,
     organizationsService,
+    ssoEnforcement,
     prisma,
   };
 }
@@ -505,6 +543,100 @@ describe('AuthController — accept-invite ownership check', () => {
     expect(a.organizationsService.addMember).not.toHaveBeenCalled();
   });
 
+  it('does not take a revoked session as proof (sessionsValidFrom after the token)', async () => {
+    const revoked: Account = { ...EXISTING, sessionsValidFrom: new Date(Date.now() + 60_000) };
+    const a = makeController({ mode: 'cloud', accounts: [revoked] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite(
+        { headers: { authorization: 'Bearer sess:taken@example.com' } },
+        { token: 'invite-token' },
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+    expect(a.authService.generateToken).not.toHaveBeenCalled();
+  });
+
+  it('does not take a token of the MCP authorization server as a session', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite(
+        { headers: { authorization: 'Bearer mcp:taken@example.com' } },
+        { token: 'invite-token' },
+      ),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('does not take a session of a user that no longer exists', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    a.invites.push(makeInvite());
+    // A signed token whose user id matches no account.
+    a.authService.verifyToken.mockReturnValueOnce({
+      sub: 'u-deleted',
+      email: 'taken@example.com',
+      tokenUse: 'dashboard',
+      iat: Math.floor(Date.now() / 1000),
+    } as any);
+    await expect(
+      a.controller.acceptInvite({ headers: { authorization: 'Bearer anything' } }, { token: 'invite-token' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('still accepts the password when the bearer is not a valid session', async () => {
+    const revoked: Account = { ...EXISTING, sessionsValidFrom: new Date(Date.now() + 60_000) };
+    const a = makeController({ mode: 'cloud', accounts: [revoked] });
+    a.invites.push(makeInvite());
+    const res = await a.controller.acceptInvite(
+      { headers: { authorization: 'Bearer sess:taken@example.com' } },
+      { token: 'invite-token', password: 'Correct#Horse1' },
+    );
+    expect(res.accessToken).toBe('jwt');
+  });
+
+  it('refuses the password when password sign-in is disabled for the account, before comparing it', async () => {
+    const ssoOnly: Account = { ...EXISTING, passwordLoginDisabled: true };
+    const a = makeController({ mode: 'self-hosted', accounts: [ssoOnly] });
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: 'invite-token', password: 'Correct#Horse1' }),
+    ).rejects.toThrow('Password sign-in is disabled for this account. Use your organization sign-in.');
+    expect(a.authService.comparePassword).not.toHaveBeenCalled();
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('refuses the password when single sign-on is enforced for the account', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [EXISTING] });
+    a.ssoEnforcement.isPasswordLoginBlocked.mockResolvedValue(true);
+    a.invites.push(makeInvite());
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: 'invite-token', password: 'Correct#Horse1' }),
+    ).rejects.toThrow('This workspace requires single sign-on.');
+    expect(a.ssoEnforcement.isPasswordLoginBlocked).toHaveBeenCalledWith('u-existing');
+    expect(a.authService.comparePassword).not.toHaveBeenCalled();
+    expect(a.organizationsService.addMember).not.toHaveBeenCalled();
+  });
+
+  it('lets a valid session join even when password sign-in is disabled (it is not the password branch)', async () => {
+    const ssoOnly: Account = { ...EXISTING, passwordLoginDisabled: true };
+    const a = makeController({ mode: 'self-hosted', accounts: [ssoOnly] });
+    a.invites.push(makeInvite());
+    const res = await a.controller.acceptInvite(
+      { headers: { authorization: 'Bearer sess:taken@example.com' } },
+      { token: 'invite-token' },
+    );
+    expect(res.accessToken).toBe('jwt');
+  });
+
+  it('has the same throttle as POST /api/auth/login (5 a minute)', () => {
+    const reflector = new Reflector();
+    expect(reflector.get('THROTTLER:LIMITdefault', AuthController.prototype.acceptInvite)).toBe(5);
+    expect(reflector.get('THROTTLER:TTLdefault', AuthController.prototype.acceptInvite)).toBe(60_000);
+    expect(reflector.get('THROTTLER:LIMITdefault', AuthController.prototype.login)).toBe(5);
+  });
+
   it('tells an SSO-only existing account to sign in first (password cannot prove it)', async () => {
     const sso: Account = { ...EXISTING, passwordHash: null };
     const a = makeController({ mode: 'cloud', accounts: [sso] });
@@ -534,6 +666,40 @@ describe('AuthController — accept-invite ownership check', () => {
         { token: 'invite-token', password: 'weak', name: 'Fresh' },
       ),
     ).rejects.toBeTruthy();
+  });
+
+  it('creates a Cloud account unverified and sends it the email code', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [] });
+    a.invites.push(makeInvite({ email: 'fresh@example.com' }));
+    const res: any = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: 'invite-token', password: 'Brand#New123', name: 'Fresh' },
+    );
+    await flush();
+    const created = a.users.find((u) => u.email === 'fresh@example.com')!;
+    expect(created.emailVerified).toBe(false);
+    expect(a.usersService.update).not.toHaveBeenCalledWith(created.id, { emailVerified: true });
+    expect(a.sent).toContain('verify fresh@example.com');
+    expect(res.user.emailVerified).toBe(false);
+    expect(res.verificationRequired).toBe(true);
+    // The membership in the inviting workspace is created as before.
+    expect(a.organizationsService.addMember).toHaveBeenCalledWith(created.id, 'org-new', 'EDITOR');
+    expect(a.invites[0].usedAt).toBeInstanceOf(Date);
+  });
+
+  it('creates a self-hosted account verified, as before, with no code sent', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [] });
+    a.invites.push(makeInvite({ email: 'fresh@example.com' }));
+    const res: any = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: 'invite-token', password: 'Brand#New123', name: 'Fresh' },
+    );
+    await flush();
+    const created = a.users.find((u) => u.email === 'fresh@example.com')!;
+    expect(created.emailVerified).toBe(true);
+    expect(a.sent).not.toContain('verify fresh@example.com');
+    expect(res.user.emailVerified).toBe(true);
+    expect(res.verificationRequired).toBeUndefined();
   });
 
   it('verifyInvite reports whether the address already exists', async () => {
@@ -708,7 +874,7 @@ describe('AuthController — email addresses ignore case', () => {
     });
 
     const reused = await a.controller.inviteUser(req, { email: 'INVITEE@example.com', role: 'EDITOR' as any });
-    expect(reused.inviteUrl).toContain('token=old-token');
+    expect(reused.inviteUrl).not.toContain('old-token');
     expect(a.invites).toHaveLength(1);
 
     const created = await a.controller.inviteUser(req, { email: 'Other.Person@Example.com', role: 'EDITOR' as any });
@@ -739,10 +905,12 @@ describe('AuthController — email addresses ignore case', () => {
       mcpRoleIds: ['role-sales'],
     });
 
-    // Same link, so the first mail keeps working, but it now grants what the
-    // second mail says.
-    expect(again.inviteUrl).toContain('token=old-token');
+    // A new link (the old one cannot be read back from its hash), on the
+    // same row and expiry, granting what the second mail says.
+    const newToken = new URL(again.inviteUrl).searchParams.get('token')!;
+    expect(newToken).not.toBe('old-token');
     expect(a.invites).toHaveLength(1);
+    expect(a.invites[0].token).toBe(hashInviteToken(newToken));
     expect(a.invites[0]).toMatchObject({
       role: 'VIEWER',
       mcpRoleId: 'role-sales',
@@ -777,5 +945,260 @@ describe('AuthController — email addresses ignore case', () => {
     });
     await a.controller.inviteUser(req, { email: 'invitee@example.com', role: 'VIEWER' as any });
     expect(a.invites[0]).toMatchObject({ role: 'VIEWER', mcpRoleId: null, mcpRoleIds: [] });
+  });
+});
+
+describe('AuthController — invitation tokens are stored as hashes', () => {
+  const req = { user: { sub: 'u-existing', organizationId: 'org-x' } };
+
+  it('stores only the hash of a new invitation link and accepts the link', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    const res = await a.controller.inviteUser(req, { email: 'new.member@example.com', role: 'EDITOR' as any });
+    const token = new URL(res.inviteUrl).searchParams.get('token')!;
+    expect(token).toMatch(/^[0-9a-f]{64}$/);
+    expect(a.invites[0].token).toBe(hashInviteToken(token));
+    expect(JSON.stringify(a.invites)).not.toContain(token);
+
+    expect(await a.controller.verifyInvite(token)).toMatchObject({ email: 'new.member@example.com', valid: true });
+    const accepted: any = await a.controller.acceptInvite(
+      { headers: {} },
+      { token, password: 'Brand#New123', name: 'New Member' },
+    );
+    expect(accepted.accessToken).toBe('jwt');
+  });
+
+  it('refuses the stored hash presented as the link token', async () => {
+    const a = makeController({ mode: 'cloud', accounts: [EXISTING] });
+    await a.controller.inviteUser(req, { email: 'new.member@example.com', role: 'EDITOR' as any });
+    const stored = a.invites[0].token as string;
+    await expect(a.controller.verifyInvite(stored)).rejects.toBeInstanceOf(BadRequestException);
+    await expect(a.controller.verifyInvite(stored.slice('sha256:'.length))).rejects.toBeInstanceOf(
+      BadRequestException,
+    );
+    await expect(
+      a.controller.acceptInvite({ headers: {} }, { token: stored, password: 'Brand#New123', name: 'X' }),
+    ).rejects.toBeInstanceOf(BadRequestException);
+  });
+
+  it('still accepts a pending invitation stored in plain text by the previous release', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [] });
+    const legacyToken = 'a'.repeat(64);
+    a.invites.push({
+      id: 'inv-legacy',
+      token: legacyToken,
+      email: 'legacy.invitee@example.com',
+      role: 'EDITOR',
+      mcpRoleId: null,
+      mcpRoleIds: [],
+      organizationId: 'org-x',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+    expect(await a.controller.verifyInvite(legacyToken)).toMatchObject({ valid: true });
+    const res = await a.controller.acceptInvite(
+      { headers: {} },
+      { token: legacyToken, password: 'Brand#New123', name: 'Legacy' },
+    );
+    expect(res.accessToken).toBe('jwt');
+    expect(a.invites[0].usedAt).toBeInstanceOf(Date);
+  });
+
+  it('refuses an expired plain-text invitation of the previous release', async () => {
+    const a = makeController({ mode: 'self-hosted', accounts: [] });
+    a.invites.push({
+      id: 'inv-legacy',
+      token: 'b'.repeat(64),
+      email: 'legacy.invitee@example.com',
+      role: 'EDITOR',
+      organizationId: 'org-x',
+      expiresAt: new Date(Date.now() - 1000),
+      usedAt: null,
+    });
+    await expect(a.controller.verifyInvite('b'.repeat(64))).rejects.toThrow('This invitation has expired');
+  });
+});
+
+/**
+ * Sign-in attempt limits per address: every password sign-in of this
+ * controller goes through the one PasswordSignInLimiter, and while an
+ * address is paused no password is compared.
+ */
+describe('AuthController — sign-in attempt limits', () => {
+  const OLD_FLOOR = process.env.AUTH_NEUTRAL_FLOOR_MS;
+  beforeEach(() => {
+    process.env.AUTH_NEUTRAL_FLOOR_MS = '0';
+  });
+  afterAll(() => {
+    process.env.AUTH_NEUTRAL_FLOOR_MS = OLD_FLOOR;
+  });
+
+  const PAUSED = 'Too many sign-in attempts. Try again in 15 minutes, or reset your password.';
+
+  function setup(accounts: Account[] = [EXISTING]) {
+    const securityEvents = { log: jest.fn(async (_input: any) => undefined) };
+    const limiterMail = { sendSignInPausedEmail: jest.fn(async (_to: string, _input: any) => true) };
+    const signInLimiter = new PasswordSignInLimiter(undefined, securityEvents as any, limiterMail as any, undefined);
+    const made = makeController({ mode: 'cloud', accounts, signInLimiter });
+    return { ...made, signInLimiter, securityEvents, limiterMail };
+  }
+
+  const request = () => {
+    const sent: Record<string, string> = {};
+    return {
+      ip: '203.0.113.7',
+      headers: {},
+      res: { setHeader: (k: string, v: string) => (sent[k] = v) },
+      sent,
+    };
+  };
+
+  async function failLogins(controller: AuthController, email: string, times: number) {
+    for (let i = 0; i < times; i++) {
+      await expect(controller.login(request(), { email, password: 'Wrong#Pass1' })).rejects.toBeInstanceOf(
+        UnauthorizedException,
+      );
+    }
+  }
+
+  it('refuses POST /api/auth/login with 429 while paused, without comparing the password', async () => {
+    const { controller, authService } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+
+    const req = request();
+    const err: any = await controller
+      .login(req, { email: 'Taken@Example.com', password: 'Correct#Horse1' })
+      .catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(err.getResponse().message).toBe(PAUSED);
+    expect(req.sent['Retry-After']).toBe('900');
+    // Even the right password is not compared while paused.
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+  });
+
+  it('answers an address with no account the same way', async () => {
+    const { controller, authService } = setup();
+    await failLogins(controller, 'nobody@example.com', 10);
+    const err: any = await controller
+      .login(request(), { email: 'nobody@example.com', password: 'Correct#Horse1' })
+      .catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(err.getResponse().message).toBe(PAUSED);
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+  });
+
+  it('records a failed sign-in with its reason and a successful one', async () => {
+    const { controller, securityEvents } = setup();
+    await failLogins(controller, 'nobody@example.com', 1);
+    await failLogins(controller, 'taken@example.com', 1);
+    await controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' });
+    const events = securityEvents.log.mock.calls.map((c) => [c[0].event, c[0].metadata.reason ?? null]);
+    expect(events).toEqual([
+      ['PASSWORD_LOGIN_FAILED', 'unknown_account'],
+      ['PASSWORD_LOGIN_FAILED', 'wrong_password'],
+      ['PASSWORD_LOGIN_SUCCESS', null],
+    ]);
+    expect(JSON.stringify(securityEvents.log.mock.calls)).not.toContain('nobody@example.com');
+  });
+
+  it('records an SSO-only account as password_login_disabled', async () => {
+    const sso: Account = { ...EXISTING, id: 'u-sso', email: 'sso@example.com', passwordLoginDisabled: true };
+    const { controller, securityEvents } = setup([sso]);
+    await expect(
+      controller.login(request(), { email: 'sso@example.com', password: 'Wrong#Pass1' }),
+    ).rejects.toBeInstanceOf(UnauthorizedException);
+    expect(securityEvents.log.mock.calls[0][0].metadata.reason).toBe('password_login_disabled');
+  });
+
+  it('starts the count again after a successful sign-in', async () => {
+    const { controller } = setup();
+    await failLogins(controller, 'taken@example.com', 9);
+    await controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' });
+    await failLogins(controller, 'taken@example.com', 9);
+    await expect(
+      controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' }),
+    ).resolves.toMatchObject({ accessToken: 'jwt' });
+  });
+
+  it('emails the owner once when the account is paused', async () => {
+    const { controller, limiterMail } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    await flush();
+    expect(limiterMail.sendSignInPausedEmail).toHaveBeenCalledTimes(1);
+    expect(limiterMail.sendSignInPausedEmail.mock.calls[0][0]).toBe('taken@example.com');
+  });
+
+  it('ends the pause when the password is reset', async () => {
+    const { controller, prisma } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    (prisma.passwordResetToken as any).findUnique = jest.fn(async () => ({
+      id: 'r1',
+      userId: EXISTING.id,
+      usedAt: null,
+      expiresAt: new Date(Date.now() + 60_000),
+    }));
+    (prisma.passwordResetToken as any).update = jest.fn(async () => undefined);
+    (prisma.user as any).update = jest.fn(async () => ({ ...EXISTING, passwordHash: 'hash:New#Horse22' }));
+    (controller as any).securityEvents = { log: jest.fn(async () => undefined) };
+    await controller.resetPassword(request(), { token: 'reset-token', newPassword: 'New#Horse22' });
+    await expect(
+      controller.login(request(), { email: 'taken@example.com', password: 'Correct#Horse1' }),
+    ).resolves.toMatchObject({ accessToken: 'jwt' });
+  });
+
+  it('refuses the password branch of accept-invite while paused, without comparing the password', async () => {
+    const { controller, authService, invites, organizationsService } = setup();
+    invites.push({
+      id: 'inv1',
+      token: hashInviteToken('invite-token'),
+      email: 'taken@example.com',
+      role: 'EDITOR',
+      mcpRoleId: null,
+      mcpRoleIds: [],
+      organizationId: 'org-new',
+      expiresAt: new Date(Date.now() + 3600_000),
+      usedAt: null,
+    });
+    for (let i = 0; i < 10; i++) {
+      await expect(
+        controller.acceptInvite(request(), { token: 'invite-token', password: 'Wrong#Pass9' }),
+      ).rejects.toBeInstanceOf(UnauthorizedException);
+    }
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+    const err: any = await controller
+      .acceptInvite(request(), { token: 'invite-token', password: 'Correct#Horse1' })
+      .catch((e) => e);
+    expect(err.getStatus()).toBe(429);
+    expect(authService.comparePassword).toHaveBeenCalledTimes(10);
+    expect(organizationsService.addMember).not.toHaveBeenCalled();
+
+    // An owner who is already signed in is not affected by the pause.
+    const res = await controller.acceptInvite(
+      { ...request(), headers: { authorization: 'Bearer sess:taken@example.com' } },
+      { token: 'invite-token' },
+    );
+    expect(res.accessToken).toBe('jwt');
+  });
+
+  it('sends at most 3 reset emails per address an hour, with the same answer after', async () => {
+    const { controller, sent, prisma } = setup();
+    for (let i = 0; i < 5; i++) {
+      await expect(
+        controller.forgotPassword({}, { email: i % 2 ? 'Taken@example.com' : 'taken@example.com' }),
+      ).resolves.toEqual(NEUTRAL_PASSWORD_RESET);
+    }
+    await flush();
+    expect(sent).toEqual(['reset taken@example.com', 'reset taken@example.com', 'reset taken@example.com']);
+    expect(prisma.passwordResetToken.create).toHaveBeenCalledTimes(3);
+  });
+
+  it('still lets a paused address ask for a reset email', async () => {
+    const { controller, sent } = setup();
+    await failLogins(controller, 'taken@example.com', 10);
+    await expect(controller.forgotPassword({}, { email: 'taken@example.com' })).resolves.toEqual(
+      NEUTRAL_PASSWORD_RESET,
+    );
+    await flush();
+    expect(sent).toEqual(['reset taken@example.com']);
   });
 });

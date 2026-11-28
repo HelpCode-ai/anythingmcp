@@ -415,6 +415,8 @@ CLI usage and connection errors go to stderr, also as JSON when `--json` is set,
 
 A management key is an ordinary MCP API key minted with a management scope: `MANAGEMENT_READ` or `MANAGEMENT_ADMIN`. You can mint one from the dashboard or with `POST /api/mcp-keys`. The key carries its owner's identity and role, and it never grants privilege, so admin-only routes still need an admin owner. `MANAGEMENT_READ` keys can only call safe methods (GET/HEAD), and connector exports made with them never include secrets, even for an admin owner.
 
+A management key works on `/api/*` only: `/mcp` and `amcp tools` need an MCP-scoped key. It acts in the workspace it was created in. Switching, creating or deleting a workspace needs a dashboard sign-in, and `GET /api/organizations/mine` and `/api/mcp-connections` show only the key's workspace.
+
 ### Getting a management key
 
 Mint one from the dashboard (Settings → Management API keys), choosing read-only or admin, or let the CLI do it through the browser:

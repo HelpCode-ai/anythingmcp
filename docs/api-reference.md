@@ -61,6 +61,38 @@ Response:
 }
 ```
 
+### Sign-in attempt limits
+
+Every email and password sign-in counts against the address it names:
+`POST /api/auth/login`, the password form of the MCP authorization page
+(`/auth/login`), and accepting an invitation with an existing account's
+password. Failed attempts are counted per address (trimmed, lower case)
+whether or not it has an account, so the answer never says which addresses
+have one.
+
+- 10 failed attempts within 15 minutes pause password sign-in for that address
+  for 15 minutes; 20 within an hour pause it for an hour.
+- While paused, `POST /api/auth/login` answers `429` with `Retry-After` and
+  "Too many sign-in attempts. Try again in N minutes, or reset your password."
+  The authorization page shows the same text on the sign-in form.
+- A successful sign-in starts the count again. Completing a password reset
+  starts it again and ends any pause.
+- A pause never affects signing in with Google, Microsoft, GitHub or single
+  sign-on, an existing session, or the password reset flow.
+- When an existing account's password sign-in is paused, its owner gets one
+  email (at most one an hour) with the time and a link to reset the password.
+- `POST /api/auth/forgot-password` sends at most 3 reset emails per address an
+  hour. Further requests get the same answer, and no new link is made.
+- Sign-ins are recorded as security events: `PASSWORD_LOGIN_SUCCESS`,
+  `PASSWORD_LOGIN_FAILED` (with a `reason`) and `SIGN_IN_PAUSED`. For an
+  address with no account, only a SHA-256 hash of the address is stored.
+
+The per-address request limits (for example 5 sign-in requests a minute) apply
+as before. Cloud and self-hosted behave the same. With `REDIS_URL` set, the
+counters and the request limits live in Redis, are shared by every backend
+process and survive a restart; without it, they are kept in memory per process
+(bounded) and start again on restart.
+
 ### Invite User (Admin)
 
 ```bash
@@ -70,8 +102,23 @@ curl -s http://localhost:4000/api/auth/invite \
   -d '{"email":"user@example.com","role":"EDITOR","mcpRoleId":"optional-role-id"}'
 ```
 
-Inviting an address that already has a pending invitation reuses its link,
-sends the mail again and applies the `role` and MCP roles of this call to it.
+The response carries `inviteUrl`, the invitation link. It is shown this once:
+only a hash of its token is stored, and `GET /api/users/invitations` lists
+invitations without it. Inviting an address that already has a pending
+invitation keeps that invitation and its expiry, applies the `role` and MCP
+roles of this call to it and sends a new link; the earlier link stops working.
+Links expire 48 hours after the invitation was created.
+
+### Accept an invitation
+
+`POST /api/auth/accept-invite` with `{"token":"…","password":"…","name":"…"}`
+creates an account for an address that has none and adds it to the workspace;
+an existing account proves itself with its current password or a dashboard
+session. On AnythingMCP Cloud a new account starts with an unverified address:
+the answer has `user.emailVerified: false` and `verificationRequired: true`, a
+verification code is sent to the address, and the account is limited like any
+unverified one until the code is entered (`POST /api/auth/verify-email`). On a
+self-hosted instance the new account is verified straight away, as before.
 
 ### Create a workspace
 
@@ -299,13 +346,15 @@ See [Tool Definition Format](tool-definition.md) for the full schema.
 
 ### Query Invocations
 
+Filters: `toolId`, `status` (`SUCCESS`, `ERROR` or `TIMEOUT`; any other value answers 400), `search` (tool name contains), `connectorId`, `mcpServerId`. Paging: `limit` (1 to 200, default 100; a larger value returns 200 rows) and `offset`.
+
 ```bash
-# Filter by tool name
-curl -s "http://localhost:4000/api/audit/invocations?toolName=get_user" \
+# The last 20 failed calls
+curl -s "http://localhost:4000/api/audit/invocations?status=ERROR&limit=20" \
   -H "Authorization: Bearer $TOKEN"
 
-# Filter by date range
-curl -s "http://localhost:4000/api/audit/invocations?from=2026-01-01&to=2026-01-31" \
+# Calls of tools whose name contains "get_user", second page of 50
+curl -s "http://localhost:4000/api/audit/invocations?search=get_user&limit=50&offset=50" \
   -H "Authorization: Bearer $TOKEN"
 ```
 

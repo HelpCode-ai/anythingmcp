@@ -15,6 +15,7 @@ import {
   licenseKeyEmail,
   onboardingReminderEmail,
   passwordResetEmail,
+  signInPausedEmail,
   trialLifecycleEmail,
   trialWinbackEmail,
   trialBlockedCallsEmail,
@@ -177,6 +178,14 @@ export const EMAIL_SAMPLES: EmailSample[] = [
     id: 'existing-account',
     render: (ctx) =>
       existingAccountEmail({ loginUrl: `${SAMPLE_CLOUD_URL}/login`, resetUrl: `${SAMPLE_CLOUD_URL}/forgot-password` }, ctx),
+  },
+  {
+    id: 'sign-in-paused',
+    render: (ctx) =>
+      signInPausedEmail(
+        { resetUrl: `${SAMPLE_CLOUD_URL}/forgot-password`, minutes: 15, when: '27 November 2026, 14:03 UTC' },
+        ctx,
+      ),
   },
   {
     id: 'onboarding-day1',

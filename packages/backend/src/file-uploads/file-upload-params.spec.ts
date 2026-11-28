@@ -1,6 +1,6 @@
 import { fileParamNames, isFileRef, withFileRefHints } from './file-upload-params';
 import { publicAllowed, sniffType } from './file-upload-sniff';
-import { uploadQuotaFor } from './file-upload-quotas';
+import { MAX_UPLOADS_PER_DAY, uploadQuotaFor, uploadsPerDayOverride } from './file-upload-quotas';
 
 describe('file upload helpers', () => {
   it('finds the parameters behind __file markers only', () => {
@@ -40,5 +40,56 @@ describe('file upload helpers', () => {
     expect(uploadQuotaFor(null, { cloud: true, env: {} })).toBeNull();
     expect(uploadQuotaFor(null, { cloud: false, env: {} })).toMatchObject({ uploadsPerDay: null, maxStoredBytes: null });
     expect(uploadQuotaFor(null, { cloud: false, env: { FILE_UPLOADS_TTL_HOURS: '2' } })?.ttlHours).toBe(2);
+  });
+
+  describe('licence feature uploadsPerDay', () => {
+    const MB = 1024 * 1024;
+
+    it('keeps the plan default without the feature', () => {
+      expect(uploadQuotaFor('team', { cloud: true, env: {} })?.uploadsPerDay).toBe(500);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: null })?.uploadsPerDay).toBe(500);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { maxUsers: 3 } })?.uploadsPerDay).toBe(500);
+    });
+
+    it('replaces only the daily count when set', () => {
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay: 2000 } })).toEqual({
+        plan: 'team',
+        maxFileBytes: 100 * MB,
+        uploadsPerDay: 2000,
+        maxStoredBytes: 10 * 1024 * MB,
+        ttlHours: 8,
+      });
+      expect(uploadQuotaFor('starter', { cloud: true, env: {}, features: { uploadsPerDay: '2000' } })?.uploadsPerDay).toBe(2000);
+      expect(uploadQuotaFor('starter', { cloud: true, env: {}, features: { uploadsPerDay: 2000 } })?.maxFileBytes).toBe(50 * MB);
+    });
+
+    it('falls back to the plan default for an invalid, zero or negative value', () => {
+      for (const uploadsPerDay of [0, -5, 1.5, NaN, Infinity, '', 'lots', '20 00', null, true, {}]) {
+        expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay } })?.uploadsPerDay).toBe(500);
+      }
+      // The argument is the features object, not the field: a bare string or
+      // array is not a features object, so there is no override.
+      expect(uploadsPerDayOverride('2000')).toBeNull();
+      expect(uploadsPerDayOverride([2000])).toBeNull();
+    });
+
+    it('clamps a value above the documented maximum', () => {
+      expect(MAX_UPLOADS_PER_DAY).toBe(10_000);
+      expect(uploadsPerDayOverride({ uploadsPerDay: 20_000_000 })).toBe(MAX_UPLOADS_PER_DAY);
+      expect(uploadsPerDayOverride({ uploadsPerDay: '20000000' })).toBe(MAX_UPLOADS_PER_DAY);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay: 20_000_000 } })?.uploadsPerDay).toBe(10_000);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay: 10_000 } })?.uploadsPerDay).toBe(10_000);
+    });
+
+    it('raises the plan count but never lowers it', () => {
+      expect(uploadQuotaFor('enterprise', { cloud: true, env: {}, features: { uploadsPerDay: 2000 } })?.uploadsPerDay).toBe(5_000);
+      expect(uploadQuotaFor('enterprise', { cloud: true, env: {}, features: { uploadsPerDay: 8000 } })?.uploadsPerDay).toBe(8000);
+      expect(uploadQuotaFor('team', { cloud: true, env: {}, features: { uploadsPerDay: 100 } })?.uploadsPerDay).toBe(500);
+    });
+
+    it('needs an active plan on Cloud and leaves self-hosted to its env', () => {
+      expect(uploadQuotaFor(null, { cloud: true, env: {}, features: { uploadsPerDay: 2000 } })).toBeNull();
+      expect(uploadQuotaFor(null, { cloud: false, env: {}, features: { uploadsPerDay: 2000 } })?.uploadsPerDay).toBeNull();
+    });
   });
 });

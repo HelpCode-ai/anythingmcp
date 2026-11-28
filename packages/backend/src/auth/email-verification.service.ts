@@ -7,6 +7,8 @@ import { EmailService } from '../settings/email.service';
 import { LicenseService } from '../license/license.service';
 import { AdsSignupService } from '../audit/ads-signup.service';
 import { maskEmail } from './mcp-email-verification';
+import { RedisService } from '../common/redis.service';
+import { MAX_WRONG_CODES, VerificationAttemptsStore } from './verification-attempts.store';
 
 /** How long a verification code (and its link) stays valid. */
 export const VERIFICATION_CODE_TTL_MS = 15 * 60 * 1000;
@@ -34,7 +36,13 @@ export class EmailVerificationService {
     private readonly configService: ConfigService,
     private readonly licenseService: LicenseService,
     @Optional() private readonly adsSignup?: AdsSignupService,
-  ) {}
+    @Optional() redis?: RedisService,
+  ) {
+    this.wrongCodes = new VerificationAttemptsStore(VERIFICATION_CODE_TTL_MS, redis);
+  }
+
+  /** Wrong codes per account; see verifyCode. */
+  private readonly wrongCodes: VerificationAttemptsStore;
 
   private frontendUrl(): string {
     // Server-side config only: request headers are attacker-controlled and
@@ -65,6 +73,8 @@ export class EmailVerificationService {
     await this.prisma.emailVerificationToken.create({
       data: { userId, token: linkToken, code, expiresAt },
     });
+    // A new code gets the full number of tries.
+    await this.wrongCodes.reset(userId);
 
     // Link straight to the instance's verify-email page (the anythingmcp.com
     // hop 404s behind the marketing site's i18n middleware).
@@ -89,6 +99,10 @@ export class EmailVerificationService {
   /**
    * Checks a 6-digit code against the user's open, unexpired codes. On a match
    * the code is spent and the address verified (see markVerified).
+   *
+   * Wrong codes are counted per account (both the dashboard and the MCP
+   * authorization page call this). After MAX_WRONG_CODES the account's open
+   * codes, and with them their links, are voided: the user asks for a new one.
    */
   async verifyCode(userId: string, code: string): Promise<boolean> {
     const record = await this.prisma.emailVerificationToken.findFirst({
@@ -99,7 +113,19 @@ export class EmailVerificationService {
         expiresAt: { gt: new Date() },
       },
     });
-    if (!record) return false;
+    if (!record) {
+      const wrong = await this.wrongCodes.recordWrong(userId);
+      if (wrong >= MAX_WRONG_CODES) {
+        await this.prisma.emailVerificationToken.updateMany({
+          where: { userId, usedAt: null },
+          data: { usedAt: new Date() },
+        });
+        await this.wrongCodes.reset(userId);
+        this.logger.warn(`Voided the open verification codes of user ${userId} after ${wrong} wrong codes`);
+      }
+      return false;
+    }
+    await this.wrongCodes.reset(userId);
 
     await this.prisma.emailVerificationToken.update({
       where: { id: record.id },

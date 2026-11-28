@@ -2,7 +2,8 @@ import { PlanCapsModule } from './plan-caps/plan-caps.module';
 import { Module, MiddlewareConsumer, NestModule, Logger, ClassSerializerInterceptor } from '@nestjs/common';
 import { ConfigModule, ConfigService } from '@nestjs/config';
 import { join } from 'path';
-import { ThrottlerModule, ThrottlerGuard } from '@nestjs/throttler';
+import { ThrottlerModule } from '@nestjs/throttler';
+import { AppThrottlerGuard } from './common/app-throttler.guard';
 import { APP_FILTER, APP_GUARD, APP_INTERCEPTOR } from '@nestjs/core';
 import * as Sentry from '@sentry/nestjs';
 import { SentryModule } from '@sentry/nestjs/setup';
@@ -29,9 +30,12 @@ import { FileSearchModule } from './file-search/file-search.module';
 import { LicenseModule } from './license/license.module';
 import { PrismaModule } from './common/prisma.module';
 import { RedisModule } from './common/redis.module';
+import { RedisService } from './common/redis.service';
+import { throttlerModuleOptions } from './common/redis-throttler.storage';
 import { McpAuthMiddleware } from './auth/mcp-auth.middleware';
 import { McpRateLimitMiddleware } from './auth/mcp-rate-limit.middleware';
 import { ClientCredentialsMiddleware } from './auth/client-credentials.middleware';
+import { TokenRequestShapeMiddleware } from './auth/token-request-shape.middleware';
 import { RefreshTokenRevocationMiddleware } from './auth/refresh-token-revocation.middleware';
 import { OAuthRegisterGuardMiddleware } from './auth/oauth-register-guard.middleware';
 import {
@@ -164,7 +168,13 @@ if (useOAuth) {
     // Note: do NOT add additional named buckets here. With nestjs/throttler
     // v6, ALL configured buckets apply to every request, which means a
     // strict bucket would also throttle the MCP endpoints.
-    ThrottlerModule.forRoot([{ ttl: 60_000, limit: 100 }]),
+    // With REDIS_URL set the counters live in Redis (shared by every backend
+    // process, kept across deploys); without it, in memory as before.
+    ThrottlerModule.forRootAsync({
+      inject: [ConfigService, RedisService],
+      useFactory: (config: ConfigService, redis: RedisService) =>
+        throttlerModuleOptions(config.get<string>('REDIS_URL'), redis),
+    }),
 
     // OAuth2 module (conditionally loaded)
     ...conditionalImports,
@@ -205,7 +215,8 @@ if (useOAuth) {
     // are logged as a warning. Must stay the first APP_FILTER.
     { provide: APP_FILTER, useClass: AppExceptionFilter },
     { provide: APP_INTERCEPTOR, useClass: SentryContextInterceptor },
-    { provide: APP_GUARD, useClass: ThrottlerGuard },
+    // The stock ThrottlerGuard plus a stricter cap for POST /register.
+    { provide: APP_GUARD, useClass: AppThrottlerGuard },
     { provide: APP_GUARD, useClass: EmailVerifiedGuard },
     // Injected by McpServerService, which registers the tools defined in the
     // database once the app is up.
@@ -232,9 +243,16 @@ export class AppModule implements NestModule {
     // RefreshTokenRevocationMiddleware is what makes `sessionsValidFrom`
     // actually revoke a session: without it a refresh grant mints a fresh
     // access token whose `iat` sits above the watermark.
+    // TokenRequestShapeMiddleware runs first: it refuses parameters that are
+    // not plain strings, so the two above and the upstream controller all read
+    // the same values.
     if (mode === 'oauth2' || mode === 'both') {
       consumer
-        .apply(ClientCredentialsMiddleware, RefreshTokenRevocationMiddleware)
+        .apply(
+          TokenRequestShapeMiddleware,
+          ClientCredentialsMiddleware,
+          RefreshTokenRevocationMiddleware,
+        )
         .forRoutes('token');
     }
 

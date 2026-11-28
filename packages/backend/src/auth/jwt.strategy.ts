@@ -23,71 +23,90 @@ export class JwtStrategy extends PassportStrategy(Strategy) {
   }
 
   async validate(payload: JwtPayload) {
-    // SECURITY: the MCP OAuth authorization server signs its access/refresh
-    // tokens with the same JWT_SECRET as this strategy, so a valid signature
-    // does not imply a dashboard token. Reject anything bearing the MCP-side
-    // claims before it can be traded for a dashboard session.
-    if (isForeignIssuedToken(payload as unknown as Record<string, unknown>)) {
-      throw new UnauthorizedException('Token is not valid for this API');
-    }
-
-    // One query: the user row plus their ACTIVE memberships. The membership
-    // is the authoritative role and the only proof the user may still act in
-    // the organization; `users.role` / `users.organizationId` are caches.
-    const user = await this.prisma.user.findUnique({
-      where: { id: payload.sub },
-      select: {
-        id: true,
-        email: true,
-        role: true,
-        organizationId: true,
-        sessionsValidFrom: true,
-        memberships: {
-          where: { deactivatedAt: null },
-          orderBy: { joinedAt: 'asc' },
-          select: { organizationId: true, role: true },
-        },
-      },
-    });
-    if (!user) {
-      throw new UnauthorizedException('User no longer exists');
-    }
-
-    // Revocation: refuse tokens minted before the user's cutover instant (set
-    // on password change, demotion and deactivation). Free to check — the
-    // user row is already loaded.
-    if (isTokenRevoked(payload, user.sessionsValidFrom)) {
-      throw new UnauthorizedException('Session has been revoked');
-    }
-
-    const active = user.organizationId
-      ? user.memberships.find((m) => m.organizationId === user.organizationId)
-      : undefined;
-
-    if (active) {
-      // Repair cache drift in place. Rare: only after a role sync wrote the
-      // membership, or a pre-fix role change wrote the cache alone.
-      if (user.role !== active.role) {
-        await this.prisma.user.update({
-          where: { id: user.id },
-          data: { role: active.role },
-        });
-      }
-      return { sub: user.id, email: user.email, role: active.role, organizationId: active.organizationId };
-    }
-
-    // The cached org is null, deleted, or the membership in it was deactivated:
-    // snap to the oldest remaining ACTIVE membership. Nothing left means the
-    // user may not act anywhere — fail closed rather than serve a workspace
-    // they were removed from.
-    const fallback = user.memberships[0];
-    if (!fallback) {
-      throw new UnauthorizedException('No active workspace');
-    }
-    await this.prisma.user.update({
-      where: { id: user.id },
-      data: { organizationId: fallback.organizationId, role: fallback.role },
-    });
-    return { sub: user.id, email: user.email, role: fallback.role, organizationId: fallback.organizationId };
+    return validateDashboardPayload(payload, this.prisma);
   }
+}
+
+/**
+ * What makes a verified JWT a dashboard session: not a token of the MCP
+ * authorization server, a user that still exists, not issued before the
+ * user's revocation watermark (`sessionsValidFrom`), and an active
+ * membership (the active workspace, else the oldest remaining one). Throws
+ * UnauthorizedException otherwise. The signature and expiry must already be
+ * checked (passport-jwt here, `AuthService.verifyToken` elsewhere).
+ *
+ * Shared by JwtStrategy and every route that reads an optional session
+ * outside the guard (e.g. POST /api/auth/accept-invite), so a session means
+ * the same everywhere.
+ */
+export async function validateDashboardPayload(
+  payload: JwtPayload,
+  prisma: Pick<PrismaService, 'user'>,
+): Promise<{ sub: string; email: string; role: string; organizationId: string }> {
+  // SECURITY: the MCP OAuth authorization server signs its access/refresh
+  // tokens with the same JWT_SECRET as this strategy, so a valid signature
+  // does not imply a dashboard token. Reject anything bearing the MCP-side
+  // claims before it can be traded for a dashboard session.
+  if (isForeignIssuedToken(payload as unknown as Record<string, unknown>)) {
+    throw new UnauthorizedException('Token is not valid for this API');
+  }
+
+  // One query: the user row plus their ACTIVE memberships. The membership
+  // is the authoritative role and the only proof the user may still act in
+  // the organization; `users.role` / `users.organizationId` are caches.
+  const user = await prisma.user.findUnique({
+    where: { id: payload.sub },
+    select: {
+      id: true,
+      email: true,
+      role: true,
+      organizationId: true,
+      sessionsValidFrom: true,
+      memberships: {
+        where: { deactivatedAt: null },
+        orderBy: { joinedAt: 'asc' },
+        select: { organizationId: true, role: true },
+      },
+    },
+  });
+  if (!user) {
+    throw new UnauthorizedException('User no longer exists');
+  }
+
+  // Revocation: refuse tokens minted before the user's cutover instant (set
+  // on password change, demotion and deactivation). Free to check — the
+  // user row is already loaded.
+  if (isTokenRevoked(payload, user.sessionsValidFrom)) {
+    throw new UnauthorizedException('Session has been revoked');
+  }
+
+  const active = user.organizationId
+    ? user.memberships.find((m) => m.organizationId === user.organizationId)
+    : undefined;
+
+  if (active) {
+    // Repair cache drift in place. Rare: only after a role sync wrote the
+    // membership, or a pre-fix role change wrote the cache alone.
+    if (user.role !== active.role) {
+      await prisma.user.update({
+        where: { id: user.id },
+        data: { role: active.role },
+      });
+    }
+    return { sub: user.id, email: user.email, role: active.role, organizationId: active.organizationId };
+  }
+
+  // The cached org is null, deleted, or the membership in it was deactivated:
+  // snap to the oldest remaining ACTIVE membership. Nothing left means the
+  // user may not act anywhere — fail closed rather than serve a workspace
+  // they were removed from.
+  const fallback = user.memberships[0];
+  if (!fallback) {
+    throw new UnauthorizedException('No active workspace');
+  }
+  await prisma.user.update({
+    where: { id: user.id },
+    data: { organizationId: fallback.organizationId, role: fallback.role },
+  });
+  return { sub: user.id, email: user.email, role: fallback.role, organizationId: fallback.organizationId };
 }

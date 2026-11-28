@@ -27,6 +27,7 @@ import { ConfigService } from '@nestjs/config';
 import * as crypto from 'crypto';
 import { Response } from 'express';
 import { AuthService } from './auth.service';
+import { validateDashboardPayload } from './jwt.strategy';
 import { UsersService } from '../users/users.service';
 import { McpServersService } from '../mcp-servers/mcp-servers.service';
 import { PrismaService } from '../common/prisma.service';
@@ -48,6 +49,15 @@ import { DISPOSABLE_EMAIL_MESSAGE, isDisposableEmail } from './disposable-email.
 import { emailLookupWhere, normalizeEmail, sameEmail } from '../common/email.util';
 import { maskEmail } from './mcp-email-verification';
 import { EmailVerificationService, MAX_CODES_PER_HOUR } from './email-verification.service';
+import { RedisService } from '../common/redis.service';
+import { findInvitationByToken, hashInviteToken, newInviteToken } from './invite-token.util';
+import {
+  PasswordSignInLimiter,
+  signInPausedException,
+  type PasswordSignInAccount,
+  type PasswordSignInCheck,
+  type PasswordSignInContext,
+} from './password-sign-in-limiter';
 
 /**
  * Registration and password reset answer the same whether or not the address
@@ -238,10 +248,16 @@ export class AuthController {
     private readonly edition: EditionService,
     @Optional() private readonly adsSignup?: AdsSignupService,
     @Optional() private readonly licenseGuard?: LicenseGuardService,
+    @Optional() redis?: RedisService,
+    // Sign-in attempt limits per address. Optional only so specs that build
+    // this controller by hand can leave it out; Nest always provides it.
+    @Optional() private readonly signInLimiter?: PasswordSignInLimiter,
   ) {
     // Built from this controller's own dependencies (it is stateless), so the
     // dashboard endpoints and the MCP authorization page share one
     // implementation without changing how this controller is constructed.
+    // Redis (or, without it, the per-process fallback) holds the wrong-code
+    // count, so both pages count against the same account.
     this.verification = new EmailVerificationService(
       prisma,
       usersService,
@@ -249,11 +265,34 @@ export class AuthController {
       configService,
       licenseService,
       adsSignup,
+      redis,
     );
   }
 
   /** Issuing and checking email verification codes (shared with LoginController). */
   private readonly verification: EmailVerificationService;
+
+  /** Who is signing in with a password, for the sign-in events. */
+  private signInContext(req: any, surface: PasswordSignInContext['surface']): PasswordSignInContext {
+    return { surface, ip: req?.ip ?? null, userAgent: req?.headers?.['user-agent'] ?? null };
+  }
+
+  /**
+   * Refuses a password sign-in while the address is paused, before any
+   * password is compared: status 429, the wait in Retry-After.
+   */
+  private async refuseIfPaused(
+    req: any,
+    email: string,
+    ctx: PasswordSignInContext,
+    account?: PasswordSignInAccount | null,
+  ): Promise<void> {
+    const check: PasswordSignInCheck = (await this.signInLimiter?.check(email)) ?? { paused: false };
+    if (!check.paused) return;
+    this.signInLimiter?.refused(email, ctx, account);
+    req?.res?.setHeader?.('Retry-After', String(Math.ceil(check.retryAfterMs / 1000)));
+    throw signInPausedException(check);
+  }
 
   private getFrontendUrl(_req?: any): string {
     // SECURITY: we deliberately ignore req.headers.origin / req.headers.referer
@@ -268,18 +307,20 @@ export class AuthController {
   }
 
   /**
-   * The verified dashboard-session email on a request, or null. Used to let an
+   * The user behind the request's dashboard session, or null. Used to let an
    * already-signed-in owner accept an invitation to one of their other
-   * addresses without re-typing a password. Never throws: a missing, malformed
-   * or expired token is simply "no session".
+   * addresses without re-typing a password. The bearer must be a dashboard
+   * session exactly as JwtStrategy accepts one (signature and expiry, not an
+   * MCP token, the user still exists, not revoked by `sessionsValidFrom`, an
+   * active membership). Never throws: anything else is simply "no session".
    */
-  private sessionEmailFromRequest(req: any): string | null {
+  private async sessionUserFromRequest(req: any): Promise<{ id: string; email: string } | null> {
     const header: string | undefined = req?.headers?.authorization;
     if (!header?.startsWith('Bearer ')) return null;
     try {
       const payload = this.authService.verifyToken(header.slice(7).trim());
-      const email = (payload as any)?.email;
-      return typeof email === 'string' ? normalizeEmail(email) : null;
+      const session = await validateDashboardPayload(payload, this.prisma);
+      return { id: session.sub, email: normalizeEmail(session.email) };
     } catch {
       return null;
     }
@@ -355,18 +396,26 @@ export class AuthController {
   @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Login with email and password' })
   async login(@Req() req: any, @Body() dto: LoginDto) {
+    const signIn = this.signInContext(req, 'dashboard');
     const user = await this.usersService.findByEmail(dto.email);
+
+    // Sign-in attempt limits per address: while paused, refuse before any
+    // password is compared, for an address with an account or without one.
+    await this.refuseIfPaused(req, dto.email, signIn, user);
+
     if (!user) {
       // Same bcrypt work as a wrong password, so the time taken does not say
       // whether the address has an account.
       this.dummyHash ??= this.authService.hashPassword(crypto.randomBytes(16).toString('hex'));
       await this.authService.comparePassword(dto.password, await this.dummyHash);
+      await this.signInLimiter?.failed(dto.email, 'unknown_account', signIn);
       throw new UnauthorizedException('Invalid email or password');
     }
 
     // SSO-only account: refuse the password path entirely. Checked BEFORE the
     // bcrypt compare so a disabled account cannot be used as a password oracle.
     if (user.passwordLoginDisabled) {
+      await this.signInLimiter?.failed(dto.email, 'password_login_disabled', signIn, user);
       throw new UnauthorizedException(
         'Password sign-in is disabled for this account. Use your organization sign-in.',
       );
@@ -376,6 +425,7 @@ export class AuthController {
     // as the per-account flag: comparing first would turn this into an oracle
     // for whether a password is correct on an account that cannot use one.
     if (await this.ssoEnforcement.isPasswordLoginBlocked(user.id)) {
+      await this.signInLimiter?.failed(dto.email, 'password_login_disabled', signIn, user);
       throw new UnauthorizedException(
         'This workspace requires single sign-on. Use your organization sign-in, or a recovery code if you cannot reach it.',
       );
@@ -384,6 +434,7 @@ export class AuthController {
     // `passwordHash` is nullable for SSO-provisioned users — never hand null to
     // bcrypt, which would throw a 500 instead of failing the login cleanly.
     if (!user.passwordHash) {
+      await this.signInLimiter?.failed(dto.email, 'wrong_password', signIn, user);
       throw new UnauthorizedException('Invalid email or password');
     }
 
@@ -392,8 +443,10 @@ export class AuthController {
       user.passwordHash,
     );
     if (!isValid) {
+      await this.signInLimiter?.failed(dto.email, 'wrong_password', signIn, user);
       throw new UnauthorizedException('Invalid email or password');
     }
+    await this.signInLimiter?.succeeded(dto.email, signIn, user);
 
     const token = this.authService.generateToken({
       sub: user.id,
@@ -615,6 +668,9 @@ export class AuthController {
 
   @Post('verify-email')
   @UseGuards(AuthGuard('jwt'))
+  // Same cap as the authorization page's code form (POST /auth/verify-email);
+  // both count wrong codes against the same account (EmailVerificationService).
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
   @ApiBearerAuth()
   @HttpCode(HttpStatus.OK)
   @ApiOperation({ summary: 'Verify email with 6-digit code' })
@@ -731,9 +787,10 @@ export class AuthController {
     });
     const existingInvite = pendingInvites.find((i) => sameEmail(i.email, inviteEmail)) ?? null;
 
-    const inviteToken = existingInvite
-      ? existingInvite.token
-      : crypto.randomBytes(32).toString('hex');
+    // Only the token's hash is stored, so a pending invitation's link cannot
+    // be read back: inviting again issues a new link, and the earlier one
+    // stops working. The admin sees the link once, in this response.
+    const inviteToken = newInviteToken();
 
     // `mcpRoleIds` supersedes the single `mcpRoleId`; accept either so an older
     // frontend bundle keeps working.
@@ -745,14 +802,15 @@ export class AuthController {
       // Inviting the same address again states a role in the mail it sends:
       // the pending invitation must grant that role, not the one of the first
       // attempt. An admin who first picked EDITOR and corrected it to VIEWER
-      // otherwise got an EDITOR, with the mail saying VIEWER. The link and its
-      // expiry stay, so the first mail keeps working. `existingInvite` was
-      // found inside this workspace, so its id is this workspace's row.
-      // Written every time: an invitation of the previous release can hold
-      // its role in `mcpRoleId` alone, which an empty list must clear too.
+      // otherwise got an EDITOR, with the mail saying VIEWER. The expiry stays;
+      // the link is the new one sent now. `existingInvite` was found inside
+      // this workspace, so its id is this workspace's row. Written every
+      // time: an invitation of the previous release can hold its role in
+      // `mcpRoleId` alone, which an empty list must clear too.
       await this.prisma.invitationToken.update({
         where: { id: existingInvite.id },
         data: {
+          token: hashInviteToken(inviteToken),
           role: dto.role,
           mcpRoleId: invitedMcpRoleIds[0] ?? null,
           mcpRoleIds: invitedMcpRoleIds,
@@ -764,7 +822,7 @@ export class AuthController {
       await this.prisma.invitationToken.create({
         data: {
           email: inviteEmail,
-          token: inviteToken,
+          token: hashInviteToken(inviteToken),
           role: dto.role,
           mcpRoleId: invitedMcpRoleIds[0] ?? null,
           mcpRoleIds: invitedMcpRoleIds,
@@ -811,7 +869,7 @@ export class AuthController {
     return {
       message: emailResult.sent
         ? existingInvite
-          ? `${created} for ${inviteEmail} — the email was re-sent.`
+          ? `${created} for ${inviteEmail} — a new link was sent; the earlier one no longer works.`
           : `Invitation sent to ${inviteEmail}`
         : `${created} for ${inviteEmail}, but the email could not be sent. Share the link manually.`,
       inviteUrl,
@@ -825,9 +883,7 @@ export class AuthController {
   async verifyInvite(@Query('token') token: string) {
     if (!token) throw new BadRequestException('Token is required');
 
-    const invite = await this.prisma.invitationToken.findUnique({
-      where: { token },
-    });
+    const invite = await findInvitationByToken(this.prisma, token);
 
     if (!invite) throw new BadRequestException('Invalid invitation token');
     if (invite.usedAt) throw new BadRequestException('This invitation has already been used');
@@ -851,11 +907,12 @@ export class AuthController {
   }
 
   @Post('accept-invite')
+  // The password branch checks an existing account's password: the same cap
+  // as POST /api/auth/login.
+  @Throttle({ default: { limit: 5, ttl: 60_000 } })
   @ApiOperation({ summary: 'Accept an invitation and create account' })
   async acceptInvite(@Req() req: any, @Body() dto: AcceptInviteDto) {
-    const invite = await this.prisma.invitationToken.findUnique({
-      where: { token: dto.token },
-    });
+    const invite = await findInvitationByToken(this.prisma, dto.token);
 
     if (!invite) throw new BadRequestException('Invalid invitation token');
     if (invite.usedAt) throw new BadRequestException('This invitation has already been used');
@@ -863,8 +920,11 @@ export class AuthController {
 
     // Check if email already registered
     const existing = await this.usersService.findByEmail(invite.email);
+    const isCloud = this.configService.get<string>('DEPLOYMENT_MODE') === 'cloud';
 
     let user: any;
+    /** A Cloud account created just now: it still has to enter its email code. */
+    let newAccountUnverified = false;
     if (existing) {
       // SECURITY: an invitation link is not proof that the holder controls the
       // invited address. Before attaching an *existing* account to the new org
@@ -873,23 +933,42 @@ export class AuthController {
       // its current password. Otherwise anyone who can create an invite (every
       // workspace admin, i.e. every signed-up user) could take over an
       // arbitrary account by inviting it and accepting the invite themselves.
-      const sessionEmail = this.sessionEmailFromRequest(req);
-      const provenBySession = sameEmail(sessionEmail, invite.email);
+      const session = await this.sessionUserFromRequest(req);
+      const provenBySession = session?.id === existing.id && sameEmail(session.email, invite.email);
       if (!provenBySession) {
+        // The sign-in attempt limits of the address, as on POST
+        // /api/auth/login: while paused, no password is compared here either.
+        const signIn = this.signInContext(req, 'accept_invite');
+        await this.refuseIfPaused(req, invite.email, signIn, existing);
         if (!existing.passwordHash) {
           throw new UnauthorizedException(
             'This email already has an account that signs in with single sign-on. ' +
               'Sign in first, then open this invitation again to join the workspace.',
           );
         }
+        // The same refusals as POST /api/auth/login, before the password is
+        // compared: an account that may not sign in with a password cannot
+        // prove itself with one here either.
+        if (existing.passwordLoginDisabled) {
+          throw new UnauthorizedException(
+            'Password sign-in is disabled for this account. Use your organization sign-in.',
+          );
+        }
+        if (await this.ssoEnforcement.isPasswordLoginBlocked(existing.id)) {
+          throw new UnauthorizedException(
+            'This workspace requires single sign-on. Use your organization sign-in, or a recovery code if you cannot reach it.',
+          );
+        }
         const ok =
           !!dto.password &&
           (await this.authService.comparePassword(dto.password, existing.passwordHash));
         if (!ok) {
+          await this.signInLimiter?.failed(invite.email, 'wrong_password', signIn, existing);
           throw new UnauthorizedException(
             'Enter the current password for this account to accept the invitation.',
           );
         }
+        await this.signInLimiter?.succeeded(invite.email, signIn, existing);
       }
 
       // Existing user — add to the new organization (multi-org)
@@ -932,11 +1011,19 @@ export class AuthController {
       // Create organization membership
       await this.organizationsService.addMember(user.id, invite.organizationId, invite.role);
 
-      // Mark email as verified (invited users don't need to verify)
-      await this.usersService.update(user.id, { emailVerified: true });
-
       // Create default MCP server for new user
       await this.mcpServersService.createDefaultForUser(user.id, invite.organizationId);
+
+      if (isCloud) {
+        // Cloud: the account starts unverified, like a password sign-up, and
+        // is sent the usual code; until it is entered the account is limited
+        // as any unverified one.
+        await this.createAndSendVerificationCode(user.id, user.email, req, { sendInBackground: true });
+      } else {
+        // Self-hosted: invited users are trusted as before.
+        await this.usersService.update(user.id, { emailVerified: true });
+      }
+      newAccountUnverified = isCloud;
     }
 
     // Apply the MCP roles the inviting admin chose. This sits OUTSIDE the
@@ -981,8 +1068,11 @@ export class AuthController {
         name: user.name,
         role: user.role,
         organizationId: invite.organizationId,
-        emailVerified: true,
+        // Cloud: what the account really is, so the page asks a new (or
+        // never verified) account for its email code.
+        emailVerified: !newAccountUnverified && !(isCloud && existing && !existing.emailVerified),
       },
+      ...(newAccountUnverified && { verificationRequired: true }),
     };
   }
 
@@ -997,6 +1087,12 @@ export class AuthController {
     // address has an account; the email is sent after the answer, so a slow
     // mail server does not give an existing account away either.
     const startedAt = Date.now();
+    // At most RESET_MAILS_PER_HOUR reset emails per address an hour: over it,
+    // the same answer, and no new link is made or sent.
+    if (this.signInLimiter && !(await this.signInLimiter.resetMailAllowed(dto.email))) {
+      this.logger.warn(`Password reset email limit reached for ${maskEmail(dto.email)}`);
+      return answerNoSoonerThan(startedAt, NEUTRAL_PASSWORD_RESET);
+    }
     const user = await this.usersService.findByEmail(dto.email);
     if (!user) {
       return answerNoSoonerThan(startedAt, NEUTRAL_PASSWORD_RESET);
@@ -1071,10 +1167,13 @@ export class AuthController {
     // tokens valid would let an attacker keep a live session for up to 24h
     // (longer on an MCP refresh token) after the victim locks them out.
     const newHash = await this.authService.hashPassword(dto.newPassword);
-    await this.prisma.user.update({
+    const updated = await this.prisma.user.update({
       where: { id: resetRecord.userId },
       data: { passwordHash: newHash, sessionsValidFrom: new Date() },
     });
+    // The owner proved the mailbox: the address's sign-in count starts again
+    // and any pause ends.
+    if (updated?.email) await this.signInLimiter?.clear(updated.email);
 
     // Mark token as used
     await this.prisma.passwordResetToken.update({

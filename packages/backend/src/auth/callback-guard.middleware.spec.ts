@@ -31,20 +31,41 @@ function fakeRes() {
   return res as Response & Record<string, any>;
 }
 
-function build(opts: { row?: { expiresAt: bigint } | null; fail?: boolean; cloud?: boolean } = {}) {
+function build(
+  opts: {
+    row?: { expiresAt: bigint; clientId?: string | null } | null;
+    fail?: boolean;
+    cloud?: boolean;
+    grant?: { revokedAt: Date | null } | null;
+    grantFails?: boolean;
+  } = {},
+) {
   const findUnique = jest.fn(async () => {
     if (opts.fail) throw new Error('db down');
-    return opts.row === undefined ? { expiresAt: BigInt(Date.now() + 60_000) } : opts.row;
+    return opts.row === undefined ? { expiresAt: BigInt(Date.now() + 60_000), clientId: 'client-1' } : opts.row;
+  });
+  const findGrant = jest.fn(async () => {
+    if (opts.grantFails) throw new Error('db down');
+    return opts.grant === undefined ? { revokedAt: null } : opts.grant;
   });
   const log = jest.fn().mockResolvedValue(undefined);
   const middleware = new CallbackGuardMiddleware(
-    { oAuthSession: { findUnique } } as any,
+    { oAuthSession: { findUnique }, mcpConnectionGrant: { findUnique: findGrant } } as any,
     { get: (key: string) => (key === 'FRONTEND_URL' ? 'https://cloud.example/' : undefined) } as any,
     { isCloud: () => opts.cloud ?? true } as any,
     { log } as any,
   );
-  return { middleware, findUnique, log };
+  return { middleware, findUnique, findGrant, log };
 }
+
+/** A browser signed in as `userId` for the pending authorization `s1`. */
+const signedIn = (userId = 'user-1') => ({
+  cookies: { oauth_session: 's1' },
+  signedCookies: {
+    login_user: Buffer.from(JSON.stringify({ id: userId, email: 'a@example.test' })).toString('base64url'),
+    login_bind: 's1',
+  },
+});
 
 const run = async (middleware: CallbackGuardMiddleware, req: Partial<Request>) => {
   const res = fakeRes();
@@ -58,9 +79,53 @@ describe('CallbackGuardMiddleware', () => {
   it('lets a browser with an open authorization through to the callback', async () => {
     const { middleware, findUnique } = build();
     const { res, next } = await run(middleware, { cookies: { oauth_session: 's1' } } as any);
-    expect(findUnique).toHaveBeenCalledWith({ where: { sessionId: 's1' }, select: { expiresAt: true } });
+    expect(findUnique).toHaveBeenCalledWith({
+      where: { sessionId: 's1' },
+      select: { expiresAt: true, clientId: true },
+    });
     expect(next).toHaveBeenCalledTimes(1);
     expect(res.body).toBeUndefined();
+  });
+
+  it('issues the code when the signed-in person has an active grant for the client', async () => {
+    const { middleware, findGrant } = build();
+    const { res, next } = await run(middleware, signedIn() as any);
+    expect(findGrant).toHaveBeenCalledWith({
+      where: { clientId_userId: { clientId: 'client-1', userId: 'user-1' } },
+      select: { revokedAt: true },
+    });
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.body).toBeUndefined();
+  });
+
+  it.each([
+    ['no grant row', null, false],
+    ['a revoked grant', { revokedAt: new Date() }, false],
+    ['a grant that cannot be read', undefined, true],
+  ])('issues no code for a client with %s, and shows the page instead', async (_label, grant, grantFails) => {
+    const { middleware, log } = build({ grant: grant as any, grantFails });
+    const { res, next } = await run(middleware, signedIn() as any);
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toContain('no longer open');
+    expect(res.cleared).toEqual(expect.arrayContaining(['login_user', 'login_bind']));
+    expect(log).toHaveBeenCalledWith({
+      event: 'authorize_request_closed',
+      metadata: { device: expect.any(String), via: 'callback-no-grant' },
+    });
+  });
+
+  it('checks no grant when nobody is signed in for this authorization (the library sends them to sign in)', async () => {
+    const { middleware, findGrant } = build({ grant: null });
+    const { next } = await run(middleware, { cookies: { oauth_session: 's1' } } as any);
+    // A sign-in bound to another authorization does not count either.
+    const other = await run(middleware, {
+      ...signedIn(),
+      signedCookies: { ...signedIn().signedCookies, login_bind: 's2' },
+    } as any);
+    expect(findGrant).not.toHaveBeenCalled();
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(other.next).toHaveBeenCalledTimes(1);
   });
 
   it.each([

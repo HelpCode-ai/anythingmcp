@@ -28,6 +28,7 @@ import {
   licenseKeyEmail,
   onboardingReminderEmail,
   passwordResetEmail,
+  signInPausedEmail,
   TrialBlockedCallsEmailInput,
   TrialEndedBusinessEmailInput,
   trialBlockedCallsEmail,
@@ -586,6 +587,33 @@ export class EmailService {
       return true;
     } catch (err) {
       this.logger.error(`Failed to send existing-account notice: ${err}`);
+      return false;
+    }
+  }
+
+  // ── Password sign-in paused (SMTP only) ──────────────────────────────
+  // Sent to the owner of an existing account when password sign-in for it is
+  // paused after several sign-in attempts with a wrong password (at most once
+  // an hour, PasswordSignInLimiter). Without SMTP this is skipped.
+
+  async sendSignInPausedEmail(
+    to: string,
+    input: { resetUrl: string; minutes: number; when: string },
+  ): Promise<boolean> {
+    const transport = await this.createTransporter();
+    if (!transport) {
+      this.logger.warn('SMTP not configured; sign-in pause notice not sent.');
+      return false;
+    }
+    try {
+      await transport.transporter.sendMail({
+        from: transport.from,
+        to,
+        ...this.mail(signInPausedEmail(input, await this.brand())),
+      });
+      return true;
+    } catch (err) {
+      this.logger.error(`Failed to send sign-in pause notice: ${err}`);
       return false;
     }
   }

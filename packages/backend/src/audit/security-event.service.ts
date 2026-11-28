@@ -44,10 +44,30 @@ export const SecurityEvents = {
   SOCIAL_IDENTITY_UNLINKED: 'SOCIAL_IDENTITY_UNLINKED',
   /**
    * A provider-verified email took over a local account whose address had
-   * never been verified: its password and sessions were dropped, because
-   * whoever set them never proved they own the mailbox.
+   * never been verified: its password, sessions, other connected sign-in
+   * providers and API keys were dropped, because whoever set them never
+   * proved they own the mailbox. Metadata: `removedIdentities` (providers),
+   * `deactivatedApiKeys` (count).
    */
   SOCIAL_ACCOUNT_RECLAIMED: 'SOCIAL_ACCOUNT_RECLAIMED',
+  /**
+   * Email and password sign-in (dashboard, authorization page, accepting an
+   * invitation with an existing account's password). Metadata: `surface`.
+   */
+  PASSWORD_LOGIN_SUCCESS: 'PASSWORD_LOGIN_SUCCESS',
+  /**
+   * An email and password that did not sign in. Metadata: `reason`
+   * (`unknown_account` | `wrong_password` | `password_login_disabled` |
+   * `paused`), `surface`, and for an address with no account `emailHash`
+   * (SHA-256 of the normalised address; never the address itself).
+   */
+  PASSWORD_LOGIN_FAILED: 'PASSWORD_LOGIN_FAILED',
+  /**
+   * Password sign-in for an address was paused after too many sign-in
+   * attempts. Metadata: `pauseMinutes`, `surface`, `emailHash` for an address
+   * with no account.
+   */
+  SIGN_IN_PAUSED: 'SIGN_IN_PAUSED',
   /** A bearer token was refused — e.g. an MCP-issued token sent to the dashboard API. */
   TOKEN_REJECTED: 'TOKEN_REJECTED',
   /** A request to /api/scim/v2 carried no valid bearer. */

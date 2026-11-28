@@ -168,3 +168,74 @@ describe('OAuthRegisterGuardMiddleware', () => {
     });
   });
 });
+
+describe('OAuthRegisterGuardMiddleware — size and field limits', () => {
+  const guard = new OAuthRegisterGuardMiddleware();
+  const OK_URI = 'https://claude.ai/api/mcp/auth_callback';
+  const run = (body: unknown, headers: Record<string, string> = {}) => {
+    const next = jest.fn();
+    const res = makeRes();
+    guard.use(makeReq({ headers: { 'content-type': 'application/json', ...headers }, body }), res, next);
+    return { next, res };
+  };
+
+  it('refuses a body over 16 KB by Content-Length with 413', () => {
+    const { next, res } = run({ redirect_uris: [OK_URI] }, { 'content-length': String(16 * 1024 + 1) });
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(413);
+    expect(res.body).toMatchObject({ error: 'invalid_client_metadata' });
+  });
+
+  it('refuses a body over 16 KB without Content-Length (measured after parsing)', () => {
+    const { next, res } = run({ redirect_uris: [OK_URI], software_statement: 'x'.repeat(17 * 1024) });
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(413);
+  });
+
+  it.each([
+    ['client_name over 200 characters', { client_name: 'n'.repeat(201) }],
+    ['client_description over 2048 characters', { client_description: 'd'.repeat(2049) }],
+    ['client_uri over 2048 characters', { client_uri: 'https://a.example/' + 'p'.repeat(2048) }],
+    ['logo_uri over 2048 characters', { logo_uri: 'https://a.example/' + 'p'.repeat(2048) }],
+    ['tos_uri over 2048 characters', { tos_uri: 'https://a.example/' + 'p'.repeat(2048) }],
+    ['policy_uri over 2048 characters', { policy_uri: 'https://a.example/' + 'p'.repeat(2048) }],
+    ['more than 5 contacts', { contacts: ['a@x', 'b@x', 'c@x', 'd@x', 'e@x', 'f@x'] }],
+    ['a client_name that is not a string', { client_name: { x: 1 } }],
+    ['contacts that is not an array', { contacts: 'a@x' }],
+  ])('refuses %s with 400 invalid_client_metadata', (_what, extra) => {
+    const { next, res } = run({ redirect_uris: [OK_URI], ...extra });
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_client_metadata', error_description: expect.any(String) });
+  });
+
+  it('refuses more than 10 redirect_uris', () => {
+    const uris = Array.from({ length: 11 }, (_, i) => 'https://a.example/cb' + i);
+    const { next, res } = run({ redirect_uris: uris });
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_client_metadata' });
+  });
+
+  it('refuses a redirect_uri over 2048 characters', () => {
+    const { next, res } = run({ redirect_uris: ['https://a.example/' + 'p'.repeat(2048)] });
+    expect(next).not.toHaveBeenCalled();
+    expect(res.statusCode).toBe(400);
+    expect(res.body).toMatchObject({ error: 'invalid_client_metadata' });
+  });
+
+  it('accepts a full registration at the limits', () => {
+    const { next, res } = run({
+      client_name: 'n'.repeat(200),
+      client_uri: 'https://claude.ai',
+      logo_uri: 'https://claude.ai/logo.png',
+      contacts: ['a@x', 'b@x', 'c@x', 'd@x', 'e@x'],
+      redirect_uris: Array.from({ length: 10 }, (_, i) => 'https://claude.ai/cb' + i),
+      grant_types: ['authorization_code', 'refresh_token'],
+      response_types: ['code'],
+      token_endpoint_auth_method: 'none',
+    });
+    expect(next).toHaveBeenCalledTimes(1);
+    expect(res.statusCode).toBe(200);
+  });
+});

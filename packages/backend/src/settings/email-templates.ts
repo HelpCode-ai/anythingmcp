@@ -486,6 +486,49 @@ export function existingAccountEmail(
   });
 }
 
+/**
+ * Password sign-in for an account was paused after several sign-in attempts
+ * with a wrong password. Sent at most once an hour per account. Never carries
+ * the passwords that were tried.
+ */
+export function signInPausedEmail(
+  input: {
+    /** Where to ask for a new password (the forgot-password page). */
+    resetUrl: string;
+    /** How long password sign-in is paused. */
+    minutes: number;
+    /** When the pause started, already formatted (e.g. "27 November 2026, 14:03 UTC"). */
+    when: string;
+  },
+  ctx: EmailBrandContext,
+): RenderedEmail {
+  const minutes = `${input.minutes} ${plural(input.minutes, 'minute')}`;
+  const intro =
+    `There were several sign-in attempts with a wrong password for your AnythingMCP account. ` +
+    `Password sign-in for this account was paused on ${input.when}, for ${minutes}.`;
+  const other = ctx.cloud
+    ? 'Signing in with Google, Microsoft, GitHub or single sign-on still works.'
+    : 'Signing in with single sign-on, where your workspace has it, still works.';
+  const reset = 'If you forgot your password, reset it: that also ends the pause.';
+  const notYou =
+    "If this wasn't you, these attempts did not sign anyone in. If you use the same password anywhere else, consider resetting it.";
+  return build({
+    subject: 'Password sign-in to your AnythingMCP account is paused',
+    preheader: `Several sign-in attempts with a wrong password. Password sign-in is paused for ${minutes}.`,
+    bodyHtml:
+      h1('Password sign-in is paused', `for ${esc(minutes)}.`) +
+      p(esc(intro)) +
+      p(esc(other)) +
+      p(esc(reset)) +
+      button(input.resetUrl, 'Reset your password') +
+      small(esc(notYou)),
+    bodyText:
+      `Password sign-in is paused for ${minutes}.\n\n` +
+      `${intro}\n\n${other}\n\n${reset}\n${input.resetUrl}\n\n${notYou}`,
+    ctx,
+  });
+}
+
 // ── Cloud lifecycle ─────────────────────────────────────────────────────────
 
 export function onboardingReminderEmail(

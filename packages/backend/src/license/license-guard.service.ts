@@ -105,6 +105,16 @@ export class LicenseGuardService {
       );
     }
 
+    // A community licence is for self-hosted installations: on Cloud it is
+    // not an active plan. (Cloud refuses such keys when they are entered;
+    // this covers one stored before that.) Trials are left to the checks
+    // below: a Cloud workspace's own trial is stored with plan `trial` too.
+    if (license.plan === 'community') {
+      throw new ForbiddenException(
+        'This workspace\'s license is for self-hosted installations. Ask a workspace administrator to activate a Cloud plan.',
+      );
+    }
+
     // Every plan, not only trials: a paid licence carries an expiresAt while
     // its renewal payment is failing (the end of the grace period), and must
     // stop on that date even if nobody has re-verified it since.
@@ -303,9 +313,10 @@ export class LicenseGuardService {
    * number is a licence feature (`features.maxCodeTools`), set per plan on the
    * licensing site, so no plan→number mapping is hardcoded here. Self-hosted is
    * never capped. Counting is by the tool's endpoint method, joined to the
-   * connector for the org scope.
+   * connector for the org scope. `adding` is how many code tools the request
+   * creates (a bulk create or an import adds several at once).
    */
-  async checkCanCreateCodeTool(organizationId?: string): Promise<void> {
+  async checkCanCreateCodeTool(organizationId?: string, adding = 1): Promise<void> {
     // On Cloud an active licence is required first (and an ended trial gets the
     // reactivation message); self-hosted self-guards this to a no-op.
     await this.checkLicenseActive(organizationId);
@@ -317,7 +328,7 @@ export class LicenseGuardService {
     if (cap == null || !organizationId) return;
 
     const count = await this.countCodeTools(organizationId);
-    if (count >= cap) {
+    if (count + Math.max(1, adding) > cap) {
       throw new ForbiddenException(
         `Plan limit reached (${cap} code tools on the ${plan} plan). Upgrade the plan to add more.`,
       );
