@@ -8,6 +8,7 @@ import { execFile, spawn } from 'node:child_process';
 import { promisify } from 'node:util';
 import { configPath, writeConfig } from './config.js';
 import { serverUrl } from './mcp.js';
+import { apiRequest } from './rest.js';
 import { COMMANDS, FLAGS, SHELLS, completionScript, type Shell } from './completion.js';
 import { OPTIONS } from './index.js';
 
@@ -653,6 +654,59 @@ test('management login stores a management key and api uses it from the profile'
     const replaced = JSON.parse(await readFile(join(both, 'amcp', 'config.json'), 'utf8')).profiles.default;
     assert.deepEqual(replaced, { url: base, server: '', key: '', managementKey: 'mcp_mgmtlogin' });
   } finally {
+    server.close();
+  }
+});
+
+test('management API preserves instance path prefixes for env and saved profiles', async () => {
+  const seen: { method?: string; path?: string; body: string }[] = [];
+  const prefix = '/gateway/anythingmcp';
+  const server = createServer(async (req, res) => {
+    let body = '';
+    for await (const chunk of req) body += chunk.toString();
+    seen.push({ method: req.method, path: req.url, body });
+    if (req.headers.authorization !== 'Bearer mcp_prefixed') {
+      res.writeHead(401); res.end('{}'); return;
+    }
+    if (req.url === `${prefix}/api/users/me` || req.url === `${prefix}/api/connectors?name=A%2FB` ||
+        (req.url === `${prefix}/api/connectors` && req.method === 'POST')) {
+      res.writeHead(200, { 'Content-Type': 'application/json' });
+      res.end(JSON.stringify({ path: req.url, method: req.method, body: body ? JSON.parse(body) : null }));
+      return;
+    }
+    res.writeHead(404); res.end('{}');
+  });
+  server.listen(0, '127.0.0.1');
+  await new Promise<void>((resolve) => server.once('listening', resolve));
+  try {
+    const address = server.address();
+    if (!address || typeof address === 'string') throw new Error('Missing address');
+    const base = `http://127.0.0.1:${address.port}${prefix}`;
+    const cli = join(__dirname, 'index.js');
+    for (const suffix of ['', '/']) {
+      const directory = await mkdtemp(join(tmpdir(), 'amcp-prefix-'));
+      const env = { ...process.env, XDG_CONFIG_HOME: directory, AMCP_URL: base + suffix, AMCP_API_KEY: 'mcp_prefixed' };
+      const fromEnv = await execFileAsync(process.execPath, [cli, 'api', 'GET', '/api/connectors?name=A%2FB', '--json'], { env });
+      assert.equal(JSON.parse(fromEnv.stdout).data.path, `${prefix}/api/connectors?name=A%2FB`);
+      const login = await execFileAsync(process.execPath, [cli, 'login', '--management', '--url', base + suffix, '--json'], { env });
+      assert.equal(JSON.parse(login.stdout).loggedIn, true);
+      const saved: NodeJS.ProcessEnv = { ...env };
+      delete saved.AMCP_URL;
+      delete saved.AMCP_API_KEY;
+      const created = await execFileAsync(process.execPath,
+        [cli, 'api', 'POST', '/api/connectors', '--data', '{"name":"prefixed"}', '--yes', '--json'], { env: saved });
+      assert.deepEqual(JSON.parse(created.stdout).data, {
+        path: `${prefix}/api/connectors`, method: 'POST', body: { name: 'prefixed' },
+      });
+      assert.doesNotMatch(fromEnv.stdout + fromEnv.stderr + login.stdout + login.stderr + created.stdout + created.stderr, /mcp_prefixed/);
+    }
+    assert.ok(seen.every((request) => request.path?.startsWith(`${prefix}/api/`)));
+    const before = seen.length;
+    await assert.rejects(apiRequest({ url: base, key: 'mcp_prefixed', method: 'GET', path: '//other.example/api/users/me' }),
+      /Path must stay on the instance origin/);
+    assert.equal(seen.length, before);
+  } finally {
+    server.closeAllConnections();
     server.close();
   }
 });

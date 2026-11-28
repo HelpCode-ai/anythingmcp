@@ -64,13 +64,18 @@ export class LibredeskClient {
     return page?.results ?? [];
   }
 
-  /** Private notes of a conversation, newest first (the triage note among them). */
-  async privateNotes(uuid: string): Promise<LibredeskMessage[]> {
+  /** The latest 50 messages of a conversation, every type, newest first. */
+  async messages(uuid: string): Promise<LibredeskMessage[]> {
     const page = await this.call<{ results?: LibredeskMessage[] }>(
       'GET',
       `/api/v1/conversations/${encodeURIComponent(uuid)}/messages?page=1&page_size=50`,
     );
-    return (page?.results ?? []).filter((m) => m.private);
+    return page?.results ?? [];
+  }
+
+  /** Private notes of a conversation, newest first (the triage note among them). */
+  async privateNotes(uuid: string): Promise<LibredeskMessage[]> {
+    return (await this.messages(uuid)).filter((m) => m.private);
   }
 
   conversation(uuid: string): Promise<LibredeskConversation | undefined> {
