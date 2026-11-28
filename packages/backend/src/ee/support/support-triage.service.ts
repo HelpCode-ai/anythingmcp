@@ -41,6 +41,35 @@ export const AI_HANDLED_CATEGORIES: readonly TriageCategory[] = [
  */
 export const AI_HANDLED_SELF_SERVICE_CATEGORIES: readonly TriageCategory[] = ['billing-question'];
 
+/**
+ * The one public message a live chat gets when the triage sends it straight
+ * to a person (billing problems, bugs, sales, enterprise billing questions):
+ * without it the customer saw nothing until someone answered, sometimes for
+ * hours. No promise about refunds, amounts or deadlines. Support hours from
+ * the enterprise and partner support model: Monday to Friday, 9:00 to 17:00 CET.
+ */
+export const HUMAN_ROUTING_ACKS: Record<string, string> = {
+  en: 'Thanks for your message. A person from our team will check it and reply here in this chat. Our support hours are Monday to Friday, 9:00 to 17:00 CET.',
+  de: 'Danke für Ihre Nachricht. Eine Person aus unserem Team prüft sie und antwortet Ihnen hier im Chat. Unsere Supportzeiten sind Montag bis Freitag, 9 bis 17 Uhr MEZ.',
+  it: 'Grazie per il messaggio. Una persona del nostro team lo controlla e ti risponde qui in chat. Il supporto è attivo dal lunedì al venerdì, dalle 9 alle 17 CET.',
+  es: 'Gracias por tu mensaje. Una persona de nuestro equipo lo revisará y te responderá aquí en el chat. Nuestro horario de soporte es de lunes a viernes, de 9:00 a 17:00 CET.',
+  fr: "Merci pour votre message. Une personne de notre équipe va l'examiner et vous répondra ici dans le chat. Notre support est disponible du lundi au vendredi, de 9 h à 17 h CET.",
+  pt: 'Obrigado pela sua mensagem. Uma pessoa da nossa equipe vai analisá-la e responder aqui no chat. Nosso horário de suporte é de segunda a sexta, das 9h às 17h CET.',
+  ru: 'Спасибо за сообщение. Сотрудник нашей команды проверит его и ответит вам здесь, в чате. Часы работы поддержки: с понедельника по пятницу, с 9:00 до 17:00 CET.',
+  tr: 'Mesajınız için teşekkürler. Ekibimizden bir kişi inceleyip size burada, sohbette yanıt verecek. Destek saatlerimiz pazartesiden cumaya, 9:00-17:00 CET.',
+};
+
+/** The acknowledgement in the triage's language ("pt-BR" reads as "pt"), English otherwise. */
+export function humanRoutingAck(language: string | null | undefined): string {
+  const lang = (language || '').trim().toLowerCase().slice(0, 2);
+  return HUMAN_ROUTING_ACKS[lang] ?? HUMAN_ROUTING_ACKS.en;
+}
+
+/** A reply the customer saw from an agent, a person or this API user. */
+export function isPublicAgentReply(m: { private?: boolean; sender_type?: string; type?: string }): boolean {
+  return !m.private && m.sender_type === 'agent' && m.type !== 'activity';
+}
+
 const PRIORITIES = ['Low', 'Medium', 'High'] as const;
 type Priority = (typeof PRIORITIES)[number];
 
@@ -96,7 +125,8 @@ Facts to get right:
 /**
  * Tags, prioritises and annotates every new support conversation. Runs only
  * on the instance that holds the Libredesk API key (Cloud). The suggested
- * reply goes into a private note: nothing is sent to the customer.
+ * reply goes into a private note. The customer only gets a short
+ * acknowledgement when a live chat goes straight to a person.
  */
 @Injectable()
 export class SupportTriageService {
@@ -200,6 +230,9 @@ export class SupportTriageService {
       // Assigning the assistant starts its reply; it hands back to the
       // Support team when it cannot help.
       steps.push(['assistant', () => desk.assignUser(uuid, assistant)]);
+    } else if (channel === 'livechat') {
+      // Nobody answers until a person does: tell the customer so, once.
+      steps.push(['acknowledgement', () => this.acknowledge(desk, uuid, r.language)]);
     }
     for (const [name, run] of steps) {
       try {
@@ -208,6 +241,20 @@ export class SupportTriageService {
         this.logger.warn(`Support triage step "${name}" failed for ${uuid}: ${(err as Error).message}`);
       }
     }
+  }
+
+  /**
+   * Posts the human-routing acknowledgement unless the chat already shows a
+   * public agent reply: a person was faster, or an earlier run posted it
+   * (triage() itself runs once per conversation: in-memory set plus the
+   * ai-triaged tag). When the messages cannot be read, nothing is posted
+   * rather than risk a second copy.
+   */
+  private async acknowledge(desk: LibredeskClient, uuid: string, language: string): Promise<boolean> {
+    const messages = await desk.messages(uuid);
+    if (messages.some(isPublicAgentReply)) return false;
+    await desk.reply(uuid, `<p>${humanRoutingAck(language)}</p>`);
+    return true;
   }
 
   private async teamId(desk: LibredeskClient, name: string): Promise<number | undefined> {
