@@ -38,6 +38,9 @@ const url = process.env.AUDIT_TEST_DATABASE_URL;
 const KEY = 'k'.repeat(48);
 
 (url ? describe : describe.skip)('connectors, tools and File Search with member visibility (PostgreSQL)', () => {
+  // Each case makes a dozen HTTP calls against a real database; on a busy CI
+  // runner one took longer than Jest's 5 s default (28 Nov 2026, #1923).
+  jest.setTimeout(30_000);
   let prisma: PrismaClient;
   let app: INestApplication;
   let base: string;
