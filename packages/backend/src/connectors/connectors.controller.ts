@@ -33,10 +33,12 @@ import {
   IsIn,
   ValidateNested,
   ArrayMinSize,
+  ArrayMaxSize,
   MaxLength,
   IsNumber,
   Allow,
 } from 'class-validator';
+import { Throttle } from '@nestjs/throttler';
 import { Type } from 'class-transformer';
 import { ConnectorType, AuthType } from '../generated/prisma/client';
 import { ConnectorsService } from './connectors.service';
@@ -116,9 +118,28 @@ import { isCodeMethod } from '../mcp-server/code-tool.util';
 import { assertCodeToolBatch, type CodeToolSaveDeps } from './code-tool-save.util';
 import {
   USER_CREDENTIALS_FEATURE,
+  UserCredentialError,
   UserCredentialsService,
 } from './user-credentials.service';
-import { supportsUserCredentials } from './user-credential.util';
+import { randomBytes } from 'crypto';
+import {
+  MAX_USER_VARIABLES,
+  USER_VARIABLES_CONFIG_KEY,
+  cleanUserVariables,
+  effectiveVariables,
+  userCredentialModeOf,
+  userVariableCredentialsEnabled,
+  userVariableNames,
+} from './user-credential.util';
+import {
+  checkUserVariableNames,
+  unreferencedUserVariables,
+  userVariableEligibilityProblem,
+  userVariablePlacementProblem,
+} from './user-variable-switch.util';
+import { withTokenRenewal } from './engines/bearer-token-renewal.service';
+import { describeUserVariables } from './user-variable-fields.util';
+import { connectorConnectUrl } from '../common/url.util';
 import { egressIps } from './egress';
 import { IOP_TOKEN_PROVIDER, isIopAuth } from './engines/iop-token.service';
 import { SHEIN_TOKEN_PROVIDER, isSheinAuth } from './engines/shein-token.service';
@@ -150,6 +171,30 @@ class UpdateCredentialScopeDto {
   })
   @IsIn(['SHARED', 'USER'])
   credentialScope!: 'SHARED' | 'USER';
+
+  @ApiPropertyOptional({
+    description:
+      'With `USER`, for a connector that has no provider sign-in for each user (an API key, a password, ' +
+      'a token): the variables every user enters for themselves, e.g. `["ACME_API_KEY"]`. The connector\'s ' +
+      'own values of them are removed. Not used for an OAuth2 connector users authorize in the browser.',
+    type: [String],
+  })
+  @IsOptional()
+  @IsArray()
+  @ArrayMaxSize(MAX_USER_VARIABLES)
+  @IsString({ each: true })
+  userVariables?: string[];
+}
+
+class SetMyCredentialDto {
+  @ApiProperty({
+    description: 'Your own value of every per-user variable of the connector, by variable name.',
+    example: { ACME_API_KEY: 'sk_live_…' },
+    type: 'object',
+    additionalProperties: { type: 'string' },
+  })
+  @IsObject()
+  variables!: Record<string, string>;
 }
 
 class CreateConnectorDto {
@@ -1028,10 +1073,19 @@ export class ConnectorsController {
       credentialScope: connector.credentialScope,
       toolMappings: connector.tools?.map((t) => t.endpointMapping),
     });
+    const perUser = connector.credentialScope === 'USER';
     return {
       ...toPublicConnector(connector),
       setupStatus: setup.status,
       missingVariables: setup.missing,
+      // Per-user credentials: the page each user opens to connect their own
+      // account, and the variables they enter there (none for a provider sign-in).
+      ...(perUser
+        ? {
+            connectUrl: connectorConnectUrl((connector as { id?: string }).id) ?? null,
+            userVariables: userVariableNames(connector.config),
+          }
+        : {}),
       // A seller authorization at an IOP gateway (Lazada, Miravia, AliExpress
       // seller): the connector page shows its Authorize button. Not a secret;
       // absent on every other connector.
@@ -1766,6 +1820,65 @@ export class ConnectorsController {
         };
       }
     }
+    // A connector whose users enter their own values of some variables: no
+    // value of those is stored on it again, and a field that refers to one
+    // as {{NAME}} cannot be overwritten with a value, which would then be
+    // sent for every user.
+    const perUser = this.perUserVariablesOf(connector);
+    if (perUser.length > 0) {
+      if (dto.authType !== undefined && dto.authType !== connector.authType) {
+        throw new BadRequestException(
+          'This connector asks every user for their own credentials. Switch it back to a shared sign-in ' +
+            'before changing how it signs in.',
+        );
+      }
+      if (data.envVars) {
+        const cleared = { ...(data.envVars as Record<string, string>) };
+        for (const name of perUser) cleared[name] = '';
+        data.envVars = cleared;
+      }
+      const storedAuth = this.readAuthConfig(connector.authConfig);
+      const refersBefore = (name: string) =>
+        unreferencedUserVariables([name], { baseUrl: connector.baseUrl, headers: connector.headers, authConfig: storedAuth })
+          .length === 0;
+      const dropped = unreferencedUserVariables(perUser.filter(refersBefore), {
+        baseUrl: data.baseUrl ?? connector.baseUrl,
+        headers: data.headers ?? connector.headers,
+        authConfig: data.authConfig ?? storedAuth,
+      });
+      const mergedConfig =
+        dto.config && typeof dto.config === 'object' && !Array.isArray(dto.config)
+          ? { ...((connector.config as Record<string, unknown> | null) ?? {}), ...(dto.config as Record<string, unknown>) }
+          : connector.config;
+      const nextAuth = data.authConfig ?? storedAuth ?? undefined;
+      const misplaced =
+        userVariableEligibilityProblem({
+          type: connector.type,
+          authType: connector.authType,
+          authConfig: nextAuth,
+          config: mergedConfig,
+          webhookEnabled: dto.webhookEnabled ?? connector.webhookEnabled,
+        }) ??
+        userVariablePlacementProblem(perUser, {
+          baseUrl: data.baseUrl ?? connector.baseUrl,
+          config: mergedConfig,
+          authConfig: nextAuth,
+          headers: data.headers ?? connector.headers,
+        });
+      if (misplaced) {
+        throw new BadRequestException(
+          `${misplaced} This connector asks every user for their own credentials: switch it back to a shared ` +
+            'sign-in before making this change.',
+        );
+      }
+      if (dropped.length > 0) {
+        throw new BadRequestException(
+          `This connector asks every user for their own ${dropped.join(', ')}. This change would replace ` +
+            `${dropped.map((n) => `{{${n}}}`).join(', ')} with one value for everyone. Keep the variable where it ` +
+            'is, or switch the connector back to a shared sign-in first.',
+        );
+      }
+    }
     // `config` also carries keys no form edits: the catalog adapter's slug,
     // version and baselines (logo, re-sync), a database adapter's
     // deniedTables. The database settings form sends only { readOnly }, and
@@ -1782,6 +1895,9 @@ export class ConnectorsController {
       const merged = new Map<string, unknown>(Object.entries(existing));
       for (const [k, v] of Object.entries(dto.config as Record<string, unknown>)) {
         if (k === '__proto__' || k === 'constructor' || k === 'prototype') continue;
+        // Set only by PATCH :id/credential-scope, which also empties the
+        // connector's own values of those variables.
+        if (k === USER_VARIABLES_CONFIG_KEY) continue;
         if (v === null) merged.delete(k);
         else merged.set(k, v);
       }
@@ -1938,6 +2054,7 @@ export class ConnectorsController {
   ) {
     const connector = await this.connectorsService.findById(id);
     this.assertCanWrite(connector, req);
+    let userVariables: string[] | undefined;
     if (dto.credentialScope === 'USER') {
       await this.assertUserCredentialsLicensed(connector.organizationId);
       let authConfig: Record<string, unknown> | undefined;
@@ -1948,16 +2065,75 @@ export class ConnectorsController {
       } catch {
         authConfig = undefined;
       }
-      if (!supportsUserCredentials(connector.type, connector.authType, authConfig)) {
-        throw new BadRequestException(
-          'Per-user sign-in needs a REST, GraphQL, MCP or OData connector with OAuth2 that users ' +
-            'authorize in the browser. API keys, passwords and client-credentials grants stay shared.',
-        );
+      const how = userCredentialModeOf(
+        {
+          type: connector.type,
+          authType: connector.authType,
+          authConfig,
+          config: connector.config,
+          webhookEnabled: connector.webhookEnabled,
+          renewsBearerToken: !!withTokenRenewal(connector.authType, authConfig, connector.config, {})?.tokenRenewal,
+        },
+        { variablesEnabled: userVariableCredentialsEnabled() },
+      );
+      if (how.mode === null) throw new BadRequestException(how.reason);
+      if (how.mode === 'oauth') {
+        if (dto.userVariables?.length) {
+          throw new BadRequestException(
+            'Users of this connector sign in through the provider, so there are no variables for them to enter. ' +
+              'Leave userVariables out.',
+          );
+        }
+      } else {
+        const checked = checkUserVariableNames(dto.userVariables);
+        if ('error' in checked) {
+          throw new BadRequestException(
+            `This connector has no provider sign-in for each user, so every user enters their own values. ${checked.error}`,
+          );
+        }
+        userVariables = checked.names;
+        // A user's own values are checked with the connection test before
+        // they are stored. So the test has to tell right from wrong first:
+        // pass with the values the connector has now (a test that cannot
+        // pass would lock everyone out), and fail with values that are not
+        // anyone's (a test that passes without the sign-in, a public health
+        // check or a WSDL, would accept whatever a user types).
+        if (connector.credentialScope !== 'USER') {
+          // Refuses here what the switch itself would refuse, before any test.
+          const preview = await this.connectorsService.previewUserVariableSwitch(id, userVariables);
+          const test = await this.connectorsService.testConnection(id, { userId: req.user.sub });
+          if (!test.ok) {
+            throw new BadRequestException(
+              'The connection test has to pass with the connector\'s current values before every user enters ' +
+                `their own: it is how their values are checked. It answered: ${test.message}`,
+            );
+          }
+          const nobodys = Object.fromEntries(
+            userVariables.map((name) => [name, `amcp-check-${randomBytes(9).toString('hex')}`]),
+          );
+          const blind = await this.connectorsService.testConnection(id, {
+            userId: req.user.sub,
+            as: preview,
+            userVariables: nobodys,
+          });
+          if (blind.ok) {
+            throw new BadRequestException(
+              'The connection test passes without these values, so it could not tell a user\'s own values from ' +
+                'wrong ones. Set a health check path that needs the sign-in, then switch.',
+            );
+          }
+        }
       }
     }
-    const updated = await this.connectorsService.setCredentialScope(id, dto.credentialScope);
+    // Unchanged for a provider sign-in and for the way back to shared.
+    const updated = userVariables
+      ? await this.connectorsService.setCredentialScope(id, dto.credentialScope, { userVariables })
+      : await this.connectorsService.setCredentialScope(id, dto.credentialScope);
     await this.reloadToolsQuietly(id);
-    return { credentialScope: updated.credentialScope };
+    return {
+      credentialScope: updated.credentialScope,
+      ...(userVariables ? { userVariables } : {}),
+    };
   }
 
   @Get(':id/my-credential')
@@ -1975,10 +2151,83 @@ export class ConnectorsController {
     await this.hideUnlessVisible(req, connector, id);
     const available = (await this.edition?.hasEnterprise(connector.organizationId)) ?? false;
     if (!this.userCredentials || connector.credentialScope !== 'USER') return { connected: false, available };
+    // A connector whose users enter their own values of some variables:
+    // which ones (labels only, never a value), and whether this user has.
+    const variables = describeUserVariables(connector.config);
+    if (variables.length > 0) {
+      return {
+        ...(await this.userCredentials.status(
+          connector.id,
+          connector.organizationId,
+          req.user.sub,
+          variables.map((v) => v.name),
+        )),
+        available,
+        mode: 'variables',
+        variables,
+      };
+    }
     return {
       ...(await this.userCredentials.status(connector.id, connector.organizationId, req.user.sub)),
       available,
     };
+  }
+
+  @Put(':id/my-credential')
+  @Throttle({ default: { limit: 10, ttl: 60_000 } })
+  @ApiOperation({
+    summary: 'Enter your own values for a connector with per-user variables',
+    description:
+      'For a connector whose users each enter their own credentials (`mode: "variables"` in ' +
+      '`GET :id/my-credential`). Send a value for every per-user variable. They are tried with the ' +
+      'connector\'s connection test first and stored only when it passes; a refused login stores nothing. ' +
+      'No value is ever returned. In a workspace with restricted member visibility, a member who is not an ' +
+      'admin gets 404 for a connector they cannot see.',
+  })
+  async setMyCredential(
+    @Req() req: any,
+    @Param('id') id: string,
+    @Body(new ValidationPipe({ whitelist: true })) dto: SetMyCredentialDto,
+  ) {
+    const connector = await this.connectorsService.findById(id);
+    this.assertOrgMatch(connector, req);
+    await this.hideUnlessVisible(req, connector, id);
+    return this.storeOwnVariables(connector, req.user.sub, dto.variables);
+  }
+
+  /**
+   * Check, try and store one user's own values of a connector's per-user
+   * variables. Shared by the dashboard route above and the connect page.
+   */
+  async storeOwnVariables(
+    connector: { id: string; name: string; organizationId: string; credentialScope: string; config: unknown },
+    userId: string,
+    input: unknown,
+  ) {
+    const names = userVariableNames(connector.config);
+    if (!this.userCredentials || connector.credentialScope !== 'USER' || names.length === 0) {
+      throw new BadRequestException('This connector does not ask its users for values of their own.');
+    }
+    await this.assertUserCredentialsLicensed(connector.organizationId);
+    if (!userVariableCredentialsEnabled()) {
+      throw new BadRequestException('Per-user values are switched off on this server.');
+    }
+    const cleaned = cleanUserVariables(names, input);
+    if ('error' in cleaned) throw new BadRequestException(cleaned.error);
+    const test = await this.connectorsService.testConnection(connector.id, {
+      userId,
+      userVariables: cleaned.values,
+    });
+    if (!test.ok) {
+      throw new BadRequestException({
+        statusCode: 400,
+        code: 'connection_test_failed',
+        kind: test.kind ?? 'error',
+        message: `These values did not work, so nothing was saved. ${test.message}`,
+      });
+    }
+    await this.userCredentials.storeVariables(connector, userId, cleaned.values);
+    return this.userCredentials.status(connector.id, connector.organizationId, userId, names);
   }
 
   @Delete(':id/my-credential')
@@ -2385,13 +2634,19 @@ export class ConnectorsController {
     }
 
     try {
-      const { baseUrl, headers, authConfig: connectorAuth } = this.resolvedAddress(connector);
+      // Per-user variables: the caller's own values resolve the address and
+      // the sign-in, as on a call of theirs.
+      const ownVariables = await this.ownVariablesOf(connector, req.user.sub);
+      const { baseUrl, headers, authConfig: connectorAuth, envVars: resolvedVars } = this.resolvedAddress(
+        connector,
+        ownVariables,
+      );
       // Per-user credentials: listed with the admin's own sign-in, so the
       // tools are what that account may see; MCP servers answer each user
       // with their own permissions at call time anyway.
       let authConfig = connectorAuth;
-      let credentialKey = connector.id;
-      if (connector.credentialScope === 'USER') {
+      let credentialKey = ownVariables?.credentialKey ?? connector.id;
+      if (connector.credentialScope === 'USER' && !ownVariables) {
         if (!this.userCredentials) return { error: 'Per-user sign-in is not available on this server.' };
         const resolved = await this.userCredentials.resolveForCall({
           connectorId: connector.id,
@@ -2412,7 +2667,7 @@ export class ConnectorsController {
         headers,
         connectorId: credentialKey,
         mcpPath,
-        logSecrets: connectorSecretValues(connector),
+        logSecrets: connectorSecretValues({ ...connector, envVars: resolvedVars }),
       });
 
       const discovered = remoteTools.map((rt) => ({
@@ -2705,12 +2960,12 @@ export class ConnectorsController {
         break;
       }
       case 'SOAP': {
-        const wsdlUrl = connector.specUrl || this.resolvedAddress(connector).baseUrl;
+        const wsdlUrl = connector.specUrl || (await this.addressFor(connector, req.user.sub)).baseUrl;
         parsedTools = await readRemoteSpec('WSDL', () => this.wsdlParser.parse(wsdlUrl));
         break;
       }
       case 'GRAPHQL': {
-        const { baseUrl, headers } = this.resolvedAddress(connector);
+        const { baseUrl, headers } = await this.addressFor(connector, req.user.sub);
         parsedTools = await readRemoteSpec('GraphQL schema', () =>
           this.graphqlParser.parse(
             baseUrl, headers || undefined, connector.specUrl || undefined,
@@ -2819,12 +3074,12 @@ export class ConnectorsController {
           break;
         }
         case 'wsdl': {
-          const wsdlUrl = dto.url || dto.content || this.resolvedAddress(connector).baseUrl;
+          const wsdlUrl = dto.url || dto.content || (await this.addressFor(connector, req.user.sub)).baseUrl;
           parsedTools = await this.wsdlParser.parse(wsdlUrl);
           break;
         }
         case 'graphql': {
-          const resolved = this.resolvedAddress(connector);
+          const resolved = await this.addressFor(connector, req.user.sub);
           const headers = resolved.headers;
           const endpoint = dto.url || resolved.baseUrl;
           parsedTools = await this.graphqlParser.parse(
@@ -2853,7 +3108,7 @@ export class ConnectorsController {
           if (!dto.content) {
             return { error: 'Provide the HAR file content in the content field' };
           }
-          const { baseUrl } = this.resolvedAddress(connector);
+          const { baseUrl } = await this.addressFor(connector, req.user.sub);
           const result = this.harParser.parse(dto.content, { baseUrl });
           parsedTools = result.tools;
           harSkipped = result.skipped;
@@ -2890,7 +3145,7 @@ export class ConnectorsController {
           if (connector.type !== 'MCP') {
             return { error: 'MCP import source is only available for MCP connectors' };
           }
-          const { baseUrl, headers, authConfig } = this.resolvedAddress(connector);
+          const { baseUrl, headers, authConfig, envVars: resolvedVars } = await this.addressFor(connector, req.user.sub);
           const remoteTools = await this.mcpClientEngine.listTools({
             baseUrl,
             authType: connector.authType,
@@ -2898,7 +3153,7 @@ export class ConnectorsController {
             headers,
             mcpPath: dto.url || '/mcp',
             connectorId: connector.id,
-            logSecrets: connectorSecretValues(connector),
+            logSecrets: connectorSecretValues({ ...connector, envVars: resolvedVars }),
           });
           for (const rt of remoteTools) {
             parsedTools.push({
@@ -3080,17 +3335,36 @@ export class ConnectorsController {
    * values as they are, so a base URL holding `{{VAR}}` (a key moved out of
    * it, a tenant) was requested literally.
    */
-  private resolvedAddress(connector: {
-    baseUrl: string;
-    headers: unknown;
-    envVars: unknown;
-    authConfig: string | null;
-  }): {
+  private resolvedAddress(
+    connector: {
+      baseUrl: string;
+      headers: unknown;
+      envVars: unknown;
+      authConfig: string | null;
+      credentialScope?: string;
+      config?: unknown;
+    },
+    /** The caller's own values, for a connector with per-user variables (ownVariablesOf). */
+    ownVariables?: { userVars: Record<string, string> },
+  ): {
     baseUrl: string;
     headers: Record<string, string> | undefined;
     authConfig: Record<string, unknown> | undefined;
+    /** The variables everything above was resolved from. */
+    envVars: Record<string, string>;
   } {
-    const envVars = (connector.envVars as Record<string, string> | null) ?? {};
+    let envVars = (connector.envVars as Record<string, string> | null) ?? {};
+    const perUser = this.perUserVariablesOf(connector);
+    if (perUser.length > 0) {
+      // Never from the connector's own variables: they are empty for these
+      // names, and an empty credential is not to be sent in anyone's name.
+      if (!ownVariables) {
+        throw new BadRequestException(
+          'This connector asks every user for their own credentials, and this request carries none.',
+        );
+      }
+      envVars = effectiveVariables(envVars, perUser, ownVariables.userVars);
+    }
     const authConfig = connector.authConfig
       ? JSON.parse(decrypt(connector.authConfig, this.encryptionKey))
       : undefined;
@@ -3101,7 +3375,85 @@ export class ConnectorsController {
         envVars,
       ),
       authConfig: authConfig ? interpolateDeep(authConfig, envVars) : undefined,
+      envVars,
     };
+  }
+
+  /** The variables every user enters for themselves, when the connector asks for them; else none. */
+  private perUserVariablesOf(connector: { credentialScope?: string; config?: unknown }): string[] {
+    return connector.credentialScope === 'USER' ? userVariableNames(connector.config) : [];
+  }
+
+  /**
+   * The caller's own values of a connector's per-user variables, or undefined
+   * for a connector that has none. Refused (400, with what to do) when the
+   * caller has not entered them.
+   */
+  private async ownVariablesOf(
+    connector: {
+      id: string;
+      name: string;
+      organizationId: string;
+      credentialScope?: string;
+      config?: unknown;
+      type?: string;
+      authType?: string;
+      authConfig?: string | null;
+      baseUrl?: string;
+      headers?: unknown;
+      webhookEnabled?: boolean;
+    },
+    userId: string,
+  ): Promise<{ userVars: Record<string, string>; credentialKey: string } | undefined> {
+    const userVariables = this.perUserVariablesOf(connector);
+    if (userVariables.length === 0) return undefined;
+    if (!this.userCredentials) throw new BadRequestException('Per-user sign-in is not available on this server.');
+    // As on a call: a user's values go only to a sign-in that takes them,
+    // and never where they would choose the server or the name of a field.
+    const authConfig = this.readAuthConfig(connector.authConfig ?? null) ?? undefined;
+    const problem =
+      userVariableEligibilityProblem({
+        type: String(connector.type ?? ''),
+        authType: String(connector.authType ?? ''),
+        authConfig,
+        config: connector.config,
+        webhookEnabled: connector.webhookEnabled,
+      }) ??
+      userVariablePlacementProblem(userVariables, {
+        baseUrl: connector.baseUrl,
+        config: connector.config,
+        authConfig,
+        headers: connector.headers,
+      });
+    if (problem) {
+      throw new BadRequestException(
+        `${problem} Nothing was sent. Change the connector, or switch it back to a shared sign-in.`,
+      );
+    }
+    try {
+      return await this.userCredentials.variablesForCall({
+        connectorId: connector.id,
+        connectorName: connector.name,
+        organizationId: connector.organizationId,
+        userId,
+        userVariables,
+      });
+    } catch (err) {
+      if (err instanceof UserCredentialError) throw new BadRequestException(err.message);
+      throw err;
+    }
+  }
+
+  /** The connector's address and sign-in as the caller's own requests carry them. */
+  private async addressFor(
+    connector: Parameters<ConnectorsController['resolvedAddress']>[0] & {
+      id: string;
+      name: string;
+      organizationId: string;
+    },
+    userId: string,
+  ) {
+    return this.resolvedAddress(connector, await this.ownVariablesOf(connector, userId));
   }
 
   /** The stored authConfig, or null when there is none or it cannot be read. */

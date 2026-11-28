@@ -3297,13 +3297,65 @@ first user's account and with each later sign-in. **Re-discover Tools** lists
 them with your own sign-in. The remote server still checks every call against the
 caller's own permissions.
 
+## Connectors without a provider sign-in: per-user values
+
+> A preview, off by default: set `USER_VARIABLE_CREDENTIALS=true` on a
+> self-hosted server with an Enterprise licence. Not switched on for
+> AnythingMCP Cloud yet. Everything is set through the API for now; the
+> dashboard and the connect page get their forms in a later release, so the
+> link in the "connect first" error does not open a form yet.
+
+A connector that signs in with an API key, a token or a user name and password
+has no provider sign-in to send each user through. There, per-user means every
+user enters **their own values of some of the connector's variables**, for
+example `ACME_API_KEY`, or the user name and password of a mail archive.
+
+- **Which connectors.** REST, GraphQL, SOAP, OData, e-mail and MCP connectors
+  whose sign-in is an API key (header or query), a bearer token, basic auth,
+  WS-Security or none (a key in the address or the body). Not yet: database
+  connectors, login-token, HMAC and OAuth 1.0a sign-ins, client certificates,
+  and bearer tokens that are renewed in the background. File Search and
+  connectors that receive webhooks stay shared: they work without a caller.
+- **Switching.** `PATCH /api/connectors/:id/credential-scope` with
+  `{ "credentialScope": "USER", "userVariables": ["ACME_API_KEY"] }`. The
+  connector must use each variable as `{{NAME}}` somewhere (address, headers,
+  sign-in or tools). The connection test is how each user's values are checked
+  later, so it has to tell right from wrong first: it must pass with the
+  connector's current values, and fail with made-up ones. A test that passes
+  without the sign-in (a public health check, a WSDL anyone can read) is
+  refused; set a health check path that needs the sign-in.
+- **Only what signs a user in.** A per-user variable can sit in the sign-in,
+  a header, the path of the address or a tool. It cannot be part of the
+  server's address (scheme, host, port), of the connector's settings (mail
+  hosts and ports, the MCP path) or the start of a tool's path, nor the name
+  of a header or parameter or a field that says where a token is fetched: a
+  call also carries what the connector shares, and no user may choose where
+  that goes. A connector edited later into a sign-in that is not offered
+  (see above) stops taking calls until it is switched back to shared.
+  Values with a line break or a control character are refused.
+- **Afterwards.** The connector's own values of those variables stay empty,
+  whatever is typed into them, and a sign-in field that refers to one cannot
+  be overwritten with a fixed value. Switch back to shared to change that.
+- **What the switch removes.** The connector's own values of those variables,
+  everywhere they are stored. A call never falls back to them: a user who has
+  not entered their own gets the "connect first" error with the link to the
+  connect page, and nothing is sent.
+- **Entering values.** `PUT /api/connectors/:id/my-credential` with
+  `{ "variables": { "ACME_API_KEY": "…" } }`. The values are tried with the
+  connection test and stored only when it passes. They are stored encrypted,
+  per user, and never returned.
+- **Back to shared.** Removes every user's values. The connector's own values
+  of those variables are empty then and have to be entered again.
+
 ## API
 
 | Method and path | Who | What |
 |---|---|---|
 | `PATCH /api/connectors/:id/credential-scope` `{ "credentialScope": "USER" \| "SHARED" }` | owner or admin | Switch the mode (USER needs Enterprise) |
 | `POST /api/connectors/:id/oauth/authorize` | any member (per-user connectors) | Start your own sign-in |
-| `GET /api/connectors/:id/my-credential` | any member | Whether you are connected; no token is returned |
+| `PATCH /api/connectors/:id/credential-scope` `{ "credentialScope": "USER", "userVariables": ["NAME"] }` | owner or admin | Per-user values for a connector without a provider sign-in |
+| `GET /api/connectors/:id/my-credential` | any member | Whether you are connected, and for per-user values which variables to enter; no token or value is returned |
+| `PUT /api/connectors/:id/my-credential` `{ "variables": { "NAME": "value" } }` | any member (per-user values) | Enter your own values; stored only when the connection test passes |
 | `DELETE /api/connectors/:id/my-credential` | any member | Disconnect your own account |
 | `GET /auth/connect/:id` | anyone (HTML) | The connect page; signs the user in first |
 

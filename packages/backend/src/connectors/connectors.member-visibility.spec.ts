@@ -758,6 +758,8 @@ const reducedShared = (toolIds: string[]) => ({
   icon: null,
   isActive: true,
   credentialScope: 'USER',
+  // Where the member connects their own account (null here: no FRONTEND_URL in the spec).
+  connectUrl: null,
   setupStatus: 'ready',
   authStatus: 'needs_reauth',
   authStatusCode: 'refresh_refused',
@@ -779,6 +781,7 @@ describe('reduced view of a connector the restricted member does not own', () =>
       'icon',
       'isActive',
       'credentialScope',
+      'connectUrl',
       'setupStatus',
       'authStatus',
       'authStatusCode',
@@ -1019,6 +1022,9 @@ const fullShared = () => ({
   maskedHeaders: [],
   setupStatus: 'ready',
   missingVariables: [],
+  // Added with per-user variables, on a connector with per-user credentials only.
+  connectUrl: null,
+  userVariables: [],
 });
 
 describe('callers who keep the full view read byte for byte what they read before', () => {

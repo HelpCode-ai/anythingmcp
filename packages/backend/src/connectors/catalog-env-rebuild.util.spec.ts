@@ -242,6 +242,84 @@ describe('rebuildCatalogCredentials', () => {
   });
 });
 
+describe('rebuildCatalogCredentials — per-user variables (referenceVariables)', () => {
+  const ACME: CatalogTemplate = {
+    connector: {
+      baseUrl: 'https://{{ACME_TENANT}}.example.test/api',
+      authType: 'API_KEY',
+      authConfig: { headerName: 'X-Api-Key', apiKey: '{{ACME_API_KEY}}' },
+      headers: { 'X-Acme-Auth': '{{ACME_CLIENT_ID}}:{{ACME_API_KEY}}' },
+    },
+  };
+  const stored = {
+    adapter: ACME,
+    connectorAuthType: 'API_KEY',
+    storedBaseUrl: 'https://shop.example.test/api',
+    storedAuthConfig: { headerName: 'X-Api-Key', apiKey: 'admin-key' },
+    storedHeaders: { 'X-Acme-Auth': 'client-1:admin-key' },
+  };
+
+  it('puts every field built from a per-user variable back into its {{VAR}} form', () => {
+    const result = rebuildCatalogCredentials({
+      ...stored,
+      previousEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: 'admin-key' },
+      nextEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: '' },
+      referenceVariables: ['ACME_API_KEY'],
+    });
+    expect(result.authConfig).toEqual({ headerName: 'X-Api-Key', apiKey: '{{ACME_API_KEY}}' });
+    // The shared part of a mixed field stays resolved.
+    expect(result.headers).toEqual({ 'X-Acme-Auth': 'client-1:{{ACME_API_KEY}}' });
+    expect(result.baseUrl).toBeUndefined();
+    expect(result.missing).toEqual([]);
+  });
+
+  it('does not keep a stored key "because it works" when the variable was already empty', () => {
+    const result = rebuildCatalogCredentials({
+      ...stored,
+      previousEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: '' },
+      nextEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: '' },
+      referenceVariables: ['ACME_API_KEY'],
+    });
+    expect(result.authConfig).toEqual({ headerName: 'X-Api-Key', apiKey: '{{ACME_API_KEY}}' });
+    expect(result.headers).toEqual({ 'X-Acme-Auth': 'client-1:{{ACME_API_KEY}}' });
+  });
+
+  it('keeps the reference when another variable of the same field is edited later', () => {
+    const result = rebuildCatalogCredentials({
+      ...stored,
+      storedAuthConfig: { headerName: 'X-Api-Key', apiKey: '{{ACME_API_KEY}}' },
+      storedHeaders: { 'X-Acme-Auth': 'client-1:{{ACME_API_KEY}}' },
+      previousEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: '' },
+      nextEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-2', ACME_API_KEY: '' },
+      referenceVariables: ['ACME_API_KEY'],
+    });
+    expect(result.headers).toEqual({ 'X-Acme-Auth': 'client-2:{{ACME_API_KEY}}' });
+    expect(result.authConfig).toBeUndefined();
+  });
+
+  it('never resolves a value typed for a per-user variable into a field', () => {
+    const result = rebuildCatalogCredentials({
+      ...stored,
+      storedAuthConfig: { headerName: 'X-Api-Key', apiKey: '{{ACME_API_KEY}}' },
+      storedHeaders: { 'X-Acme-Auth': 'client-1:{{ACME_API_KEY}}' },
+      previousEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: '' },
+      nextEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: 'typed-again' },
+      referenceVariables: ['ACME_API_KEY'],
+    });
+    expect(JSON.stringify(result)).not.toContain('typed-again');
+  });
+
+  it('changes nothing for a connector without per-user variables', () => {
+    const input = {
+      ...stored,
+      previousEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: 'admin-key' },
+      nextEnvVars: { ACME_TENANT: 'shop', ACME_CLIENT_ID: 'client-1', ACME_API_KEY: 'new-key' },
+    };
+    expect(rebuildCatalogCredentials({ ...input, referenceVariables: [] })).toEqual(rebuildCatalogCredentials(input));
+    expect(rebuildCatalogCredentials(input).authConfig).toEqual({ headerName: 'X-Api-Key', apiKey: 'new-key' });
+  });
+});
+
 describe('variablesForAuthFields', () => {
   const template = {
     clientId: '{{ETSY_CLIENT_ID}}',

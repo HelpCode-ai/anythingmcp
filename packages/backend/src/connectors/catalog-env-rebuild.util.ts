@@ -85,6 +85,13 @@ export interface RebuildInput {
   storedHeaders: Record<string, string> | null;
   previousEnvVars: Record<string, string>;
   nextEnvVars: Record<string, string>;
+  /**
+   * Variables every user enters for themselves (a connector with per-user
+   * variables, user-credential.util). Every field keeps them as `{{VAR}}`,
+   * with or without a value on the connector: resolved into the stored copy,
+   * one account's key would be sent for every user.
+   */
+  referenceVariables?: readonly string[];
 }
 
 export interface MissingVariable {
@@ -160,11 +167,13 @@ export function rebuildCatalogCredentials(input: RebuildInput): RebuildResult {
     // A stored `{{VAR}}` that the variables can resolve works at call time
     // (which knows nothing of aliases); one they cannot is what an earlier
     // wholesale rebuild left behind.
+    const perUser = new Set(input.referenceVariables ?? []);
     const storedIsBroken =
       typeof stored === 'string' &&
-      placeholders(stored).some((name) => !input.nextEnvVars[name]);
+      placeholders(stored).some((name) => !perUser.has(name) && !input.nextEnvVars[name]);
     // Call time resolves only the variable's own name, not an alias.
     const keep = new Set([...keepAsReference].filter((name) => !!input.nextEnvVars[name]));
+    for (const name of input.referenceVariables ?? []) keep.add(name);
     const values = Object.fromEntries(Object.entries(next).filter(([name]) => !keep.has(name)));
     const resolved = interpolateString(template, values);
     // A secret resolved into the stored value by an older install: the
@@ -185,6 +194,11 @@ export function rebuildCatalogCredentials(input: RebuildInput): RebuildResult {
     for (const variable of unresolved) {
       missing.push({ variable, field, kept: stored !== undefined });
     }
+    // A field built from a per-user variable is always stored as the
+    // template says, never as a value someone resolved into it: whatever is
+    // stored there (a key from before the switch, a value "kept because it
+    // works") would be sent for every user.
+    if (vars.some((name) => perUser.has(name))) return resolved;
     if (!needsRebuild) return stored;
     if (unresolved.length === 0) return resolved;
     // Keep what works. With nothing stored, the placeholder stays, and the

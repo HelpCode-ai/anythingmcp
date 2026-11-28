@@ -8,6 +8,7 @@ import { decrypt } from '../common/crypto/encryption.util';
 import { mergeMaskedEnvVars, secretContext } from './connector-secrets.util';
 import { describeMissing, rebuildCatalogCredentials } from './catalog-env-rebuild.util';
 import { assertConsumerKeyIsNotEmail } from './oauth1-consumer-key.util';
+import { userVariableNames } from './user-credential.util';
 
 /**
  * Writing a connector's variables, the way PUT /api/connectors/:id/env-vars
@@ -134,6 +135,11 @@ export async function writeConnectorEnvVars(
   // The editor never receives stored secrets, so it sends them back empty
   // when they were not retyped: keep the stored value for those.
   const kept = mergeMaskedEnvVars(trimmed, stored, secretContext(connector));
+  // A variable every user enters for themselves has no value on the
+  // connector (user-credential.util): one typed here would be sent for
+  // nobody, and must never become a fallback for a user without their own.
+  const perUser = connector.credentialScope === 'USER' ? userVariableNames(connector.config) : [];
+  for (const name of perUser) kept[name] = '';
 
   // The variable a base URL starts with (`{{SUBSTACK_PUBLICATION_URL}}`)
   // must hold a whole URL: add the missing https:// to a bare host, refuse
@@ -175,6 +181,7 @@ export async function writeConnectorEnvVars(
       storedHeaders: (connector.headers as Record<string, string> | null) ?? null,
       previousEnvVars: stored,
       nextEnvVars: envVars,
+      referenceVariables: perUser,
     });
     if (rebuilt.authConfig) {
       const consumerKey = rebuilt.authConfig.consumerKey;
