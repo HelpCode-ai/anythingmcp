@@ -58,6 +58,8 @@ export async function apiRequest(options: {
   if (target.origin !== base.origin) {
     throw new Error('Path must stay on the instance origin');
   }
+  // API routes are relative to the instance, including a reverse-proxy prefix.
+  target.pathname = `${base.pathname.replace(/\/$/, '')}${target.pathname}`;
 
   const controller = new AbortController();
   const timer = options.timeoutMs
