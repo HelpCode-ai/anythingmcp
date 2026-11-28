@@ -57,6 +57,7 @@ import { BearerTokenRenewalService, withTokenRenewal } from './engines/bearer-to
 import { connectorErrorWhen, connectorLargeIntegers } from './error-when.util';
 import { ResponseBodyError } from './engines/response-error.util';
 import { metaLoginFlavourOfSlug } from './engines/meta-login.util';
+import { resolveHealthcheckPath } from './healthcheck-path.util';
 
 /** Whether a URL has a query string (`?singleWsdl`), so `?wsdl` cannot simply be added. */
 function hasQueryString(url: string): boolean {
@@ -746,7 +747,9 @@ export class ConnectorsService implements OnApplicationBootstrap {
      *
      *   ok           — 2xx response
      *   auth_failed  — 401 / 403: handshake reached the API, credentials rejected
-     *   not_found    — 404: URL reachable but the healthcheck path doesn't exist
+     *   not_found    — 404: URL reachable but the healthcheck path doesn't exist;
+     *                  also 400/405 at the bare base URL of a REST connector
+     *                  that has no test path anywhere
      *   unreachable  — DNS/network/SSRF/timeout
      *   unsupported  — connector type with no test implementation yet
      *   error        — anything else (5xx, parse error, etc.)
@@ -787,6 +790,9 @@ export class ConnectorsService implements OnApplicationBootstrap {
         return { ok: false, kind: 'error', message: (err as Error).message };
       }
     }
+
+    // The connector's own path, else its catalog adapter's, else "/".
+    const healthcheck = resolveHealthcheckPath(connector);
 
     try {
       // Same substitution the tool path does, so Test connection exercises the
@@ -845,11 +851,12 @@ export class ConnectorsService implements OnApplicationBootstrap {
 
       switch (connector.type) {
         case 'REST': {
-          // Use the configured healthcheckPath if set (auto-detected on
-          // OpenAPI import, or set by the user). Falls back to "/" — many
-          // APIs without a root handler return 404 there, which we surface
-          // as kind: 'not_found' with a hint to set the path.
-          const path = connector.healthcheckPath || '/';
+          // The configured healthcheckPath (auto-detected on OpenAPI import,
+          // set by the user, or copied from the catalog), else the catalog
+          // adapter's current one, else "/". Many APIs have no handler at
+          // "/" and answer 400, 404 or 405 there; classifyTestError reports
+          // that as a missing test path, not as a broken connector.
+          const path = healthcheck.path;
           await this.restEngine.execute(
             {
               baseUrl,
@@ -968,7 +975,11 @@ export class ConnectorsService implements OnApplicationBootstrap {
       }
       return { ok: true, kind: 'ok', message: 'Connection successful' };
     } catch (error: any) {
-      return this.classifyTestError(error, connector.healthcheckPath || '/');
+      // Only a REST test sends a request to the healthcheck path. GraphQL and
+      // the other types never read it, so "set a test path" would be wrong
+      // advice there and could hide a real credential error behind it.
+      const baseUrlOnly = connector.type === 'REST' && healthcheck.source === 'default';
+      return this.classifyTestError(error, healthcheck.path, baseUrlOnly);
     }
   }
 
@@ -1128,6 +1139,8 @@ export class ConnectorsService implements OnApplicationBootstrap {
   private classifyTestError(
     error: any,
     healthcheckPath: string,
+    /** No test path is set anywhere: the request went to the base URL itself. */
+    baseUrlOnly = false,
   ): {
     ok: false;
     message: string;
@@ -1174,6 +1187,31 @@ export class ConnectorsService implements OnApplicationBootstrap {
           (typeof error?.hint === 'string' && error.hint ? ` ${error.hint}` : ''),
       };
     }
+    // Meta's Graph API answers a refused or expired token with HTTP 400
+    // (error code 190; 10 and 200-299 are missing permissions), not 401.
+    if (status === 400 && isTokenRefusalBody(error?.response?.data)) {
+      return {
+        ok: false,
+        kind: 'auth_failed',
+        httpStatus: status,
+        message: 'The API rejected the access token or one of its permissions. Authorize again or update the token, then retry.',
+      };
+    }
+    // No test path anywhere, so the request went to the bare base URL. Plenty
+    // of APIs have nothing there and answer 400 (Meta's Graph API:
+    // "Unsupported get request"), 404 or 405 whatever the credentials are.
+    // That is a missing test path, not a broken connector.
+    if (baseUrlOnly && (status === 400 || status === 404 || status === 405)) {
+      return {
+        ok: false,
+        kind: 'not_found',
+        httpStatus: status,
+        message:
+          `The API answered HTTP ${status} at its base URL, which has no endpoint to test; ` +
+          'this does not show whether the credentials work. Set Connector.healthcheckPath to an ' +
+          'endpoint that only reads (e.g. /me or /health) and test again.',
+      };
+    }
     if (status === 404) {
       return {
         ok: false,
@@ -1189,7 +1227,7 @@ export class ConnectorsService implements OnApplicationBootstrap {
         ok: false,
         kind: 'error',
         httpStatus: status,
-        message: `Healthcheck returned HTTP ${status}.`,
+        message: `Healthcheck path "${healthcheckPath}" returned HTTP ${status}.`,
       };
     }
 
@@ -1962,4 +2000,27 @@ function assertValidHeaderNames(
 ): void {
   const invalid = invalidConnectorHeaderNames(headers, authConfig);
   if (invalid.length > 0) throw new BadRequestException(describeInvalidHeaderNames(invalid));
+}
+
+/**
+ * A Graph-API style error body (Meta) that refuses the token or its
+ * permissions: 190 invalid or expired token, 102 session, 10 and 200-299
+ * missing permission, all of type OAuthException. Meta also labels plain
+ * request errors such as code 100 ("nonexisting field") OAuthException, so
+ * the type alone decides nothing.
+ */
+function isTokenRefusalBody(data: unknown): boolean {
+  let body = data;
+  if (typeof body === 'string') {
+    try {
+      body = JSON.parse(body);
+    } catch {
+      return false;
+    }
+  }
+  const err = (body as { error?: { type?: unknown; code?: unknown } } | null | undefined)?.error;
+  if (!err || err.type !== 'OAuthException') return false;
+  const code = err.code;
+  if (typeof code !== 'number') return false;
+  return code === 190 || code === 102 || code === 10 || (code >= 200 && code <= 299);
 }
