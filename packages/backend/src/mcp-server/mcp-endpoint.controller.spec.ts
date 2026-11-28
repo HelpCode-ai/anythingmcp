@@ -2058,3 +2058,43 @@ describe('McpEndpointController — upload box resource', () => {
     expect(read.contents[0].text).not.toMatch(/<script[^>]+src=/);
   });
 });
+
+describe('McpEndpointController progress registrations', () => {
+  it.each([false, true])('keeps configured JSON mode=%p free of progress', async (jsonMode) => {
+    const previous = process.env.MCP_STREAMABLE_JSON_RESPONSE;
+    process.env.MCP_STREAMABLE_JSON_RESPONSE = String(jsonMode);
+    const controller = Object.create(McpEndpointController.prototype) as McpEndpointController;
+    const server = new McpServer({ name: 'tenant-progress', version: '1' });
+    const client = new Client({ name: 'progress-client', version: '1' });
+    let finish!: (value: { content: Array<{ type: 'text'; text: string }> }) => void;
+    let started!: () => void;
+    const pending = new Promise<{ content: Array<{ type: 'text'; text: string }> }>((resolve) => { finish = resolve; });
+    const running = new Promise<void>((resolve) => { started = resolve; });
+    const result = { content: [{ type: 'text' as const, text: 'tenant result' }] };
+    (controller as any).registerAll(server, [{
+      name: 'slow', sig: 'slow',
+      register: (target: McpServer) => target.registerTool('slow', { inputSchema: {} }, () => { started(); return pending; }),
+    }], 'server-A');
+    const [clientSide, serverSide] = InMemoryTransport.createLinkedPair();
+    try {
+      await server.connect(serverSide);
+      await client.connect(clientSide);
+      jest.useFakeTimers({ doNotFake: ['queueMicrotask', 'nextTick', 'setImmediate'] });
+      const onprogress = jest.fn();
+      const call = client.callTool({ name: 'slow', arguments: {} }, { onprogress });
+      void call.catch(() => undefined);
+      await running;
+      await jest.advanceTimersByTimeAsync(5_000);
+      expect(onprogress).toHaveBeenCalledTimes(jsonMode ? 0 : 1);
+      finish(result);
+      await expect(call).resolves.toEqual(result);
+    } finally {
+      finish(result);
+      await client.close();
+      await server.close();
+      jest.useRealTimers();
+      if (previous === undefined) delete process.env.MCP_STREAMABLE_JSON_RESPONSE;
+      else process.env.MCP_STREAMABLE_JSON_RESPONSE = previous;
+    }
+  });
+});

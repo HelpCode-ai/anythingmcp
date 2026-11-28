@@ -1,3 +1,4 @@
+import { enableToolProgress } from './tool-progress';
 import { z } from 'zod';
 import { McpServer } from '@modelcontextprotocol/server';
 import { listAdapters } from '../adapters/catalog';
@@ -79,30 +80,30 @@ MCP-to-MCP bridge. Browse everything: ${SITE}/guides`;
 /**
  * Register the static demo tools on a per-request McpServer instance.
  */
-export function registerDemoTools(server: McpServer): void {
+export function registerDemoTools(server: McpServer, progressEnabled = true): void {
   // `server.tool(name, description, shape, cb)` was removed in the 2.0 SDK.
   // `registerTool` takes the description in a config object, and wants a whole
   // schema rather than a raw shape — the shape form still compiles but is
   // deprecated, so these use `z.object()` directly.
-  server.registerTool(
+  enableToolProgress(server.registerTool(
     'anythingmcp_overview',
     {
       description:
         'What AnythingMCP is, what this demo endpoint does, and where to learn more.',
     },
     async () => ({ content: [{ type: 'text' as const, text: OVERVIEW }] }),
-  );
+  ), progressEnabled);
 
-  server.registerTool(
+  enableToolProgress(server.registerTool(
     'anythingmcp_get_started',
     {
       description:
         'How to install and run your own AnythingMCP instance with Docker.',
     },
     async () => ({ content: [{ type: 'text' as const, text: GET_STARTED }] }),
-  );
+  ), progressEnabled);
 
-  server.registerTool(
+  enableToolProgress(server.registerTool(
     'anythingmcp_connect_client',
     {
       description:
@@ -116,14 +117,14 @@ export function registerDemoTools(server: McpServer): void {
     async ({ client }) => ({
       content: [{ type: 'text' as const, text: CONNECT[client] ?? CONNECT.claude }],
     }),
-  );
+  ), progressEnabled);
 
-  server.registerTool(
+  enableToolProgress(server.registerTool(
     'anythingmcp_list_connectors',
     {
       description:
         `Overview of the ${ADAPTER_COUNT} pre-built connectors and the connector types you can build.`,
     },
     async () => ({ content: [{ type: 'text' as const, text: CONNECTORS }] }),
-  );
+  ), progressEnabled);
 }
