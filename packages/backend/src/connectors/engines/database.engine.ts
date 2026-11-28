@@ -251,8 +251,7 @@ export class DatabaseEngine {
     } else if (this.isHana(config.baseUrl)) {
       await this.executeHana(config, 'SELECT 1 AS OK FROM DUMMY', [], true);
     } else if (this.isMssql(config.baseUrl)) {
-      const mssqlConfig = this.buildMssqlConfig(config);
-      const pool = await mssql.connect(mssqlConfig);
+      const pool = await openMssqlPool(this.buildMssqlConfig(config));
       try {
         await pool.request().query('SELECT 1 AS ok');
       } finally {
@@ -392,7 +391,7 @@ export class DatabaseEngine {
     const mssqlConfig = this.buildMssqlConfig(config);
     this.logger.debug(`MSSQL query → ${mssqlConfig.server}/${mssqlConfig.database}`);
 
-    const pool = await mssql.connect(mssqlConfig);
+    const pool = await openMssqlPool(mssqlConfig);
     // SQL Server has no read-only transaction mode. A read-only connector runs
     // its statement in a transaction that is always rolled back, so a write
     // caused by the statement does not persist. Only a database user without
@@ -1272,6 +1271,24 @@ export function assertSafeSqlIdentifierVars(
       );
     }
   }
+}
+
+/**
+ * A connection pool of this call's own. `mssql.connect()` opens one pool for
+ * the whole process and, while it is open, returns it whatever config is
+ * passed: two MSSQL calls that overlapped ran on the first caller's server,
+ * database and login, and the first to finish closed the pool for both
+ * ("Connection is closed."). Callers close the pool when they are done.
+ */
+export async function openMssqlPool(config: mssql.config): Promise<mssql.ConnectionPool> {
+  const pool = new mssql.ConnectionPool(config);
+  try {
+    await pool.connect();
+  } catch (err) {
+    await pool.close().catch(() => undefined);
+    throw err;
+  }
+  return pool;
 }
 
 export type SqlDriver = 'postgres' | 'mysql' | 'mssql' | 'oracle' | 'sqlite' | 'hana';
