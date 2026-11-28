@@ -33,12 +33,11 @@ const mockMssqlQuery = jest.fn();
 const mockMssqlBegin = jest.fn().mockResolvedValue(undefined);
 const mockMssqlRollback = jest.fn().mockResolvedValue(undefined);
 jest.mock('mssql', () => ({
-  connect: jest.fn().mockImplementation(() =>
-    Promise.resolve({
-      request: () => ({ query: mockMssqlQuery, input: jest.fn() }),
-      close: jest.fn(),
-    }),
-  ),
+  ConnectionPool: jest.fn().mockImplementation(() => ({
+    connect: jest.fn().mockResolvedValue(undefined),
+    request: () => ({ query: mockMssqlQuery, input: jest.fn() }),
+    close: jest.fn().mockResolvedValue(undefined),
+  })),
   Transaction: jest.fn().mockImplementation(() => ({
     begin: mockMssqlBegin,
     rollback: mockMssqlRollback,
