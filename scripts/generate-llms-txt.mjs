@@ -13,6 +13,7 @@ export const EXCLUDED_DOCS = [
   'docs/operations/card-trial-offer.md',
   'docs/operations/signup-attribution.md',
   'docs/plans/file-search.md',
+  'docs/plans/webhook-wake-up.md',
 ];
 // Generated per-connector pages (docs/catalog/connectors/<slug>.md, 700+ of
 // them): the catalog's category pages, which llms.txt lists, link to each one.
