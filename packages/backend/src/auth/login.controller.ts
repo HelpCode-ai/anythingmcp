@@ -2288,14 +2288,17 @@ ${
     if (plugin) await markDirectorySignup(this.prisma, this.productEvents, userId, plugin);
 
     // The client asked for one specific server via RFC 8707. It has already
-    // said what it wants; asking again would be noise. An id this user cannot
-    // reach is dropped, and the server is added to what this client was
-    // already allowed, so its other server URLs keep working.
+    // said what it wants; asking again would be noise. The server is added to
+    // what this client was already allowed, so its other server URLs keep
+    // working. When it cannot be granted (it no longer exists, is switched
+    // off, or this user may not see it), the decision below is made as if no
+    // server had been asked for, so the authorization still ends with a
+    // grant (the callback refuses to issue a code without one).
     const requestedServerId = (req as Request & { signedCookies?: Record<string, unknown> })
       .signedCookies?.[MCP_RESOURCE_COOKIE];
     if (typeof requestedServerId === 'string' && requestedServerId) {
-      await this.grants.grantRequestedServer(consent.clientId, userId, requestedServerId);
-      return false;
+      if (await this.grants.grantRequestedServer(consent.clientId, userId, requestedServerId)) return false;
+      this.logger.warn('The requested MCP server cannot be granted; choosing as if none had been requested');
     }
 
     const targets = await this.grants.listSelectableTargets(userId);
@@ -2304,23 +2307,27 @@ ${
     // Nothing to choose between: one server, or one workspace whose servers are
     // the only thing on offer. Grant it and carry on without a screen.
     if (servers.length <= 1) {
+      let granted = false;
       if (targets.length === 1 && (await this.grants.restrictedIn(userId, targets[0].organizationId))) {
         // Member visibility: a restricted member is offered only their own
         // server, which often holds none of the connectors shared with them.
         // The whole workspace gives them every tool their roles allow.
-        await this.grants.grantWholeOrganization(consent.clientId, userId, targets[0].organizationId);
+        granted = await this.grants.grantWholeOrganization(consent.clientId, userId, targets[0].organizationId);
       } else if (servers.length === 1) {
-        await this.grants.grantServers(consent.clientId, userId, [servers[0].id]);
+        granted = (await this.grants.grantServers(consent.clientId, userId, [servers[0].id])).length > 0;
       } else if (targets.length === 1) {
         // No servers yet — grant the workspace, so a server created later is
         // picked up without having to reconnect.
-        await this.grants.grantWholeOrganization(
+        granted = await this.grants.grantWholeOrganization(
           consent.clientId,
           userId,
           targets[0].organizationId,
         );
       }
-      return false;
+      // Several workspaces without a server, or a grant that could not be
+      // written: the person chooses on the picker below. With no workspace at
+      // all there is nothing to grant, and the callback ends the attempt.
+      if (granted || targets.length === 0) return false;
     }
 
     // A server without connectors is not a choice. In one workspace where at
@@ -2343,20 +2350,21 @@ ${
       withConnectors.length <= 1 &&
       !(await this.grants.hasActiveGrant(consent.clientId, userId))
     ) {
+      // Each choice falls through to the picker when its grant is not written.
       const organizationId = targets[0].organizationId;
       if (await this.grants.restrictedIn(userId, organizationId)) {
-        await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId);
-        return false;
-      }
-      if (withConnectors.length === 1) {
+        if (await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId)) return false;
+      } else if (withConnectors.length === 1) {
         const only = withConnectors[0].id;
         const own = await this.grants.firstOwnServerId(userId, organizationId);
-        await this.grants.grantServers(consent.clientId, userId, own && own !== only ? [only, own] : [only]);
-        return false;
-      }
-      if ((await this.prisma.connector.count({ where: { organizationId } })) === 0) {
-        await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId);
-        return false;
+        const granted = await this.grants.grantServers(
+          consent.clientId,
+          userId,
+          own && own !== only ? [only, own] : [only],
+        );
+        if (granted.length > 0) return false;
+      } else if ((await this.prisma.connector.count({ where: { organizationId } })) === 0) {
+        if (await this.grants.grantWholeOrganization(consent.clientId, userId, organizationId)) return false;
       }
     }
 
@@ -2466,8 +2474,13 @@ ${
 
     if (body.workspace) {
       // "Everything in this workspace" — covers connectors not yet attached to
-      // any server. Refused outright if the user is not a member.
-      await this.grants.grantWholeOrganization(consent.clientId, userId, body.workspace);
+      // any server. Refused outright if the user is not a member, and then
+      // no code is issued: there is no grant to issue it for.
+      if (!(await this.grants.grantWholeOrganization(consent.clientId, userId, body.workspace))) {
+        return res.redirect(
+          `/auth/login?error=${loginErrorParam('noServersAvailable')}`,
+        );
+      }
     } else if (selected.length > 0) {
       const granted = await this.grants.grantServers(consent.clientId, userId, selected);
       if (granted.length === 0) {
