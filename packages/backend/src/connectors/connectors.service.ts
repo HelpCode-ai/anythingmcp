@@ -747,7 +747,9 @@ export class ConnectorsService implements OnApplicationBootstrap {
      *
      *   ok           — 2xx response
      *   auth_failed  — 401 / 403: handshake reached the API, credentials rejected
-     *   not_found    — 404: URL reachable but the healthcheck path doesn't exist
+     *   not_found    — 404: URL reachable but the healthcheck path doesn't exist;
+     *                  also 400/405 at the bare base URL of a REST connector
+     *                  that has no test path anywhere
      *   unreachable  — DNS/network/SSRF/timeout
      *   unsupported  — connector type with no test implementation yet
      *   error        — anything else (5xx, parse error, etc.)
@@ -973,7 +975,11 @@ export class ConnectorsService implements OnApplicationBootstrap {
       }
       return { ok: true, kind: 'ok', message: 'Connection successful' };
     } catch (error: any) {
-      return this.classifyTestError(error, healthcheck.path, healthcheck.source === 'default');
+      // Only a REST test sends a request to the healthcheck path. GraphQL and
+      // the other types never read it, so "set a test path" would be wrong
+      // advice there and could hide a real credential error behind it.
+      const baseUrlOnly = connector.type === 'REST' && healthcheck.source === 'default';
+      return this.classifyTestError(error, healthcheck.path, baseUrlOnly);
     }
   }
 

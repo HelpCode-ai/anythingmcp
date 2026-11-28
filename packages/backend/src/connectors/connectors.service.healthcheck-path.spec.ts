@@ -28,6 +28,7 @@ describe('ConnectorsService test connection path', () => {
 
   let prisma: any;
   let restEngine: any;
+  let graphqlEngine: any;
   let service: ConnectorsService;
 
   function httpError(status: number, data: unknown) {
@@ -44,12 +45,13 @@ describe('ConnectorsService test connection path', () => {
       },
     };
     restEngine = { execute: jest.fn().mockResolvedValue({ ok: true }) };
+    graphqlEngine = { execute: jest.fn().mockResolvedValue({ ok: true }) };
     service = new ConnectorsService(
       prisma,
       { get: () => KEY } as any,
       restEngine,
       {} as any,
-      {} as any,
+      graphqlEngine,
       {} as any,
       {} as any,
     );
@@ -140,6 +142,46 @@ describe('ConnectorsService test connection path', () => {
     const result = await service.testConnection('conn-ig');
 
     expect(result.kind).toBe('error');
+  });
+
+  // A GraphQL test POSTs { __typename } to the base URL and never reads
+  // healthcheckPath, so its errors must not be reported as a missing test path.
+  describe('GraphQL connector', () => {
+    const gqlRow = {
+      ...row,
+      id: 'conn-gql',
+      name: 'Some GraphQL API',
+      type: 'GRAPHQL',
+      baseUrl: 'https://api.example.com/graphql',
+      config: null,
+    };
+
+    beforeEach(() => {
+      prisma.connector.findUnique.mockResolvedValue(gqlRow);
+    });
+
+    it('HTTP 400 stays an error and does not tell the user to set healthcheckPath', async () => {
+      graphqlEngine.execute.mockRejectedValue(
+        httpError(400, { errors: [{ message: 'Missing or invalid token' }] }),
+      );
+
+      const result = await service.testConnection('conn-gql');
+
+      expect(restEngine.execute).not.toHaveBeenCalled();
+      expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'error', httpStatus: 400 }));
+      expect(result.message).not.toContain('base URL');
+      expect(result.message).not.toContain('credentials work');
+    });
+
+    it('HTTP 404 keeps the plain not-found wording', async () => {
+      graphqlEngine.execute.mockRejectedValue(httpError(404, 'Not Found'));
+
+      const result = await service.testConnection('conn-gql');
+
+      expect(result).toEqual(expect.objectContaining({ ok: false, kind: 'not_found', httpStatus: 404 }));
+      expect(result.message).toContain('returned 404');
+      expect(result.message).not.toContain('base URL');
+    });
   });
 });
 
