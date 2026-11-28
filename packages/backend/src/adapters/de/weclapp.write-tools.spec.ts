@@ -405,8 +405,221 @@ describe('weclapp adapter: write tools', () => {
       'weclapp_update_party', 'weclapp_update_purchase_order', 'weclapp_update_quotation',
       'weclapp_update_recurring_invoice', 'weclapp_update_sales_invoice', 'weclapp_update_sales_order',
       'weclapp_update_salesorder',
+      // Seen on Cloud weclapp connectors on 27 Nov 2026.
+      'weclapp_add_purchase_invoice', 'weclapp_edit_purchase_order', 'weclapp_edit_supply_source',
+      'weclapp_edit_article_supply_source', 'weclapp_list_incoming_bookings', 'weclapp_update_incoming_bookings',
+      'weclapp_get_incoming_goods', 'weclapp_update_incoming_goods', 'weclapp_list_shipment_documents',
+      'weclapp_create_production_order', 'weclapp_update_production_order', 'weclapp_add_purchase_order_status',
     ];
     const ours = new Set(tools.map((t) => t.name));
     expect(customerNames.filter((n) => ours.has(n))).toEqual([]);
+  });
+});
+
+/**
+ * Purchasing, incoming goods and purchase invoices. Bodies follow weclapp's
+ * OpenAPI v2 file; the rules in the descriptions come from refusals weclapp
+ * gave on Cloud: a production order is created only in ENTRY_IN_PROGRESS
+ * (null and NEW answer 400), `targetQuantity` of a position is read-only,
+ * a purchase invoice position with its own price needs manualUnitPrice.
+ */
+describe('weclapp adapter: purchasing, incoming goods and purchase invoices', () => {
+  const engine = new RestEngine(
+    { getAccessToken: jest.fn(), refreshToken: jest.fn() } as any,
+    { getToken: jest.fn(), forceRelogin: jest.fn() } as any,
+  );
+  const base = 'https://acme.weclapp.com/webapp/api/v2';
+  const config = {
+    baseUrl: base,
+    authType: 'API_KEY' as const,
+    authConfig: { headerName: 'AuthenticationToken', apiKey: 'token' },
+  };
+  const run = (name: string, params: Record<string, unknown>) =>
+    engine.execute(config, tool(name).endpointMapping as any, params);
+  const sent = () => mockedAxios.mock.calls[0][0] as any;
+
+  beforeEach(() => {
+    jest.clearAllMocks();
+    mockedAxios.mockResolvedValue({ data: { id: '1' } });
+  });
+
+  it('creates production orders in ENTRY_IN_PROGRESS with components by quantity', async () => {
+    const t = tool('weclapp_add_production_order');
+    expect(t.parameters.properties.status).toBeUndefined();
+    expect(t.description).not.toMatch(/fills the components/);
+    await run('weclapp_add_production_order', {
+      articleId: '21943439',
+      targetQuantity: '123',
+      warehouseId: '6603425',
+      targetStartDate: 1794956400000,
+      targetEndDate: 1795042800000,
+      productionOrderItems: [{ articleId: '11830049', quantity: '123' }],
+      dryRun: true,
+    });
+    expect(sent().url).toBe(`${base}/productionOrder`);
+    expect(sent().params).toEqual({ dryRun: true });
+    expect(sent().data).toEqual({
+      articleId: '21943439',
+      targetQuantity: '123',
+      warehouseId: '6603425',
+      targetStartDate: 1794956400000,
+      targetEndDate: 1795042800000,
+      status: 'ENTRY_IN_PROGRESS',
+      productionOrderItems: [{ articleId: '11830049', quantity: '123' }],
+    });
+    expect(tool('weclapp_edit_production_order').parameters.properties.fields.description).not.toMatch(/"status"/);
+  });
+
+  it('records a purchase invoice with its positions and order links, dry run first', async () => {
+    const purchaseInvoiceItems = [
+      {
+        title: 'Freight 18.11.2026',
+        quantity: '1',
+        unitPrice: '245.71',
+        manualUnitPrice: true,
+        taxId: '3691',
+        accountId: '5925',
+        purchaseInvoiceItemRelationships: [{ purchaseOrderItemId: '98266', quantity: '1' }],
+      },
+    ];
+    await run('weclapp_record_purchase_invoice', {
+      supplierId: '12301',
+      invoiceNumber: '0242145804',
+      invoiceDate: 1795388400000,
+      purchaseInvoiceType: 'STANDARD_INVOICE',
+      purchaseInvoiceItems,
+      purchaseOrders: [{ id: '98264' }],
+      dryRun: true,
+    });
+    expect(sent().method).toBe('POST');
+    expect(sent().url).toBe(`${base}/purchaseInvoice`);
+    expect(sent().params).toEqual({ dryRun: true });
+    expect(sent().data).toEqual({
+      supplierId: '12301',
+      invoiceNumber: '0242145804',
+      invoiceDate: 1795388400000,
+      purchaseInvoiceType: 'STANDARD_INVOICE',
+      purchaseInvoiceItems,
+      purchaseOrders: [{ id: '98264' }],
+    });
+  });
+
+  it('creates purchase invoices and incoming goods from an order with the documented actions', async () => {
+    await run('weclapp_create_purchase_invoice_from_purchase_order', {
+      purchaseOrderId: '98264',
+      invoiceNumber: 'RE-1',
+      invoiceDate: 1795388400000,
+      invoiceType: 'PREPAYMENT_INVOICE',
+    });
+    expect(sent().url).toBe(`${base}/purchaseOrder/id/98264/createPurchaseInvoice`);
+    expect(sent().data).toEqual({ invoiceNumber: 'RE-1', invoiceDate: 1795388400000, invoiceType: 'PREPAYMENT_INVOICE' });
+
+    mockedAxios.mockClear();
+    const customAttributes = [{ attributeDefinitionId: '4711', dateValue: 1795388400000 }];
+    await run('weclapp_create_incoming_goods_from_purchase_order', { purchaseOrderId: '98264', customAttributes });
+    expect(sent().url).toBe(`${base}/purchaseOrder/id/98264/createIncomingGoods`);
+    expect(sent().data).toEqual({ customAttributes });
+
+    mockedAxios.mockClear();
+    await run('weclapp_create_purchase_invoice_from_incoming_goods', { incomingGoodsId: '9000' });
+    expect(sent().url).toBe(`${base}/incomingGoods/id/9000/createPurchaseInvoice`);
+    expect(sent().data).toEqual({});
+  });
+
+  it('sends purchase order status and close actions with a JSON body', async () => {
+    await run('weclapp_set_purchase_order_status', { purchaseOrderId: '98264', status: 'CONFIRMED' });
+    expect(sent().method).toBe('POST');
+    expect(sent().url).toBe(`${base}/purchaseOrder/id/98264/updateStatus`);
+    expect(sent().params).toBeUndefined();
+    expect(sent().data).toEqual({ status: 'CONFIRMED' });
+
+    mockedAxios.mockClear();
+    await run('weclapp_close_purchase_order', { purchaseOrderId: '98264' });
+    expect(sent().url).toBe(`${base}/purchaseOrder/id/98264/manuallyClose`);
+    expect(sent().data).toEqual({});
+  });
+
+  it('reads and enters the bookings of incoming goods', async () => {
+    await run('weclapp_read_incoming_bookings', { incomingGoodsId: '9000' });
+    expect(sent().method).toBe('GET');
+    expect(sent().url).toBe(`${base}/incomingGoods/id/9000/incomingBookings`);
+
+    mockedAxios.mockClear();
+    const incomingBookings = [
+      { incomingGoodsItemId: '9001', quantity: '20', batchNumber: 'CH-1', expirationDate: 1798758000000, storagePlaceId: '812', bookIntoWarehouse: false },
+    ];
+    await run('weclapp_enter_incoming_bookings', { incomingGoodsId: '9000', incomingBookings });
+    expect(sent().method).toBe('POST');
+    expect(sent().url).toBe(`${base}/incomingGoods/id/9000/updateIncomingBookings`);
+    expect(sent().data).toEqual({ incomingBookings });
+  });
+
+  it('offers no dryRun on actions weclapp carries out regardless, and says so', () => {
+    const noDryRun = [
+      'weclapp_set_purchase_order_status',
+      'weclapp_close_purchase_order',
+      'weclapp_create_incoming_goods_from_purchase_order',
+      'weclapp_enter_incoming_bookings',
+      'weclapp_create_purchase_invoice_from_purchase_order',
+      'weclapp_create_purchase_invoice_from_incoming_goods',
+      'weclapp_fast_production_booking',
+    ];
+    for (const name of noDryRun) {
+      const t = tool(name);
+      expect({ name, dryRun: t.parameters.properties.dryRun }).toEqual({ name, dryRun: undefined });
+      expect({ name, says: /No dry run/.test(t.description) }).toEqual({ name, says: true });
+      expect(adapter.instructions).toContain(`\`${name}\``);
+    }
+  });
+
+  it('books stock with a custom attribute such as a reason', async () => {
+    const customAttributes = [{ attributeDefinitionId: '4711', selectedValueId: '4720' }];
+    await run('weclapp_book_stock_out', { articleId: '5101', quantity: '3', customAttributes });
+    expect(sent().url).toBe(`${base}/warehouseStockMovement/bookOutgoingMovement`);
+    expect(sent().data).toEqual({ articleId: '5101', quantity: '3', customAttributes });
+  });
+
+  it('lists and downloads the documents of a record', async () => {
+    await run('weclapp_list_documents', { entityName: 'purchaseOrder', entityId: '98264' });
+    expect(sent().url).toBe(`${base}/document`);
+    expect(sent().params).toEqual({ entityName: 'purchaseOrder', entityId: '98264' });
+    const dl = tool('weclapp_download_document') as Tool & { responseMapping?: { binary?: unknown } };
+    expect(dl.endpointMapping.path).toBe('/document/id/{documentId}/download');
+    expect(dl.responseMapping?.binary).toBeDefined();
+  });
+
+  it('changes purchase orders, incoming goods, invoices and supply sources with partial PUTs', async () => {
+    const cases: Array<[string, Record<string, unknown>, string]> = [
+      ['weclapp_change_purchase_order', { purchaseOrderId: '98264', fields: { confirmationNumber: 'AB-1' } }, '/purchaseOrder/id/98264'],
+      ['weclapp_edit_incoming_goods', { incomingGoodsId: '9000', fields: { deliveryNoteNumber: 'LS-1' } }, '/incomingGoods/id/9000'],
+      ['weclapp_edit_purchase_invoice', { purchaseInvoiceId: '5500', fields: { dueDate: 1795388400000 } }, '/purchaseInvoice/id/5500'],
+      ['weclapp_change_supply_source', { articleSupplySourceId: '301', fields: { articleNumber: 'SUP-1' } }, '/articleSupplySource/id/301'],
+    ];
+    for (const [name, params, path] of cases) {
+      mockedAxios.mockClear();
+      await run(name, params);
+      expect(sent().method).toBe('PUT');
+      expect(sent().url).toBe(`${base}${path}`);
+      expect(sent().params).toEqual({ ignoreMissingProperties: 'true' });
+      expect(sent().data).toEqual(params.fields);
+    }
+  });
+
+  it('creates an internal shipment and installs the custom attribute editor switched off', async () => {
+    await run('weclapp_add_shipment', {
+      shipmentType: 'INTERNAL',
+      warehouseId: '20',
+      destinationWarehouseId: '21',
+      shipmentItems: [{ articleId: '5101', quantity: '300' }],
+      dryRun: true,
+    });
+    expect(sent().url).toBe(`${base}/shipment`);
+    expect(sent().data).toEqual({
+      shipmentType: 'INTERNAL',
+      warehouseId: '20',
+      destinationWarehouseId: '21',
+      shipmentItems: [{ articleId: '5101', quantity: '300' }],
+    });
+    expect(tool('weclapp_edit_custom_attribute_definition').enabled).toBe(false);
   });
 });
