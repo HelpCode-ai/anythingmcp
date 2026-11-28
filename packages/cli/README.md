@@ -448,6 +448,11 @@ For CI, skip the profile and pass the key in the environment:
 AMCP_URL=https://cloud.anythingmcp.com AMCP_API_KEY=mcp_… amcp api GET /api/users --json
 ```
 
+For an instance behind a path prefix, include it in the URL used with the management key:
+`AMCP_URL=https://example.com/gateway AMCP_API_KEY=mcp_… amcp api GET /api/users` requests
+`https://example.com/gateway/api/users`. Use the usual `/api/...` paths; the saved
+management profile or `AMCP_URL` supplies the prefix, with or without a trailing slash.
+
 The key comes from `AMCP_API_KEY`, `--key-stdin` or a saved management profile, never from a command argument.
 
 - A non-safe method asks for confirmation in a terminal. Pass `--yes` in scripts.
